@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SONAR · Market Scanner</title>
+<style>
+  :root{
+    --bg:#080b11; --panel:#0d131d; --panel2:#0a0f17; --border:#1a2431;
+    --ink:#e6edf3; --muted:#7f8ea0; --faint:#4a5867;
+    --up:#3ea6ff; --down:#ff6a54; --gold:#e8b84b; --grid:#141d29;
+    --liq:#46c6b8; --tim:#e8b84b; --mom:#9b8cff; --edge:#3ea6ff; --news:#e069a6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:12.5px/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1280px;margin:0 auto;padding:14px}
+  a{color:var(--up);text-decoration:none} a:hover{text-decoration:underline}
+  .mono{font-variant-numeric:tabular-nums}
+  .lbl{color:var(--faint);text-transform:uppercase;letter-spacing:.12em;font-size:9.5px}
+
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 14px;border:1px solid var(--border);border-radius:8px;
+    background:linear-gradient(180deg,#0e141e,#0a0f17)}
+  .brand{font-size:15px;font-weight:700;letter-spacing:.16em}
+  .brand b{color:var(--gold)}
+  .tag{font-size:9px;letter-spacing:.14em;text-transform:uppercase;padding:3px 7px;
+    border-radius:4px;border:1px solid var(--border);color:var(--muted)}
+  .tag.live{color:#0a0f17;background:var(--up);border-color:var(--up);font-weight:700}
+  .tag.paper{color:var(--gold);border-color:rgba(232,184,75,.5);background:rgba(232,184,75,.08);font-weight:700}
+  .hdr-right{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .ctrl{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:5px;
+    border:1px solid var(--border);background:var(--panel2);color:var(--muted);
+    font:inherit;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+  .ctrl:hover{color:var(--ink);border-color:var(--faint)}
+  #docs-btn,.termlink{color:var(--gold);border-color:rgba(232,184,75,.4)}
+  .termlink{color:var(--up);border-color:rgba(62,166,255,.4)}
+  .sw{width:22px;height:12px;border-radius:7px;background:var(--border);position:relative;transition:background .15s;flex:none}
+  .sw .knob{position:absolute;top:1px;left:1px;width:10px;height:10px;border-radius:50%;background:var(--faint);transition:left .15s,background .15s}
+  #tips-toggle[aria-pressed="true"]{color:var(--up);border-color:rgba(62,166,255,.4)}
+  #tips-toggle[aria-pressed="true"] .sw{background:var(--up)}
+  #tips-toggle[aria-pressed="true"] .sw .knob{left:11px;background:#0a0f17}
+  .clock{color:var(--muted);letter-spacing:.1em}
+
+  .banner{margin:10px 0;padding:8px 12px;border-radius:6px;font-size:11px;
+    border:1px solid rgba(232,184,75,.35);background:rgba(232,184,75,.06);color:#f0d99a}
+  .banner b{color:var(--gold)}
+
+  .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
+  .chipset{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--panel2);
+    color:var(--muted);cursor:pointer;font-size:11px;letter-spacing:.04em}
+  .chip.on{color:var(--ink);border-color:var(--up);background:rgba(62,166,255,.1)}
+  .meta{margin-left:auto;color:var(--faint);font-size:10.5px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin:2px 0 10px}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:middle}
+  .modebar{display:flex;gap:8px;margin-bottom:10px}
+  .modebtn{padding:7px 15px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);
+    color:var(--muted);cursor:pointer;font-size:12px;letter-spacing:.06em}
+  .modebtn.on{color:var(--ink);border-color:var(--up);background:rgba(62,166,255,.12)}
+  .chg.up{color:var(--up)} .chg.down{color:var(--down)}
+  .lean.bull{color:var(--up);border-color:rgba(62,166,255,.45);background:rgba(62,166,255,.1)}
+  .lean.bear{color:var(--down);border-color:rgba(255,106,84,.45);background:rgba(255,106,84,.1)}
+  .lean.neut{color:var(--muted)}
+  .spark{vertical-align:middle;margin-left:6px}
+
+  /* suggestion cards */
+  .list{display:flex;flex-direction:column;gap:9px}
+  .card{display:grid;grid-template-columns:96px 1fr;gap:14px;
+    background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+  .card:hover{border-color:var(--faint)}
+  .conf{text-align:center}
+  .conf .v{font-size:26px;font-weight:700;line-height:1;color:var(--gold)}
+  .conf .cap{font-size:8px;color:var(--faint);text-transform:uppercase;letter-spacing:.08em;margin-top:3px}
+  .cbar{display:flex;height:7px;border-radius:4px;overflow:hidden;margin-top:8px;background:var(--panel2);border:1px solid var(--border)}
+  .cbar > i{height:100%}
+
+  .body h3{margin:0 0 6px;font-size:13.5px;font-weight:600;line-height:1.35}
+  .body h3 a{color:var(--ink)} .body h3 a:hover{color:var(--up)}
+  .row1{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:7px}
+  .pill{font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);color:var(--muted);letter-spacing:.04em}
+  .cat{border-color:rgba(127,142,160,.4)}
+  .side{font-weight:700}
+  .side.up{color:var(--up);border-color:rgba(62,166,255,.45);background:rgba(62,166,255,.1)}
+  .side.down{color:var(--down);border-color:rgba(255,106,84,.45);background:rgba(255,106,84,.1)}
+  .side.lean{color:var(--muted)}
+  .tone.pos{color:var(--up)} .tone.neg{color:var(--down)} .tone.mix{color:var(--muted)}
+  .facts{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:11px;margin-bottom:6px}
+  .facts b{color:var(--ink);font-weight:600}
+  .rat{color:var(--faint);font-size:11px;font-style:italic;margin-bottom:6px}
+  .news{border-top:1px solid var(--grid);padding-top:7px;margin-top:2px;display:flex;flex-direction:column;gap:4px}
+  .news a{font-size:11px;color:var(--ink)} .news a:hover{color:var(--up)}
+  .news .src{color:var(--news);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;margin-right:6px}
+  .news .age{color:var(--faint);font-size:9.5px;margin-left:6px}
+  .empty{color:var(--faint);text-align:center;padding:40px}
+
+  #tip{position:fixed;z-index:200;max-width:300px;padding:8px 11px;border-radius:6px;background:#0e1826;
+    border:1px solid var(--faint);color:var(--ink);font-size:11px;line-height:1.5;pointer-events:none;
+    opacity:0;transition:opacity .1s;box-shadow:0 8px 24px rgba(0,0,0,.55)}
+  #tip.show{opacity:1}
+  body.tips [data-tip]{cursor:help}
+  body.tips [data-tip]:hover{outline:1px dotted rgba(232,184,75,.5);outline-offset:2px;border-radius:3px}
+
+  footer{margin:18px 0 8px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;
+    color:var(--muted);font-size:10.5px;line-height:1.65;background:var(--panel2)}
+  footer b{color:var(--ink)}
+  @media(max-width:640px){.card{grid-template-columns:1fr}.conf{display:flex;gap:12px;align-items:center;text-align:left}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="brand" data-tip="The scanner ranks many live prediction markets by a transparent 'confidence' score and attaches reputable news as context. Paper money only — it suggests nothing to buy with real funds.">◇ <b>SONAR</b> · SCANNER</span>
+    <span class="tag live" data-tip="Markets and news are pulled live from Polymarket and reputable RSS feeds and refresh on a timer.">● LIVE</span>
+    <span class="tag paper" data-tip="Everything here is informational and paper-only. No orders, no advice.">◈ PAPER</span>
+    <div class="hdr-right">
+      <button class="ctrl" id="tips-toggle" type="button" aria-pressed="false">
+        <span class="sw"><span class="knob"></span></span>Tooltips&nbsp;<span id="tips-state">OFF</span>
+      </button>
+      <a class="ctrl termlink" href="/">← Terminal</a>
+      <a class="ctrl" id="docs-btn" href="/docs" target="_blank" rel="noopener">◈ Docs ↗</a>
+      <span class="clock mono" id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <div class="banner">
+    <b>Read the confidence score honestly.</b> It is a heuristic for how <b>notable and tradeable</b>
+    something looks right now — not the probability you will make money. <b>Markets:</b> a side is
+    suggested only for crypto up/down markets (on paper, real model edge); elsewhere just the market's own
+    odds. <b>Assets</b> (stocks, forex, crypto, commodities): there is no independent model, so the
+    Bullish/Bearish <em>lean</em> is a transparent momentum-plus-news heuristic — a computed indicator,
+    <b>not advice</b>. News is context, no order is ever placed, and none of this is financial advice.
+  </div>
+
+  <div class="modebar">
+    <button class="modebtn on" data-mode="markets" data-tip="Prediction markets from Polymarket, ranked by the confidence heuristic.">◎ Prediction Markets</button>
+    <button class="modebtn" data-mode="assets" data-tip="Real assets — stocks, indices, forex, crypto spot, commodities — with live price, momentum, and a news-driven lean.">$ Assets</button>
+  </div>
+
+  <div class="bar">
+    <div class="chipset" id="cats"></div>
+    <div class="chipset" id="sortbar" style="margin-left:8px">
+      <span class="chip on" data-sort="confidence" data-tip="Rank by the overall confidence heuristic (default).">Confidence</span>
+      <span class="chip" data-sort="closing" data-tip="Rank by soonest to resolve — the 'quick' view.">Closing soon</span>
+      <span class="chip" data-sort="momentum" data-tip="Rank by how much the market's odds have moved recently.">Movers</span>
+    </div>
+    <span class="meta" id="meta">scanning…</span>
+  </div>
+  <div class="legend" id="legend">
+    <span data-tip="How much real money and depth is in the market — higher is more reliable pricing and easier paper fills."><i style="background:var(--liq)"></i>liquidity</span>
+    <span data-tip="How soon it resolves — shorter scores higher, for quick turnaround."><i style="background:var(--tim)"></i>timing</span>
+    <span data-tip="How much the market's odds have moved lately."><i style="background:var(--mom)"></i>momentum</span>
+    <span data-tip="Model probability minus market price. Only crypto up/down markets have this — it's the only true edge signal."><i style="background:var(--edge)"></i>model edge (crypto)</span>
+    <span data-tip="Recency-weighted volume of matched reputable headlines. Coverage, not a prediction."><i style="background:var(--news)"></i>news</span>
+  </div>
+  <div class="legend" id="alegend" style="display:none">
+    <span data-tip="Size of the recent 5-day price move — bigger moves score higher."><i style="background:var(--mom)"></i>momentum</span>
+    <span data-tip="Daily volatility of returns — how active the asset is."><i style="background:var(--liq)"></i>volatility</span>
+    <span data-tip="Recency-weighted matched headlines from reputable outlets."><i style="background:var(--news)"></i>news</span>
+    <span style="color:var(--faint)">· lean = momentum + news sentiment (a computed indicator, not advice)</span>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <footer>
+    <b>How the score is built.</b> Each market's confidence is <code>100 × Σ(weight × component)</code>
+    over the coloured components above (crypto up/down markets weight the model edge; other markets
+    reweight across the remaining factors). The bar under each score shows that exact mix. <b>News</b>
+    comes from public RSS at reputable outlets (BBC, MarketWatch, Yahoo Finance, NPR), keyword-matched to
+    each market and treated strictly as untrusted context — headlines are shown so you can judge them, and
+    sentiment is a crude word-list heuristic, not an NLP model. <b>Nothing here is financial advice, and
+    no real order is ever placed.</b>
+  </footer>
+</div>
+
+<div id="tip" role="tooltip"></div>
+
+<script>
+const $ = s=>document.querySelector(s);
+const fmtC = p=>(p*100).toFixed(0)+"¢";
+const css = k=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+const COMPS=[["edge","--edge"],["liquidity","--liq"],["timing","--tim"],["momentum","--mom"],["news","--news"]];
+const WEIGHTS_C={edge:.30,liquidity:.20,timing:.15,momentum:.15,news:.20};
+const WEIGHTS_O={liquidity:.32,timing:.26,momentum:.22,news:.20};
+
+let mode="markets", cat="All", sort="confidence", acls="All";
+let M={suggestions:[],categories:{},n_scanned:0,generated:0,sources:[]};
+let A={assets:[],classes:[],generated:0};
+
+function fmtLeft(h){
+  if(h<1) return Math.round(h*60)+"m";
+  if(h<48) return Math.round(h)+"h";
+  return Math.round(h/24)+"d";
+}
+function fmtVol(v){
+  if(v>=1e6) return "$"+(v/1e6).toFixed(1)+"M";
+  if(v>=1e3) return "$"+(v/1e3).toFixed(0)+"k";
+  return "$"+Math.round(v);
+}
+function fmtPrice(p){ return p>=1000? p.toLocaleString("en-US",{maximumFractionDigits:0}) : p>=1? p.toFixed(2) : p.toFixed(4); }
+function pct(x){ return (x>=0?"+":"")+(x*100).toFixed(1)+"%"; }
+function ago(t){ if(!t) return "—"; const d=Math.max(0,Date.now()/1000-t); return d<60?Math.round(d)+"s ago":Math.round(d/60)+"m ago"; }
+function esc(x){return (x||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+async function poll(){
+  const [m,a] = await Promise.all([
+    fetch("/api/scan",{cache:"no-store"}).then(r=>r.json()).catch(()=>null),
+    fetch("/api/assets",{cache:"no-store"}).then(r=>r.json()).catch(()=>null),
+  ]);
+  if(m) M=m; if(a) A=a;
+  render();
+}
+
+function setMode(m){
+  mode=m;
+  document.querySelectorAll("[data-mode]").forEach(b=>b.classList.toggle("on",b.getAttribute("data-mode")===m));
+  $("#sortbar").style.display = m==="markets"?"":"none";
+  $("#legend").style.display  = m==="markets"?"":"none";
+  $("#alegend").style.display = m==="assets"?"":"none";
+  render();
+}
+function render(){ mode==="assets"? renderAssets() : renderMarkets(); }
+
+function renderMarkets(){
+  const cc=M.categories||{}, all=M.suggestions||[];
+  const cats=["All",...Object.keys(cc).sort((a,b)=>cc[b]-cc[a])];
+  $("#cats").innerHTML = cats.map(c=>{
+    const n = c==="All"? all.length : (cc[c]||0);
+    return `<span class="chip ${c===cat?'on':''}" data-cat="${c}" data-tip="Show only ${c} markets.">${c} <span style="color:var(--faint)">${n}</span></span>`;
+  }).join("");
+  $("#meta").textContent =
+    `${M.n_scanned||0} markets scanned · ${all.length} shown · updated ${ago(M.generated)} · ${(M.sources||[]).length} news sources`;
+  let rows = cat==="All"? all : all.filter(s=>s.category===cat);
+  if(sort==="closing") rows=[...rows].sort((a,b)=>a.hours_left-b.hours_left);
+  else if(sort==="momentum") rows=[...rows].sort((a,b)=>(b.comp.momentum||0)-(a.comp.momentum||0));
+  else rows=[...rows].sort((a,b)=>b.confidence-a.confidence);
+  $("#list").innerHTML = rows.length? rows.map(marketCard).join("") : `<div class="empty">No markets in this view yet.</div>`;
+}
+
+function renderAssets(){
+  const all=A.assets||[];
+  const cc={}; all.forEach(a=>cc[a.cls]=(cc[a.cls]||0)+1);
+  const classes=["All",...(A.classes||[])];
+  $("#cats").innerHTML = classes.map(c=>{
+    const n = c==="All"? all.length : (cc[c]||0);
+    return `<span class="chip ${c===acls?'on':''}" data-acls="${c}" data-tip="Show only ${c}.">${c} <span style="color:var(--faint)">${n}</span></span>`;
+  }).join("");
+  $("#meta").textContent = `${all.length} assets · updated ${ago(A.generated)} · Yahoo Finance + reputable news`;
+  let rows = acls==="All"? all : all.filter(a=>a.cls===acls);
+  rows=[...rows].sort((a,b)=>b.confidence-a.confidence);
+  $("#list").innerHTML = rows.length? rows.map(assetCard).join("") : `<div class="empty">Loading assets…</div>`;
+}
+
+function sparkSVG(pts){
+  if(!pts||pts.length<2) return "";
+  const w=76,h=18,mn=Math.min(...pts),mx=Math.max(...pts),r=(mx-mn)||1;
+  const d=pts.map((p,i)=>`${(i/(pts.length-1)*w).toFixed(1)},${(h-(p-mn)/r*h).toFixed(1)}`).join(" ");
+  const up=pts[pts.length-1]>=pts[0];
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${d}" fill="none" stroke="var(${up?'--up':'--down'})" stroke-width="1.5"/></svg>`;
+}
+
+function assetCard(a){
+  const W={momentum:.35,volatility:.20,news:.45};
+  const segs=[["momentum","--mom"],["volatility","--liq"],["news","--news"]].map(([k,v])=>{
+    const contrib=(W[k]||0)*(a.comp[k]||0)*100;
+    return contrib>0.4?`<i style="background:var(${v});width:${contrib/(a.confidence||1)*100}%" title="${k}"></i>`:"";
+  }).join("");
+  const cl=a.lean==="Bullish"?"bull":a.lean==="Bearish"?"bear":"neut";
+  const dc=a.day_change>=0?"up":"down";
+  const tone=a.headlines.length?(a.news_sentiment>0.15?["pos","▲ positive"]:a.news_sentiment<-0.15?["neg","▼ negative"]:["mix","● mixed"]):null;
+  const toneChip=tone?`<span class="pill tone ${tone[0]}" data-tip="Crude tone of matched headlines from a small word list — context only, never a buy/sell signal.">news ${tone[1]}</span>`:"";
+  const news=a.headlines.map(h=>`<div><a href="${h.link}" target="_blank" rel="noopener"><span class="src">${h.source}</span>${esc(h.title)}${h.age_h!=null?`<span class="age">${h.age_h}h</span>`:''}</a></div>`).join("");
+  return `<div class="card">
+    <div class="conf">
+      <div class="v mono" data-tip="Confidence ${a.confidence}/100 — a notability/activity heuristic (momentum + volatility + news coverage), NOT the probability of profit.">${a.confidence}</div>
+      <div class="cap">confidence</div>
+      <div class="cbar" data-tip="Momentum + volatility + news mix, to scale.">${segs}</div>
+    </div>
+    <div class="body">
+      <h3>${esc(a.name)} <span style="color:var(--faint);font-weight:400">${a.symbol}</span>${sparkSVG(a.spark)}</h3>
+      <div class="row1">
+        <span class="pill cat" data-tip="Asset class.">${a.cls}</span>
+        <span class="pill lean ${cl}" data-tip="Heuristic lean = sign of (5-day momentum + crude news sentiment). A computed indicator, NOT financial advice.">${a.lean}</span>
+        ${toneChip}
+      </div>
+      <div class="facts">
+        <span data-tip="Latest price.">price <b>${fmtPrice(a.price)} ${a.currency}</b></span>
+        <span class="chg ${dc}" data-tip="1-day change (last two daily closes).">1d <b>${pct(a.day_change)}</b></span>
+        <span data-tip="5-day change.">5d <b>${pct(a.mom_5d)}</b></span>
+        <span data-tip="Daily volatility of returns.">vol <b>${(a.volatility*100).toFixed(1)}%</b></span>
+      </div>
+      <div class="rat">${esc(a.rationale)}</div>
+      ${news?`<div class="news">${news}</div>`:''}
+    </div>
+  </div>`;
+}
+
+function marketCard(s){
+  const W = s.side? WEIGHTS_C : WEIGHTS_O;
+  const segs = COMPS.filter(([k])=>s.comp[k]!=null).map(([k,v])=>{
+    const contrib = (W[k]||0)*(s.comp[k]||0)*100;      // points of confidence
+    return contrib>0.4? `<i style="background:var(${v});width:${contrib/ (s.confidence||1) *100}%" title="${k}"></i>`:"";
+  }).join("");
+
+  let sideChip;
+  if(s.side){
+    const cl=s.side==="UP"?"up":"down";
+    sideChip=`<span class="pill side ${cl}" data-tip="Paper signal: the model's probability (${fmtC(s.model_up)}) differs from the market (${fmtC(s.yes_price)}) by ${(s.edge*100).toFixed(1)}¢. This is the only kind of true edge the scanner asserts — and it's paper only.">▲▼ ${s.side} · edge ${(s.edge*100>=0?'+':'')}${(s.edge*100).toFixed(1)}¢</span>`;
+  }else{
+    sideChip=`<span class="pill side lean" data-tip="No independent model exists for this market, so no side is suggested — this is just the market's own current favourite.">market: ${s.market_lean||fmtC(s.yes_price)}</span>`;
+  }
+
+  const tone = s.headlines.length? (s.news_sentiment>0.15?["pos","▲ positive"]:s.news_sentiment<-0.15?["neg","▼ negative"]:["mix","● mixed"]):null;
+  const toneChip = tone? `<span class="pill tone ${tone[0]}" data-tip="Crude tone of the matched headlines from a small word list — context only, never a buy/sell signal.">news ${tone[1]}</span>`:"";
+
+  const news = s.headlines.map(h=>`<div><a href="${h.link}" target="_blank" rel="noopener"><span class="src">${h.source}</span>${esc(h.title)}${h.age_h!=null?`<span class="age">${h.age_h}h</span>`:''}</a></div>`).join("");
+
+  return `<div class="card">
+    <div class="conf">
+      <div class="v mono" data-tip="Confidence ${s.confidence} of 100 — a heuristic for how notable/tradeable this setup looks, NOT the probability of profit. The bar shows which factors drive it.">${s.confidence}</div>
+      <div class="cap">confidence</div>
+      <div class="cbar" data-tip="Contribution of each factor to the score, to scale.">${segs}</div>
+    </div>
+    <div class="body">
+      <h3><a href="${s.url}" target="_blank" rel="noopener">${esc(s.question)}</a></h3>
+      <div class="row1">
+        <span class="pill cat" data-tip="Auto-detected topic.">${s.category}</span>
+        ${sideChip}${toneChip}
+      </div>
+      <div class="facts">
+        <span data-tip="Time until this market resolves.">resolves <b>${fmtLeft(s.hours_left)}</b></span>
+        <span data-tip="24-hour trading volume — a liquidity proxy.">24h vol <b>${fmtVol(s.volume24h)}</b></span>
+        <span data-tip="Market's implied probability of the first outcome.">odds <b>${fmtC(s.yes_price)}</b></span>
+      </div>
+      <div class="rat">${esc(s.rationale)}</div>
+      ${news?`<div class="news">${news}</div>`:''}
+    </div>
+  </div>`;
+}
+document.addEventListener("click", e=>{
+  const md=e.target.closest("[data-mode]"); if(md){ setMode(md.getAttribute("data-mode")); return; }
+  const c=e.target.closest("[data-cat]"); if(c){ cat=c.getAttribute("data-cat"); renderMarkets(); return; }
+  const ac=e.target.closest("[data-acls]"); if(ac){ acls=ac.getAttribute("data-acls"); renderAssets(); return; }
+  const so=e.target.closest("[data-sort]"); if(so){ sort=so.getAttribute("data-sort");
+    document.querySelectorAll("[data-sort]").forEach(x=>x.classList.toggle("on",x===so)); renderMarkets(); }
+});
+
+/* tooltip engine (shared with the terminal) */
+(function(){
+  const tip=$("#tip"), btn=$("#tips-toggle"), state=$("#tips-state");
+  let on=localStorage.getItem("mf_tips")==="1", cur=null;
+  function apply(){ document.body.classList.toggle("tips",on); btn.setAttribute("aria-pressed",on?"true":"false");
+    state.textContent=on?"ON":"OFF"; if(!on){tip.classList.remove("show");cur=null;} }
+  btn.addEventListener("click",()=>{on=!on;localStorage.setItem("mf_tips",on?"1":"0");apply();});
+  document.addEventListener("mouseover",e=>{ if(!on)return; const el=e.target.closest("[data-tip]");
+    if(el===cur)return; cur=el; if(el){tip.textContent=el.getAttribute("data-tip");tip.classList.add("show");} else tip.classList.remove("show"); });
+  document.addEventListener("mousemove",e=>{ if(!on||!tip.classList.contains("show"))return;
+    const pad=14,r=tip.getBoundingClientRect(); let x=e.clientX+pad,y=e.clientY+pad;
+    if(x+r.width>innerWidth-8)x=e.clientX-r.width-pad; if(y+r.height>innerHeight-8)y=e.clientY-r.height-pad;
+    tip.style.left=Math.max(8,x)+"px";tip.style.top=Math.max(8,y)+"px"; });
+  apply();
+})();
+
+setInterval(()=>{ $("#clock").textContent=new Date().toLocaleTimeString("en-US",{hour12:false,timeZone:"America/New_York"})+" ET"; },1000);
+setMode("markets"); poll(); setInterval(poll, 15000);
+</script>
+</body>
+</html>

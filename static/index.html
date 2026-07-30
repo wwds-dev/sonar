@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SONAR · BTC Up/Down Paper Terminal</title>
+<style>
+  :root{
+    --bg:#080b11; --panel:#0d131d; --panel2:#0a0f17; --border:#1a2431;
+    --ink:#e6edf3; --muted:#7f8ea0; --faint:#4a5867;
+    --up:#3ea6ff; --down:#ff6a54; --gold:#e8b84b; --grid:#141d29;
+    --up-dim:rgba(62,166,255,.16); --down-dim:rgba(255,106,84,.16);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:12px/1.45 ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--up);text-decoration:none}
+  .wrap{max-width:1500px;margin:0 auto;padding:14px}
+  .mono{font-variant-numeric:tabular-nums}
+  .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
+  .lbl{color:var(--faint);text-transform:uppercase;letter-spacing:.12em;font-size:9.5px}
+
+  /* header */
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    padding:10px 14px;border:1px solid var(--border);border-radius:8px;
+    background:linear-gradient(180deg,#0e141e,#0a0f17)}
+  .brand{font-size:15px;font-weight:700;letter-spacing:.18em;color:var(--ink)}
+  .brand b{color:var(--gold)}
+  .tag{font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    padding:3px 7px;border-radius:4px;border:1px solid var(--border);color:var(--muted)}
+  .tag.live{color:#0a0f17;background:var(--up);border-color:var(--up);font-weight:700}
+  .tag.paper{color:var(--gold);border-color:rgba(232,184,75,.5);
+    background:rgba(232,184,75,.08);font-weight:700}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--up);
+    display:inline-block;margin-right:5px;animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .clock{color:var(--muted);letter-spacing:.1em}
+  .hdr-right{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .ctrl{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:5px;
+    border:1px solid var(--border);background:var(--panel2);color:var(--muted);
+    font:inherit;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+  .ctrl:hover{color:var(--ink);border-color:var(--faint)}
+  #docs-btn{color:var(--gold);border-color:rgba(232,184,75,.4)}
+  #docs-btn:hover{background:rgba(232,184,75,.08)}
+  #scan-btn{color:var(--up);border-color:rgba(62,166,255,.45)}
+  #scan-btn:hover{background:rgba(62,166,255,.08)}
+  .sw{width:22px;height:12px;border-radius:7px;background:var(--border);position:relative;
+    transition:background .15s;flex:none}
+  .sw .knob{position:absolute;top:1px;left:1px;width:10px;height:10px;border-radius:50%;
+    background:var(--faint);transition:left .15s,background .15s}
+  #tips-toggle[aria-pressed="true"]{color:var(--up);border-color:rgba(62,166,255,.4)}
+  #tips-toggle[aria-pressed="true"] .sw{background:var(--up)}
+  #tips-toggle[aria-pressed="true"] .sw .knob{left:11px;background:#0a0f17}
+  /* tooltip system */
+  #tip{position:fixed;z-index:200;max-width:290px;padding:8px 11px;border-radius:6px;
+    background:#0e1826;border:1px solid var(--faint);color:var(--ink);font-size:11px;
+    line-height:1.5;letter-spacing:0;text-transform:none;pointer-events:none;opacity:0;
+    transition:opacity .1s;box-shadow:0 8px 24px rgba(0,0,0,.55)}
+  #tip.show{opacity:1}
+  body.tips [data-tip]{cursor:help}
+  body.tips [data-tip]:hover{outline:1px dotted rgba(232,184,75,.55);outline-offset:3px;border-radius:3px}
+
+  .banner{margin:10px 0;padding:8px 12px;border-radius:6px;font-size:11px;
+    border:1px solid rgba(232,184,75,.35);background:rgba(232,184,75,.06);color:#f0d99a}
+  .banner b{color:var(--gold)}
+
+  /* grid */
+  .grid{display:grid;gap:12px;margin-top:12px}
+  .cols{grid-template-columns:repeat(12,1fr)}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
+  .panel h2{margin:0 0 10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .span3{grid-column:span 3} .span4{grid-column:span 4} .span5{grid-column:span 5}
+  .span6{grid-column:span 6} .span7{grid-column:span 7} .span8{grid-column:span 8}
+  .span12{grid-column:span 12}
+  @media(max-width:1080px){.cols>*{grid-column:span 6 !important}}
+  @media(max-width:680px){.cols>*{grid-column:span 12 !important}}
+
+  /* stat tiles */
+  .tiles{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+  .tile{padding:10px 12px;border:1px solid var(--border);border-radius:7px;background:var(--panel2)}
+  .tile .v{font-size:20px;font-weight:700;margin-top:3px}
+  .tile .v.sm{font-size:15px}
+  @media(max-width:900px){.tiles{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:520px){.tiles{grid-template-columns:repeat(2,1fr)}}
+
+  canvas{width:100%;display:block}
+  .price-big{font-size:34px;font-weight:700;letter-spacing:.01em}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
+  .row .k{color:var(--muted)}
+
+  /* probability bars */
+  .pbar{height:10px;border-radius:5px;background:var(--panel2);
+    border:1px solid var(--border);overflow:hidden;margin-top:4px}
+  .pbar > i{display:block;height:100%}
+  .gauge-row{margin-bottom:10px}
+  .gauge-row .top{display:flex;justify-content:space-between;font-size:11px}
+
+  /* countdown ring */
+  .cd{display:flex;align-items:center;gap:12px}
+  .cd .big{font-size:22px;font-weight:700}
+
+  /* side chip */
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:5px;
+    font-weight:700;letter-spacing:.08em;font-size:12px}
+  .chip.up{background:var(--up-dim);color:var(--up);border:1px solid rgba(62,166,255,.4)}
+  .chip.down{background:var(--down-dim);color:var(--down);border:1px solid rgba(255,106,84,.4)}
+  .chip.flat{background:var(--panel2);color:var(--muted);border:1px solid var(--border)}
+
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th,td{text-align:right;padding:5px 6px;border-bottom:1px solid var(--grid)}
+  th{color:var(--faint);text-transform:uppercase;font-size:9px;letter-spacing:.1em;font-weight:600}
+  th:first-child,td:first-child{text-align:left}
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+
+  footer{margin:16px 0 6px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;
+    color:var(--muted);font-size:10.5px;line-height:1.6;background:var(--panel2)}
+  footer b{color:var(--ink)}
+  .win{color:var(--up)} .loss{color:var(--down)}
+  .flash{animation:fl .5s}
+  @keyframes fl{from{background:rgba(62,166,255,.14)}to{background:transparent}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="brand" data-tip="SONAR is a paper-trading terminal. It reads real Bitcoin prices and real Polymarket hourly odds, runs a probability model, and places simulated fake-money bets every hour to test whether the model has any real edge. Nothing here trades real money.">◇ <b>SONAR</b> · BTC UP/DOWN</span>
+    <span class="tag live" data-tip="Every price and odd on this page is pulled live from public APIs (Binance for BTC, Polymarket for the market) and refreshes every couple of seconds."><span class="dot" style="background:#0a0f17"></span>LIVE DATA</span>
+    <span class="tag paper" data-tip="All positions are simulated. There is no exchange account, no wallet, and no order is ever sent anywhere. The bankroll is pretend money.">◈ PAPER MONEY</span>
+    <span class="tag" id="model-tag" data-tip="The model is a barrier probability: it estimates the chance this hour's candle closes above where it opened, using how far price has moved, recent volatility, and how much time is left.">MODEL · BARRIER Φ</span>
+    <div class="hdr-right">
+      <button class="ctrl" id="tips-toggle" type="button" aria-pressed="false" title="Toggle explanatory tooltips on hover">
+        <span class="sw"><span class="knob"></span></span>Tooltips&nbsp;<span id="tips-state">OFF</span>
+      </button>
+      <a class="ctrl" id="scan-btn" href="/scan">◎ Scanner →</a>
+      <a class="ctrl" id="docs-btn" href="/docs" target="_blank" rel="noopener">◈ Docs ↗</a>
+      <span class="clock mono" id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <div class="banner">
+    <b>Simulated.</b> Prices &amp; odds are real (Binance + Polymarket, read-only); every position is
+    paper money — no exchange, no wallet, no order placed anywhere. This demonstrates a probability
+    model against a live market. It is <b>not</b> trading advice and past paper P&amp;L predicts nothing.
+  </div>
+
+  <!-- stat tiles -->
+  <div class="tiles" id="tiles"></div>
+
+  <div class="grid cols" style="margin-top:12px">
+    <!-- equity -->
+    <div class="panel span8">
+      <h2 data-tip="Your simulated bankroll over time. The grey section is a fair-odds backtest over the last 36 real hours (expected to net roughly zero — it just shows how bumpy the ride is). The gold LIVE line marks where real paper trading begins.">Paper Equity Curve <span class="lbl" id="equity-sub"></span></h2>
+      <canvas id="equity" height="230"></canvas>
+    </div>
+    <!-- current hour -->
+    <div class="panel span4" id="hour-panel">
+      <h2 data-tip="The Bitcoin hourly candle currently in progress — the one this hour's market is betting on. It resolves UP if the price at the top of the next hour is at or above where this hour opened.">Current Hour <span class="lbl" id="hour-src"></span></h2>
+      <div class="price-big mono" id="price" data-tip="Live BTC price right now, from Binance BTC/USDT. Blue means it is currently above this hour's open (heading UP), red means below.">—</div>
+      <div class="row" data-tip="The price at the very start of this hour. The whole bet is simply: will we close above or below this number?"><span class="k">Open</span><span class="mono" id="open">—</span></div>
+      <div class="row" data-tip="How far price has moved from the open so far, in dollars and percent."><span class="k">Change</span><span class="mono" id="chg">—</span></div>
+      <div class="row" data-tip="The highest and lowest price seen so far during this hour."><span class="k">Range</span><span class="mono" id="range">—</span></div>
+      <div class="cd" style="margin-top:12px">
+        <div data-tip="Time left until this hour's candle closes and the market resolves. The less time remains, the more the current price sign decides the outcome."><div class="lbl">Resolves in</div><div class="big mono" id="countdown">--:--</div></div>
+        <div style="flex:1" data-tip="The exact Polymarket market for this hour, and its trading volume."><div class="lbl" id="mkt-title">—</div>
+          <div class="muted mono" id="mkt-vol"></div></div>
+      </div>
+    </div>
+
+    <!-- signal / gauges -->
+    <div class="panel span4">
+      <h2 data-tip="Side by side: what the model thinks the chance of UP is, versus what the market is pricing. The gap between them is the model's supposed edge.">Model vs Market</h2>
+      <div class="gauge-row" data-tip="The model's estimated probability that this hour closes UP, shown in cents (45¢ means a 45% chance).">
+        <div class="top"><span>Model P(up)</span><span class="mono up" id="model-p">—</span></div>
+        <div class="pbar"><i id="model-bar" style="background:var(--up)"></i></div>
+      </div>
+      <div class="gauge-row" data-tip="The market's implied probability of UP — the live Polymarket price for the Up share, in cents. This is the crowd's answer.">
+        <div class="top"><span>Market P(up)</span><span class="mono" id="market-p">—</span></div>
+        <div class="pbar"><i id="market-bar" style="background:var(--muted)"></i></div>
+      </div>
+      <div class="row" style="margin-top:8px" data-tip="Model probability minus market probability. Positive means the model thinks UP is underpriced; negative means DOWN looks underpriced. A paper bet only fires when this gap exceeds 4 cents."><span class="k">Edge</span>
+        <span class="mono" id="edge">—</span></div>
+      <div class="row" data-tip="Realised volatility: how much BTC has typically moved per hour recently. A bigger sigma means a more uncertain outcome, which pulls the model back toward 50/50."><span class="k">Realised σ / hr</span><span class="mono" id="sigma">—</span></div>
+      <div class="row" data-tip="What the model would do right now: back UP, back DOWN, or NO EDGE when the gap is too small to bother. It takes at most one position per hour."><span class="k">Signal</span><span id="side-chip"></span></div>
+    </div>
+
+    <!-- lattice -->
+    <div class="panel span4">
+      <h2 data-tip="A Galton board of where the model thinks price could end the hour. Blue bars land at or above the open (UP), red bars below it (DOWN); the gold line is the open. The blue share of the bell curve equals the model's P(up).">Probability Lattice <span class="lbl">end-of-hour dist.</span></h2>
+      <canvas id="lattice" height="180"></canvas>
+      <div class="muted" style="text-align:center;margin-top:4px" id="lattice-cap"></div>
+    </div>
+
+    <!-- order book -->
+    <div class="panel span4">
+      <h2 data-tip="The live Polymarket order book for the Up share: real resting buy orders (bids) and sell orders (asks), and how much size sits at each price. The gap between best bid and ask is the spread you would actually pay to trade.">Order Book · "Up" <span class="lbl">Polymarket CLOB</span></h2>
+      <canvas id="book" height="180"></canvas>
+      <div class="row" style="margin-top:6px" data-tip="Best bid, the spread, and best ask for the Up share right now. On real money you cross this spread on every trade, which quietly eats most of any thin edge."><span class="down mono" id="bk-bid">bid —</span>
+        <span class="muted mono" id="bk-spread"></span>
+        <span class="up mono" id="bk-ask">ask —</span></div>
+    </div>
+
+    <!-- sparkline -->
+    <div class="panel span8">
+      <h2 data-tip="BTC price tick-by-tick this hour against the dashed open line. Above the line the hour is currently green (UP); below it is red (DOWN).">BTC Pulse <span class="lbl">price vs hour open</span></h2>
+      <canvas id="spark" height="160"></canvas>
+    </div>
+    <!-- open position -->
+    <div class="panel span4" id="pos-panel" data-tip="The single paper bet held for this hour, if any: which side, the price paid per share, the stake, and what it pays if it wins. Stays empty until the model's edge crosses the threshold with enough time left in the hour.">
+      <h2>Open Paper Position</h2>
+      <div id="pos-body" class="muted">No open position this hour.</div>
+    </div>
+
+    <!-- histogram -->
+    <div class="panel span5">
+      <h2 data-tip="The spread of profit and loss across all resolved hours. Bars left of the dashed zero line are losing bets (red); bars to the right are winners (blue). A few tall right-side bars are longshot wins that can flatter the total.">Per-Trade P&amp;L <span class="lbl">resolved hours</span></h2>
+      <canvas id="hist" height="170"></canvas>
+    </div>
+    <!-- trade log -->
+    <div class="panel span7">
+      <h2 data-tip="Every resolved hour, newest first. Columns: the hour, the side backed, the entry price paid, the stake, the model's P(up) at entry, the real outcome, and the resulting paper P/L. Rows tagged 'bt' are backtest seeds, not live trades.">Trade Log <span class="lbl" id="log-sub"></span></h2>
+      <div style="max-height:220px;overflow:auto">
+        <table id="trades"><thead><tr>
+          <th>Hour</th><th>Side</th><th>Entry</th><th>Stake</th><th>Model</th>
+          <th>Result</th><th>P&amp;L</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <footer id="footer">
+    <b>How it works.</b> Every hour, Polymarket runs a "Bitcoin Up or Down" market that resolves
+    <b>Up</b> if the BTC/USDT 1-hour candle closes ≥ its open (source: Binance). The model estimates
+    that probability as <b>Φ( ln(price/open) / (σ·√τ) )</b> — a driftless-random-walk barrier
+    probability, with σ the realised hourly volatility and τ the fraction of the hour left. When the
+    model's number differs from the market's price by more than the edge threshold, it takes a capped
+    fractional-Kelly <b>paper</b> position and settles it on the real candle.<br>
+    <b>Honesty notes.</b> The equity curve is seeded with a fair-odds backtest over the last 36 real
+    hours (expected value ≈ 0 — it shows variance, not profit), then extends with live paper trades.
+    A real edge here is thin and often negative after crossing the spread. <b>Nothing here places a
+    real trade or constitutes financial advice.</b> Data: Binance &amp; Polymarket public APIs.
+  </footer>
+</div>
+
+<div id="tip" role="tooltip"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmtUSD = (n,d=2) => (n<0?"-":"")+"$"+Math.abs(n).toLocaleString("en-US",
+  {minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtC = p => (p*100).toFixed(1)+"¢";
+const fmtPct = n => (n>=0?"+":"")+n.toFixed(2)+"%";
+const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+function fitCanvas(cv){
+  const dpr = window.devicePixelRatio||1;
+  const w = cv.clientWidth, h = cv.height;
+  if(cv.width !== Math.round(w*dpr)){ cv.width = Math.round(w*dpr); }
+  cv._h = h; cv._w = w;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  return ctx;
+}
+function pad(n){return String(n).padStart(2,"0");}
+function hms(s){s=Math.max(0,s|0);return pad(s/3600|0)+":"+pad((s%3600)/60|0)+":"+pad(s%60);}
+function ms(s){s=Math.max(0,s|0);return pad(s/60|0)+":"+pad(s%60);}
+
+let last = null;
+
+async function poll(){
+  try{
+    const r = await fetch("/api/state",{cache:"no-store"});
+    const s = await r.json();
+    last = s;
+    render(s);
+  }catch(e){ /* keep last frame */ }
+}
+
+function render(s){
+  if(s.status==="starting"){ $("#footer").insertAdjacentText; return; }
+  const P = s.portfolio||{}, st = P.stats||{}, c = s.candle, m = s.market, sig = s.signal;
+
+  // tiles
+  const pnl = st.total_pnl||0;
+  const tiles = [
+    ["Paper Bankroll", fmtUSD(st.bankroll||0), "",
+      "Simulated cash on hand. Starts at 10,000 pretend dollars and moves as paper bets settle each hour. No real money is involved."],
+    ["Total P&L", (pnl>=0?"+":"")+fmtUSD(pnl), pnl>=0?"up":"down",
+      "Total simulated profit or loss versus the 10,000 starting stake — the backtest seed plus live paper trades combined."],
+    ["Return", fmtPct(st.return_pct||0), (st.return_pct||0)>=0?"up":"down",
+      "Total P/L as a percent of the starting bankroll. Big returns here are usually small-sample luck, not proof the model works."],
+    ["Win Rate", (st.win_rate||0).toFixed(1)+"%", "",
+      "Share of resolved hours that won. A win rate below 50% can still be profitable when the wins are cheap longshots that pay several times the stake."],
+    ["Resolved", (st.n_trades||0)+" hrs", "",
+      "How many hourly bets have fully settled so far. More settled hours means less luck in the numbers — but this is still a tiny sample."],
+    ["Profit Factor", st.profit_factor==null?"—":st.profit_factor.toFixed(2),
+      (st.profit_factor||0)>=1?"up":"down",
+      "Gross winnings divided by gross losses. Above 1.0 means winners outweigh losers so far; near 1.0 is basically break-even."],
+  ];
+  $("#tiles").innerHTML = tiles.map(([k,v,cl,tip])=>
+    `<div class="tile" data-tip="${tip}"><div class="lbl">${k}</div><div class="v ${cl} mono">${v}</div></div>`).join("");
+
+  // current hour
+  if(c){
+    const up = c.is_up;
+    $("#price").textContent = fmtUSD(c.price,2);
+    $("#price").className = "price-big mono "+(up?"up":"down");
+    $("#open").textContent = fmtUSD(c.open,2);
+    $("#chg").innerHTML = `<span class="${up?'up':'down'}">${up?'▲':'▼'} ${fmtUSD(c.change,2)} (${fmtPct(c.change_pct)})</span>`;
+    $("#range").textContent = fmtUSD(c.low,0)+" – "+fmtUSD(c.high,0);
+    $("#hour-src").textContent = c.source;
+  }
+  if(m){
+    $("#countdown").textContent = ms(m.seconds_left);
+    $("#mkt-title").textContent = m.title;
+    $("#mkt-vol").textContent = "vol "+fmtUSD(m.volume,0);
+    $("#bk-bid").textContent = "bid "+fmtC(m.best_bid);
+    $("#bk-ask").textContent = "ask "+fmtC(m.best_ask);
+    $("#bk-spread").textContent = "spread "+((m.best_ask-m.best_bid)*100).toFixed(1)+"¢";
+    drawBook($("#book"), m.bids, m.asks);
+  }
+
+  // signal
+  if(sig){
+    $("#model-p").textContent = fmtC(sig.model_up);
+    $("#market-p").textContent = fmtC(sig.market_up);
+    $("#model-bar").style.width = clamp(sig.model_up*100,0,100)+"%";
+    $("#market-bar").style.width = clamp(sig.market_up*100,0,100)+"%";
+    const e = sig.edge;
+    $("#edge").innerHTML = `<span class="${e>=0?'up':'down'}">${(e>=0?'+':'')}${(e*100).toFixed(1)}¢</span>`;
+    $("#sigma").textContent = (s.sigma*100).toFixed(3)+"%";
+    const strong = sig.abs_edge >= 0.04;
+    const cls = !strong?"flat":(sig.side==="UP"?"up":"down");
+    const glyph = sig.side==="UP"?"▲":"▼";
+    $("#side-chip").innerHTML = `<span class="chip ${cls}">${strong?glyph+" "+sig.side:"NO EDGE"}</span>`;
+    if(s.lattice) drawLattice($("#lattice"), s.lattice, sig);
+  }
+
+  // open position
+  const pos = P.open_position;
+  if(pos){
+    const glyph = pos.side==="UP"?"▲":"▼";
+    $("#pos-body").innerHTML =
+      `<div class="chip ${pos.side==='UP'?'up':'down'}" style="margin-bottom:8px">${glyph} ${pos.side}</div>
+       <div class="row"><span class="k">Entry price</span><span class="mono">${fmtC(pos.entry_price)}</span></div>
+       <div class="row"><span class="k">Stake</span><span class="mono">${fmtUSD(pos.stake)}</span></div>
+       <div class="row"><span class="k">Shares</span><span class="mono">${pos.shares.toFixed(2)}</span></div>
+       <div class="row"><span class="k">If win → payout</span><span class="mono up">${fmtUSD(pos.shares)}</span></div>
+       <div class="row"><span class="k">Model / Edge</span><span class="mono">${fmtC(pos.model_up)} · ${(pos.edge*100).toFixed(1)}¢</span></div>`;
+    $("#pos-panel").classList.add("flash");
+  }else{
+    $("#pos-body").innerHTML = `<div class="muted">No open position this hour.</div>
+      <div class="muted" style="margin-top:6px">Waiting for the model's edge to exceed the threshold
+      with enough time left in the hour.</div>`;
+  }
+
+  // charts + tables
+  drawEquity($("#equity"), P.equity||[]);
+  drawSpark($("#spark"), s.spark||[], c?c.open:null);
+  drawHist($("#hist"), P.trades||[]);
+  renderTrades(P.trades||[]);
+  const bt = (P.trades||[]).filter(t=>t.edge===0).length;
+  $("#equity-sub").textContent = `start ${fmtUSD(st.starting_bankroll||0,0)}`;
+  $("#log-sub").textContent = `${st.n_trades||0} resolved`;
+  $("#lattice-cap").innerHTML = sig
+    ? `barrier @ open ${fmtUSD(c.open,0)} · P(up)=${fmtC(s.lattice? s.lattice.p_up: sig.model_up)}` : "";
+}
+
+/* ---------- canvas charts ---------- */
+function drawEquity(cv, eq){
+  const ctx = fitCanvas(cv), W=cv._w, H=cv._h, pl=52, pr=10, pt=12, pb=18;
+  if(eq.length<2){ctx.fillStyle=css("--faint");ctx.fillText("awaiting data…",pl,H/2);return;}
+  const vs = eq.map(e=>e.v), mn=Math.min(...vs), mx=Math.max(...vs);
+  const lo = mn-(mx-mn)*.12-1, hi = mx+(mx-mn)*.12+1;
+  const X = i => pl+(W-pl-pr)*(i/(eq.length-1));
+  const Y = v => pt+(H-pt-pb)*(1-(v-lo)/(hi-lo));
+  // grid + y labels
+  ctx.strokeStyle=css("--grid");ctx.fillStyle=css("--faint");ctx.lineWidth=1;
+  ctx.font="9px ui-monospace";ctx.textAlign="right";
+  for(let g=0;g<=4;g++){const v=lo+(hi-lo)*g/4,y=Y(v);
+    ctx.beginPath();ctx.moveTo(pl,y);ctx.lineTo(W-pr,y);ctx.stroke();
+    ctx.fillText("$"+(v|0).toLocaleString(),pl-6,y+3);}
+  // start baseline
+  const y0=Y(eq[0].v);
+  ctx.strokeStyle=css("--faint");ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(pl,y0);ctx.lineTo(W-pr,y0);ctx.stroke();ctx.setLineDash([]);
+  // split backtest vs live at first live point
+  let liveIdx = eq.findIndex(e=>e.kind==="live");
+  // area + line coloured by segment
+  function seg(a,b,color,fill){
+    ctx.beginPath();
+    for(let i=a;i<=b;i++){const x=X(i),y=Y(eq[i].v);i===a?ctx.moveTo(x,y):ctx.lineTo(x,y);}
+    ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();
+    ctx.lineTo(X(b),H-pb);ctx.lineTo(X(a),H-pb);ctx.closePath();
+    ctx.fillStyle=fill;ctx.fill();
+  }
+  const cut = liveIdx<0?eq.length-1:liveIdx;
+  seg(0,cut,css("--faint"),"rgba(127,142,160,.07)");
+  if(liveIdx>=0){
+    const up = eq[eq.length-1].v>=eq[0].v;
+    seg(Math.max(0,liveIdx-1),eq.length-1,up?css("--up"):css("--down"),
+        up?"rgba(62,166,255,.10)":"rgba(255,106,84,.10)");
+    const x=X(liveIdx);ctx.strokeStyle=css("--gold");ctx.setLineDash([2,3]);
+    ctx.beginPath();ctx.moveTo(x,pt);ctx.lineTo(x,H-pb);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=css("--gold");ctx.textAlign="left";ctx.font="8px ui-monospace";
+    ctx.fillText("LIVE",x+3,pt+8);
+  }
+  ctx.textAlign="left";ctx.fillStyle=css("--faint");ctx.font="8px ui-monospace";
+  ctx.fillText("◦ backtest (fair odds, EV≈0)",pl,H-5);
+}
+
+function drawSpark(cv, sp, open){
+  const ctx=fitCanvas(cv),W=cv._w,H=cv._h,pr=54,pt=10,pb=14,pl=6;
+  if(sp.length<2){ctx.fillStyle=css("--faint");ctx.fillText("collecting ticks…",pl,H/2);return;}
+  const ps=sp.map(p=>p.p);let mn=Math.min(...ps),mx=Math.max(...ps);
+  if(open!=null){mn=Math.min(mn,open);mx=Math.max(mx,open);}
+  const pad=(mx-mn)*.15+1;mn-=pad;mx+=pad;
+  const X=i=>pl+(W-pl-pr)*(i/(sp.length-1));
+  const Y=v=>pt+(H-pt-pb)*(1-(v-mn)/(mx-mn));
+  if(open!=null){const yo=Y(open);ctx.strokeStyle=css("--faint");ctx.setLineDash([4,3]);
+    ctx.beginPath();ctx.moveTo(pl,yo);ctx.lineTo(W-pr,yo);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=css("--muted");ctx.font="9px ui-monospace";ctx.textAlign="left";
+    ctx.fillText("open "+(open|0),W-pr+4,yo+3);}
+  const up=ps[ps.length-1]>=(open??ps[0]);
+  const col=up?css("--up"):css("--down");
+  ctx.beginPath();
+  sp.forEach((p,i)=>{const x=X(i),y=Y(p.p);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  ctx.strokeStyle=col;ctx.lineWidth=1.8;ctx.stroke();
+  ctx.lineTo(X(sp.length-1),H-pb);ctx.lineTo(X(0),H-pb);ctx.closePath();
+  ctx.fillStyle=up?"rgba(62,166,255,.09)":"rgba(255,106,84,.09)";ctx.fill();
+  // last dot + label
+  const lx=X(sp.length-1),ly=Y(ps[ps.length-1]);
+  ctx.fillStyle=col;ctx.beginPath();ctx.arc(lx,ly,3,0,7);ctx.fill();
+  ctx.fillStyle=col;ctx.textAlign="left";ctx.font="10px ui-monospace";
+  ctx.fillText((ps[ps.length-1]|0).toLocaleString(),W-pr+4,ly+3);
+}
+
+function drawLattice(cv, lat, sig){
+  const ctx=fitCanvas(cv),W=cv._w,H=cv._h,pb=6,pt=6;
+  const bins=lat.bins, n=bins.length, maxP=Math.max(...bins.map(b=>b.prob));
+  const bw=(W-8)/n;
+  bins.forEach((b,i)=>{
+    const h=(H-pt-pb)*(b.prob/maxP);
+    const x=4+i*bw+1, y=H-pb-h;
+    ctx.fillStyle=b.up?css("--up"):css("--down");
+    ctx.globalAlpha=.85;
+    ctx.fillRect(x,y,bw-2,h);ctx.globalAlpha=1;
+  });
+  // barrier marker between last down and first up bin
+  const upStart=bins.findIndex(b=>b.up);
+  if(upStart>0){const x=4+upStart*bw;
+    ctx.strokeStyle=css("--gold");ctx.setLineDash([3,2]);ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(x,pt);ctx.lineTo(x,H-pb);ctx.stroke();ctx.setLineDash([]);}
+}
+
+function drawBook(cv, bids, asks){
+  const ctx=fitCanvas(cv),W=cv._w,H=cv._h;
+  const rows=6;const b=(bids||[]).slice(0,rows),a=(asks||[]).slice(0,rows).reverse();
+  const all=[...b.map(x=>x[1]),...a.map(x=>x[1])];const mx=Math.max(1,...all);
+  const rh=(H-4)/(rows*2);let y=2;
+  const draw=(arr,color,dim)=>{
+    arr.forEach(([p,sz])=>{
+      const w=(W*0.62)*(sz/mx);
+      ctx.fillStyle=dim;ctx.fillRect(W-w,y,w,rh-1);
+      ctx.fillStyle=css("--muted");ctx.font="9px ui-monospace";ctx.textAlign="left";
+      ctx.fillText(fmtC_(p),4,y+rh-3);
+      ctx.fillStyle=color;ctx.textAlign="right";
+      ctx.fillText(sz.toFixed(0),W-4,y+rh-3);
+      y+=rh;
+    });
+  };
+  draw(a,css("--up"),"rgba(62,166,255,.14)");
+  ctx.strokeStyle=css("--border");ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
+  draw(b,css("--down"),"rgba(255,106,84,.14)");
+}
+function fmtC_(p){return (p*100).toFixed(0)+"¢";}
+
+function drawHist(cv, trades){
+  const ctx=fitCanvas(cv),W=cv._w,H=cv._h;
+  const pnls=trades.map(t=>t.pnl).filter(v=>v!=null);
+  if(pnls.length<1){ctx.fillStyle=css("--faint");ctx.fillText("no resolved trades yet",8,H/2);return;}
+  const mx=Math.max(...pnls),mn=Math.min(...pnls),span=Math.max(1,mx-mn);
+  const nb=11, bins=new Array(nb).fill(0);
+  pnls.forEach(v=>{let i=clamp(Math.floor((v-mn)/span*nb),0,nb-1);bins[i]++;});
+  const mxc=Math.max(...bins),bw=(W-8)/nb,zero=8+(W-8)*((0-mn)/span);
+  ctx.strokeStyle=css("--faint");ctx.setLineDash([2,3]);
+  ctx.beginPath();ctx.moveTo(zero,2);ctx.lineTo(zero,H-14);ctx.stroke();ctx.setLineDash([]);
+  bins.forEach((cnt,i)=>{
+    const binMid=mn+span*(i+.5)/nb;const h=(H-18)*(cnt/mxc);
+    const x=4+i*bw+1,y=H-14-h;
+    ctx.fillStyle=binMid>=0?css("--up"):css("--down");ctx.globalAlpha=.8;
+    ctx.fillRect(x,y,bw-2,h);ctx.globalAlpha=1;
+  });
+  ctx.fillStyle=css("--faint");ctx.font="9px ui-monospace";ctx.textAlign="center";
+  ctx.fillText("loss ◂",zero-30,H-3);ctx.fillText("▸ win",zero+30,H-3);
+}
+
+function renderTrades(trades){
+  const tb=$("#trades tbody");
+  tb.innerHTML = trades.map(t=>{
+    const g=t.side==="UP"?"▲":"▼";
+    const hr=new Date((t.hour_key||0)*1000).toLocaleTimeString("en-US",
+      {hour:"numeric",hour12:true,timeZone:"America/New_York"});
+    const res = t.result? `<span class="${t.won?'win':'loss'}">${t.result} ${t.won?'✓':'✗'}</span>`:"—";
+    const pnl = t.pnl==null?"—":`<span class="${t.pnl>=0?'win':'loss'}">${t.pnl>=0?'+':''}${fmtUSD(t.pnl)}</span>`;
+    const kind = t.edge===0? '<span class="muted" style="font-size:8px"> bt</span>':'';
+    return `<tr><td>${hr}${kind}</td>
+      <td class="${t.side==='UP'?'up':'down'}">${g} ${t.side}</td>
+      <td class="mono">${fmtC(t.entry_price)}</td>
+      <td class="mono">${fmtUSD(t.stake,0)}</td>
+      <td class="mono">${fmtC(t.model_up)}</td>
+      <td>${res}</td><td class="mono">${pnl}</td></tr>`;
+  }).join("");
+}
+
+/* ---------- explanatory tooltips (toggle) ---------- */
+(function(){
+  const tip=document.getElementById("tip"), btn=document.getElementById("tips-toggle"),
+        state=document.getElementById("tips-state");
+  let on=localStorage.getItem("mf_tips")==="1", cur=null;
+  function apply(){
+    document.body.classList.toggle("tips", on);
+    btn.setAttribute("aria-pressed", on?"true":"false");
+    state.textContent = on?"ON":"OFF";
+    if(!on){ tip.classList.remove("show"); cur=null; }
+  }
+  btn.addEventListener("click", ()=>{ on=!on; localStorage.setItem("mf_tips", on?"1":"0"); apply(); });
+  document.addEventListener("mouseover", e=>{
+    if(!on) return;
+    const el=e.target.closest("[data-tip]");
+    if(el===cur) return;
+    cur=el;
+    if(el){ tip.textContent=el.getAttribute("data-tip"); tip.classList.add("show"); }
+    else tip.classList.remove("show");
+  });
+  document.addEventListener("mousemove", e=>{
+    if(!on || !tip.classList.contains("show")) return;
+    const pad=14, r=tip.getBoundingClientRect();
+    let x=e.clientX+pad, y=e.clientY+pad;
+    if(x+r.width > innerWidth-8)  x=e.clientX-r.width-pad;
+    if(y+r.height > innerHeight-8) y=e.clientY-r.height-pad;
+    tip.style.left=Math.max(8,x)+"px"; tip.style.top=Math.max(8,y)+"px";
+  });
+  apply();
+})();
+
+setInterval(()=>{ $("#clock").textContent =
+  new Date().toLocaleTimeString("en-US",{hour12:false,timeZone:"America/New_York"})+" ET"; },1000);
+poll(); setInterval(poll, 2000);
+window.addEventListener("resize", ()=>{ if(last) render(last); });
+</script>
+</body>
+</html>

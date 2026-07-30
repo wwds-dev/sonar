@@ -1,0 +1,11 @@
+venv/
+.venv/
+__pycache__/
+.env
+*.log
+*.db
+*.zip
+output/
+.DS_Store
+data/state.json
+data/*.tmp

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SONAR · Documentation</title>
+<style>
+  :root{
+    --bg:#080b11; --panel:#0d131d; --panel2:#0a0f17; --border:#1a2431;
+    --ink:#e6edf3; --muted:#8b98a5; --faint:#4a5867;
+    --up:#3ea6ff; --down:#ff6a54; --gold:#e8b84b; --grid:#141d29;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.65 ui-monospace,"SF Mono",Menlo,Consolas,monospace;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 80px}
+  a{color:var(--up);text-decoration:none} a:hover{text-decoration:underline}
+  code{background:var(--panel2);border:1px solid var(--border);border-radius:4px;
+    padding:1px 5px;font-size:.9em;color:#cfe3ff}
+  pre{background:var(--panel2);border:1px solid var(--border);border-radius:8px;
+    padding:12px 14px;overflow-x:auto;font-size:12.5px;line-height:1.55}
+  pre code{background:none;border:none;padding:0;color:var(--ink)}
+  .up{color:var(--up)} .down{color:var(--down)} .gold{color:var(--gold)} .muted{color:var(--muted)}
+
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    padding:14px 18px;border:1px solid var(--border);border-radius:10px;
+    background:linear-gradient(180deg,#0e141e,#0a0f17);margin-bottom:22px}
+  .brand{font-size:17px;font-weight:700;letter-spacing:.16em}
+  .brand b{color:var(--gold)}
+  .back{margin-left:auto;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    padding:6px 12px;border:1px solid rgba(62,166,255,.4);border-radius:6px;color:var(--up)}
+  .back:hover{background:rgba(62,166,255,.08);text-decoration:none}
+
+  h1{font-size:22px;margin:6px 0 4px;letter-spacing:.02em}
+  .sub{color:var(--muted);margin:0 0 20px}
+  h2{font-size:15px;margin:34px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);
+    letter-spacing:.06em;color:var(--ink)}
+  h2 .n{color:var(--gold);margin-right:8px}
+  h3{font-size:13px;margin:20px 0 4px;color:var(--up);letter-spacing:.04em;text-transform:uppercase}
+  p{margin:8px 0} ul,ol{margin:8px 0;padding-left:22px} li{margin:4px 0}
+
+  .callout{border:1px solid rgba(232,184,75,.35);background:rgba(232,184,75,.06);
+    border-radius:8px;padding:12px 15px;margin:16px 0;color:#f0d99a}
+  .callout b{color:var(--gold)}
+  .warn{border-color:rgba(255,106,84,.4);background:rgba(255,106,84,.07);color:#ffc4b8}
+  .warn b{color:var(--down)}
+
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--grid);vertical-align:top}
+  th{color:var(--faint);text-transform:uppercase;font-size:10px;letter-spacing:.1em}
+  td:first-child{color:var(--up);white-space:nowrap}
+
+  .toc{border:1px solid var(--border);border-radius:8px;background:var(--panel);padding:12px 16px;margin:0 0 8px}
+  .toc a{display:inline-block;margin:3px 14px 3px 0;font-size:12.5px}
+  .formula{text-align:center;font-size:16px;color:var(--ink);margin:14px 0}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);
+    color:var(--faint);font-size:11.5px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="brand">◇ <b>SONAR</b> · DOCS</span>
+    <a class="back" href="/">← Back to terminal</a>
+  </header>
+
+  <h1>SONAR — how this terminal works</h1>
+  <p class="sub">A live, honest recreation of the viral "an AI built an overnight trading bot" dashboard —
+    with the marketing removed and the mechanics laid bare. Paper money only.</p>
+
+  <div class="callout">
+    <b>The one thing to understand first.</b> SONAR reads <b>real</b> Bitcoin prices and <b>real</b>
+    prediction-market odds, but it never touches real money. There is no exchange account, no wallet,
+    and no order is ever placed anywhere. It exists to show — transparently — how a probability model
+    stacks up against a live market, and how thin and noisy any "edge" really is.
+  </div>
+
+  <div class="toc">
+    <a href="#what">1 · What it is</a>
+    <a href="#data">2 · Data sources</a>
+    <a href="#model">3 · The model</a>
+    <a href="#trading">4 · Paper trading</a>
+    <a href="#warmup">5 · The backtest seed</a>
+    <a href="#panels">6 · Reading the dashboard</a>
+    <a href="#btc">7 · Why only BTC?</a>
+    <a href="#scanner">8 · The market scanner</a>
+    <a href="#run">9 · Running it</a>
+    <a href="#honesty">10 · Honesty &amp; limits</a>
+  </div>
+
+  <h2 id="what"><span class="n">1</span>What it is</h2>
+  <p>Every hour, Polymarket runs a market called <em>"Bitcoin Up or Down"</em>. It resolves
+    <span class="up">Up</span> if the BTC/USDT 1-hour candle closes at or above where it opened, and
+    <span class="down">Down</span> otherwise. SONAR does four things on a loop:</p>
+  <ol>
+    <li><b>Reads reality</b> — the live BTC price and the in-progress hourly candle, plus that hour's
+      Polymarket market (its odds and order book).</li>
+    <li><b>Forms an opinion</b> — a probability model estimates the chance the candle closes up.</li>
+    <li><b>Compares to the crowd</b> — model probability minus the market's price = its <em>edge</em>.</li>
+    <li><b>Acts on paper</b> — if the edge is big enough, it places one simulated bet and settles it on
+      the real outcome, updating a pretend bankroll.</li>
+  </ol>
+  <p>Run it long enough and the equity curve answers a simple question: does the model actually beat the
+    market, or is it just riding luck? (Spoiler: mostly luck.)</p>
+
+  <h2 id="data"><span class="n">2</span>Data sources</h2>
+  <table>
+    <tr><th>What</th><th>Where from</th><th>Notes</th></tr>
+    <tr><td>BTC price + hourly candle</td><td>Binance <code>BTCUSDT</code></td>
+      <td>The exact source Polymarket uses to resolve these markets. Coinbase <code>BTC-USD</code> is a fallback.</td></tr>
+    <tr><td>Hourly volatility σ</td><td>Binance hourly candles</td>
+      <td>Std-dev of the last ~72 hourly log-returns.</td></tr>
+    <tr><td>Market odds + order book</td><td>Polymarket Gamma + CLOB</td>
+      <td>Implied P(up), best bid/ask, resting order sizes — all public, read-only.</td></tr>
+  </table>
+  <p class="muted">No API keys, no authentication, no write access anywhere. If a feed hiccups, the app
+    keeps the last good value rather than crashing.</p>
+
+  <h2 id="model"><span class="n">3</span>The model — a barrier probability</h2>
+  <p>Part-way through the hour we already know the open <code>o</code> and the current price
+    <code>c</code>. What's uncertain is the move over the time that's left. The model treats the rest of
+    the hour as a <em>driftless random walk</em> (Bitcoin's hourly return is, to a good approximation, a
+    coin flip around zero). With <code>σ</code> the per-hour volatility and <code>τ</code> the fraction
+    of the hour remaining:</p>
+  <div class="formula">P(up) = Φ( ln(c / o) / (σ · √τ) )</div>
+  <p>where <code>Φ</code> is the standard normal CDF. In plain words: <em>how many standard deviations
+    of the remaining move is the current price above the open?</em> The further above, and the less time
+    left, the more certain an Up close.</p>
+  <ul>
+    <li>At the top of the hour (<code>τ = 1</code>, <code>c = o</code>) it returns exactly <b>0.5</b> —
+      no information, no edge.</li>
+    <li>As the hour runs out (<code>τ → 0</code>) it collapses toward <b>1</b> or <b>0</b> depending
+      only on whether price is currently above or below the open.</li>
+  </ul>
+  <p>The model's <em>only</em> disagreement with the market comes from the volatility estimate: it uses
+    <b>realised</b> vol (recent hourly moves) while the market prices its own <b>implied</b> vol. When
+    they differ, there's a thin statistical edge — the realised-vs-implied trade that real quants run.
+    It is small, and frequently negative once you pay the spread.</p>
+
+  <h2 id="trading"><span class="n">4</span>Paper trading — sizing &amp; settlement</h2>
+  <p>The engine holds <b>at most one position per hour</b>. It enters only when both are true:</p>
+  <ul>
+    <li>the absolute edge <code>|model − market|</code> exceeds <b>4¢</b>, and</li>
+    <li>there's a sensible amount of time left (roughly the middle ~70% of the hour — not the noisy first
+      minutes, not the final seconds).</li>
+  </ul>
+  <p>Stake is a <b>capped, half-Kelly</b> fraction of the bankroll — bigger when the edge is bigger, but
+    never more than <b>8%</b> on one hour. Entry crosses the spread (you pay the ask), so the fill price
+    is realistic. Buying the <span class="up">Up</span> share at price <code>p</code> means each share
+    costs <code>p</code> and pays <code>1.00</code> if the hour closes up, <code>0.00</code> if not.</p>
+  <p>At the top of the next hour the position is <b>settled on the real candle</b>: a winning share is
+    worth 1.00, a loser 0.00, and the realised profit or loss updates the bankroll and the equity curve.</p>
+  <div class="callout"><b>Why a below-50% win rate can still show a profit.</b> The model often backs
+    cheap longshots (say 25¢). Those lose most of the time, but each win pays ~4× the stake. A handful of
+    those wins can lift the total even when fewer than half the bets hit — which is exactly why a rising
+    paper balance is <em>not</em> proof of edge. It's usually variance.</div>
+
+  <h2 id="warmup"><span class="n">5</span>The backtest seed</h2>
+  <p>A brand-new run would have an empty chart, so on first launch the equity curve is seeded with a
+    <b>fair-odds backtest</b> over the last 36 <em>real</em> hours: the model's favoured side, priced at
+    its own fair probability, settled on the real candle. Because the odds are fair, the expected value
+    is ≈ 0 by construction — it illustrates <em>variance</em>, not profit, and invents no counterparty.
+    On the chart these seed hours are the grey segment before the <span class="gold">gold LIVE line</span>;
+    in the trade log they carry a small <code>bt</code> tag.</p>
+
+  <h2 id="panels"><span class="n">6</span>Reading the dashboard</h2>
+  <p>Flip on the <b>Tooltips</b> toggle in the header and hover anything for an inline explanation. The
+    panels, in short:</p>
+  <table>
+    <tr><th>Panel</th><th>What it shows</th></tr>
+    <tr><td>Stat tiles</td><td>Bankroll, total P/L, return, win rate, hours resolved, profit factor.</td></tr>
+    <tr><td>Paper Equity Curve</td><td>Bankroll over time; grey = backtest seed, gold line = start of live trading.</td></tr>
+    <tr><td>Current Hour</td><td>Live price, the hour's open, change, range, and the countdown to resolution.</td></tr>
+    <tr><td>Model vs Market</td><td>Model P(up) vs market P(up), the edge between them, σ, and the current signal.</td></tr>
+    <tr><td>Probability Lattice</td><td>A Galton board of end-of-hour outcomes; blue = Up, red = Down, gold line = open.</td></tr>
+    <tr><td>Order Book · "Up"</td><td>Live Polymarket bids/asks and the spread you'd actually pay.</td></tr>
+    <tr><td>BTC Pulse</td><td>Price this hour against the dashed open line.</td></tr>
+    <tr><td>Open Paper Position</td><td>The single simulated bet held this hour, if any.</td></tr>
+    <tr><td>Per-Trade P/L</td><td>Histogram of profit/loss across resolved hours.</td></tr>
+    <tr><td>Trade Log</td><td>Every resolved hour: side, entry, stake, model, outcome, P/L.</td></tr>
+  </table>
+
+  <h2 id="btc"><span class="n">7</span>Why only BTC?</h2>
+  <p>It's a <b>scope choice, not a technical limit.</b> The model and engine are asset-agnostic — the
+    math only needs an open, a current price, a volatility, and a clock. Two things are simply hardcoded
+    in <code>feeds.py</code>: the price symbol <code>BTCUSDT</code> and the market series
+    <code>bitcoin-up-or-down-hourly</code>.</p>
+  <p>Bitcoin is the default for three practical reasons:</p>
+  <ul>
+    <li>The viral post it recreates was about BTC.</li>
+    <li>Polymarket's most liquid, cleanly-resolving hourly up/down series is BTC's — deep order books and
+      steady volume every hour. (Ethereum has an equivalent series; most other coins don't.)</li>
+    <li>The resolution source (a single Binance 1-hour candle) is unambiguous and free to read.</li>
+  </ul>
+  <p>Adding an <b>ETH</b> switch — or any asset with a matching hourly Polymarket series — is a small
+    change: parameterise the symbol and slug in <code>feeds.py</code> and add a selector to the header.</p>
+
+  <h2 id="scanner"><span class="n">8</span>The market scanner</h2>
+  <p>The <a href="/scan">Scanner</a> widens the tool from one BTC market to <b>many</b> live Polymarket
+    markets across crypto, economics, politics and geopolitics (sports are excluded). Each market gets a
+    <b>confidence score (0–100)</b> — and this is the part to read honestly:</p>
+  <div class="callout"><b>Confidence is not the probability you'll profit.</b> It's a transparent
+    heuristic for how <em>notable and tradeable</em> a setup looks right now, blended from measurable
+    factors: <span class="gold">liquidity</span>, <span class="gold">timing</span> (sooner = higher, for
+    "quick"), <span class="gold">momentum</span> (recent odds move), <span class="gold">model edge</span>
+    (crypto up/down only), and <span class="gold">news</span> coverage. Every card shows the mix as a bar,
+    so it's never a black box.</div>
+  <p>A <b>side</b> (Up/Down, on paper) is asserted <em>only</em> for crypto up/down markets, where the
+    barrier model gives an independent probability. For every other market there's no independent model,
+    so the scanner shows the market's own odds and the news around it — no buy/sell call.</p>
+  <h3>News as context</h3>
+  <p>Headlines come from reputable public RSS (BBC Business &amp; Politics, MarketWatch, Yahoo Finance,
+    NPR), keyword-matched to each market and shown with source and link. Two rules: it's <b>context, not
+    a predictor</b> (sentiment is a crude word-list heuristic, deliberately labelled as such), and scraped
+    text is treated as <b>untrusted data</b> — the tool reads and summarises it, never acts on anything
+    written inside a headline or article.</p>
+
+  <h2 id="run"><span class="n">9</span>Running it</h2>
+  <p>Zero dependencies — Python 3.11+ standard library only:</p>
+  <pre><code>python3 -m sonar.server        # then open http://127.0.0.1:8787
+# options:  --host 0.0.0.0  --port 9000</code></pre>
+  <p>Leave it running and the equity curve gains a point each hour as markets resolve. State persists to
+    <code>data/state.json</code> (delete that file to reset to a clean $10,000).</p>
+
+  <h2 id="honesty"><span class="n">10</span>Honesty &amp; limits</h2>
+  <div class="warn">
+    <b>This is not financial advice, and it places no real trades.</b> Paper P/L predicts nothing about
+    real results. Live trading would mean real fees, real spread, real slippage, and real risk — none of
+    which a simulation pays.
+  </div>
+  <ul>
+    <li><b>The edge is thin and often negative.</b> Crossing the real bid/ask spread eats most of any
+      realised-vs-implied advantage.</li>
+    <li><b>Small samples lie.</b> Dozens of hours is not enough to distinguish skill from luck; a
+      cheerful return number is usually the latter.</li>
+    <li><b>Settlement is approximated</b> at the hour boundary using the contiguous candle price (accurate
+      to within a few dollars), not a separate authoritative fetch.</li>
+    <li><b>The market is efficient.</b> These hourly BTC markets are priced by people doing the same math;
+      persistent free money is not on the table.</li>
+  </ul>
+
+  <footer>
+    SONAR · paper-trading demonstrator · data from Binance &amp; Polymarket public APIs · built as an
+    honest counterpart to social-media "AI trading bot" hype. Source lives in the project's
+    <code>sonar/</code> package and <code>static/</code> dashboard.
+  </footer>
+</div>
+</body>
+</html>
