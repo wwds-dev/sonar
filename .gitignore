@@ -9,3 +9,9 @@ output/
 .DS_Store
 data/state.json
 data/*.tmp
+dist.noindex/
+build/
+dist/
+data/cache/
+assets/icon.iconset/
+*.spec

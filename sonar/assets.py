@@ -27,10 +27,11 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
 
-from . import news
+from . import horizon, news, risk
 
 _UA = {"User-Agent": "Mozilla/5.0 (Macintosh) sonar/0.3"}
-_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=1mo&interval=1d"
+_CHART = ("https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+          "?range={rng}&interval=1d")
 
 # symbol, display, class, matching keywords
 WATCHLIST: list[tuple[str, str, str, set[str]]] = [
@@ -55,6 +56,11 @@ WATCHLIST: list[tuple[str, str, str, set[str]]] = [
 
 _W = {"momentum": .35, "volatility": .20, "news": .45}   # asset confidence weights
 
+# Momentum scale per lookback window: the move that saturates the score at 1.0.
+# Longer windows accumulate more move, so a flat 10% would make the 1-day score
+# useless and the 250-day score permanently maxed.
+_MOM_SCALE = {1: 0.03, 5: 0.10, 20: 0.20, 60: 0.35, 250: 0.60}
+
 
 @dataclass
 class AssetSuggestion:
@@ -64,7 +70,8 @@ class AssetSuggestion:
     price: float
     currency: str
     day_change: float        # fractional 1-day change
-    mom_5d: float            # fractional 5-day change
+    momentum: float          # fractional change over the horizon's window
+    momentum_days: int       # which window that was (1 / 5 / 20)
     volatility: float        # daily vol of log returns
     spark: list[float]       # recent closes for a mini chart
     comp: dict = field(default_factory=dict)
@@ -83,8 +90,8 @@ def _get(url: str):
         return None
 
 
-def _fetch(symbol: str):
-    d = _get(_CHART.format(sym=urllib.parse.quote(symbol)))
+def _fetch(symbol: str, rng: str = "1mo"):
+    d = _get(_CHART.format(sym=urllib.parse.quote(symbol), rng=rng))
     try:
         r = d["chart"]["result"][0]
         meta = r["meta"]
@@ -113,29 +120,50 @@ class AssetScanner:
     def __init__(self, ttl: float = 120.0) -> None:
         self.ttl = ttl
         self._at = 0.0
+        self._key: tuple = ()
         self._payload: dict = {"status": "starting", "assets": []}
 
-    def payload(self, headlines) -> dict:
+    def payload(self, headlines, hz=None, profile=None) -> dict:
+        """Cached screen. Refreshes on TTL, or immediately when the horizon or
+        risk profile changes (a cached screen for a different horizon would be
+        showing the wrong momentum window)."""
+        hz = hz or horizon.DEFAULT
+        profile = profile or risk.DEFAULT
         now = time.time()
-        if now - self._at > self.ttl or self._payload.get("status") != "live":
-            self._refresh(headlines)
+        key = (hz.name, profile.name)
+        if (now - self._at > self.ttl or key != self._key
+                or self._payload.get("status") != "live"):
+            self._refresh(headlines, hz, profile)
             self._at = now
+            self._key = key
         return self._payload
 
-    def _refresh(self, headlines) -> None:
+    def _refresh(self, headlines, hz, profile) -> None:
         out: list[AssetSuggestion] = []
+        days = hz.momentum_days
+        scale = _MOM_SCALE.get(days, 0.10)
         for symbol, name, cls, kw in WATCHLIST:
-            got = _fetch(symbol)
+            got = _fetch(symbol, hz.chart_range)
             if got is None:
                 continue
             price, currency, closes = got
             prev = closes[-2]                        # yesterday's daily close
             day = price / prev - 1 if prev else 0.0
-            mom5 = (price / closes[-6] - 1) if len(closes) >= 6 else day
+            # Momentum over the horizon's window, falling back to the longest
+            # window the series actually supports.
+            if len(closes) > days:
+                mom = price / closes[-(days + 1)] - 1
+            else:
+                mom = day
             vol = _daily_vol(closes)
 
+            # Risk filter: hide instruments too volatile for this appetite. A
+            # visibility rule — it never changes what the score would have been.
+            if vol > profile.max_daily_vol:
+                continue
+
             comp = {
-                "momentum": round(min(1.0, abs(mom5) / 0.10), 3),   # 10%/wk -> 1
+                "momentum": round(min(1.0, abs(mom) / scale), 3),
                 "volatility": round(min(1.0, vol / 0.03), 3),        # 3%/day -> 1
             }
             matched = _match_news(headlines, kw)
@@ -143,17 +171,20 @@ class AssetScanner:
             comp["news"] = round(coverage, 3)
 
             conf = round(100 * sum(_W[k] * comp.get(k, 0.0) for k in _W), 1)
-            lean = _lean(mom5, sentiment)
+            lean = _lean(mom, sentiment)
             s = AssetSuggestion(
                 symbol=symbol, name=name, cls=cls, price=round(price, 4),
-                currency=currency, day_change=round(day, 4), mom_5d=round(mom5, 4),
-                volatility=round(vol, 4), spark=[round(c, 4) for c in closes[-20:]],
+                currency=currency, day_change=round(day, 4),
+                momentum=round(mom, 4), momentum_days=days,
+                volatility=round(vol, 4),
+                # a longer window deserves a longer sparkline
+                spark=[round(c, 4) for c in closes[-(60 if hz.long_horizon else 20):]],
                 comp=comp, confidence=conf, lean=lean,
                 news_sentiment=round(sentiment, 3),
                 headlines=[{"title": h.title, "source": h.source, "link": h.link,
                             "age_h": round(h.age_hours, 1) if h.dated else None,
                             "cat": h.category} for h in matched],
-                rationale=_rationale(name, mom5, sentiment, matched),
+                rationale=_rationale(name, mom, days, sentiment, matched),
             )
             out.append(s)
 
@@ -163,6 +194,8 @@ class AssetScanner:
             "generated": int(time.time()),
             "n": len(out),
             "classes": sorted({s.cls for s in out}),
+            "horizon": hz.as_dict(),
+            "risk": profile.as_dict(),
             "assets": [asdict(s) for s in out],
         }
 
@@ -176,13 +209,13 @@ def _daily_vol(closes: list[float]) -> float:
     return math.sqrt(sum((r - mean) ** 2 for r in rets) / (len(rets) - 1))
 
 
-def _lean(mom5: float, sentiment: float) -> str:
-    score = 0.5 * (1 if mom5 > 0.005 else -1 if mom5 < -0.005 else 0) + 0.5 * sentiment
+def _lean(mom: float, sentiment: float) -> str:
+    score = 0.5 * (1 if mom > 0.005 else -1 if mom < -0.005 else 0) + 0.5 * sentiment
     return "Bullish" if score > 0.2 else "Bearish" if score < -0.2 else "Neutral"
 
 
-def _rationale(name: str, mom5: float, sentiment: float, matched) -> str:
-    bits = [f"{name} {mom5*100:+.1f}% over 5d"]
+def _rationale(name: str, mom: float, days: int, sentiment: float, matched) -> str:
+    bits = [f"{name} {mom*100:+.1f}% over {days}d"]
     if matched:
         tone = "positive" if sentiment > .15 else "negative" if sentiment < -.15 else "mixed"
         bits.append(f"{len(matched)} headline(s), tone {tone}")

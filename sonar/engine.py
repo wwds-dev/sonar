@@ -21,18 +21,18 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
 
 from . import model as _model
+from . import risk as _risk
 
 # --- strategy parameters -------------------------------------------------- #
+# Sizing and entry-timing parameters now live on a RiskProfile (see risk.py).
+# They were always an expression of risk appetite — they were just hardcoded.
+# What stays here is the part that isn't a matter of taste.
 STARTING_BANKROLL = 10_000.0
-EDGE_THRESHOLD = 0.04        # only bet when |model - market| exceeds this
-KELLY_FRACTION = 0.5         # half-Kelly
-MAX_STAKE_FRACTION = 0.08    # never risk more than 8% of bankroll on one hour
-ENTER_TAU_MAX = 0.80         # skip the noisy first minutes of the hour
-ENTER_TAU_MIN = 0.12         # ...and don't chase in the final seconds
 SLIPPAGE = 0.005             # half a cent of spread crossing, in probability
 
 
@@ -48,6 +48,13 @@ class Trade:
     market_up: float
     edge: float
     entered_at: float
+    risk_profile: str = "moderate"
+    # The LLM's stated conviction at entry, when a read was attached. Recorded,
+    # never acted on: sizing is the model's edge and the risk profile, nothing
+    # else. Logging it is what lets llm_calibration() score it after the fact.
+    llm_conviction: int | None = None
+    llm_direction: str | None = None
+    llm_model: str | None = None
     # filled on settlement
     result: str | None = None       # "UP" / "DOWN"
     won: bool | None = None
@@ -57,21 +64,12 @@ class Trade:
     close_price: float | None = None
 
 
-def _kelly_stake(bankroll: float, model_side_prob: float, price: float) -> float:
-    """Capped fractional-Kelly stake for backing a side priced at ``price``
-    (0..1) that the model gives ``model_side_prob`` of winning."""
-    if price <= 0 or price >= 1:
-        return 0.0
-    f = (model_side_prob - price) / (1.0 - price)   # Kelly fraction
-    f = max(0.0, f) * KELLY_FRACTION
-    f = min(f, MAX_STAKE_FRACTION)
-    return round(bankroll * f, 2)
-
-
 class Engine:
     def __init__(self, state_path: str | Path,
-                 starting_bankroll: float = STARTING_BANKROLL):
+                 starting_bankroll: float = STARTING_BANKROLL,
+                 risk: _risk.RiskProfile | None = None):
         self.path = Path(state_path)
+        self.risk = risk or _risk.DEFAULT
         self.starting_bankroll = starting_bankroll
         self.bankroll = starting_bankroll
         self.open_position: Trade | None = None
@@ -80,7 +78,28 @@ class Engine:
         self.equity: list[dict] = [{"t": int(time.time()), "v": starting_bankroll,
                                     "kind": "start"}]
         self.last_signal: _model.Signal | None = None
+        # An LLM read for the hour in progress, if the user asked for one.
+        self.pending_llm: dict | None = None
         self._load()
+
+    def set_risk(self, profile: _risk.RiskProfile) -> None:
+        """Switch risk profile. Takes effect on the next entry decision; an
+        already-open position keeps the profile it was sized under."""
+        self.risk = profile
+        self.save()
+
+    def attach_llm_read(self, hour_key: int, read: dict) -> None:
+        """Record an LLM read for the hour in progress so that, if a position is
+        opened, the stated conviction rides along on the Trade and can later be
+        scored against the real candle."""
+        if read.get("error"):
+            return
+        self.pending_llm = {
+            "hour_key": hour_key,
+            "conviction": read.get("conviction"),
+            "direction": read.get("direction"),
+            "model": read.get("model"),
+        }
 
     # ---- persistence ----------------------------------------------------- #
     def _load(self) -> None:
@@ -93,10 +112,13 @@ class Engine:
         self.bankroll = d.get("bankroll", self.starting_bankroll)
         self.starting_bankroll = d.get("starting_bankroll", self.starting_bankroll)
         self.current_hour = d.get("current_hour")
-        self.trades = [Trade(**t) for t in d.get("trades", [])]
+        # Tolerate state files written before a field existed.
+        self.trades = [_trade_from(t) for t in d.get("trades", [])]
         self.equity = d.get("equity") or self.equity
         op = d.get("open_position")
-        self.open_position = Trade(**op) if op else None
+        self.open_position = _trade_from(op) if op else None
+        if d.get("risk_profile"):
+            self.risk = _risk.get(d["risk_profile"])
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +126,7 @@ class Engine:
             "starting_bankroll": self.starting_bankroll,
             "bankroll": self.bankroll,
             "current_hour": self.current_hour,
+            "risk_profile": self.risk.name,
             "open_position": asdict(self.open_position) if self.open_position else None,
             "trades": [asdict(t) for t in self.trades],
             "equity": self.equity,
@@ -143,9 +166,10 @@ class Engine:
     def _maybe_enter(self, candle, market, sig: _model.Signal) -> None:
         if self.open_position is not None:      # one position per hour
             return
-        if not (ENTER_TAU_MIN <= sig.tau <= ENTER_TAU_MAX):
+        r = self.risk
+        if not (r.enter_tau_min <= sig.tau <= r.enter_tau_max):
             return
-        if sig.abs_edge < EDGE_THRESHOLD:
+        if sig.abs_edge < r.edge_threshold:
             return
 
         if sig.side == "UP":
@@ -156,15 +180,26 @@ class Engine:
             price = min(0.99, (1.0 - up_bid) + SLIPPAGE)
             model_side_prob = 1.0 - sig.model_up
 
-        stake = _kelly_stake(self.bankroll, model_side_prob, price)
+        stake = r.kelly_stake(self.bankroll, model_side_prob, price)
         if stake < 1.0:
             return
         shares = round(stake / price, 4)
+
+        # Stamp on any LLM read taken for this hour. It does not influence the
+        # side or the size — it is carried so it can be graded later.
+        llm = self.pending_llm or {}
+        if llm.get("hour_key") != candle.open_time:
+            llm = {}
+
         self.open_position = Trade(
             hour_key=candle.open_time, title=market.title, side=sig.side,
             entry_price=round(price, 4), shares=shares, stake=stake,
             model_up=round(sig.model_up, 4), market_up=round(sig.market_up, 4),
             edge=round(sig.edge, 4), entered_at=time.time(),
+            risk_profile=r.name,
+            llm_conviction=llm.get("conviction"),
+            llm_direction=llm.get("direction"),
+            llm_model=llm.get("model"),
             open_price=candle.open,
         )
         self.save()
@@ -247,4 +282,54 @@ class Engine:
             "avg_pnl": round(sum(pnls) / len(pnls), 2) if pnls else 0.0,
             "best": round(max(pnls), 2) if pnls else 0.0,
             "worst": round(min(pnls), 2) if pnls else 0.0,
+            "risk_profile": self.risk.name,
         }
+
+    def llm_calibration(self) -> dict:
+        """Score the LLM's stated convictions against what actually happened.
+
+        This is the honest counterweight to having an LLM in the loop at all.
+        The narrative track is uncalibrated by construction — so rather than
+        take its confidence at face value, we bucket every logged conviction and
+        report the realised hit rate in each bucket, using the same settled
+        candles the paper P&L uses.
+
+        A well-calibrated commentator's ``hit_rate`` should climb with the
+        bucket. A flat or inverted table means the conviction number carries no
+        information, which is exactly the kind of thing that is worth knowing and
+        almost never measured.
+
+        Interpret with care until ``n`` per bucket is well into double digits;
+        small samples say nothing.
+        """
+        scored = [t for t in self.trades
+                  if t.llm_conviction is not None and t.won is not None]
+        buckets = [(0, 25), (25, 50), (50, 75), (75, 101)]
+        rows = []
+        for lo, hi in buckets:
+            in_b = [t for t in scored if lo <= t.llm_conviction < hi]
+            hits = [t for t in in_b if t.llm_direction == t.result]
+            rows.append({
+                "bucket": f"{lo}–{hi - 1 if hi <= 100 else 100}",
+                "n": len(in_b),
+                "hit_rate": round(len(hits) / len(in_b) * 100, 1) if in_b else None,
+                "avg_conviction": (round(sum(t.llm_conviction for t in in_b) / len(in_b), 1)
+                                   if in_b else None),
+            })
+        agree = [t for t in scored if t.llm_direction == t.side]
+        return {
+            "n_scored": len(scored),
+            "buckets": rows,
+            # How often the narrative track agreed with the arithmetic one.
+            "agreed_with_model_pct": (round(len(agree) / len(scored) * 100, 1)
+                                      if scored else None),
+            "note": ("Stated conviction is subjective, not a probability. This "
+                     "table exists to check whether it tracks reality."),
+        }
+
+
+def _trade_from(d: dict) -> Trade:
+    """Build a Trade from persisted JSON, ignoring keys this version dropped and
+    defaulting ones it gained. Keeps old state.json files loadable."""
+    fields = {f.name for f in dataclass_fields(Trade)}
+    return Trade(**{k: v for k, v in d.items() if k in fields})

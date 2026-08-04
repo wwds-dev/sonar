@@ -29,8 +29,13 @@ Plus in-app docs at `/docs`, and a tooltips toggle that explains every number on
 | Equities/indices/FX/commodities — Yahoo Finance | The P&L |
 | News — BBC, MarketWatch, Yahoo, NPR, Ars Technica, TechCrunch, The Verge | |
 
-**No** API keys, **no** authentication, **no** write access anywhere, and nothing here can move
-real money. The running app also makes **zero AI/LLM calls** — the model is local arithmetic.
+**No** authentication, **no** write access anywhere, and nothing here can move real money.
+
+The probability model, both scanners and the paper engine make **zero AI/LLM calls** — that is
+all local arithmetic over public data, and it needs no API key. The one exception is the
+optional **LLM read** (below), which you invoke by hand on a single opportunity and which
+requires an Anthropic key. Leave it off and SONAR runs exactly as it always did: keyless,
+dependency-free, and free.
 
 ## The model
 
@@ -67,47 +72,152 @@ card shows its component mix as a bar.
 - **Markets** — model edge (crypto only) `0.30`, liquidity `0.20`, timing `0.15`, momentum `0.15`,
   news `0.20`. Non-crypto markets reweight across the remaining four.
 - **Assets** — news `0.45`, momentum `0.35`, volatility `0.20`. The Bullish/Bearish **lean** is
-  just the sign of *(5-day momentum + crude news sentiment)*: a computed indicator, not advice.
+  just the sign of *(horizon momentum + crude news sentiment)*: a computed indicator, not advice.
 
 News is **context, not a predictor**. Sentiment is a small word-list heuristic, matching is
 deliberately conservative, and scraped text is treated as **untrusted data** — read and
 summarised, never acted upon.
 
-## Run it
+## Risk tolerance and horizon
 
-Zero dependencies — Python 3.11+ standard library only:
+Two knobs, and it matters *where* they apply.
+
+**Risk tolerance** (`--risk conservative|moderate|aggressive`) is about **you**, not the market.
+It was always in the code — hardcoded as four constants at the top of `engine.py` — and is now
+named. It changes what you **stake** and what you **see**, never what something **scores**:
+
+| | edge threshold | Kelly | max stake | min liquidity |
+|---|---|---|---|---|
+| conservative | 7¢ | ¼ | 3% | $50k |
+| **moderate** (default) | 4¢ | ½ | 8% | $10k |
+| aggressive | 2.5¢ | ¾ | 15% | none |
+
+**Horizon** (`--horizon intraday|week|month`) is about **when**. The hourly engine has no
+horizon to pick — Polymarket's up/down market *is* one hour — so this shapes the two scanners:
+the timing component now **peaks at your horizon** instead of always preferring "soonest", and
+the asset screener switches its momentum window (1d / 5d / 20d) to match.
+
+Both are live-switchable from `POST /api/config`; the boards rescan immediately.
+
+> Confidence scores are deliberately **not** affected by either. Confidence measures the market;
+> risk measures you. Folding one into the other would mean the same market scored differently for
+> a cautious user than a reckless one — and the number would stop measuring anything.
+
+## The LLM read (optional, off by default)
+
+A second, **separate** track: an on-demand narrative read of one selected opportunity.
+
+`model.prob_up()` is a *calibrated* probability — when it says 0.6, roughly 60% of those hours
+should close up, and the engine checks by settling every trade against the real candle. An LLM's
+stated conviction is not that; it is fluent, not calibrated. So the two are never averaged:
+
+- **`confidence`** — arithmetic, component bars, unchanged.
+- **`llm_read`** — direction, conviction, catalysts, risks. Labelled uncalibrated everywhere.
+
+The part that earns its keep: every stated conviction is **logged onto the trade record**, and
+SONAR already resolves trades against ground truth. `engine.llm_calibration()` buckets them and
+reports the realised hit rate per bucket, so after enough hours you can see whether the model's
+confidence ever tracked reality. Rising hit rate across buckets means it carries information;
+flat or inverted means it doesn't — and you'll know.
+
+Headlines go to the model as **titles only**, inside a delimited block, marked untrusted. No
+article bodies are sent, and the system prompt states that instructions appearing inside that
+block are never to be followed.
 
 ```bash
-python3 -m sonar.server         # then open http://127.0.0.1:8787
-# options: --host 0.0.0.0 --port 9000
+pip install anthropic          # only needed for this feature
+export ANTHROPIC_API_KEY=...   # or: ant auth login
 ```
 
-Leave it running and the equity curve grows by one point each hour as markets resolve.
-State persists to `data/state.json` (git-ignored; delete it to reset to a clean $10,000).
+Runs `claude-opus-5` at `medium` effort, on demand for one opportunity — never across the board
+on every scan, which would cost real money for no benefit.
+
+## Run it
+
+SONAR is a native macOS app — PySide6 widgets, every chart drawn with `QPainter`. There is no
+web view, which is why the bundle is ~98MB rather than ~300MB.
+
+```bash
+uv venv .venv && uv pip install -r requirements.txt
+python main.py              # the app
+python main.py --selftest   # check a build's wiring and exit
+python main.py --headless   # the old HTTP daemon instead
+```
+
+Build a signed `.app`:
+
+```bash
+./build_app.sh              # add --install to copy into /Applications
+```
+
+The build script runs `--selftest` **against the frozen binary**, because that is where
+packaging fails: a bundle is read-only and code-signed, so writable state must live in
+`~/Library/Application Support/SONAR/` (writing inside the `.app` breaks the signature and a
+reinstall wipes it), and lazily-imported modules — `anthropic`, here — are invisible to
+PyInstaller's static analysis without an explicit `--hidden-import`.
+
+Note the frozen app and the source tree keep **separate portfolios**: `~/Library/Application
+Support/SONAR/state.json` versus `data/state.json`. Installing does not inherit a dev bankroll.
+
+Leave it running and the equity curve grows by one point each hour as markets resolve. The
+active risk profile is saved with the state, so a bankroll keeps the profile it was built
+under; delete the state file to reset to a clean $10,000.
+
+**Headless still works and is still dependency-free.** `python main.py --headless` runs the
+same `sonar.core.Live` behind the stdlib HTTP server with the original browser dashboards —
+useful on a spare machine or under launchd, where the engine's uptime is the whole point.
 
 ### What it costs
 
-**Nothing.** Runs locally, every source is a free keyless public API, no trades means no fees,
-and no AI calls at runtime. The only resource is bandwidth — measured at roughly **60 MB/hour
-(~1.4 GB/day)** if left running 24/7, dominated by the 90-second market scan. Widening that
-interval to 5 minutes cuts total traffic ~70%. Relevant only on metered connections.
+**Nothing, unless you use the LLM read.** Every data source is a free keyless public API, no
+trades means no fees, and the model, scanners and paper engine make no AI calls at all. The
+only standing resource is bandwidth — roughly **60 MB/hour (~1.4 GB/day)** left running 24/7,
+dominated by the 90-second market scan; widening that to 5 minutes cuts traffic ~70%.
+
+The LLM read is the one paid path: it bills normal Anthropic API rates per invocation, and only
+when you ask for one. It is not wired into any polling loop.
 
 ## Layout
 
 ```
+main.py        entry point — app, --selftest, --headless
 sonar/
+  core.py      the headless engine driver; both the app and the daemon use it
   feeds.py     BTC/ETH candles + Polymarket market, order book, multi-market scan
   model.py     barrier probability + Galton-lattice distribution
-  engine.py    paper portfolio: sizing, settlement, persistence, stats
+  risk.py      risk profiles — staking and filtering, never scoring
+  horizon.py   return horizons, intraday → year — timing curve + momentum window
+  macro.py     FRED regime (curve, VIX, real rates, labour) for long horizons
+  paths.py     dev vs frozen path resolution — the packaging landmine
+  engine.py    paper portfolio: sizing, settlement, persistence, stats, LLM calibration
+  llm.py       the optional narrative read (the only module with a dependency)
   news.py      reputable RSS/Atom (financial, political, tech), matching + sentiment
   scanner.py   multi-market confidence scoring and ranking
   assets.py    real-asset screener (equities/indices/FX/crypto/commodities)
-  server.py    background pollers + stdlib HTTP server (/api/state, /api/scan, /api/assets)
+  server.py    stdlib HTTP server over core.Live (headless mode)
+ui/
+  app.py       the window — Terminal / Markets / Assets / Macro
+  charts.py    QPainter charts: equity curve, sparkline, depth, lattice, bars
+  theme.py     palette, lifted from the original terminal's CSS
+  worker.py    QThreads for the poll loop, LLM reads, and config changes
+assets/
+  make_icon.py one-off icon generator (QPainter, no extra deps)
 static/
   index.html   the BTC terminal (canvas charts, tooltips)
   scan.html    the scanner + assets board
   docs.html    in-app documentation
 ```
+
+### API
+
+| | |
+|---|---|
+| `GET /api/state` | live snapshot: candle, market, signal, portfolio, calibration |
+| `GET /api/scan` | ranked prediction markets for the current horizon + risk |
+| `GET /api/assets` | the real-asset screen |
+| `GET /api/config` | current risk/horizon, available options, LLM availability |
+| `POST /api/config` | `{"risk": "...", "horizon": "..."}` — switches and rescans |
+| `POST /api/read` | `{"kind": "btc\|market\|asset", "id": "..."}` — one LLM read |
 
 ## Roadmap
 

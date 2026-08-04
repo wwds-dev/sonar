@@ -29,7 +29,7 @@ import math
 import time
 from dataclasses import asdict, dataclass, field
 
-from . import feeds, model, news
+from . import feeds, horizon, model, news, risk
 
 # Which measured factors feed the confidence blend, and their weights.
 _W_CRYPTO = {"edge": .30, "liquidity": .20, "timing": .15, "momentum": .15, "news": .20}
@@ -100,9 +100,15 @@ def _liquidity_score(m: feeds.ScanMarket) -> float:
     return 0.6 * vol + 0.4 * liq
 
 
-def _timing_score(hours_left: float) -> float:
-    h = max(hours_left, 0.2)
-    return max(0.0, min(1.0, 1 - math.log10(h) / math.log10(720)))  # 30d -> 0
+def _timing_score(hours_left: float, hz: horizon.Horizon) -> float:
+    """How well this market's resolution time matches the chosen horizon.
+
+    This used to decay monotonically — "sooner is always better". That is only
+    right if your horizon is always "now". With a horizon selected it peaks *at*
+    the horizon instead, so on a one-week setting a market resolving in six days
+    outranks one resolving in two hours.
+    """
+    return hz.timing_score(hours_left)
 
 
 def _momentum_score(m: feeds.ScanMarket) -> float:
@@ -129,20 +135,35 @@ def _crypto_edge(m: feeds.ScanMarket, cache: dict):
 
 
 def build(markets: list[feeds.ScanMarket], headlines: list[news.Headline],
-          limit: int = 40) -> list[Suggestion]:
+          limit: int = 40, hz: horizon.Horizon | None = None,
+          profile: risk.RiskProfile | None = None) -> list[Suggestion]:
+    """Score and rank markets.
+
+    ``hz`` and ``profile`` shape *which markets are shown and how they are
+    ranked*. Neither one touches a component score: ``liquidity``, ``momentum``
+    and ``edge`` measure the market and read the same for everyone. Only
+    ``timing`` is horizon-relative, and that is by definition — "resolves soon"
+    is meaningless without saying soon relative to what.
+    """
+    hz = hz or horizon.DEFAULT
+    profile = profile or risk.DEFAULT
     asset_cache: dict = {}
     out: list[Suggestion] = []
 
     for m in markets:
         if is_sports(m.question):          # scanner is for financial/political markets
             continue
+        hours_left = max(0.0, (m.end_time - time.time()) / 3600.0)
+        if not hz.contains(hours_left):    # outside the chosen holding period
+            continue
+        if m.liquidity < profile.min_liquidity:   # too thin for this risk appetite
+            continue
         sym = m.crypto_asset
         cat = categorize(m.question, sym is not None)
-        hours_left = max(0.0, (m.end_time - time.time()) / 3600.0)
 
         comp = {
             "liquidity": round(_liquidity_score(m), 3),
-            "timing": round(_timing_score(hours_left), 3),
+            "timing": round(_timing_score(hours_left, hz), 3),
             "momentum": round(_momentum_score(m), 3),
         }
 
@@ -206,8 +227,12 @@ def _rationale(s: Suggestion, comp: dict, weights: dict) -> str:
     return "; ".join(bits) or "notable market"
 
 
-def suggestions_payload(markets, headlines, limit: int = 40) -> dict:
-    sugg = build(markets, headlines, limit)
+def suggestions_payload(markets, headlines, limit: int = 40,
+                        hz: horizon.Horizon | None = None,
+                        profile: risk.RiskProfile | None = None) -> dict:
+    hz = hz or horizon.DEFAULT
+    profile = profile or risk.DEFAULT
+    sugg = build(markets, headlines, limit, hz, profile)
     cats: dict[str, int] = {}
     for s in sugg:
         cats[s.category] = cats.get(s.category, 0) + 1
@@ -217,5 +242,7 @@ def suggestions_payload(markets, headlines, limit: int = 40) -> dict:
         "n_shown": len(sugg),
         "categories": cats,
         "sources": list(news.FEEDS.keys()),
+        "horizon": hz.as_dict(),
+        "risk": profile.as_dict(),
         "suggestions": [asdict(s) for s in sugg],
     }

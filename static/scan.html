@@ -148,7 +148,7 @@
   </div>
   <div class="legend" id="legend">
     <span data-tip="How much real money and depth is in the market — higher is more reliable pricing and easier paper fills."><i style="background:var(--liq)"></i>liquidity</span>
-    <span data-tip="How soon it resolves — shorter scores higher, for quick turnaround."><i style="background:var(--tim)"></i>timing</span>
+    <span data-tip="How well the resolution date matches your chosen horizon — scores highest at the horizon, lower both sooner and later."><i style="background:var(--tim)"></i>timing</span>
     <span data-tip="How much the market's odds have moved lately."><i style="background:var(--mom)"></i>momentum</span>
     <span data-tip="Model probability minus market price. Only crypto up/down markets have this — it's the only true edge signal."><i style="background:var(--edge)"></i>model edge (crypto)</span>
     <span data-tip="Recency-weighted volume of matched reputable headlines. Coverage, not a prediction."><i style="background:var(--news)"></i>news</span>
@@ -286,7 +286,7 @@ function assetCard(a){
       <div class="facts">
         <span data-tip="Latest price.">price <b>${fmtPrice(a.price)} ${a.currency}</b></span>
         <span class="chg ${dc}" data-tip="1-day change (last two daily closes).">1d <b>${pct(a.day_change)}</b></span>
-        <span data-tip="5-day change.">5d <b>${pct(a.mom_5d)}</b></span>
+        <span data-tip="Change over your chosen horizon's momentum window.">${a.momentum_days}d <b>${pct(a.momentum)}</b></span>
         <span data-tip="Daily volatility of returns.">vol <b>${(a.volatility*100).toFixed(1)}%</b></span>
       </div>
       <div class="rat">${esc(a.rationale)}</div>
