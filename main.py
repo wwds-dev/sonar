@@ -87,13 +87,26 @@ def selftest() -> int:
     return 0
 
 
-def headless() -> int:
+def headless(argv: list[str]) -> int:
+    """Run the HTTP daemon. Forwards the same flags sonar.server accepts."""
+    import argparse
+
+    from sonar import horizon, risk
     from sonar.server import main as serve
-    serve()
+
+    ap = argparse.ArgumentParser(prog="main.py --headless")
+    ap.add_argument("--headless", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--port", type=int, default=8787)
+    ap.add_argument("--risk", default=None, choices=sorted(risk.PROFILES))
+    ap.add_argument("--horizon", default=None, choices=sorted(horizon.HORIZONS))
+    args = ap.parse_args(argv)
+    serve(args.host, args.port, args.risk, args.horizon, role="agent")
     return 0
 
 
 def run_app() -> int:
+    from PySide6.QtCore import QEvent
     from PySide6.QtWidgets import QApplication
 
     from sonar import paths
@@ -101,12 +114,44 @@ def run_app() -> int:
     from ui import theme
     from ui.app import MainWindow
 
+    class SonarApp(QApplication):
+        """Clicking the Dock icon brings the window back.
+
+        Because the close button hides rather than quits, a user who cannot
+        find the menu-bar item would otherwise have a running process and no
+        way to reach it. macOS sends ApplicationActivate on a Dock click; this
+        makes that the second, obvious way back in.
+        """
+
+        window = None
+
+        def event(self, e):
+            if e.type() == QEvent.ApplicationActivate and self.window is not None:
+                if not self.window.isVisible():
+                    self.window.showNormal()
+                    self.window.raise_()
+            return super().event(e)
+
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    from ui.tray import Tray
+
     paths.ensure_dirs()
-    app = QApplication(sys.argv)
+    app = SonarApp(sys.argv)
     app.setApplicationName("SONAR")
     app.setStyleSheet(theme.STYLESHEET)
 
     win = MainWindow(Live())
+    app.window = win
+
+    # The engine must outlive the window — closing it would abandon a priced
+    # position before it settles. Only the tray's Quit ends the process.
+    if QSystemTrayIcon.isSystemTrayAvailable():
+        app.setQuitOnLastWindowClosed(False)
+        tray = Tray(win, app)
+        win.tray = tray
+        tray.show()
+
     win.show()
     return app.exec()
 
@@ -115,5 +160,5 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         sys.exit(selftest())
     if "--headless" in sys.argv:
-        sys.exit(headless())
+        sys.exit(headless(sys.argv[1:]))
     sys.exit(run_app())

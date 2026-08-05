@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -94,9 +95,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main(host: str = "127.0.0.1", port: int = 8787,
-         risk_name: str | None = None, horizon_name: str | None = None) -> None:
+         risk_name: str | None = None, horizon_name: str | None = None,
+         role: str = "daemon") -> None:
     live = Live(risk_name=risk_name, horizon_name=horizon_name)
-    threading.Thread(target=live.run, daemon=True).start()
+    threading.Thread(target=live.run, args=(role,), daemon=True).start()
     Handler.live = live
     srv = ThreadingHTTPServer((host, port), Handler)
     ok, why = llm.available()
@@ -106,6 +108,11 @@ def main(host: str = "127.0.0.1", port: int = 8787,
           flush=True)
     print("Live BTC data + real Polymarket odds. Paper money only. Ctrl-C to stop.",
           flush=True)
+    # If another SONAR already holds the engine lock this process serves its
+    # state read-only rather than settling the same hour twice.
+    time.sleep(1.5)
+    if getattr(live, "read_only", False):
+        print(f"READ-ONLY: {live.conflict}", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

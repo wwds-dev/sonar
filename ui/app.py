@@ -264,6 +264,8 @@ class MainWindow(QMainWindow):
         self.live = live
         self._read_thread = None
         self._cfg_thread = None
+        self.tray = None            # set by main.py once the app exists
+        self.allow_close = False    # flipped only by the tray's Quit action
         self.setWindowTitle("SONAR")
         self.resize(1180, 820)
         icon = paths.asset_path("icon.icns")
@@ -491,12 +493,20 @@ class MainWindow(QMainWindow):
             scan = dict(self.live.scan)
             assets = dict(self.live.assets)
 
+        if snap.get("status") == "read-only":
+            # Another SONAR (usually the launchd agent) holds the engine lock.
+            # Say so plainly rather than showing a window that looks broken.
+            self.status.setText("⚠  " + snap.get("detail", "another engine is running"))
+            self.read_btn.setEnabled(False)
+            return
         if snap.get("status") != "live":
             self.status.setText(f'{snap.get("status", "…")} — first poll can take a moment')
             return
         self._refresh_terminal(snap)
         self._refresh_cards(scan, assets)
         self._refresh_macro(snap)
+        if self.tray is not None:
+            self.tray.update_state(snap)
 
         hz = self.live.horizon
         self.status.setText(
@@ -600,5 +610,17 @@ class MainWindow(QMainWindow):
             f'As of {", ".join(f"{k} {v}" for k, v in (mc.get("as_of") or {}).items() if v)}.')
 
     def closeEvent(self, e) -> None:
-        self.timer.stop()
-        e.accept()
+        """Hide, don't quit — see ui/tray.py for why.
+
+        Closing the window while the engine is mid-hour would abandon a priced
+        position before it settles, which is exactly the data the app exists to
+        collect. Quitting is available, but it is a deliberate act from the
+        menu bar rather than the side effect of a close button.
+        """
+        if getattr(self, "allow_close", False) or self.tray is None:
+            self.timer.stop()
+            e.accept()
+            return
+        e.ignore()
+        self.hide()
+        self.tray.note_hidden()

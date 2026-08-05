@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Keeps the SONAR engine running when the app is not open.
+
+  Runs the headless daemon (main.py --headless), which drives the same
+  sonar.core.Live the GUI does and writes the same state file. The point is
+  uptime: a position priced at 14:05 has to settle against the 15:00 candle, and
+  an app you quit at 14:30 loses that hour permanently.
+
+  Installed by scripts/install_agent.sh — it rewrites PROJECT_DIR and
+  PYTHON_BIN, since launchd does not expand variables or ~ in these fields.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.netrunner3000.sonar</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON_BIN__</string>
+        <string>__PROJECT_DIR__/main.py</string>
+        <string>--headless</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8787</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if it dies. ThrottleInterval stops a crash-loop from
+         hammering the market APIs and getting the machine rate-limited. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <!-- Loopback only. Nothing here should be reachable off the machine. -->
+    <key>StandardOutPath</key>
+    <string>__PROJECT_DIR__/data/logs/agent.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_DIR__/data/logs/agent.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Low priority: this is a background poller, not interactive work. -->
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>

@@ -163,9 +163,50 @@ Leave it running and the equity curve grows by one point each hour as markets re
 active risk profile is saved with the state, so a bankroll keeps the profile it was built
 under; delete the state file to reset to a clean $10,000.
 
-**Headless still works and is still dependency-free.** `python main.py --headless` runs the
-same `sonar.core.Live` behind the stdlib HTTP server with the original browser dashboards —
-useful on a spare machine or under launchd, where the engine's uptime is the whole point.
+### Uptime
+
+SONAR is a daemon wearing an app: the equity curve only means something if positions settle on
+the hours they were priced for. So two things protect that.
+
+**The close button hides.** The window disappears, the engine keeps running, and the menu-bar
+item shows bankroll and open position. Quitting is a separate, deliberate menu action — and
+clicking the Dock icon brings the window back if the menu-bar item is hard to find.
+
+**A launchd agent** keeps it running when you are not logged into the app at all:
+
+```bash
+./scripts/install_agent.sh             # install and start
+./scripts/install_agent.sh --status
+./scripts/install_agent.sh --uninstall
+```
+
+Running both is safe. `sonar/enginelock.py` enforces **one engine per state file**: whoever
+starts first drives, and the other opens read-only rather than settling the same hour twice —
+which would double-count the portfolio silently. A lock left behind by a killed process is
+reclaimed rather than blocking forever.
+
+**Headless is still dependency-free.** `python main.py --headless` runs the same
+`sonar.core.Live` behind the stdlib HTTP server with the original browser dashboards.
+
+## Execution guard (simulator only)
+
+`sonar/execution.py` is the safety layer that would sit between a signal and a real order. It
+contains **no broker integration** — it talks to an abstract port whose only implementation is
+an in-process simulator, so every rule in it is testable:
+
+- an order is never sent without explicit human confirmation
+- idempotent client order ids, recorded *before* the send, so a double-click cannot double-fill
+- hard caps on notional, quantity, orders per day, and open positions, checked locally
+- an instrument allowlist that **fails closed** — empty permits nothing
+- unpriced orders rejected: no limit price means no notional to cap
+- an unknown outcome halts the guard rather than retrying, because a retry is how one order
+  becomes two
+- append-only audit log, and a kill switch that latches closed
+
+There is deliberately **no live venue wired up**. SONAR's only calibrated model prices the
+Polymarket hourly BTC market, which conventional brokers cannot trade; the assets board, which
+they can trade, explicitly asserts nothing. Connecting execution to the board SONAR does not
+model would be pointing a careful safety layer at the wrong signal.
 
 ### What it costs
 

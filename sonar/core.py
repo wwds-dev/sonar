@@ -19,8 +19,8 @@ import time
 
 from dataclasses import asdict
 
-from . import (assets, feeds, horizon, llm, macro, model, news, paths, risk,
-               scanner)
+from . import (assets, enginelock, feeds, horizon, llm, macro, model, news,
+               paths, risk, scanner)
 from .engine import Engine
 
 
@@ -40,6 +40,10 @@ class Live:
     def __init__(self, risk_name: str | None = None,
                  horizon_name: str | None = None) -> None:
         self.lock = threading.Lock()
+        # Single-writer guard around the paper engine (see enginelock.py).
+        self.engine_lock = None
+        self.read_only = False
+        self.conflict = ""
         self.horizon = horizon.get(horizon_name)
         paths.ensure_dirs()
         self.engine = Engine(paths.state_file(), risk=risk.get(risk_name))
@@ -247,7 +251,21 @@ class Live:
                  "age_h": round(h.age_hours, 1) if h.dated else None}
                 for h in heads if h.category == category][:6]
 
-    def run(self) -> None:
+    def run(self, role: str = "app") -> None:
+        """Drive the engine forever.
+
+        Refuses to poll if another SONAR already holds the engine lock. Two
+        engines settling the same hour into one state file would double-count
+        the portfolio, and it would do so silently — so this returns instead,
+        leaving the caller displaying whatever the real engine writes.
+        """
+        self.engine_lock = enginelock.EngineLock(role=role)
+        if not self.engine_lock.acquire():
+            self.read_only = True
+            self.conflict = enginelock.describe_conflict(self.engine_lock)
+            with self.lock:
+                self.snapshot = {"status": "read-only", "detail": self.conflict}
+            return
         self.warmup()
         while True:
             try:
