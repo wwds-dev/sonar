@@ -609,6 +609,41 @@ class MainWindow(QMainWindow):
             "not forecasting them. Source: FRED. "
             f'As of {", ".join(f"{k} {v}" for k, v in (mc.get("as_of") or {}).items() if v)}.')
 
+    # Grace for a background thread to notice it should finish. The poll loop
+    # returns almost at once once stopped; the ceiling is a network call already
+    # in flight, and those sockets time out around 8-10s.
+    SHUTDOWN_WAIT_MS = 4000
+
+    def shutdown(self) -> None:
+        """Stop the background threads before the process exits.
+
+        Qt calls ``qFatal()`` when a QThread is destroyed while still running,
+        and qFatal aborts: the process dies with SIGABRT and macOS reports
+        "Python quit unexpectedly" rather than exiting cleanly. Interpreter
+        shutdown destroys this window, which *owns* those threads, so stopping
+        them here is not optional — lab_hub's MainWindow.shutdown guards the
+        same way for the same reason.
+
+        Wired to ``QApplication.aboutToQuit`` so it runs however the quit
+        arrived: the tray's Quit item, Cmd-Q, or a logout.
+        """
+        timer = getattr(self, "timer", None)
+        if timer is not None:
+            timer.stop()
+        self.live.stop()                    # ends the poll loop's wait()
+        for thread in (getattr(self, "poll", None),
+                       self._read_thread, self._cfg_thread):
+            if thread is None or not thread.isRunning():
+                continue
+            thread.quit()                   # no-op for run()-override threads
+            if thread.wait(self.SHUTDOWN_WAIT_MS):
+                continue
+            # Last resort: a thread wedged in a slow network read. Terminating
+            # at exit is ugly, but it beats aborting the process, and there is
+            # nothing to corrupt — the engine persists on every write.
+            thread.terminate()
+            thread.wait(500)
+
     def closeEvent(self, e) -> None:
         """Hide, don't quit — see ui/tray.py for why.
 

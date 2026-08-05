@@ -40,6 +40,10 @@ class Live:
     def __init__(self, risk_name: str | None = None,
                  horizon_name: str | None = None) -> None:
         self.lock = threading.Lock()
+        # Set by stop() to end run()'s loop. Qt aborts the whole process if a
+        # QThread is still running when it is destroyed, so the loop this drives
+        # must be able to finish on request — see ui/app.py's shutdown().
+        self._stop = threading.Event()
         # Single-writer guard around the paper engine (see enginelock.py).
         self.engine_lock = None
         self.read_only = False
@@ -252,7 +256,7 @@ class Live:
                 for h in heads if h.category == category][:6]
 
     def run(self, role: str = "app") -> None:
-        """Drive the engine forever.
+        """Drive the engine until :meth:`stop` is called.
 
         Refuses to poll if another SONAR already holds the engine lock. Two
         engines settling the same hour into one state file would double-count
@@ -266,14 +270,26 @@ class Live:
             with self.lock:
                 self.snapshot = {"status": "read-only", "detail": self.conflict}
             return
-        self.warmup()
-        while True:
-            try:
-                self._poll()
-            except Exception as exc:               # keep the loop alive
-                with self.lock:
-                    self.snapshot = {"status": "error", "detail": str(exc)}
-            time.sleep(PRICE_EVERY)
+        try:
+            self.warmup()
+            while not self._stop.is_set():
+                try:
+                    self._poll()
+                except Exception as exc:           # keep the loop alive
+                    with self.lock:
+                        self.snapshot = {"status": "error", "detail": str(exc)}
+                # wait(), not sleep(): a quit lands immediately instead of
+                # blocking shutdown for the rest of the poll interval.
+                self._stop.wait(PRICE_EVERY)
+        finally:
+            # Hand the lock back on the way out. A crash could never do this,
+            # which left a stale holder and sent the next launch to read-only.
+            self.engine_lock.release()
+
+    def stop(self) -> None:
+        """Ask :meth:`run` to finish. Safe to call from another thread, and
+        safe to call when the loop was never started."""
+        self._stop.set()
 
     def _poll(self) -> None:
         now = time.time()

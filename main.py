@@ -144,6 +144,11 @@ def run_app() -> int:
     win = MainWindow(Live())
     app.window = win
 
+    # Qt aborts the process if a QThread outlives its parent, so the poll
+    # thread has to be stopped before teardown. aboutToQuit fires for every
+    # route out — tray Quit, Cmd-Q, logout — which closeEvent alone does not.
+    app.aboutToQuit.connect(win.shutdown)
+
     # The engine must outlive the window — closing it would abandon a priced
     # position before it settles. Only the tray's Quit ends the process.
     if QSystemTrayIcon.isSystemTrayAvailable():
