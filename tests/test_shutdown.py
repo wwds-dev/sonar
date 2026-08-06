@@ -20,7 +20,7 @@ from sonar.core import Live
 
 def test_stop_ends_the_run_loop(tmp_path, monkeypatch):
     """run() must return after stop() — the property the window relies on."""
-    monkeypatch.setattr("sonar.paths.state_file", lambda: tmp_path / "state.json")
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
     live = Live()
     monkeypatch.setattr(live, "warmup", lambda: None)
     monkeypatch.setattr(live, "_poll", lambda: None)
@@ -41,7 +41,7 @@ def test_stop_does_not_wait_out_the_poll_interval(tmp_path, monkeypatch):
     The loop sleeps between polls. If it used time.sleep() a quit would block
     for the rest of that interval; an Event.wait() returns the moment it is set.
     """
-    monkeypatch.setattr("sonar.paths.state_file", lambda: tmp_path / "state.json")
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
     monkeypatch.setattr("sonar.core.PRICE_EVERY", 30.0)
     live = Live()
     monkeypatch.setattr(live, "warmup", lambda: None)
@@ -66,7 +66,7 @@ def test_run_releases_the_engine_lock(tmp_path, monkeypatch):
     SIGABRT never could, which left a stale holder on disk and sent the *next*
     launch into read-only mode for no reason a user could see.
     """
-    monkeypatch.setattr("sonar.paths.state_file", lambda: tmp_path / "state.json")
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
     live = Live()
     monkeypatch.setattr(live, "warmup", lambda: None)
     monkeypatch.setattr(live, "_poll", lambda: None)
@@ -81,8 +81,9 @@ def test_run_releases_the_engine_lock(tmp_path, monkeypatch):
     assert live.engine_lock.holder() is None, "lock still held after a clean exit"
 
 
-def test_stop_before_run_is_harmless():
+def test_stop_before_run_is_harmless(tmp_path, monkeypatch):
     """stop() may arrive before the thread ever started — quitting during
     startup must not raise."""
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
     live = Live()
     live.stop()          # must not raise

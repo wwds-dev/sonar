@@ -8,8 +8,11 @@ lock never blocks a legitimate one forever.
 
 import json
 import os
+import subprocess
+import sys
+import time
 
-from sonar.enginelock import EngineLock, describe_conflict
+from sonar.enginelock import EngineLock, _is_zombie, describe_conflict
 
 
 def lock(tmp_path, role="app"):
@@ -18,6 +21,40 @@ def lock(tmp_path, role="app"):
 
 def test_first_acquire_succeeds(tmp_path):
     assert lock(tmp_path).acquire() is True
+
+
+def test_a_zombie_holder_is_not_alive(tmp_path):
+    """A crashed engine nobody reaped must not keep holding the lock.
+
+    Lab Hub starts SONAR with Popen and stops watching after the startup grace,
+    so a child that dies later lingers as a zombie. ``os.kill(pid, 0)`` succeeds
+    on one, which used to read as "still running" — the lock stayed held for as
+    long as the launcher lived and every later launch fell back to read-only.
+    """
+    child = subprocess.Popen([sys.executable, "-c", ""])
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not _is_zombie(child.pid):
+        time.sleep(0.05)
+    try:
+        assert _is_zombie(child.pid), "could not produce a zombie to test against"
+        assert lock(tmp_path)._alive(child.pid) is False
+    finally:
+        child.wait()          # reap it, whatever happened above
+
+
+def test_a_zombie_lock_gets_reclaimed(tmp_path):
+    """The end-to-end version: a lock file naming a zombie is takeable."""
+    child = subprocess.Popen([sys.executable, "-c", ""])
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not _is_zombie(child.pid):
+        time.sleep(0.05)
+    try:
+        lk = lock(tmp_path)
+        lk.path.write_text(json.dumps({"pid": child.pid, "role": "app",
+                                       "since": time.time()}))
+        assert lk.acquire() is True
+    finally:
+        child.wait()
 
 
 def test_reacquiring_your_own_lock_is_idempotent(tmp_path):

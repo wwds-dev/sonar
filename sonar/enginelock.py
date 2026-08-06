@@ -20,10 +20,26 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 from pathlib import Path
 
 from . import paths
+
+
+def _is_zombie(pid: int) -> bool:
+    """Has ``pid`` exited without being reaped?
+
+    Undecidable from ``os.kill`` alone, so ask ``ps``. Any failure answers
+    "not a zombie": treating an unknown process as alive keeps the
+    single-writer guarantee, which is the safe direction to be wrong in.
+    """
+    try:
+        out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out.stdout.strip().startswith("Z")
 
 
 class EngineLock:
@@ -43,7 +59,14 @@ class EngineLock:
 
     @staticmethod
     def _alive(pid: int) -> bool:
-        """Is that PID still around? Signal 0 checks without delivering."""
+        """Is that PID still around? Signal 0 checks without delivering.
+
+        A zombie does not count. ``os.kill()`` succeeds on a process that has
+        exited but not been reaped, and Lab Hub launches SONAR without ever
+        waiting on it — so a crashed engine stayed "alive" for as long as the
+        launcher lived, and every later launch fell back to read-only with
+        nothing on screen to explain why.
+        """
         if pid <= 0:
             return False
         try:
@@ -52,7 +75,7 @@ class EngineLock:
             return False
         except PermissionError:
             return True          # exists, owned by someone else
-        return True
+        return not _is_zombie(pid)
 
     def holder(self) -> dict | None:
         """The live holder, or ``None``. Clears a stale lock as a side effect."""
