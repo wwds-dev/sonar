@@ -15,8 +15,8 @@ is load-bearing.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout,
                                QLabel, QMainWindow, QPushButton, QScrollArea,
                                QSizePolicy, QTabWidget, QVBoxLayout, QWidget)
@@ -32,6 +32,57 @@ from .charts import ComponentBar, DepthChart, EquityCurve, Lattice, Sparkline
 from .worker import ConfigThread, PollThread, ReadThread
 
 REFRESH_MS = 1000
+# Long enough for macOS to finish collapsing the full-screen Space before the
+# window disappears into the menu bar. Shorter and the empty Space survives.
+FULLSCREEN_EXIT_MS = 350
+
+# The Assets table's columns: key, heading, width, tooltip. The header row and
+# every asset row are both built from this one list, so a column can never drift
+# away from the heading that names it.
+ASSET_COLS = [
+    ("name", "", 150, ""),
+    ("trend", "TREND", 110, "Recent price path over the horizon's window."),
+    ("price", "PRICE", 78, "Latest price."),
+    ("1d", "1D", 66, "Change since yesterday's close."),
+    ("momentum", "MOMENTUM", 96,
+     "Change over the horizon's momentum window (1d / 5d / 20d)."),
+    ("volatility", "VOL", 74, "Daily volatility of returns."),
+    ("lean", "LEAN", 62,
+     "Sign of (horizon momentum + crude news sentiment).\n"
+     "A computed indicator, not advice."),
+    ("mix", "SCORE MIX", 90,
+     "What drives the confidence score: momentum, volatility, news."),
+    ("conf", "CONF", 40,
+     "Confidence 0–100: how notable this looks.\n"
+     "NOT the probability you will make money."),
+    ("read", "", 52, ""),
+]
+
+
+def _asset_widths() -> list[tuple[str, int]]:
+    return [(key, width) for key, _heading, width, _tip in ASSET_COLS]
+
+
+class AssetHeader(QFrame):
+    """Column headings for the Assets table.
+
+    Without these the screen was ten unlabelled numbers per row and you had to
+    already know the layout to read it.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        # left margin = the scroll area's own 2px + the row panel's 12px, so a
+        # heading sits directly over its column
+        lay.setContentsMargins(15, 8, 12, 4)
+        lay.setSpacing(14)
+        for _key, heading, width, tip in ASSET_COLS:
+            lb = label(heading, "faint", theme.mono(8))
+            lb.setFixedWidth(width)
+            if tip:
+                lb.setToolTip(tip)
+            lay.addWidget(lb)
 
 
 def panel() -> QFrame:
@@ -141,33 +192,39 @@ class AssetRow(QFrame):
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(14)
 
-        name = QVBoxLayout()
+        widths = dict(_asset_widths())
+
+        holder = QWidget()
+        holder.setFixedWidth(widths["name"])
+        name = QVBoxLayout(holder)
+        name.setContentsMargins(0, 0, 0, 0)
         name.setSpacing(0)
         name.addWidget(label(a["name"], font=theme.ui_font(12, True)))
         name.addWidget(label(f'{a["symbol"]}  ·  {a["cls"]}', "faint", theme.mono(9)))
-        lay.addLayout(name)
+        lay.addWidget(holder)
 
         spark = Sparkline(38)
         spark.frame = False
-        spark.setFixedWidth(110)
+        spark.setFixedWidth(widths["trend"])
         # colour by the horizon's momentum so the line agrees with the number
         # printed next to it and with the lean
         spark.set_values(a.get("spark", []), up=a["momentum"] >= 0)
         lay.addWidget(spark)
 
-        for text, tip, col in [
-            (f'{a["price"]:,.2f}', "Latest price", theme.INK),
-            (f'{a["day_change"]*100:+.2f}%', "1-day change",
+        for key, text, tip, col in [
+            ("price", f'{a["price"]:,.2f}', "Latest price", theme.INK),
+            ("1d", f'{a["day_change"]*100:+.2f}%', "1-day change",
              theme.pnl_color(a["day_change"])),
-            (f'{a["momentum"]*100:+.1f}% / {a["momentum_days"]}d',
+            ("momentum", f'{a["momentum"]*100:+.1f}% / {a["momentum_days"]}d',
              "Change over the horizon's momentum window",
              theme.pnl_color(a["momentum"])),
-            (f'vol {a["volatility"]*100:.1f}%', "Daily volatility of returns",
-             theme.MUTED),
+            ("volatility", f'{a["volatility"]*100:.1f}%',
+             "Daily volatility of returns", theme.MUTED),
         ]:
             lb = label(text, font=theme.mono(11))
             lb.setStyleSheet(f"color: {col.name()};")
             lb.setToolTip(tip)
+            lb.setFixedWidth(widths[key])
             lay.addWidget(lb)
 
         lean = label(a["lean"], font=theme.mono(10, True))
@@ -175,18 +232,21 @@ class AssetRow(QFrame):
             f"color: {(theme.UP if a['lean']=='Bullish' else theme.DOWN if a['lean']=='Bearish' else theme.MUTED).name()};")
         lean.setToolTip("Sign of (horizon momentum + crude news sentiment).\n"
                         "A computed indicator, not advice.")
+        lean.setFixedWidth(widths["lean"])
         lay.addWidget(lean)
 
         bar = ComponentBar()
-        bar.setFixedWidth(90)
+        bar.setFixedWidth(widths["mix"])
         bar.set_parts(a.get("comp", {}), ASSET_W)
         lay.addWidget(bar)
 
         conf = label(f'{a["confidence"]:.0f}', font=theme.mono(14, True))
+        conf.setFixedWidth(widths["conf"])
         lay.addWidget(conf)
 
         btn = QPushButton("read")
         btn.setFont(theme.mono(9))
+        btn.setFixedWidth(widths["read"])
         btn.clicked.connect(lambda: on_read("asset", a["symbol"], a["name"]))
         lay.addWidget(btn)
 
@@ -235,8 +295,13 @@ class ReadPanel(QFrame):
         if r.get("error"):
             self.badge.setText("unavailable")
             self.badge.setStyleSheet(f"color: {theme.DOWN.name()};")
+            if r.get("subject"):
+                self.subject.setText(r["subject"])
             self.body.setText(r["error"])
-            self.caveat.setText("")
+            self.caveat.setText(
+                "The LLM read is optional and off by default. Everything else "
+                "in SONAR — the model, both scanners, the paper engine — is "
+                "local arithmetic and keeps working without it.")
             return
         d = r.get("direction", "UNCLEAR")
         self.badge.setText(f'{d}  ·  conviction {r.get("conviction", 0)}/100')
@@ -282,7 +347,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._terminal_tab(), "Terminal")
         self.tabs.addTab(self._scroll_tab("markets"), "Markets")
-        self.tabs.addTab(self._scroll_tab("assets"), "Assets")
+        self.tabs.addTab(self._scroll_tab("assets", AssetHeader()), "Assets")
         self.tabs.addTab(self._macro_tab(), "Macro")
         outer.addWidget(self.tabs, 1)
 
@@ -326,7 +391,27 @@ class MainWindow(QMainWindow):
             "asset momentum window; long horizons add the macro regime.")
         self.hz_box.currentIndexChanged.connect(self._apply_config)
         bar.addWidget(self.hz_box)
+
+        docs = QPushButton("Docs")
+        docs.setFont(theme.mono(9))
+        docs.setToolTip("What every number means, how the model works, and "
+                        "what SONAR deliberately will not do.")
+        docs.clicked.connect(self._open_docs)
+        bar.addWidget(docs)
         return bar
+
+    def _open_docs(self) -> None:
+        """Open the bundled documentation in the default browser.
+
+        ``static/`` ships inside the app bundle, so this resolves both frozen
+        and from source. If it is somehow missing, say so in the status line
+        rather than opening nothing and looking broken.
+        """
+        page = paths.resource_base() / "static" / "docs.html"
+        if not page.exists():
+            self.status.setText(f"⚠  documentation not found at {page}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(page)))
 
     def _terminal_tab(self) -> QWidget:
         w = QWidget()
@@ -390,7 +475,7 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         return w
 
-    def _scroll_tab(self, which: str) -> QWidget:
+    def _scroll_tab(self, which: str, header: QWidget | None = None) -> QWidget:
         area = QScrollArea()
         area.setWidgetResizable(True)
         host = QWidget()
@@ -402,7 +487,17 @@ class MainWindow(QMainWindow):
         setattr(self, f"_{which}_host", host)
         setattr(self, f"_{which}_lay", lay)
         setattr(self, f"_{which}_sig", None)
-        return area
+        if header is None:
+            return area
+        # Header sits outside the scroll area so it stays put while the rows
+        # move under it.
+        wrap = QWidget()
+        wl = QVBoxLayout(wrap)
+        wl.setContentsMargins(0, 0, 0, 0)
+        wl.setSpacing(0)
+        wl.addWidget(header)
+        wl.addWidget(area, 1)
+        return wrap
 
     def _macro_tab(self) -> QWidget:
         w = QWidget()
@@ -468,16 +563,25 @@ class MainWindow(QMainWindow):
             setattr(self, f"_{which}_sig", None)      # force a rebuild
 
     def _read(self, kind: str, ident: str, subject: str) -> None:
+        # The read panel lives on the Terminal tab, so every path has to bring
+        # the user there. Reporting "unavailable" onto a tab they are not
+        # looking at is indistinguishable from the button being dead — which is
+        # exactly how the Assets tab's read button used to behave.
+        self.read_panel.show()
+        self.tabs.setCurrentIndex(0)
+
         ok, why = llm.available()
         if not ok:
-            self.read_panel.show_read({"error": why}, False)
-            self.read_panel.show()
+            self.read_panel.show_read({"subject": subject, "error": why}, False)
             return
         if self._read_thread and self._read_thread.isRunning():
+            self.read_panel.show_read(
+                {"subject": subject,
+                 "error": "Another read is still running — one at a time."},
+                False)
             return
         self.read_btn.setEnabled(False)
         self.read_panel.show_pending(subject)
-        self.tabs.setCurrentIndex(0)
         self._read_thread = ReadThread(self.live, kind, ident, self)
         self._read_thread.done.connect(self._read_done)
         self._read_thread.start()
@@ -657,5 +761,13 @@ class MainWindow(QMainWindow):
             e.accept()
             return
         e.ignore()
-        self.hide()
+        if self.isFullScreen():
+            # Hiding a full-screen window leaves its macOS Space behind with
+            # nothing in it — the user closes SONAR and is left staring at a
+            # black screen. Drop back to a normal window first, and let the
+            # Space transition finish before actually hiding.
+            self.showNormal()
+            QTimer.singleShot(FULLSCREEN_EXIT_MS, self.hide)
+        else:
+            self.hide()
         self.tray.note_hidden()
