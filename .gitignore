@@ -9,6 +9,10 @@ output/
 .DS_Store
 data/state.json
 data/*.tmp
+# Runtime single-writer lock: holds a PID from whichever machine last ran the
+# engine. Committing it means a clone can start life believing another SONAR is
+# already polling, and silently drop to read-only.
+data/engine.lock
 dist.noindex/
 build/
 dist/
