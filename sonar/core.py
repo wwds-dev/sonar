@@ -22,6 +22,7 @@ from dataclasses import asdict
 from . import (assets, enginelock, feeds, horizon, llm, macro, model, news,
                paths, risk, scanner)
 from .engine import Engine
+from . import calibration, events, portfolio, scoring
 
 
 def trade_dict(t) -> dict | None:
@@ -66,9 +67,15 @@ class Live:
         self._market_at = 0.0
         self._vol_at = 0.0
         self.news = news.NewsCache()
-        self.asset_scanner = assets.AssetScanner()
+        self.events = events.EventsCache()
+        self.asset_scanner = assets.AssetScanner(events=self.events)
+        # The general paper book: any instrument, long or short. Kept in its own
+        # file so the hourly BTC engine's bankroll stays a separate experiment.
+        self.book = portfolio.Portfolio(paths.user_data_base() / "portfolio.json")
         self.scan: dict = {"status": "starting", "suggestions": []}
         self.assets: dict = {"status": "starting", "assets": []}
+        self.positions: dict = {"stats": self.book.stats(), "open": [], "closed": []}
+        self.calibration: dict = calibration.report(self.book.closed)
         self._scan_at = 0.0
         self.macro = macro.MacroCache()
         self.reader = llm.LLMReader()
@@ -107,11 +114,61 @@ class Live:
                 self.scan["error"] = str(exc)
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
+            self._mark_book(ap)
             with self.lock:
                 self.assets = ap
         except Exception:
             pass
         self._scan_at = time.time()
+
+    # -- the paper book ---------------------------------------------------- #
+    def _mark_book(self, asset_payload: dict) -> None:
+        """Mark open positions against the new prices and close any that hit a
+        barrier, then feed the resulting outcomes back into the score.
+
+        This is the loop that makes the screener falsifiable: positions resolve,
+        calibration measures whether high scores actually won, and the measured
+        drift — and only that — is allowed to move P(profit) off its baseline.
+        """
+        prices = {a["symbol"]: a["price"] for a in asset_payload.get("assets", [])}
+        if not prices:
+            return
+        self.book.mark(prices)
+        report = calibration.report(self.book.closed)
+        # Nothing is claimed below the sample threshold; report() enforces that.
+        self.asset_scanner.edge_sigma = report["implied_edge_sigma"]
+        self.asset_scanner.calibrated = report["calibrated"]
+        with self.lock:
+            self.calibration = report
+            self.positions = {"stats": self.book.stats(prices),
+                              "open": self.book.open_rows(prices),
+                              "closed": [asdict(p) for p in self.book.closed[-40:]][::-1]}
+
+    def trade(self, symbol: str, direction: str) -> dict:
+        """Open a paper position on a screener row. Paper money only."""
+        with self.lock:
+            rows = list(self.assets.get("assets", []))
+        asset = next((a for a in rows if a["symbol"] == symbol), None)
+        if asset is None:
+            return {"ok": False, "message": f"unknown symbol {symbol}"}
+        pos, msg = self.book.enter(
+            asset, direction, self.horizon.momentum_days, self.horizon.name,
+            risk_fraction=self.risk.max_stake_fraction / 8.0)
+        self._mark_book({"assets": rows})
+        return {"ok": pos is not None, "message": msg,
+                "position": asdict(pos) if pos else None}
+
+    def close_position(self, pos_id: str) -> dict:
+        with self.lock:
+            rows = list(self.assets.get("assets", []))
+        prices = {a["symbol"]: a["price"] for a in rows}
+        pos = next((p for p in self.book.open if p.id == pos_id), None)
+        if pos is None:
+            return {"ok": False, "message": "no such open position"}
+        closed = self.book.close(pos.id, prices.get(pos.symbol, pos.entry), "MANUAL")
+        self._mark_book({"assets": rows})
+        return {"ok": True, "message": f"closed {closed.symbol}",
+                "position": asdict(closed)}
 
     # -- configuration ----------------------------------------------------- #
     def configure(self, risk_name: str | None, horizon_name: str | None) -> dict:

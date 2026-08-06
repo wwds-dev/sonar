@@ -29,7 +29,13 @@ from email.utils import parsedate_to_datetime
 
 _UA = {"User-Agent": "Mozilla/5.0 (compatible; sonar/0.2; +paper-demo)"}
 
-# name -> (rss/atom url, category)   category is financial | political | tech
+def _gnews(query: str, lang: str = "en-US", country: str = "US") -> str:
+    """A Google News RSS search, used to reach wires with no open feed."""
+    return (f"https://news.google.com/rss/search?q=when:24h+{query}"
+            f"&hl={lang}&gl={country}&ceid={country}:{lang.split('-')[0]}")
+
+
+# name -> (rss/atom url, category)   category is financial | political | tech | wire
 FEEDS: dict[str, tuple[str, str]] = {
     "BBC Business":   ("https://feeds.bbci.co.uk/news/business/rss.xml", "financial"),
     "BBC Politics":   ("https://feeds.bbci.co.uk/news/politics/rss.xml", "political"),
@@ -39,6 +45,22 @@ FEEDS: dict[str, tuple[str, str]] = {
     "Ars Technica":   ("https://feeds.arstechnica.com/arstechnica/index", "tech"),
     "TechCrunch":     ("https://techcrunch.com/feed/", "tech"),
     "The Verge":      ("https://www.theverge.com/rss/index.xml", "tech"),
+    # --- wire services -------------------------------------------------- #
+    # Reuters' own feed answers 401 and has done for a while; AP, Bloomberg and
+    # the FT publish no open full-text RSS either. Google News is used as a
+    # *proxy* — it indexes those wires and exposes headline, publisher and link,
+    # which is all this app consumes. Worth being plain about: these are
+    # second-hand headlines, not a wire subscription.
+    #
+    # dpa has no usable public feed at all (its Google News channel returns
+    # nothing), so German wire coverage is not available here. Handelsblatt
+    # stands in for German business news instead.
+    "Reuters":        (_gnews("source:Reuters"), "wire"),
+    "AP":             (_gnews("source:Associated+Press"), "wire"),
+    "Bloomberg":      (_gnews("source:Bloomberg"), "wire"),
+    "Financial Times": (_gnews("source:Financial+Times"), "wire"),
+    "Handelsblatt":   (_gnews("source:Handelsblatt", lang="de", country="DE"), "wire"),
+    "CNBC Markets":   ("https://www.cnbc.com/id/10000664/device/rss/rss.html", "financial"),
 }
 _ATOM = "{http://www.w3.org/2005/Atom}"
 
@@ -134,10 +156,24 @@ class NewsCache:
             else:
                 link = (it.findtext("link") or "").strip()
                 ts = _parse_date(it.findtext("pubDate"))
+            title = _clean_title(title, name)
             toks = {w.lower() for w in _WORD.findall(title)}
             out.append(Headline(title=title, link=link, source=name,
                                 category=cat, ts=ts, _tokens=toks))
         return out
+
+
+def _clean_title(title: str, source: str) -> str:
+    """Google News suffixes every headline with " - Publisher".
+
+    The publisher is already carried on the Headline, so the suffix is pure
+    noise — and it pollutes the keyword tokens used for matching, which is the
+    part that actually matters.
+    """
+    cut = title.rsplit(" - ", 1)
+    if len(cut) == 2 and 0 < len(cut[1]) <= 40:
+        return cut[0].strip()
+    return title.strip()
 
 
 def _parse_date(s: str | None) -> int:

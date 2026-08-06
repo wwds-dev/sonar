@@ -27,7 +27,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
 
-from . import horizon, news, risk
+from . import events as events_mod
+from . import horizon, news, risk, scoring
 
 _UA = {"User-Agent": "Mozilla/5.0 (Macintosh) sonar/0.3"}
 _CHART = ("https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
@@ -48,13 +49,36 @@ WATCHLIST: list[tuple[str, str, str, set[str]]] = [
     ("EURUSD=X", "EUR/USD", "Forex", {"euro", "eurozone"}),
     ("GBPUSD=X", "GBP/USD", "Forex", {"pound", "sterling"}),
     ("USDJPY=X", "USD/JPY", "Forex", {"yen", "japan"}),
+    # The ten largest non-stablecoin coins. Stablecoins are deliberately absent:
+    # a screener ranking things by momentum and volatility has nothing to say
+    # about an asset whose entire purpose is not to move.
     ("BTC-USD", "Bitcoin", "Crypto", {"bitcoin", "btc", "crypto"}),
     ("ETH-USD", "Ethereum", "Crypto", {"ethereum", "eth", "crypto"}),
+    ("BNB-USD", "BNB", "Crypto", {"binance", "bnb", "crypto"}),
+    ("XRP-USD", "XRP", "Crypto", {"ripple", "xrp", "crypto"}),
+    ("SOL-USD", "Solana", "Crypto", {"solana", "sol", "crypto"}),
+    ("TRX-USD", "TRON", "Crypto", {"tron", "trx", "crypto"}),
+    ("DOGE-USD", "Dogecoin", "Crypto", {"dogecoin", "doge", "crypto"}),
+    ("ADA-USD", "Cardano", "Crypto", {"cardano", "ada", "crypto"}),
+    ("AVAX-USD", "Avalanche", "Crypto", {"avalanche", "avax", "crypto"}),
+    ("LINK-USD", "Chainlink", "Crypto", {"chainlink", "link", "crypto"}),
     ("GC=F", "Gold", "Commodity", {"gold", "bullion"}),
     ("CL=F", "WTI Crude", "Commodity", {"oil", "crude"}),
 ]
 
-_W = {"momentum": .35, "volatility": .20, "news": .45}   # asset confidence weights
+# Coins whose hourly candle Binance serves directly, for the barrier model.
+# Yahoo covers the screener; Binance is what the hourly up/down engine needs.
+CRYPTO_BINANCE = {
+    "BTC-USD": "BTCUSDT", "ETH-USD": "ETHUSDT", "BNB-USD": "BNBUSDT",
+    "XRP-USD": "XRPUSDT", "SOL-USD": "SOLUSDT", "TRX-USD": "TRXUSDT",
+    "DOGE-USD": "DOGEUSDT", "ADA-USD": "ADAUSDT", "AVAX-USD": "AVAXUSDT",
+    "LINK-USD": "LINKUSDT",
+}
+
+# Confidence weights. News dominates because "what is happening right now" is
+# the honest thing to surface for a short hold; the catalyst term rewards a
+# *scheduled* repricing inside the horizon.
+_W = {"momentum": .30, "volatility": .15, "news": .35, "catalyst": .20}
 
 # Momentum scale per lookback window: the move that saturates the score at 1.0.
 # Longer windows accumulate more move, so a flat 10% would make the 1-day score
@@ -80,6 +104,11 @@ class AssetSuggestion:
     news_sentiment: float = 0.0
     headlines: list[dict] = field(default_factory=list)
     rationale: str = ""
+    # the tradeable plan: what you'd risk, what you'd make, and how often that
+    # actually pays out. See sonar/scoring.py — with no proven edge, p_profit is
+    # 1/(1+rr) and expected value is zero by construction.
+    plan: dict = field(default_factory=dict)
+    catalyst: dict = field(default_factory=dict)
 
 
 def _get(url: str):
@@ -117,8 +146,14 @@ def _match_news(headlines, kw: set[str], limit: int = 4):
 
 
 class AssetScanner:
-    def __init__(self, ttl: float = 120.0) -> None:
+    def __init__(self, ttl: float = 120.0, events=None) -> None:
         self.ttl = ttl
+        # Shared with core.Live so the calendar is fetched once, not per scan.
+        self.events = events
+        # Drift, in horizon-sigmas, measured by sonar.calibration from closed
+        # positions. Zero until enough have resolved — never a guess.
+        self.edge_sigma = 0.0
+        self.calibrated = False
         self._at = 0.0
         self._key: tuple = ()
         self._payload: dict = {"status": "starting", "assets": []}
@@ -170,8 +205,25 @@ class AssetScanner:
             coverage, sentiment = news.news_signal(matched)
             comp["news"] = round(coverage, 3)
 
+            # A scheduled event inside the horizon makes an instrument more
+            # notable — never more bullish. Direction stays with momentum+news.
+            cat_info: dict = {}
+            earn = self.events.earnings_for(symbol) if self.events else None
+            if earn is not None:
+                comp["catalyst"] = round(
+                    events_mod.catalyst_score(earn.days_away, days), 3)
+                cat_info = {"kind": "earnings", "label": earn.label,
+                            "date": earn.date, "days_away": earn.days_away,
+                            "when": earn.when}
+
             conf = round(100 * sum(_W[k] * comp.get(k, 0.0) for k in _W), 1)
             lean = _lean(mom, sentiment)
+
+            # The plan follows the lean: a bearish read is a short, and shorting
+            # is how you act on bad news rather than merely noting it.
+            plan = scoring.build_plan(
+                price, vol, days, "SHORT" if lean == "Bearish" else "LONG",
+                edge_sigma=self.edge_sigma, calibrated=self.calibrated)
             s = AssetSuggestion(
                 symbol=symbol, name=name, cls=cls, price=round(price, 4),
                 currency=currency, day_change=round(day, 4),
@@ -184,7 +236,21 @@ class AssetScanner:
                 headlines=[{"title": h.title, "source": h.source, "link": h.link,
                             "age_h": round(h.age_hours, 1) if h.dated else None,
                             "cat": h.category} for h in matched],
-                rationale=_rationale(name, mom, days, sentiment, matched),
+                rationale=_rationale(name, mom, days, sentiment, matched,
+                                     cat_info),
+                plan={"direction": plan.direction,
+                      "entry": round(plan.entry, 4),
+                      "target": round(plan.target, 4),
+                      "stop": round(plan.stop, 4),
+                      "rr": round(plan.rr, 2),
+                      "p_profit": round(plan.p_profit, 4),
+                      "ev": round(plan.ev_per_unit, 4),
+                      "reward_pct": round(plan.reward_pct, 4),
+                      "risk_pct": round(plan.risk_pct, 4),
+                      "calibrated": plan.calibrated,
+                      "grade": scoring.grade(plan.p_profit, plan.rr,
+                                             plan.calibrated)},
+                catalyst=cat_info,
             )
             out.append(s)
 
@@ -214,11 +280,14 @@ def _lean(mom: float, sentiment: float) -> str:
     return "Bullish" if score > 0.2 else "Bearish" if score < -0.2 else "Neutral"
 
 
-def _rationale(name: str, mom: float, days: int, sentiment: float, matched) -> str:
+def _rationale(name: str, mom: float, days: int, sentiment: float, matched,
+               catalyst: dict | None = None) -> str:
     bits = [f"{name} {mom*100:+.1f}% over {days}d"]
     if matched:
         tone = "positive" if sentiment > .15 else "negative" if sentiment < -.15 else "mixed"
         bits.append(f"{len(matched)} headline(s), tone {tone}")
     else:
         bits.append("no matched news")
+    if catalyst:
+        bits.append(catalyst["label"])
     return "; ".join(bits)

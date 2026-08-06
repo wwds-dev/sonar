@@ -40,22 +40,30 @@ FULLSCREEN_EXIT_MS = 350
 # every asset row are both built from this one list, so a column can never drift
 # away from the heading that names it.
 ASSET_COLS = [
-    ("name", "", 150, ""),
-    ("trend", "TREND", 110, "Recent price path over the horizon's window."),
-    ("price", "PRICE", 78, "Latest price."),
-    ("1d", "1D", 66, "Change since yesterday's close."),
-    ("momentum", "MOMENTUM", 96,
+    ("name", "", 140, ""),
+    ("trend", "TREND", 92, "Recent price path over the horizon's window."),
+    ("price", "PRICE", 74, "Latest price."),
+    ("1d", "1D", 58, "Change since yesterday's close."),
+    ("momentum", "MOM", 86,
      "Change over the horizon's momentum window (1d / 5d / 20d)."),
-    ("volatility", "VOL", 74, "Daily volatility of returns."),
-    ("lean", "LEAN", 62,
+    ("volatility", "VOL", 56, "Daily volatility of returns."),
+    ("lean", "LEAN", 58,
      "Sign of (horizon momentum + crude news sentiment).\n"
      "A computed indicator, not advice."),
-    ("mix", "SCORE MIX", 90,
-     "What drives the confidence score: momentum, volatility, news."),
-    ("conf", "CONF", 40,
+    ("rr", "R:R", 46,
+     "Reward divided by risk, from a volatility-scaled target and stop.\n"
+     "1.5 means the target is 1.5x as far away as the stop."),
+    ("pprof", "P(PROF)", 60,
+     "Probability of touching the target before the stop.\n"
+     "With no proven edge this is exactly 1/(1+R:R) — so a fatter reward\n"
+     "buys a lower hit rate and expected value stays zero. Only a measured\n"
+     "edge (see the Book tab) moves it."),
+    ("mix", "SCORE MIX", 76,
+     "What drives the confidence score: momentum, volatility, news, catalyst."),
+    ("conf", "CONF", 36,
      "Confidence 0–100: how notable this looks.\n"
-     "NOT the probability you will make money."),
-    ("read", "", 52, ""),
+     "NOT the probability you will make money — that is P(PROF)."),
+    ("actions", "", 186, ""),
 ]
 
 
@@ -185,7 +193,7 @@ class MarketCard(QFrame):
 class AssetRow(QFrame):
     """One instrument on the screener."""
 
-    def __init__(self, a: dict, on_read, parent=None) -> None:
+    def __init__(self, a: dict, on_read, on_trade, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("panel")
         lay = QHBoxLayout(self)
@@ -235,6 +243,24 @@ class AssetRow(QFrame):
         lean.setFixedWidth(widths["lean"])
         lay.addWidget(lean)
 
+        plan = a.get("plan") or {}
+        rr = label(f'{plan.get("rr", 0):.2f}', font=theme.mono(11))
+        rr.setFixedWidth(widths["rr"])
+        rr.setToolTip("Reward : risk from a volatility-scaled target and stop.")
+        lay.addWidget(rr)
+
+        pp = label(f'{plan.get("p_profit", 0)*100:.0f}%', font=theme.mono(11, True))
+        pp.setFixedWidth(widths["pprof"])
+        pp.setStyleSheet(
+            f"color: {(theme.INK if plan.get('calibrated') else theme.MUTED).name()};")
+        pp.setToolTip(
+            "Probability of hitting the target before the stop.\n"
+            + ("Shifted by a measured edge from closed positions."
+               if plan.get("calibrated") else
+               "Grey because no edge has been proven yet — this is the\n"
+               "driftless baseline 1/(1+R:R), where expected value is zero."))
+        lay.addWidget(pp)
+
         bar = ComponentBar()
         bar.setFixedWidth(widths["mix"])
         bar.set_parts(a.get("comp", {}), ASSET_W)
@@ -244,10 +270,87 @@ class AssetRow(QFrame):
         conf.setFixedWidth(widths["conf"])
         lay.addWidget(conf)
 
-        btn = QPushButton("read")
+        acts = QWidget()
+        acts.setFixedWidth(widths["actions"])
+        al = QHBoxLayout(acts)
+        al.setContentsMargins(0, 0, 0, 0)
+        al.setSpacing(4)
+        for text, tip, slot in [
+            ("buy", "Open a paper LONG with this plan's target and stop.\n"
+                    "Paper money — no order is placed anywhere.",
+             lambda: on_trade(a["symbol"], "LONG")),
+            ("short", "Open a paper SHORT — the way to act on a bearish read.\n"
+                      "Paper money — no order is placed anywhere.",
+             lambda: on_trade(a["symbol"], "SHORT")),
+            ("read", "Narrative LLM read (optional feature).",
+             lambda: on_read("asset", a["symbol"], a["name"])),
+        ]:
+            b = QPushButton(text)
+            b.setFont(theme.mono(9))
+            b.setToolTip(tip)
+            # Explicit width: squeezed below their text Qt elides these into
+            # unreadable glyphs rather than shrinking the font.
+            b.setFixedWidth(58)
+            b.clicked.connect(slot)
+            al.addWidget(b)
+        lay.addWidget(acts)
+
+
+class PositionRow(QFrame):
+    """One open paper position, with where it sits between stop and target."""
+
+    def __init__(self, p: dict, on_close, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("panel")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(12, 8, 12, 8)
+        lay.setSpacing(14)
+
+        side = label(p["direction"], font=theme.mono(10, True))
+        side.setStyleSheet(
+            f"color: {(theme.UP if p['direction']=='LONG' else theme.DOWN).name()};")
+        side.setFixedWidth(52)
+        lay.addWidget(side)
+
+        nm = QVBoxLayout()
+        nm.setSpacing(0)
+        nm.addWidget(label(p["name"], font=theme.ui_font(12, True)))
+        nm.addWidget(label(f'{p["symbol"]}  ·  {p["units"]:.4g} units',
+                           "faint", theme.mono(9)))
+        holder = QWidget()
+        holder.setFixedWidth(170)
+        holder.setLayout(nm)
+        lay.addWidget(holder)
+
+        for text, tip, width in [
+            (f'entry {p["entry"]:,.2f}', "Price the position was opened at", 118),
+            (f'now {p["price"]:,.2f}', "Latest marked price", 108),
+            (f'stop {p["stop"]:,.2f}', "Closes here for a loss", 112),
+            (f'target {p["target"]:,.2f}', "Closes here for a profit", 118),
+        ]:
+            lb = label(text, "muted", theme.mono(10))
+            lb.setToolTip(tip)
+            lb.setFixedWidth(width)
+            lay.addWidget(lb)
+
+        prog = ComponentBar()
+        prog.setFixedWidth(90)
+        prog.set_parts({"done": p["progress"], "left": 1 - p["progress"]},
+                       {"done": 1.0, "left": 1.0})
+        prog.setToolTip("How far price has travelled from the stop (left) "
+                        "toward the target (right).")
+        lay.addWidget(prog)
+
+        unreal = label(f'{p["unrealised"]:+,.2f}', font=theme.mono(12, True))
+        unreal.setStyleSheet(f"color: {theme.pnl_color(p['unrealised']).name()};")
+        unreal.setFixedWidth(90)
+        unreal.setToolTip("Mark-to-market profit or loss if closed now.")
+        lay.addWidget(unreal)
+
+        btn = QPushButton("close")
         btn.setFont(theme.mono(9))
-        btn.setFixedWidth(widths["read"])
-        btn.clicked.connect(lambda: on_read("asset", a["symbol"], a["name"]))
+        btn.setToolTip("Close this paper position at the current price.")
+        btn.clicked.connect(lambda: on_close(p["id"]))
         lay.addWidget(btn)
 
 
@@ -348,6 +451,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._terminal_tab(), "Terminal")
         self.tabs.addTab(self._scroll_tab("markets"), "Markets")
         self.tabs.addTab(self._scroll_tab("assets", AssetHeader()), "Assets")
+        self.tabs.addTab(self._book_tab(), "Book")
         self.tabs.addTab(self._macro_tab(), "Macro")
         outer.addWidget(self.tabs, 1)
 
@@ -499,6 +603,93 @@ class MainWindow(QMainWindow):
         wl.addWidget(area, 1)
         return wrap
 
+    def _book_tab(self) -> QWidget:
+        """Open paper positions, and the only page that grades the app itself."""
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(10)
+
+        head = panel()
+        hl = QHBoxLayout(head)
+        hl.setContentsMargins(14, 12, 14, 12)
+        hl.setSpacing(26)
+        self.book_stats = {}
+        for k, tip in [("equity", "Cash plus the marked value of open positions."),
+                       ("total p/l", "Against the starting paper cash."),
+                       ("open", "Positions currently held."),
+                       ("closed", "Positions that have resolved."),
+                       ("win rate", "Share of closed positions that made money."),
+                       ("unrealised", "Mark-to-market on what is still open.")]:
+            s = Stat(k, tip)
+            self.book_stats[k] = s
+            hl.addWidget(s)
+        hl.addStretch(1)
+        lay.addWidget(head)
+
+        cal = panel()
+        cl = QVBoxLayout(cal)
+        cl.setContentsMargins(14, 12, 14, 12)
+        cl.setSpacing(4)
+        cl.addWidget(label("CALIBRATION — DOES A HIGH SCORE ACTUALLY WIN?",
+                           "faint", theme.mono(8)))
+        self.cal_verdict = label("—", font=theme.ui_font(12))
+        self.cal_verdict.setWordWrap(True)
+        cl.addWidget(self.cal_verdict)
+        self.cal_table = label("", "muted", theme.mono(10))
+        cl.addWidget(self.cal_table)
+        lay.addWidget(cal)
+
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        host = QWidget()
+        self._book_lay = QVBoxLayout(host)
+        self._book_lay.setContentsMargins(2, 4, 8, 8)
+        self._book_lay.setSpacing(8)
+        self._book_lay.addStretch(1)
+        area.setWidget(host)
+        lay.addWidget(area, 1)
+        self._book_sig = None
+        return w
+
+    def _refresh_book(self) -> None:
+        with self.live.lock:
+            pos = dict(self.live.positions)
+            cal = dict(self.live.calibration)
+        st = pos.get("stats", {})
+        pnl = st.get("total_pnl", 0.0)
+        for key, val, col in [
+            ("equity", f'${st.get("equity", 0):,.0f}', theme.INK),
+            ("total p/l", f'{pnl:+,.0f}', theme.pnl_color(pnl)),
+            ("open", str(st.get("n_open", 0)), theme.INK),
+            ("closed", str(st.get("n_closed", 0)), theme.INK),
+            ("win rate", f'{st.get("win_rate", 0):.0f}%', theme.INK),
+            ("unrealised", f'{st.get("unrealised", 0):+,.0f}',
+             theme.pnl_color(st.get("unrealised", 0))),
+        ]:
+            self.book_stats[key].set(val, col)
+
+        self.cal_verdict.setText(cal.get("verdict", "—"))
+        rows = []
+        for b in cal.get("buckets", []):
+            if not b["n"]:
+                continue
+            hr = "—" if not b["enough"] else f'{b["hit_rate"]*100:.0f}%'
+            note = "" if b["enough"] else f'  (need {cal.get("min_sample", 20)})'
+            rows.append(f'  score {b["lo"]:>3}–{b["hi"]:<3}  n={b["n"]:<4} '
+                        f'hit {hr:<5} vs advertised {b["expected"]*100:.0f}%{note}')
+        self.cal_table.setText("\n".join(rows) or
+                               "  no closed positions yet — nothing to grade")
+
+        sig = (st.get("n_open"), st.get("n_closed"), round(st.get("unrealised", 0), 1))
+        if sig == self._book_sig:
+            return
+        self._book_sig = sig
+        self._rebuild(self._book_lay,
+                      [PositionRow(p, self._close_position)
+                       for p in pos.get("open", [])],
+                      "No open paper positions. Use buy or short on the Assets tab.")
+
     def _macro_tab(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
@@ -562,6 +753,21 @@ class MainWindow(QMainWindow):
         for which in ("markets", "assets"):
             setattr(self, f"_{which}_sig", None)      # force a rebuild
 
+    def _trade(self, symbol: str, direction: str) -> None:
+        """Open a paper position. Deliberately synchronous — it is local
+        bookkeeping against an already-fetched price, so there is nothing to
+        wait on and a spinner would be theatre."""
+        result = self.live.trade(symbol, direction)
+        self.status.setText(("✓  " if result["ok"] else "⚠  ") + result["message"]
+                            + "  ·  paper money only")
+        self._assets_sig = None          # force the board to redraw
+        self._book_sig = None
+
+    def _close_position(self, pos_id: str) -> None:
+        result = self.live.close_position(pos_id)
+        self.status.setText(("✓  " if result["ok"] else "⚠  ") + result["message"])
+        self._book_sig = None
+
     def _read(self, kind: str, ident: str, subject: str) -> None:
         # The read panel lives on the Terminal tab, so every path has to bring
         # the user there. Reporting "unavailable" onto a tab they are not
@@ -596,6 +802,11 @@ class MainWindow(QMainWindow):
             snap = dict(self.live.snapshot)
             scan = dict(self.live.scan)
             assets = dict(self.live.assets)
+
+        # The paper book is independent of the hourly engine: it must render
+        # even while the first BTC poll is still in flight, and even when
+        # another SONAR holds the engine lock.
+        self._refresh_book()
 
         if snap.get("status") == "read-only":
             # Another SONAR (usually the launchd agent) holds the engine lock.
@@ -659,7 +870,8 @@ class MainWindow(QMainWindow):
         if asig != self._assets_sig:
             self._assets_sig = asig
             self._rebuild(self._assets_lay,
-                          [AssetRow(a, self._read) for a in assets.get("assets", [])],
+                          [AssetRow(a, self._read, self._trade)
+                           for a in assets.get("assets", [])],
                           "No instruments pass this risk profile's volatility filter.")
 
     @staticmethod
