@@ -31,6 +31,11 @@ CLOB = "https://clob.polymarket.com"
 BINANCE = "https://api.binance.com/api/v3"
 COINBASE = "https://api.coinbase.com/v2"
 
+# An hourly candle older than this is treated as no candle at all. Two hours
+# tolerates a slow exchange or a clock skew; it does not tolerate a pair that
+# stopped trading.
+MAX_CANDLE_AGE_HOURS = 2.0
+
 
 def _get(url: str, timeout: float = 8.0):
     """GET + parse JSON, returning ``None`` on any network/parse failure."""
@@ -91,9 +96,26 @@ def _coinbase_hour() -> Candle | None:
                   low=float(row[1]), open_time=int(row[0]), source="Coinbase BTC-USD")
 
 
+def is_stale(candle: Candle, max_age_hours: float = MAX_CANDLE_AGE_HOURS) -> bool:
+    """Is this candle too old to price anything against?
+
+    A delisted pair is the dangerous case. Binance kept answering ``/klines``
+    for XMRUSDT for years after removing it, returning the final candle from the
+    day of delisting — a plausible-looking price that was three years and a 3x
+    move out of date. It never errors, so nothing downstream notices.
+    """
+    return (time.time() - candle.open_time) > max_age_hours * 3600
+
+
 def hourly_candle(symbol: str = "BTCUSDT") -> Candle | None:
+    """The hour currently in progress, or ``None`` if nothing fresh is available.
+
+    Returning ``None`` for a stale feed is deliberate: a missing signal is a
+    visible problem, while a stale one silently poisons every number computed
+    from it.
+    """
     c = _binance_hour(symbol)
-    if c is not None:
+    if c is not None and not is_stale(c):
         return c
     return _coinbase_hour() if symbol == "BTCUSDT" else None
 

@@ -62,12 +62,22 @@ WATCHLIST: list[tuple[str, str, str, set[str]]] = [
     ("ADA-USD", "Cardano", "Crypto", {"cardano", "ada", "crypto"}),
     ("AVAX-USD", "Avalanche", "Crypto", {"avalanche", "avax", "crypto"}),
     ("LINK-USD", "Chainlink", "Crypto", {"chainlink", "link", "crypto"}),
+    # Monero trades fine and Yahoo/CoinGecko agree on its price, but Binance
+    # delisted it in Feb 2024 — so it is deliberately absent from
+    # CRYPTO_BINANCE below and gets no hourly up/down model.
+    ("XMR-USD", "Monero", "Crypto", {"monero", "xmr", "privacy", "crypto"}),
     ("GC=F", "Gold", "Commodity", {"gold", "bullion"}),
     ("CL=F", "WTI Crude", "Commodity", {"oil", "crude"}),
 ]
 
 # Coins whose hourly candle Binance serves directly, for the barrier model.
 # Yahoo covers the screener; Binance is what the hourly up/down engine needs.
+#
+# Monero is absent on purpose. Binance delisted XMR in February 2024, but the
+# API still answers /klines for it — with the final candle from the day it was
+# delisted, frozen ever since. A delisted pair does not error, it lies quietly,
+# which is worse. feeds.hourly_candle() now rejects stale candles outright so
+# this cannot recur for the next coin that gets delisted.
 CRYPTO_BINANCE = {
     "BTC-USD": "BTCUSDT", "ETH-USD": "ETHUSDT", "BNB-USD": "BNBUSDT",
     "XRP-USD": "XRPUSDT", "SOL-USD": "SOLUSDT", "TRX-USD": "TRXUSDT",
