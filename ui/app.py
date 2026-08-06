@@ -29,7 +29,7 @@ from sonar.assets import _W as ASSET_W
 
 from . import theme
 from .charts import ComponentBar, DepthChart, EquityCurve, Lattice, Sparkline
-from .worker import ConfigThread, PollThread, ReadThread
+from .worker import BacktestThread, ConfigThread, PollThread, ReadThread
 
 REFRESH_MS = 1000
 # Long enough for macOS to finish collapsing the full-screen Space before the
@@ -296,6 +296,45 @@ class AssetRow(QFrame):
         lay.addWidget(acts)
 
 
+class TickerRow(QFrame):
+    """One headline on the wire, newest first."""
+
+    def __init__(self, h, parent=None) -> None:
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+        age = label(f'{h.age_hours:.0f}h' if h.age_hours >= 1 else "now",
+                    "faint", theme.mono(9))
+        age.setFixedWidth(34)
+        lay.addWidget(age)
+        src = label(h.source, font=theme.mono(9))
+        src.setStyleSheet(f"color: {theme.GOLD.name()};")
+        src.setFixedWidth(104)
+        lay.addWidget(src)
+        title = label(h.title, font=theme.ui_font(11))
+        title.setWordWrap(True)
+        lay.addWidget(title, 1)
+
+
+class EventRow(QFrame):
+    """One scheduled catalyst: an earnings date or a listing."""
+
+    def __init__(self, sym: str, what: str, when: str, colour, parent=None) -> None:
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+        s = label(sym, font=theme.mono(10, True))
+        s.setStyleSheet(f"color: {colour.name()};")
+        s.setFixedWidth(66)
+        lay.addWidget(s)
+        w = label(what, "muted", theme.mono(9))
+        w.setWordWrap(True)
+        lay.addWidget(w, 1)
+        lay.addWidget(label(when, "faint", theme.mono(9)))
+
+
 class PositionRow(QFrame):
     """One open paper position, with where it sits between stop and target."""
 
@@ -432,6 +471,7 @@ class MainWindow(QMainWindow):
         self.live = live
         self._read_thread = None
         self._cfg_thread = None
+        self._bt_thread = None
         self.tray = None            # set by main.py once the app exists
         self.allow_close = False    # flipped only by the tray's Quit action
         self.setWindowTitle("SONAR")
@@ -451,6 +491,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._terminal_tab(), "Terminal")
         self.tabs.addTab(self._scroll_tab("markets"), "Markets")
         self.tabs.addTab(self._scroll_tab("assets", AssetHeader()), "Assets")
+        self.tabs.addTab(self._wire_tab(), "Wire")
         self.tabs.addTab(self._book_tab(), "Book")
         self.tabs.addTab(self._macro_tab(), "Macro")
         outer.addWidget(self.tabs, 1)
@@ -603,6 +644,91 @@ class MainWindow(QMainWindow):
         wl.addWidget(area, 1)
         return wrap
 
+    def _wire_tab(self) -> QWidget:
+        """Breaking headlines, and the calendar of what is already scheduled."""
+        w = QWidget()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(10)
+
+        left = panel()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(14, 12, 14, 12)
+        ll.setSpacing(6)
+        head = QHBoxLayout()
+        head.addWidget(label("NEWSWIRE", "faint", theme.mono(8)))
+        head.addStretch(1)
+        self.wire_meta = label("", "faint", theme.mono(8))
+        head.addWidget(self.wire_meta)
+        ll.addLayout(head)
+        ll.addWidget(label(
+            "Reuters, AP, Bloomberg and the FT are read through Google News — "
+            "their own feeds are closed. dpa publishes no usable feed at all. "
+            "Headlines are context and untrusted data: never an instruction, "
+            "and no article body is fetched.", "faint", theme.mono(8)))
+        self._wire_area = QScrollArea()
+        self._wire_area.setWidgetResizable(True)
+        host = QWidget()
+        self._wire_lay = QVBoxLayout(host)
+        self._wire_lay.setContentsMargins(0, 4, 6, 4)
+        self._wire_lay.setSpacing(5)
+        self._wire_lay.addStretch(1)
+        self._wire_area.setWidget(host)
+        ll.addWidget(self._wire_area, 1)
+        lay.addWidget(left, 3)
+
+        right = panel()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(14, 12, 14, 12)
+        rl.setSpacing(6)
+        rl.addWidget(label("SCHEDULED — EARNINGS & LISTINGS", "faint", theme.mono(8)))
+        rl.addWidget(label(
+            "A date is a fact; a direction is not. These sharpen *when* to look, "
+            "never which way to lean.", "faint", theme.mono(8)))
+        self._events_area = QScrollArea()
+        self._events_area.setWidgetResizable(True)
+        ehost = QWidget()
+        self._events_lay = QVBoxLayout(ehost)
+        self._events_lay.setContentsMargins(0, 4, 6, 4)
+        self._events_lay.setSpacing(5)
+        self._events_lay.addStretch(1)
+        self._events_area.setWidget(ehost)
+        rl.addWidget(self._events_area, 1)
+        lay.addWidget(right, 2)
+
+        self._wire_sig = None
+        return w
+
+    def _refresh_wire(self) -> None:
+        try:
+            heads = self.live.news.headlines()
+            ev = self.live.events.payload()
+        except Exception:
+            return
+        sig = (len(heads), ev.get("generated"))
+        if sig == self._wire_sig:
+            return
+        self._wire_sig = sig
+
+        fresh = sorted((h for h in heads if h.dated),
+                       key=lambda h: h.ts, reverse=True)[:60]
+        self.wire_meta.setText(f'{len(heads)} headlines · '
+                               f'{len({h.source for h in heads})} sources')
+        rows = []
+        for h in fresh:
+            rows.append(TickerRow(h))
+        self._rebuild(self._wire_lay, rows, "no headlines yet")
+
+        items = []
+        for e in ev.get("earnings", [])[:25]:
+            items.append(EventRow(f'{e["symbol"]}', f'earnings · {e["when"]}',
+                                  f'{e["days_away"]}d', theme.GOLD))
+        for l in ev.get("listings", [])[:15]:
+            sym = l["symbol"] or "—"
+            items.append(EventRow(sym, f'IPO {l["status"]} · {l["company"][:26]}',
+                                  l["price"] or "", theme.UP))
+        self._rebuild(self._events_lay, items, "no scheduled events found")
+
     def _book_tab(self) -> QWidget:
         """Open paper positions, and the only page that grades the app itself."""
         w = QWidget()
@@ -631,13 +757,27 @@ class MainWindow(QMainWindow):
         cl = QVBoxLayout(cal)
         cl.setContentsMargins(14, 12, 14, 12)
         cl.setSpacing(4)
-        cl.addWidget(label("CALIBRATION — DOES A HIGH SCORE ACTUALLY WIN?",
+        ch = QHBoxLayout()
+        ch.addWidget(label("CALIBRATION — DOES A HIGH SCORE ACTUALLY WIN?",
                            "faint", theme.mono(8)))
+        ch.addStretch(1)
+        self.bt_btn = QPushButton("run backtest")
+        self.bt_btn.setFont(theme.mono(9))
+        self.bt_btn.setToolTip(
+            "Replay the same plan over two years of real bars.\n"
+            "Live positions take months to grade; this answers today —\n"
+            "for the price half of the score, which is all history can test.")
+        self.bt_btn.clicked.connect(self._run_backtest)
+        ch.addWidget(self.bt_btn)
+        cl.addLayout(ch)
         self.cal_verdict = label("—", font=theme.ui_font(12))
         self.cal_verdict.setWordWrap(True)
         cl.addWidget(self.cal_verdict)
         self.cal_table = label("", "muted", theme.mono(10))
         cl.addWidget(self.cal_table)
+        self.bt_result = label("", "muted", theme.mono(10))
+        self.bt_result.setWordWrap(True)
+        cl.addWidget(self.bt_result)
         lay.addWidget(cal)
 
         area = QScrollArea()
@@ -753,6 +893,39 @@ class MainWindow(QMainWindow):
         for which in ("markets", "assets"):
             setattr(self, f"_{which}_sig", None)      # force a rebuild
 
+    def _run_backtest(self) -> None:
+        if self._bt_thread is not None and self._bt_thread.isRunning():
+            return
+        self.bt_btn.setEnabled(False)
+        self.bt_result.setText("replaying two years of bars…")
+        from sonar.assets import WATCHLIST
+        self._bt_thread = BacktestThread(
+            [s for s, _n, _c, _k in WATCHLIST],
+            self.live.horizon.momentum_days, self)
+        self._bt_thread.done.connect(self._backtest_done)
+        self._bt_thread.start()
+
+    def _backtest_done(self, r: dict) -> None:
+        self.bt_btn.setEnabled(True)
+        if not r.get("n"):
+            self.bt_result.setText(f'backtest: {r.get("verdict", "no result")}')
+            return
+        lines = [
+            f'BACKTEST · {r["n"]:,} resolved trials across {r["symbols"]} '
+            f'instruments, {r["range"]} of daily bars, {r["horizon_days"]}d horizon',
+            f'  realised {r["hit_rate"]*100:.2f}%   '
+            f'predicted {r["predicted"]*100:.2f}%   '
+            f'delta {r["delta"]*100:+.2f} pts (± {r["std_error"]*100*2:.1f})   '
+            f'expectancy {r["expectancy_r"]:+.3f}R',
+        ]
+        for b in r.get("buckets", []):
+            lines.append(f'    |momentum| {b["lo"]*100:>3.0f}–{b["hi"]*100:<4.0f}%  '
+                         f'n={b["n"]:<6} hit {b["hit_rate"]*100:5.1f}%')
+        lines.append(f'  {r["verdict"]}')
+        lines.append("  Price-based half only — historical news is not replayed, "
+                     "and costs are excluded (both would push this down).")
+        self.bt_result.setText("\n".join(lines))
+
     def _trade(self, symbol: str, direction: str) -> None:
         """Open a paper position. Deliberately synchronous — it is local
         bookkeeping against an already-fetched price, so there is nothing to
@@ -807,6 +980,7 @@ class MainWindow(QMainWindow):
         # even while the first BTC poll is still in flight, and even when
         # another SONAR holds the engine lock.
         self._refresh_book()
+        self._refresh_wire()
 
         if snap.get("status") == "read-only":
             # Another SONAR (usually the launchd agent) holds the engine lock.

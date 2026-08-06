@@ -44,6 +44,25 @@ class ReadThread(QThread):
             self.done.emit({"error": f"{type(exc).__name__}: {exc}"})
 
 
+class BacktestThread(QThread):
+    """Replaying years of bars over the whole watchlist takes seconds and hits
+    the network, so it never runs on the refresh timer — only when asked."""
+
+    done = Signal(dict)
+
+    def __init__(self, symbols, horizon_days: int, parent=None) -> None:
+        super().__init__(parent)
+        self.symbols, self.horizon_days = symbols, horizon_days
+
+    def run(self) -> None:                 # noqa: D102
+        from sonar import backtest
+        try:
+            self.done.emit(backtest.run(self.symbols,
+                                        horizon_days=self.horizon_days))
+        except Exception as exc:
+            self.done.emit({"n": 0, "verdict": f"{type(exc).__name__}: {exc}"})
+
+
 class ConfigThread(QThread):
     """Applying a risk/horizon change triggers a rescan, which hits the network."""
 
