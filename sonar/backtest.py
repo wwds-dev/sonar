@@ -340,6 +340,7 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
     summary["attention_symbols"] = with_attention
     summary["attention_buckets"] = _attention_buckets(trials)
     summary["news_verdict"] = _news_verdict(summary["attention_buckets"])
+    summary["timing"] = timing(trials)
     return summary
 
 
@@ -385,6 +386,67 @@ def _news_verdict(buckets: list[dict]) -> str:
             if spike and spike["significant"] else
             "Some attention levels shift the odds: ")
     return lead + "; ".join(parts) + " — beyond two standard errors."
+
+
+def timing(trials: list[dict]) -> dict:
+    """What history says about *when* — entry weekday and holding time.
+
+    Both questions people most want answered ("which day should I buy",
+    "when do I sell") get measured here rather than asserted. The weekday test
+    is the one likely to disappoint: if entry day mattered, a hit rate would
+    stand out, and a flat table is the honest answer that it does not.
+
+    Holding time is the useful half. The plan's exit is already exact — the
+    target and the stop are prices, not dates — so the practical question is
+    how long that usually takes, which is a distribution, not a promise.
+    """
+    if not trials:
+        return {}
+    dows = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    by_dow = []
+    for i, name in enumerate(dows):
+        sel = [t for t in trials
+               if dt.datetime.utcfromtimestamp(t["t"]).weekday() == i]
+        if len(sel) < 30:
+            continue
+        wins = sum(1 for t in sel if t["outcome"] == "TARGET")
+        hit = wins / len(sel)
+        se = math.sqrt(max(hit * (1 - hit), 1e-9) / len(sel))
+        by_dow.append({"day": name, "n": len(sel), "hit_rate": round(hit, 4),
+                       "std_error": round(se, 4)})
+
+    held = sorted(t["bars_held"] for t in trials)
+    winners = sorted(t["bars_held"] for t in trials if t["outcome"] == "TARGET")
+    losers = sorted(t["bars_held"] for t in trials if t["outcome"] == "STOP")
+
+    def pct(xs, q):
+        return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else None
+
+    spread = ((max(b["hit_rate"] for b in by_dow) -
+               min(b["hit_rate"] for b in by_dow)) if by_dow else 0.0)
+    worst_se = max((b["std_error"] for b in by_dow), default=0.0)
+    # Seven days tested means seven chances to be fooled: at a 2-sigma bar,
+    # roughly one run in three throws up a "significant" day from noise alone.
+    # The first version of this test duly announced Thursday at 49% — which
+    # then reversed in commodities and ranged from 64% to 29% across symbols.
+    # So the bar is Bonferroni-style and deliberately hard to clear.
+    bonferroni = 4.0
+    return {
+        "by_weekday": by_dow,
+        "weekday_spread": round(spread, 4),
+        "weekday_matters": spread > bonferroni * 2 * worst_se,
+        "weekday_note": (
+            "Entry weekday shows no reliable effect. An apparent Thursday\n"
+            "edge did not survive: commodities reversed it and per-symbol\n"
+            "hit rates ranged from 64% to 29%. Seven days tested means\n"
+            "seven chances at a false positive, and no mechanism explains\n"
+            "why a weekday would matter. Treat entry day as irrelevant."),
+        "hold_median": pct(held, 0.5),
+        "hold_p25": pct(held, 0.25),
+        "hold_p75": pct(held, 0.75),
+        "hold_median_win": pct(winners, 0.5),
+        "hold_median_loss": pct(losers, 0.5),
+    }
 
 
 def _momentum_buckets(trials: list[dict]) -> list[dict]:

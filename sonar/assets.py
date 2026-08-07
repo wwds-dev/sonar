@@ -57,20 +57,24 @@ WATCHLIST: list[tuple[str, str, str, set[str]]] = [
     # The ten largest non-stablecoin coins. Stablecoins are deliberately absent:
     # a screener ranking things by momentum and volatility has nothing to say
     # about an asset whose entire purpose is not to move.
+    # Only BTC and ETH keep the generic "crypto" token: a story about "crypto"
+    # is usually about them. Leaving it on every coin meant one broad article
+    # counted as fresh coverage for nine different assets at once and pushed
+    # them all into the suggestions list on nothing.
     ("BTC-USD", "Bitcoin", "Crypto", {"bitcoin", "btc", "crypto"}),
-    ("ETH-USD", "Ethereum", "Crypto", {"ethereum", "eth", "crypto"}),
-    ("BNB-USD", "BNB", "Crypto", {"binance", "bnb", "crypto"}),
-    ("XRP-USD", "XRP", "Crypto", {"ripple", "xrp", "crypto"}),
-    ("SOL-USD", "Solana", "Crypto", {"solana", "sol", "crypto"}),
-    ("TRX-USD", "TRON", "Crypto", {"tron", "trx", "crypto"}),
-    ("DOGE-USD", "Dogecoin", "Crypto", {"dogecoin", "doge", "crypto"}),
-    ("ADA-USD", "Cardano", "Crypto", {"cardano", "ada", "crypto"}),
-    ("AVAX-USD", "Avalanche", "Crypto", {"avalanche", "avax", "crypto"}),
-    ("LINK-USD", "Chainlink", "Crypto", {"chainlink", "link", "crypto"}),
+    ("ETH-USD", "Ethereum", "Crypto", {"ethereum", "eth"}),
+    ("BNB-USD", "BNB", "Crypto", {"binance", "bnb"}),
+    ("XRP-USD", "XRP", "Crypto", {"ripple", "xrp"}),
+    ("SOL-USD", "Solana", "Crypto", {"solana"}),
+    ("TRX-USD", "TRON", "Crypto", {"tron", "trx"}),
+    ("DOGE-USD", "Dogecoin", "Crypto", {"dogecoin", "doge"}),
+    ("ADA-USD", "Cardano", "Crypto", {"cardano", "ada"}),
+    ("AVAX-USD", "Avalanche", "Crypto", {"avalanche", "avax"}),
+    ("LINK-USD", "Chainlink", "Crypto", {"chainlink"}),
     # Monero trades fine and Yahoo/CoinGecko agree on its price, but Binance
     # delisted it in Feb 2024 — so it is deliberately absent from
     # CRYPTO_BINANCE below and gets no hourly up/down model.
-    ("XMR-USD", "Monero", "Crypto", {"monero", "xmr", "privacy", "crypto"}),
+    ("XMR-USD", "Monero", "Crypto", {"monero", "xmr"}),
     ("GC=F", "Gold", "Commodity", {"gold", "bullion"}),
     ("CL=F", "WTI Crude", "Commodity", {"oil", "crude"}),
 ]
@@ -149,14 +153,32 @@ def _fetch(symbol: str, rng: str = "1mo"):
     return price, meta.get("currency", ""), closes
 
 
+# Words that name an asset but are also ordinary English. Matching on these
+# alone produced real nonsense: XRP "matched" a story about diesel prices
+# because it contained the phrase *ripple effect*. They now only count when the
+# headline also carries a crypto-context word.
+_AMBIGUOUS = {"ripple", "ada", "avalanche", "tron", "link", "solana", "doge"}
+_CRYPTO_CONTEXT = {"crypto", "cryptocurrency", "blockchain", "token", "coin",
+                   "bitcoin", "ethereum", "altcoin", "defi", "stablecoin",
+                   "exchange", "wallet"}
+
+
 def _match_news(headlines, kw: set[str], limit: int = 4):
-    """Asset news match — curated keywords are specific, so a single hit counts
-    (crypto tokens always count)."""
+    """Match headlines to an asset by keyword, conservatively.
+
+    A single specific hit counts — "Nvidia" in a headline is about Nvidia. But
+    an ambiguous word has to bring a chaperone: without that rule the screener
+    confidently reported that XRP was in the news because someone wrote "ripple
+    effect" about fuel prices.
+    """
     scored = []
     for h in headlines:
         overlap = h._tokens & kw
-        if overlap:
-            scored.append((len(overlap), -h.age_hours, h))
+        if not overlap:
+            continue
+        if overlap <= _AMBIGUOUS and not (h._tokens & _CRYPTO_CONTEXT):
+            continue
+        scored.append((len(overlap), -h.age_hours, h))
     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
     return [h for _, _, h in scored[:limit]]
 

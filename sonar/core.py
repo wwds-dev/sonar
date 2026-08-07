@@ -34,6 +34,13 @@ VOL_EVERY = 600.0           # seconds between volatility refreshes
 SCAN_EVERY = 90.0           # seconds between multi-market scans
 SPARK_MAX = 220             # price points kept for the sparkline
 
+# How long a volatility-scaled target/stop actually takes to resolve, measured
+# over 6,771 non-overlapping historical setups (sonar.backtest.timing). Shown
+# instead of a predicted sell date, because the exit is a *price*, not a day.
+HOLD_MEDIAN_DAYS = 6
+HOLD_P25_DAYS = 3
+HOLD_P75_DAYS = 10
+
 
 class Live:
     """Shared state between the polling thread and the HTTP handlers."""
@@ -101,17 +108,10 @@ class Live:
         except Exception:
             heads = []
         hz, profile = self.horizon, self.risk
-        try:
-            markets = feeds.scan_markets(top=150, closing=80)
-            payload = scanner.suggestions_payload(markets, heads, limit=40,
-                                                  hz=hz, profile=profile)
-            payload["status"] = "live"
-            with self.lock:
-                self.scan = payload
-        except Exception as exc:
-            with self.lock:
-                self.scan.setdefault("suggestions", [])
-                self.scan["error"] = str(exc)
+        # The multi-market Polymarket board was removed: it mirrored the
+        # crowd's own prices with no independent model behind them. Dropping it
+        # also drops ~52MB/hour — it was the single largest thing SONAR
+        # downloaded, for a screen that could not say anything of its own.
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
             self._mark_book(ap)
@@ -143,6 +143,50 @@ class Live:
             self.positions = {"stats": self.book.stats(prices),
                               "open": self.book.open_rows(prices),
                               "closed": [asdict(p) for p in self.book.closed[-40:]][::-1]}
+
+    def suggestions(self, limit: int = 8) -> list[dict]:
+        """What the news is pointing at right now, and what to do about it.
+
+        Assembled only from things that survived scrutiny, which makes the
+        honest answer narrower than the question usually asked of it:
+
+        * **What** — instruments whose coverage is elevated or spiking. The
+          backtest put attention at roughly +5 points on the hit rate, its one
+          promising component, though short of formal significance.
+        * **When to enter** — *now*, because that is when the coverage is. There
+          is no best weekday: an apparent Thursday effect reversed in
+          commodities and swung from 64% to 29% across instruments, which is
+          what seven simultaneous tests on noise look like.
+        * **When to exit** — exactly, and better than a date: the target and the
+          stop are prices. History says those resolve in a median of 6 trading
+          days, a quarter inside 3 and three quarters inside 10.
+        * **Which direction** — not stated. Momentum was measured at no edge,
+          and coverage says *something is happening*, not which way it goes.
+        """
+        with self.lock:
+            rows = list(self.assets.get("assets", []))
+        out = []
+        for a in sorted(rows, key=lambda x: -x.get("confidence", 0)):
+            if a.get("lean") not in ("Elevated", "Spike"):
+                continue
+            plan = a.get("plan") or {}
+            cat = a.get("catalyst") or {}
+            out.append({
+                "symbol": a["symbol"], "name": a["name"], "cls": a.get("cls", ""),
+                "confidence": a.get("confidence", 0.0),
+                "news_level": a.get("lean"),
+                "headlines": a.get("headlines", [])[:2],
+                "price": a.get("price"),
+                "target": plan.get("target"), "stop": plan.get("stop"),
+                "rr": plan.get("rr"), "p_profit": plan.get("p_profit"),
+                "catalyst": cat.get("label", ""),
+                "catalyst_date": cat.get("date", ""),
+                "hold_median": HOLD_MEDIAN_DAYS,
+                "hold_p25": HOLD_P25_DAYS, "hold_p75": HOLD_P75_DAYS,
+            })
+            if len(out) >= limit:
+                break
+        return out
 
     def trade(self, symbol: str, direction: str) -> dict:
         """Open a paper position on a screener row. Paper money only."""

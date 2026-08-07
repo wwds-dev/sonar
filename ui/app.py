@@ -3,9 +3,16 @@
 Four tabs over one shared :class:`sonar.core.Live`:
 
     Terminal   the hourly BTC paper trade — signal, lattice, book, equity curve
-    Markets    ranked prediction markets for the current horizon
-    Assets     the real-asset screen
+    Assets     the real-asset screen, with buy/short and a plan per row
+    Wire       the newswire, the scheduled calendar, and what it suggests
+    Book       open paper positions, plus the calibration that grades the score
     Macro      the regime, which only matters at long horizons
+
+The Polymarket board that used to sit here is gone. Mirroring a market's own
+odds back at you is not analysis — there is no independent model for an
+election or a Fed decision, so every row was just repeating the crowd. The one
+part that *did* have a model, the hourly crypto up/down market, lives on the
+Terminal where it always did.
 
 The toolbar carries the two knobs that shape everything: **risk** (how much you
 stake, and what is worth showing) and **horizon** (when you want it to resolve).
@@ -302,6 +309,74 @@ class AssetRow(QFrame):
         lay.addWidget(acts)
 
 
+class SuggestionCard(QFrame):
+    """What the news points at, with an exit that is a price rather than a date."""
+
+    def __init__(self, s: dict, on_trade, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("panel")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 9, 12, 9)
+        lay.setSpacing(5)
+
+        top = QHBoxLayout()
+        top.setSpacing(9)
+        nm = label(f'{s["name"]}', font=theme.ui_font(12, True))
+        top.addWidget(nm)
+        top.addWidget(label(s["symbol"], "faint", theme.mono(9)))
+        lvl = label(s["news_level"], font=theme.mono(9, True))
+        lvl.setStyleSheet(
+            f"color: {(theme.GOLD if s['news_level']=='Spike' else theme.UP).name()};")
+        top.addWidget(lvl)
+        top.addStretch(1)
+        conf = label(f'{s["confidence"]:.0f}', font=theme.mono(15, True))
+        conf.setToolTip("Confidence: how notable this is — not the odds of profit.")
+        top.addWidget(conf)
+        lay.addLayout(top)
+
+        if s.get("headlines"):
+            h = s["headlines"][0]
+            hl = label(f'{h["source"]} · {h["title"]}', "muted", theme.mono(9))
+            hl.setWordWrap(True)
+            lay.addWidget(hl)
+
+        # The exit is exact because it is a price. The *date* is a distribution,
+        # and is shown as one rather than invented as a single day.
+        plan = QHBoxLayout()
+        plan.setSpacing(14)
+        for text, tip in [
+            (f'in {s["price"]:,.2f}', "Entry at the current price — now, because "
+                                      "that is when the coverage is."),
+            (f'target {s["target"]:,.2f}', "Sell here. An exact price, not a guessed date."),
+            (f'stop {s["stop"]:,.2f}', "Exit here if it goes wrong."),
+            (f'{s["hold_p25"]}–{s["hold_p75"]}d (med {s["hold_median"]})',
+             "How long this usually takes to reach one barrier or the other,\n"
+             "measured over 6,771 historical setups. A distribution, not a date."),
+        ]:
+            lb = label(text, "muted", theme.mono(10))
+            lb.setToolTip(tip)
+            plan.addWidget(lb)
+        plan.addStretch(1)
+        for txt, direction in (("buy", "LONG"), ("short", "SHORT")):
+            b = QPushButton(txt)
+            b.setFont(theme.mono(9))
+            b.setFixedWidth(56)
+            b.setToolTip("Direction is yours: coverage says something is "
+                         "happening, not which way it goes.")
+            b.clicked.connect(lambda _=None, sym=s["symbol"], d=direction:
+                              on_trade(sym, d))
+            plan.addWidget(b)
+        lay.addLayout(plan)
+
+        if s.get("catalyst"):
+            c = label(f'◆ scheduled: {s["catalyst"]} ({s["catalyst_date"]})',
+                      font=theme.mono(9))
+            c.setStyleSheet(f"color: {theme.GOLD.name()};")
+            c.setToolTip("A date that is a fact, not a forecast — the one kind of "
+                         "precise timing available.")
+            lay.addWidget(c)
+
+
 class TickerRow(QFrame):
     """One headline on the wire, newest first."""
 
@@ -495,7 +570,6 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._terminal_tab(), "Terminal")
-        self.tabs.addTab(self._scroll_tab("markets"), "Markets")
         self.tabs.addTab(self._scroll_tab("assets", AssetHeader()), "Assets")
         self.tabs.addTab(self._wire_tab(), "Wire")
         self.tabs.addTab(self._book_tab(), "Book")
@@ -657,6 +731,28 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 8, 0, 0)
         lay.setSpacing(10)
 
+        sugg = panel()
+        sl = QVBoxLayout(sugg)
+        sl.setContentsMargins(14, 12, 14, 12)
+        sl.setSpacing(6)
+        sl.addWidget(label("WHAT THE NEWS IS POINTING AT", "faint", theme.mono(8)))
+        sl.addWidget(label(
+            "Coverage is the one component the backtest found anything in "
+            "(~+5 points, short of significance). Entry is now — there is no "
+            "best weekday, an apparent one reversed across asset classes. The "
+            "exit is a price, not a date. Direction is yours.",
+            "faint", theme.mono(8)))
+        self._sugg_area = QScrollArea()
+        self._sugg_area.setWidgetResizable(True)
+        shost = QWidget()
+        self._sugg_lay = QVBoxLayout(shost)
+        self._sugg_lay.setContentsMargins(0, 4, 6, 4)
+        self._sugg_lay.setSpacing(7)
+        self._sugg_lay.addStretch(1)
+        self._sugg_area.setWidget(shost)
+        sl.addWidget(self._sugg_area, 1)
+        lay.addWidget(sugg, 3)
+
         left = panel()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(14, 12, 14, 12)
@@ -711,7 +807,12 @@ class MainWindow(QMainWindow):
             ev = self.live.events.payload()
         except Exception:
             return
-        sig = (len(heads), ev.get("generated"))
+        # The asset scan has to be part of this key. Suggestions are built from
+        # it, and it lands *after* the news does — gating the rebuild on
+        # headlines alone left the panel permanently empty.
+        with self.live.lock:
+            asset_gen = self.live.assets.get("generated")
+        sig = (len(heads), ev.get("generated"), asset_gen)
         if sig == self._wire_sig:
             return
         self._wire_sig = sig
@@ -724,6 +825,15 @@ class MainWindow(QMainWindow):
         for h in fresh:
             rows.append(TickerRow(h))
         self._rebuild(self._wire_lay, rows, "no headlines yet")
+
+        try:
+            sg = self.live.suggestions()
+        except Exception:
+            sg = []
+        self._rebuild(self._sugg_lay,
+                      [SuggestionCard(s, self._trade) for s in sg],
+                      "Nothing with elevated coverage right now — which is a\n"
+                      "normal state, not a failure to find something.")
 
         items = []
         for e in ev.get("earnings", [])[:25]:
@@ -1039,13 +1149,6 @@ class MainWindow(QMainWindow):
             self.stats["profile"].set(st.get("risk_profile", "—"))
 
     def _refresh_cards(self, scan: dict, assets: dict) -> None:
-        sig = (scan.get("generated"), scan.get("n_shown"))
-        if sig != self._markets_sig:
-            self._markets_sig = sig
-            self._rebuild(self._markets_lay,
-                          [MarketCard(s, self._read)
-                           for s in scan.get("suggestions", [])],
-                          "No markets match this horizon and risk profile.")
         asig = (assets.get("generated"), assets.get("n"))
         if asig != self._assets_sig:
             self._assets_sig = asig

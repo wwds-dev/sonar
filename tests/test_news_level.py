@@ -45,3 +45,37 @@ def test_undated_headlines_cannot_manufacture_a_spike():
 def test_level_is_never_a_direction():
     for case in ([], [h(1)], [h(1), h(2), h(3)], [h(40)]):
         assert news_level(case) not in ("Bullish", "Bearish", "Neutral")
+
+
+# --- keyword matching -------------------------------------------------- #
+
+def hl(title, age=1.0):
+    import re
+    toks = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z'&-]+", title)}
+    return SimpleNamespace(dated=True, age_hours=age, _tokens=toks, title=title)
+
+
+def test_ambiguous_word_alone_does_not_match():
+    """'ripple effect' is not news about XRP — this actually happened."""
+    from sonar.assets import _match_news
+    news = [hl("California's diesel prices jumped, and the ripple effect is real")]
+    assert _match_news(news, {"ripple", "xrp"}) == []
+
+
+def test_ambiguous_word_with_crypto_context_does_match():
+    from sonar.assets import _match_news
+    news = [hl("Ripple wins court case, XRP token surges on crypto exchange")]
+    assert len(_match_news(news, {"ripple", "xrp"})) == 1
+
+
+def test_specific_name_matches_without_a_chaperone():
+    from sonar.assets import _match_news
+    news = [hl("Nvidia beats expectations again")]
+    assert len(_match_news(news, {"nvidia"})) == 1
+
+
+def test_generic_crypto_story_no_longer_covers_every_coin():
+    """One broad article used to be 'fresh coverage' for nine assets at once."""
+    from sonar.assets import WATCHLIST
+    coins = [kw for s, _n, c, kw in WATCHLIST if c == "Crypto" and s != "BTC-USD"]
+    assert not any("crypto" in kw for kw in coins)
