@@ -2,15 +2,20 @@
 
 This is an **informational screener**, built at the user's explicit request. It
 shows live prices, recent momentum and volatility, matched reputable news, and a
-transparent *confidence* score with a heuristic directional *lean*. Read the
-same honesty rules that govern the whole project:
+transparent *confidence* score. Read the same honesty rules that govern the
+whole project:
 
-* **The score is not profit odds and the lean is not advice.** Unlike a
-  prediction market, there is no independent "fair value" for a stock, so the
-  confidence here is purely a notability/activity heuristic (momentum, volatility
-  and news coverage) and the lean is the sign of (recent momentum + crude news
-  sentiment). It is a computed technical indicator, transparently shown — not a
-  recommendation to buy or sell, and nothing here places an order.
+* **The score is not profit odds, and no direction is asserted.** There is no
+  independent "fair value" for a stock, so confidence is purely a notability
+  heuristic (momentum, volatility, news coverage, scheduled catalysts).
+* **The directional lean was removed, on evidence.** It used to be the sign of
+  (momentum + word-list sentiment). ``sonar.backtest`` replayed it over 6,798
+  independent historical setups: momentum hit 40.2 / 40.9 / 41.5 / 38.6% across
+  its buckets against a 40.0% baseline — flat, and worse than baseline for the
+  largest moves. Attention was the one component that showed anything (~5 points
+  on a coverage spike, consistently, though never quite clearing two standard
+  errors), so coverage is now surfaced as a *level* and direction is left to
+  the user's buy/short choice.
 * **News is context and untrusted data**, matched by keyword and shown with its
   source so a human can judge it.
 
@@ -110,7 +115,8 @@ class AssetSuggestion:
     spark: list[float]       # recent closes for a mini chart
     comp: dict = field(default_factory=dict)
     confidence: float = 0.0
-    lean: str = "Neutral"    # Bullish / Bearish / Neutral (heuristic, not advice)
+    lean: str = "Quiet"      # news level: Quiet/Normal/Elevated/Spike.
+                             # NOT a direction — see news_level().
     news_sentiment: float = 0.0
     headlines: list[dict] = field(default_factory=list)
     rationale: str = ""
@@ -227,12 +233,14 @@ class AssetScanner:
                             "when": earn.when}
 
             conf = round(100 * sum(_W[k] * comp.get(k, 0.0) for k in _W), 1)
-            lean = _lean(mom, sentiment)
+            level = news_level(comp["news"])
 
-            # The plan follows the lean: a bearish read is a short, and shorting
-            # is how you act on bad news rather than merely noting it.
+            # Direction is the user's. R:R and P(profit) are identical for a
+            # long and a short with symmetric barriers, so the row can show the
+            # setup honestly without asserting a side — the buy and short
+            # buttons build the actual plan.
             plan = scoring.build_plan(
-                price, vol, days, "SHORT" if lean == "Bearish" else "LONG",
+                price, vol, days, "LONG",
                 edge_sigma=self.edge_sigma, calibrated=self.calibrated)
             s = AssetSuggestion(
                 symbol=symbol, name=name, cls=cls, price=round(price, 4),
@@ -241,7 +249,7 @@ class AssetScanner:
                 volatility=round(vol, 4),
                 # a longer window deserves a longer sparkline
                 spark=[round(c, 4) for c in closes[-(60 if hz.long_horizon else 20):]],
-                comp=comp, confidence=conf, lean=lean,
+                comp=comp, confidence=conf, lean=level,
                 news_sentiment=round(sentiment, 3),
                 headlines=[{"title": h.title, "source": h.source, "link": h.link,
                             "age_h": round(h.age_hours, 1) if h.dated else None,
@@ -285,9 +293,29 @@ def _daily_vol(closes: list[float]) -> float:
     return math.sqrt(sum((r - mean) ** 2 for r in rets) / (len(rets) - 1))
 
 
-def _lean(mom: float, sentiment: float) -> str:
-    score = 0.5 * (1 if mom > 0.005 else -1 if mom < -0.005 else 0) + 0.5 * sentiment
-    return "Bullish" if score > 0.2 else "Bearish" if score < -0.2 else "Neutral"
+def news_level(coverage: float) -> str:
+    """How unusual today's coverage is: quiet / normal / elevated / spike.
+
+    This replaced the old Bullish/Bearish *lean*, which was the sign of
+    (momentum + word-list sentiment). ``sonar.backtest`` put that lean on trial
+    over 6,798 independent historical setups and momentum turned out to be worth
+    nothing — hit rate 40.2 / 40.9 / 41.5 / 38.6% across momentum buckets
+    against a 40.0% baseline, flat, and *below* baseline for the biggest moves.
+
+    Attention is the component that showed something: setups opened on an
+    attention spike hit their target ~5 points more often, consistently across
+    every run. It never quite cleared two standard errors on independent
+    samples, so it is reported as a level and not as a direction — it says
+    "something is happening here", which is exactly as much as the evidence
+    supports, and no more.
+    """
+    if coverage >= 0.75:
+        return "Spike"
+    if coverage >= 0.4:
+        return "Elevated"
+    if coverage > 0.0:
+        return "Normal"
+    return "Quiet"
 
 
 def _rationale(name: str, mom: float, days: int, sentiment: float, matched,

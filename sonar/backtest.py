@@ -41,9 +41,11 @@ Two more caveats, both deliberately pessimistic:
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import math
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
@@ -58,6 +60,32 @@ _CHART = ("https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
 MIN_LOOKBACK = 30
 # Give a position this many horizons to resolve before calling it a timeout.
 MAX_HOLD_MULTIPLE = 4
+
+_PAGEVIEWS = ("https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/"
+              "en.wikipedia/all-access/user/{art}/daily/{a}/{b}")
+_WIKI_UA = {"User-Agent": "sonar-research/0.4 (personal backtest)"}
+
+# Symbol -> English Wikipedia article, used as the historical attention proxy.
+# Anything missing here simply gets no attention data and is skipped by the
+# news test rather than guessed at.
+WIKI_ARTICLE = {
+    "AAPL": "Apple_Inc.", "MSFT": "Microsoft", "NVDA": "Nvidia",
+    "TSLA": "Tesla,_Inc.", "AMZN": "Amazon_(company)", "GOOGL": "Alphabet_Inc.",
+    "META": "Meta_Platforms",
+    "BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "BNB-USD": "Binance",
+    "XRP-USD": "XRP_Ledger", "SOL-USD": "Solana_(blockchain_platform)",
+    "TRX-USD": "Tron_(cryptocurrency)", "DOGE-USD": "Dogecoin",
+    "ADA-USD": "Cardano_(blockchain_platform)",
+    "AVAX-USD": "Avalanche_(blockchain_platform)",
+    "LINK-USD": "Chainlink_(blockchain_oracle)", "XMR-USD": "Monero",
+    "GC=F": "Gold", "CL=F": "West_Texas_Intermediate",
+    "^GSPC": "S&P_500", "^IXIC": "Nasdaq_Composite",
+    "^DJI": "Dow_Jones_Industrial_Average",
+    "EURUSD=X": "Euro", "GBPUSD=X": "Pound_sterling", "USDJPY=X": "Japanese_yen",
+}
+
+# Days of trailing pageviews used as the "normal" baseline for a spike.
+ATTENTION_WINDOW = 30
 
 
 @dataclass
@@ -99,6 +127,75 @@ def fetch_bars(symbol: str, rng: str = "2y") -> Bars | None:
     return bars if len(bars) > MIN_LOOKBACK else None
 
 
+def fetch_attention(symbol: str, start: str, end: str) -> dict[str, int] | None:
+    """Daily Wikipedia pageviews for ``symbol``, keyed ``YYYYMMDD``.
+
+    A stand-in for "how much is this in the news today". It is a *proxy*, and
+    the difference matters: it measures attention, not coverage by the specific
+    outlets SONAR reads, and it carries no tone at all. Wikipedia traffic and
+    news volume move together — attention spikes are exactly what the live
+    ``coverage`` component is built to detect — but this tests the idea, not
+    the implementation.
+    """
+    art = WIKI_ARTICLE.get(symbol)
+    if not art:
+        return None
+    url = _PAGEVIEWS.format(art=urllib.parse.quote(art, safe=""), a=start, b=end)
+    for attempt in range(3):
+        _throttle()
+        try:
+            req = urllib.request.Request(url, headers=_WIKI_UA)
+            d = json.loads(urllib.request.urlopen(req, timeout=25).read())
+            return {i["timestamp"][:8]: i["views"] for i in d.get("items", [])}
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                # Backing off matters more than it looks: a swallowed 429 is
+                # indistinguishable from "this symbol has no article", which
+                # would quietly turn the entire news test into "untested".
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            return None
+        except Exception:
+            return None
+    return None
+
+
+_last_wiki_call = 0.0
+# Wikimedia asks for considerate request rates and enforces it with 429s.
+WIKI_MIN_INTERVAL = 0.35
+
+
+def _throttle() -> None:
+    global _last_wiki_call
+    wait = WIKI_MIN_INTERVAL - (time.time() - _last_wiki_call)
+    if wait > 0:
+        time.sleep(wait)
+    _last_wiki_call = time.time()
+
+
+def attention_z(views: dict[str, int], day: str,
+                window: int = ATTENTION_WINDOW) -> float | None:
+    """How unusual is today's attention, in standard deviations?
+
+    Compared against the *preceding* ``window`` days only — a spike must be
+    detectable on the day, not with hindsight.
+    """
+    days = sorted(views)
+    try:
+        i = days.index(day)
+    except ValueError:
+        return None
+    if i < window:
+        return None
+    past = [views[d] for d in days[i - window:i]]
+    mean = sum(past) / len(past)
+    var = sum((v - mean) ** 2 for v in past) / (len(past) - 1)
+    sd = math.sqrt(var)
+    if sd <= 0:
+        return None
+    return (views[day] - mean) / sd
+
+
 def _vol(closes: list[float]) -> float:
     rets = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))
             if closes[i - 1] > 0]
@@ -130,7 +227,8 @@ def _resolve(bars: Bars, start: int, direction: str, target: float,
 
 def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
                k_target: float = scoring.K_TARGET,
-               k_stop: float = scoring.K_STOP) -> list[dict]:
+               k_stop: float = scoring.K_STOP,
+               attention: dict[str, int] | None = None) -> list[dict]:
     """Every decision point for one instrument."""
     out = []
     max_bars = horizon_days * MAX_HOLD_MULTIPLE
@@ -152,10 +250,14 @@ def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
                                  plan.stop, max_bars)
         if outcome == "TIMEOUT":
             continue                                 # unresolved, not a result
-        out.append({"symbol": bars.symbol, "t": bars.time[i],
-                    "direction": plan.direction, "momentum": mom,
-                    "vol": vol, "outcome": outcome, "bars_held": held,
-                    "predicted": plan.p_profit, "rr": plan.rr})
+        row = {"symbol": bars.symbol, "t": bars.time[i],
+               "direction": plan.direction, "momentum": mom,
+               "vol": vol, "outcome": outcome, "bars_held": held,
+               "predicted": plan.p_profit, "rr": plan.rr, "attention": None}
+        if attention:
+            day = dt.datetime.utcfromtimestamp(bars.time[i]).strftime("%Y%m%d")
+            row["attention"] = attention_z(attention, day)
+        out.append(row)
     return out
 
 
@@ -203,16 +305,29 @@ def _verdict(delta: float, se: float, significant: bool) -> str:
 
 
 def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
-        step: int = 3, progress=None) -> dict:
-    """Backtest a whole watchlist. Returns the summary plus a per-bucket view."""
+        step: int = 3, progress=None, with_news: bool = False) -> dict:
+    """Backtest a whole watchlist. Returns the summary plus per-bucket views.
+
+    ``with_news`` additionally pulls a historical attention series per symbol,
+    so the news component is tested rather than assumed. One extra request per
+    instrument.
+    """
     trials: list[dict] = []
     fetched = 0
+    with_attention = 0
     for sym in symbols:
         bars = fetch_bars(sym, rng)
         if bars is None:
             continue
         fetched += 1
-        trials.extend(run_symbol(bars, horizon_days, step=step))
+        att = None
+        if with_news and bars.time:
+            a = dt.datetime.utcfromtimestamp(bars.time[0]).strftime("%Y%m%d")
+            b = dt.datetime.utcfromtimestamp(bars.time[-1]).strftime("%Y%m%d")
+            att = fetch_attention(sym, a, b)
+            if att:
+                with_attention += 1
+        trials.extend(run_symbol(bars, horizon_days, step=step, attention=att))
         if progress:
             progress(sym, len(trials))
 
@@ -222,7 +337,54 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
     summary["range"] = rng
     summary["generated"] = int(time.time())
     summary["buckets"] = _momentum_buckets(trials)
+    summary["attention_symbols"] = with_attention
+    summary["attention_buckets"] = _attention_buckets(trials)
+    summary["news_verdict"] = _news_verdict(summary["attention_buckets"])
     return summary
+
+
+def _attention_buckets(trials: list[dict]) -> list[dict]:
+    """Does an attention spike change the odds?
+
+    This is the news component on trial. If a spike carried information the
+    high-attention bucket would beat the barrier model's prediction; if it is
+    noise, every bucket sits on the same number.
+    """
+    rows = [t for t in trials if t.get("attention") is not None]
+    if not rows:
+        return []
+    edges = [(-99.0, 0.0, "below normal"), (0.0, 1.0, "normal"),
+             (1.0, 2.0, "elevated"), (2.0, 99.0, "spike")]
+    out = []
+    for lo, hi, name in edges:
+        sel = [t for t in rows if lo <= t["attention"] < hi]
+        if len(sel) < 30:
+            continue
+        wins = sum(1 for t in sel if t["outcome"] == "TARGET")
+        hit = wins / len(sel)
+        pred = sum(t["predicted"] for t in sel) / len(sel)
+        se = math.sqrt(max(hit * (1 - hit), 1e-9) / len(sel))
+        out.append({"name": name, "lo": lo, "hi": hi, "n": len(sel),
+                    "hit_rate": round(hit, 4), "predicted": round(pred, 4),
+                    "delta": round(hit - pred, 4), "std_error": round(se, 4),
+                    "significant": abs(hit - pred) > 2 * se})
+    return out
+
+
+def _news_verdict(buckets: list[dict]) -> str:
+    if not buckets:
+        return "No attention data — the news component is untested, not cleared."
+    live = [b for b in buckets if b["significant"]]
+    spike = next((b for b in buckets if b["name"] == "spike"), None)
+    if not live:
+        return ("Attention makes no difference: every bucket lands within two "
+                "standard errors of the barrier model. A news spike changed "
+                "nothing about which barrier got hit first.")
+    parts = [f'{b["name"]} {b["delta"]*100:+.1f} pts (n={b["n"]})' for b in live]
+    lead = ("A news spike shifts the odds: "
+            if spike and spike["significant"] else
+            "Some attention levels shift the odds: ")
+    return lead + "; ".join(parts) + " — beyond two standard errors."
 
 
 def _momentum_buckets(trials: list[dict]) -> list[dict]:

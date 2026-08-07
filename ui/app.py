@@ -47,9 +47,12 @@ ASSET_COLS = [
     ("momentum", "MOM", 86,
      "Change over the horizon's momentum window (1d / 5d / 20d)."),
     ("volatility", "VOL", 56, "Daily volatility of returns."),
-    ("lean", "LEAN", 58,
-     "Sign of (horizon momentum + crude news sentiment).\n"
-     "A computed indicator, not advice."),
+    ("lean", "NEWS", 62,
+     "How unusual today's coverage is: Quiet / Normal / Elevated / Spike.\n"
+     "This replaced a Bullish/Bearish lean that the backtest showed was\n"
+     "worthless — momentum had no edge over 6,798 independent setups.\n"
+     "Attention did show one (~5 points), so the level is shown; it is\n"
+     "not a direction. Use buy or short to pick a side yourself."),
     ("rr", "R:R", 46,
      "Reward divided by risk, from a volatility-scaled target and stop.\n"
      "1.5 means the target is 1.5x as far away as the stop."),
@@ -236,10 +239,13 @@ class AssetRow(QFrame):
             lay.addWidget(lb)
 
         lean = label(a["lean"], font=theme.mono(10, True))
+        _news_col = {"Spike": theme.GOLD, "Elevated": theme.UP}
         lean.setStyleSheet(
-            f"color: {(theme.UP if a['lean']=='Bullish' else theme.DOWN if a['lean']=='Bearish' else theme.MUTED).name()};")
-        lean.setToolTip("Sign of (horizon momentum + crude news sentiment).\n"
-                        "A computed indicator, not advice.")
+            f"color: {_news_col.get(a['lean'], theme.MUTED).name()};")
+        lean.setToolTip(
+            "How unusual today's coverage is — a notability signal, not a\n"
+            "direction. The old Bullish/Bearish lean was removed because the\n"
+            "backtest found momentum carried no edge at all.")
         lean.setFixedWidth(widths["lean"])
         lay.addWidget(lean)
 
