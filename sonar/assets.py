@@ -233,7 +233,7 @@ class AssetScanner:
                             "when": earn.when}
 
             conf = round(100 * sum(_W[k] * comp.get(k, 0.0) for k in _W), 1)
-            level = news_level(comp["news"])
+            level = news_level(matched)
 
             # Direction is the user's. R:R and P(profit) are identical for a
             # long and a short with symmetric barriers, so the row can show the
@@ -293,29 +293,28 @@ def _daily_vol(closes: list[float]) -> float:
     return math.sqrt(sum((r - mean) ** 2 for r in rets) / (len(rets) - 1))
 
 
-def news_level(coverage: float) -> str:
-    """How unusual today's coverage is: quiet / normal / elevated / spike.
+def news_level(matched: list) -> str:
+    """How unusual today's coverage is, from the matched headlines themselves.
 
-    This replaced the old Bullish/Bearish *lean*, which was the sign of
-    (momentum + word-list sentiment). ``sonar.backtest`` put that lean on trial
-    over 6,798 independent historical setups and momentum turned out to be worth
-    nothing — hit rate 40.2 / 40.9 / 41.5 / 38.6% across momentum buckets
-    against a 40.0% baseline, flat, and *below* baseline for the biggest moves.
+    Deliberately *not* derived from the ``coverage`` score: that saturates at
+    two fresh headlines, so a well-followed name like Apple sat at 1.0 almost
+    permanently and two-thirds of the board read "Spike". A label that fires on
+    everything is worse than no label — it looks like information and is not.
 
-    Attention is the component that showed something: setups opened on an
-    attention spike hit their target ~5 points more often, consistently across
-    every run. It never quite cleared two standard errors on independent
-    samples, so it is reported as a level and not as a direction — it says
-    "something is happening here", which is exactly as much as the evidence
-    supports, and no more.
+    Counting instead, with recency doing the work: a spike means several
+    genuinely fresh stories, not merely that the company exists.
     """
-    if coverage >= 0.75:
+    fresh = sum(1 for h in matched if h.dated and h.age_hours < 6)
+    day = sum(1 for h in matched if h.dated and h.age_hours < 24)
+    if fresh >= 3:
         return "Spike"
-    if coverage >= 0.4:
+    if fresh >= 1 or day >= 3:
         return "Elevated"
-    if coverage > 0.0:
+    if matched:
         return "Normal"
     return "Quiet"
+
+
 
 
 def _rationale(name: str, mom: float, days: int, sentiment: float, matched,

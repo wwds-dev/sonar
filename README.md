@@ -16,7 +16,9 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 |---|---|---|---|
 | **Terminal** | `/` | BTC hourly up/down paper trading — model prices each hour, compares to Polymarket, takes at most one simulated bet | **Yes** — a real (paper) edge |
 | **Scanner** | `/scan` | Ranks many live Polymarket markets (crypto, economy, politics, geopolitics) by a transparent confidence heuristic, with matched news | Crypto up/down only |
-| **Assets** | `/scan` → `$ Assets` | Screener over 17 real instruments — equities, indices, forex, crypto spot, commodities | **No** — a computed "lean" only |
+| **Assets** | tab | Screener over 26 instruments — equities, indices, forex, 11 crypto, commodities — with R:R, P(profit), and buy/short | **No** — direction is yours |
+| **Wire** | tab | Live newswire (Reuters, AP, Bloomberg, FT…) beside the earnings and IPO calendar | no |
+| **Book** | tab | Open paper positions, plus the calibration and backtest that grade the score | — |
 
 Plus in-app docs at `/docs`, and a tooltips toggle that explains every number on hover.
 
@@ -27,7 +29,7 @@ Plus in-app docs at `/docs`, and a tooltips toggle that explains every number on
 | BTC/ETH price + hourly candle — Binance (the actual Polymarket resolution source), Coinbase fallback | The bankroll ($10,000 paper) |
 | Polymarket odds, best bid/ask, order books, market metadata | Every position — **no exchange, no wallet, no order placed anywhere** |
 | Equities/indices/FX/commodities — Yahoo Finance | The P&L |
-| News — BBC, MarketWatch, Yahoo, NPR, Ars Technica, TechCrunch, The Verge | |
+| News — Reuters, AP, Bloomberg, FT, BBC, MarketWatch, Yahoo, NPR, CNBC, Ars Technica, TechCrunch, The Verge | |
 
 **No** authentication, **no** write access anywhere, and nothing here can move real money.
 
@@ -71,12 +73,60 @@ card shows its component mix as a bar.
 
 - **Markets** — model edge (crypto only) `0.30`, liquidity `0.20`, timing `0.15`, momentum `0.15`,
   news `0.20`. Non-crypto markets reweight across the remaining four.
-- **Assets** — news `0.45`, momentum `0.35`, volatility `0.20`. The Bullish/Bearish **lean** is
-  just the sign of *(horizon momentum + crude news sentiment)*: a computed indicator, not advice.
+- **Assets** — news `0.35`, momentum `0.30`, catalyst `0.20`, volatility `0.15`. There is **no
+  directional lean**: the backtest below found momentum carried none, so the row shows a news
+  *level* (Quiet/Normal/Elevated/Spike) and you pick the side with buy or short.
 
 News is **context, not a predictor**. Sentiment is a small word-list heuristic, matching is
 deliberately conservative, and scraped text is treated as **untrusted data** — read and
 summarised, never acted upon.
+
+## Risk, reward, and the probability of profit
+
+Targets and stops are scaled to how much a thing actually moves, so `reward:risk = k_target/k_stop`.
+The barrier maths then fixes the hit rate — for a driftless walk, P(reaching the target before the
+stop) is `k_stop/(k_target+k_stop)`, so
+
+```
+P(profit) = 1 / (1 + R:R)          EV = P·target − (1−P)·stop = 0
+```
+
+They are the same number twice. A fatter target buys a proportionally lower hit rate and expected
+value multiplies out to **exactly zero**. Only *drift* — a real edge — creates profit, and drift is
+only ever supplied by `sonar.calibration` from positions that actually closed. Never assumed.
+
+## What the backtest found
+
+`sonar.backtest` replays the same plan over years of real bars: momentum and volatility from prior
+bars only, then walk forward through actual highs and lows. A bar spanning both barriers scores as a
+**loss** (daily data cannot order them) and costs are excluded, so reality is worse than this.
+
+Over **6,798 independent setups** (non-overlapping windows, 5y, 26 instruments):
+
+| momentum bucket | hit rate |
+|---|---|
+| 0–2% | 40.2% |
+| 2–5% | 40.9% |
+| 5–10% | 41.5% |
+| 10%+ | **38.6%** |
+
+Baseline is 40.0%. **Momentum carries no edge** — flat, and *below* baseline for the largest moves.
+That is why the Bullish/Bearish lean was deleted rather than tuned.
+
+Attention was the one component that showed something. Using Wikipedia pageviews as a historical
+proxy for "how much is this in the news today":
+
+| attention | hit rate | vs baseline | ±2 s.e. |
+|---|---|---|---|
+| below normal | 40.6% | +0.5 | 1.7 |
+| normal | 39.1% | −0.9 | 2.2 |
+| elevated | 43.1% | +3.1 | 3.8 |
+| **spike** | **44.9%** | **+4.9** | 5.0 |
+
+Consistently positive across every run (+6.1, +4.0, +4.9) but it never quite clears two standard
+errors on independent samples. So it is reported as a **level, not a direction** — "something is
+happening here", which is as much as the evidence supports. It is a proxy, it carries no tone, and
+the news component as SONAR actually implements it remains **untested, not cleared**.
 
 ## Risk tolerance and horizon
 
