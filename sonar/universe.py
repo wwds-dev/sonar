@@ -41,9 +41,11 @@ _WIKI_UA = {"User-Agent": "sonar-research/0.4 (personal backtest)"}
 # Only ordinary shares. The screener is full of instruments whose price series
 # would quietly poison a backtest: warrants expire, rights vanish, and a
 # pre-deal SPAC sits pinned at $10 with no volatility to speak of.
+# "depositary" is deliberately absent: American Depositary Shares are how most
+# large foreign companies list here, and excluding the word threw all of them
+# out. Preferred stock dressed as depositary shares is caught by "preferred".
 _EXCLUDE = re.compile(
-    r"\b(warrant|right|unit|preferred|depositary|notes?|debenture|trust preferred)\b",
-    re.I)
+    r"\b(warrant|rights?|units?|preferred|notes?|debenture)\b", re.I)
 _COMMON = re.compile(r"common stock|ordinary shares|american depositary shares", re.I)
 # Tickers with punctuation are share classes and non-standard listings that
 # Yahoo and Wikipedia disagree about; not worth the ambiguity.
