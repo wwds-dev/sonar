@@ -56,10 +56,10 @@ ASSET_COLS = [
     ("volatility", "VOL", 56, "Daily volatility of returns."),
     ("lean", "NEWS", 62,
      "How unusual today's coverage is: Quiet / Normal / Elevated / Spike.\n"
-     "This replaced a Bullish/Bearish lean that the backtest showed was\n"
-     "worthless — momentum had no edge over 6,798 independent setups.\n"
-     "Attention did show one (~5 points), so the level is shown; it is\n"
-     "not a direction. Use buy or short to pick a side yourself."),
+     "A notability flag, not odds. Over 25,504 independent historical\n"
+     "setups neither momentum nor a news spike beat the 40% baseline\n"
+     "(spike came in at +0.8 pts, ±3.1). It marks what is worth a look.\n"
+     "Direction is yours — use buy or short."),
     ("rr", "R:R", 46,
      "Reward divided by risk, from a volatility-scaled target and stop.\n"
      "1.5 means the target is 1.5x as far away as the stop."),
@@ -737,11 +737,12 @@ class MainWindow(QMainWindow):
         sl.setSpacing(6)
         sl.addWidget(label("WHAT THE NEWS IS POINTING AT", "faint", theme.mono(8)))
         sl.addWidget(label(
-            "Coverage is the one component the backtest found anything in "
-            "(~+5 points, short of significance). Entry is now — there is no "
-            "best weekday, an apparent one reversed across asset classes. The "
-            "exit is a price, not a date. Direction is yours.",
-            "faint", theme.mono(8)))
+            "These are the names with something happening today — a place to "
+            "look, not an edge. Over 25,504 historical setups a news spike beat "
+            "the baseline by 0.8 points against a 3.1 error bar, and momentum "
+            "by nothing at all. There is no best weekday either. What is exact "
+            "is the exit: a target and a stop, typically resolving in 3-10 days. "
+            "Direction is yours.", "faint", theme.mono(8)))
         self._sugg_area = QScrollArea()
         self._sugg_area.setWidgetResizable(True)
         shost = QWidget()

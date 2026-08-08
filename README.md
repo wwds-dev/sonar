@@ -101,32 +101,30 @@ only ever supplied by `sonar.calibration` from positions that actually closed. N
 bars only, then walk forward through actual highs and lows. A bar spanning both barriers scores as a
 **loss** (daily data cannot order them) and costs are excluded, so reality is worse than this.
 
-Over **6,798 independent setups** (non-overlapping windows, 5y, 26 instruments):
+Over **25,504 independent setups** — non-overlapping windows, 5 years, 113 instruments:
 
-| momentum bucket | hit rate |
-|---|---|
-| 0–2% | 40.2% |
-| 2–5% | 40.9% |
-| 5–10% | 41.5% |
-| 10%+ | **38.6%** |
+| momentum bucket | hit rate | | attention | hit rate | vs baseline | ±2 s.e. |
+|---|---|---|---|---|---|---|
+| 0–2% | 39.5% | | below normal | 38.7% | −1.3 | 1.2 |
+| 2–5% | 39.7% | | normal | 39.0% | −1.0 | 1.1 |
+| 5–10% | 39.8% | | elevated | 40.8% | +0.8 | 2.0 |
+| 10%+ | 38.7% | | **spike** | **40.8%** | **+0.8** | 3.1 |
 
-Baseline is 40.0%. **Momentum carries no edge** — flat, and *below* baseline for the largest moves.
-That is why the Bullish/Bearish lean was deleted rather than tuned.
+Baseline is 40.0%. **Neither momentum nor news carries a usable edge.** Overall hit rate is 39.58%
+against a 39.99% prediction — the barrier maths is right, and nothing in the score beats it.
 
-Attention was the one component that showed something. Using Wikipedia pageviews as a historical
-proxy for "how much is this in the news today":
+An earlier run on 26 instruments put a news spike at **+4.9 points** and this README said so. It did
+not survive: at 3.7× the sample the effect fell to **+0.8**, well inside its own error bar. That was
+small-sample noise, and the honest thing is to record that it was reported and then withdrawn rather
+than quietly delete it.
 
-| attention | hit rate | vs baseline | ±2 s.e. |
-|---|---|---|---|
-| below normal | 40.6% | +0.5 | 1.7 |
-| normal | 39.1% | −0.9 | 2.2 |
-| elevated | 43.1% | +3.1 | 3.8 |
-| **spike** | **44.9%** | **+4.9** | 5.0 |
+Two things follow. The Bullish/Bearish lean stays deleted — momentum never justified it. And
+`P(profit)` stays pinned at its driftless `1/(1+R:R)` baseline, because no measured drift exists to
+move it. The confidence score remains what it always claimed to be: a **notability** heuristic for
+what is worth a human look, explicitly *not* a profit predictor.
 
-Consistently positive across every run (+6.1, +4.0, +4.9) but it never quite clears two standard
-errors on independent samples. So it is reported as a **level, not a direction** — "something is
-happening here", which is as much as the evidence supports. It is a proxy, it carries no tone, and
-the news component as SONAR actually implements it remains **untested, not cleared**.
+What is still untested: SONAR's own word-list **sentiment**. Wikipedia pageviews measure attention
+volume, not tone, so the direction half of the news idea has never been put on trial.
 
 ## Risk tolerance and horizon
 

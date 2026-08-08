@@ -205,6 +205,77 @@ def wiki_article(company: str) -> str | None:
     return canonical_title(titles[0])
 
 
+BATCH = 40
+
+
+def canonical_titles(titles: list[str]) -> dict[str, str]:
+    """Resolve many titles at once: ``{requested: canonical}``.
+
+    The API takes up to 50 titles per call and reports both the normalisations
+    and the redirects it followed. Doing this one name at a time meant two
+    requests per company, several hundred for a study, and enough rate-limiting
+    that a 120-name run sat asleep in backoff instead of finishing.
+    """
+    out: dict[str, str] = {}
+    for i in range(0, len(titles), BATCH):
+        chunk = [t for t in titles[i:i + BATCH] if t]
+        if not chunk:
+            continue
+        url = ("https://en.wikipedia.org/w/api.php?action=query&redirects=1"
+               "&format=json&titles=" + urllib.parse.quote("|".join(chunk)))
+        d = _wiki_get(url)
+        if not d:
+            continue
+        q = d.get("query", {})
+        # Follow the chain the API reports: requested -> normalised -> redirected
+        alias = {}
+        for n in q.get("normalized", []):
+            alias[n["from"]] = n["to"]
+        for r in q.get("redirects", []):
+            alias[r["from"]] = r["to"]
+        pages = {p.get("title"): ("missing" not in p)
+                 for p in q.get("pages", {}).values()}
+        for want in chunk:
+            seen, cur = set(), want
+            while cur in alias and cur not in seen:
+                seen.add(cur)
+                cur = alias[cur]
+            if pages.get(cur):
+                out[want] = cur.replace(" ", "_")
+    return out
+
+
+def article_map_fast(symbols: list[tuple[str, str]],
+                     refresh: bool = False) -> dict:
+    """Batch-resolve ``[(symbol, company)]`` to Wikipedia articles.
+
+    Tries the company name directly first — most resolve through a redirect,
+    which is one batched request per 40 names. Only the leftovers fall back to
+    per-name search. Results are checkpointed so a long run is resumable rather
+    than all-or-nothing.
+    """
+    cached = {} if refresh else (_load_cache("wiki_map.json", ttl=90 * 86400.0) or {})
+    out = dict(cached)
+    todo = [(s, n) for s, n in symbols if s not in out]
+    if not todo:
+        return {k: v for k, v in out.items() if v}
+
+    direct = canonical_titles([n for _s, n in todo])
+    for sym, name in todo:
+        if name in direct:
+            out[sym] = direct[name]
+    _save_cache("wiki_map.json", out)
+
+    # Whatever the batch could not place gets one search each.
+    leftover = [(s, n) for s, n in todo if s not in out]
+    for i, (sym, name) in enumerate(leftover):
+        out[sym] = wiki_article(name)
+        if i % 10 == 0:
+            _save_cache("wiki_map.json", out)      # checkpoint, so a kill costs little
+    _save_cache("wiki_map.json", out)
+    return {k: v for k, v in out.items() if v}
+
+
 def article_map(symbols: list[tuple[str, str]], refresh: bool = False) -> dict:
     """``[(symbol, company)] -> {symbol: article}``, cached on disk."""
     cached = {} if refresh else (_load_cache("wiki_map.json", ttl=90 * 86400.0) or {})

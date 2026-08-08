@@ -9,13 +9,15 @@ whole project:
   independent "fair value" for a stock, so confidence is purely a notability
   heuristic (momentum, volatility, news coverage, scheduled catalysts).
 * **The directional lean was removed, on evidence.** It used to be the sign of
-  (momentum + word-list sentiment). ``sonar.backtest`` replayed it over 6,798
-  independent historical setups: momentum hit 40.2 / 40.9 / 41.5 / 38.6% across
-  its buckets against a 40.0% baseline — flat, and worse than baseline for the
-  largest moves. Attention was the one component that showed anything (~5 points
-  on a coverage spike, consistently, though never quite clearing two standard
-  errors), so coverage is now surfaced as a *level* and direction is left to
-  the user's buy/short choice.
+  (momentum + word-list sentiment). ``sonar.backtest`` replayed it over 25,504
+  independent historical setups across 113 instruments: momentum hit
+  39.5 / 39.7 / 39.8 / 38.7% across its buckets against a 40.0% baseline — flat.
+  A news spike came in at 40.8%, i.e. +0.8 points with a ±3.1 error bar.
+  Neither carries a usable edge, so no direction is asserted and the news level
+  is shown only as *notability*: something is happening here, worth a look.
+  (An earlier 26-instrument run put the spike at +4.9 points. It did not
+  survive the larger sample — that was noise, and it is recorded rather than
+  quietly forgotten.)
 * **News is context and untrusted data**, matched by keyword and shown with its
   source so a human can judge it.
 
