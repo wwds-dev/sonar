@@ -127,7 +127,8 @@ def fetch_bars(symbol: str, rng: str = "2y") -> Bars | None:
     return bars if len(bars) > MIN_LOOKBACK else None
 
 
-def fetch_attention(symbol: str, start: str, end: str) -> dict[str, int] | None:
+def fetch_attention(symbol: str, start: str, end: str,
+                    articles: dict | None = None) -> dict[str, int] | None:
     """Daily Wikipedia pageviews for ``symbol``, keyed ``YYYYMMDD``.
 
     A stand-in for "how much is this in the news today". It is a *proxy*, and
@@ -137,7 +138,7 @@ def fetch_attention(symbol: str, start: str, end: str) -> dict[str, int] | None:
     ``coverage`` component is built to detect — but this tests the idea, not
     the implementation.
     """
-    art = WIKI_ARTICLE.get(symbol)
+    art = (articles or {}).get(symbol) or WIKI_ARTICLE.get(symbol)
     if not art:
         return None
     url = _PAGEVIEWS.format(art=urllib.parse.quote(art, safe=""), a=start, b=end)
@@ -305,7 +306,8 @@ def _verdict(delta: float, se: float, significant: bool) -> str:
 
 
 def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
-        step: int = 3, progress=None, with_news: bool = False) -> dict:
+        step: int = 3, progress=None, with_news: bool = False,
+        articles: dict | None = None) -> dict:
     """Backtest a whole watchlist. Returns the summary plus per-bucket views.
 
     ``with_news`` additionally pulls a historical attention series per symbol,
@@ -324,7 +326,7 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
         if with_news and bars.time:
             a = dt.datetime.utcfromtimestamp(bars.time[0]).strftime("%Y%m%d")
             b = dt.datetime.utcfromtimestamp(bars.time[-1]).strftime("%Y%m%d")
-            att = fetch_attention(sym, a, b)
+            att = fetch_attention(sym, a, b, articles)
             if att:
                 with_attention += 1
         trials.extend(run_symbol(bars, horizon_days, step=step, attention=att))
