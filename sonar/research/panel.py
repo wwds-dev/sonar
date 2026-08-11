@@ -42,6 +42,12 @@ class Row:
     values: dict[str, float]
     fwd: float                  # volatility-standardised forward return
     fwd_raw: float
+    # Same row, labelled at several horizons. A real signal decays smoothly as
+    # the horizon lengthens; noise jumps around. Computing them together costs
+    # one pass instead of four and keeps the rows identical across horizons,
+    # so the comparison is like-for-like.
+    fwd_h: dict[int, float] = field(default_factory=dict)
+    cls: str = ""
 
 
 def _sd(xs):
@@ -53,7 +59,8 @@ def _sd(xs):
 
 def build(symbols: list[str], horizon: int = 20, rng: str = "5y",
           articles: dict | None = None, min_history: int = 260,
-          progress=None) -> list[Row]:
+          progress=None, horizons: list[int] | None = None,
+          classes: dict | None = None) -> list[Row]:
     """Build the panel for ``symbols``.
 
     ``horizon`` is the forward window in trading days. Rows are emitted for
@@ -61,10 +68,12 @@ def build(symbols: list[str], horizon: int = 20, rng: str = "5y",
     the overlap that creates is real and is handled in the statistics, not by
     quietly thinning the sample here.
     """
+    horizons = sorted(set((horizons or [horizon]) + [horizon]))
+    longest = max(horizons)
     rows: list[Row] = []
     for n, sym in enumerate(symbols, 1):
         bars = backtest.fetch_bars(sym, rng)
-        if bars is None or len(bars) < min_history + horizon + 5:
+        if bars is None or len(bars) < min_history + longest + 5:
             continue
         att = None
         if articles and sym in articles:
@@ -72,7 +81,7 @@ def build(symbols: list[str], horizon: int = 20, rng: str = "5y",
             b = dt.datetime.utcfromtimestamp(bars.time[-1]).strftime("%Y%m%d")
             att = backtest.fetch_attention(sym, a, b, articles)
 
-        for i in range(min_history, len(bars) - horizon):
+        for i in range(min_history, len(bars) - longest):
             date = dt.datetime.utcfromtimestamp(bars.time[i]).date()
             # Everything up to and including i. Nothing past it, ever.
             closes = bars.close[:i + 1]
@@ -102,8 +111,15 @@ def build(symbols: list[str], horizon: int = 20, rng: str = "5y",
             vol = _sd(trail) * math.sqrt(horizon)
             if vol <= 0:
                 continue
+            per_h = {}
+            for h in horizons:
+                hv = _sd(trail) * math.sqrt(h)
+                if hv > 0:
+                    per_h[h] = (bars.close[i + h] / bars.close[i] - 1) / hv
             rows.append(Row(date=date, symbol=sym, values=vals,
-                            fwd=fwd_raw / vol, fwd_raw=fwd_raw))
+                            fwd=fwd_raw / vol, fwd_raw=fwd_raw,
+                            fwd_h=per_h,
+                            cls=(classes or {}).get(sym, "Equity")))
         if progress:
             progress(sym, n, len(rows))
     return rows
