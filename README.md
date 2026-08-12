@@ -179,6 +179,58 @@ A seeded random number scores 4/6. So does attention. So does reversal. The
 lead is dead, and nothing else in the registry is alive.
 
 
+## Do any of them work *sometimes*?
+
+The last idea worth testing. Unconditional effects are rare in the literature;
+what it usually reports is effects that switch on in particular states — momentum
+working in calm markets, the low-volatility anomaly strongest when rates fall. So
+`sonar/research/regimes.py` splits every date by VIX (against its own trailing
+median), by whether the 10y–2y curve is inverted, and by the direction of policy
+rates, all classified **point-in-time**, and re-runs every feature inside each
+state.
+
+48 feature-by-regime tests. **Zero survivors.** The strongest:
+
+| interaction | IC (state A) | IC (state B) | difference | t |
+|---|---|---|---|---|
+| attention_trend × VIX | −0.009 | +0.019 | −0.028 | −1.81 |
+| mom_20 × VIX | +0.042 | −0.002 | +0.043 | +1.71 |
+| attention_z × VIX | −0.007 | +0.021 | −0.029 | −1.61 |
+
+And the noise floor, from the controls put through identical conditioning:
+`price_level × curve` reached **t = +1.72**. The best real interaction is
+1.81. A feature that cannot predict anything scored 1.72 by being sliced the
+same way.
+
+Conditioning doubles the hypothesis count, which is exactly how "it only works
+when X" results get published and then fail. Here it produced nothing that a
+control could not match.
+
+## Where the research ended up
+
+Five studies, each more careful than the last:
+
+| question | answer |
+|---|---|
+| Does momentum predict the barrier outcome? | No — flat, worse at extremes |
+| Does a news/attention spike? | No — +0.8 pts, ±3.1, over 25,504 setups |
+| Does anything sort the cross-section? | No — 0 of 16 survived FDR |
+| Does the one surviving lead replicate? | No — one period, wrong asset class, no decay |
+| Does anything work conditionally? | No — 0 of 48, floor set by a control |
+
+That is a complete negative result over this feature space, and it is the
+expected one: these are liquid instruments priced by people running the same
+arithmetic. The value built here is not a signal but an apparatus that can tell
+the difference — one that has now caught itself three times (a +4.9 attention
+claim, a Thursday effect, and a t = +3.39 holdout), each time because a control
+was run under identical conditions rather than compared to a textbook threshold.
+
+**What this means for the app.** SONAR stays what it is: an honest notability
+screener with real paper trading. `P(profit)` stays pinned at its driftless
+`1/(1+R:R)` baseline, because five studies have failed to find the drift that
+would move it. Nothing here is a reason to trade.
+
+
 ## Risk tolerance and horizon
 
 Two knobs, and it matters *where* they apply.

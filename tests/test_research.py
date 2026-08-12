@@ -199,3 +199,75 @@ def test_by_class_separates_the_universe():
     out = {c["cls"]: c for c in validate.by_class(rows, "f")}
     assert out["Equity"]["mean_ic"] > out["Forex"]["mean_ic"] + 0.05, \
         "a class-specific effect must not be smeared across classes"
+
+
+# --- regime conditioning -------------------------------------------------- #
+
+def test_regime_labels_use_only_the_past():
+    """A trailing median must never see the future.
+
+    Using the full-sample median would let 'this was a volatile year' leak
+    backwards into every date inside it — a lookahead bug that produces
+    beautiful conditional results and no real ones.
+    """
+    import datetime as dt
+    from sonar.research import regimes
+    dates = [dt.date(2020, 1, 1) + dt.timedelta(days=i) for i in range(400)]
+    # calm for 300 days, then a spike; early dates must not be labelled by it
+    vals = {d: (10.0 if i < 300 else 90.0) for i, d in enumerate(dates)}
+    lab = regimes._rolling_median_split(vals, dates, "high_vol", "low_vol")
+    early = [lab[d] for d in dates[100:250] if d in lab]
+    assert early and all(x == "low_vol" for x in early), \
+        "a later spike leaked backwards into earlier labels"
+
+
+def test_forward_fill_never_reaches_forward():
+    import datetime as dt
+    from sonar.research import regimes
+    series = [(dt.date(2020, 1, 1), 1.0), (dt.date(2020, 6, 1), 2.0)]
+    dates = [dt.date(2020, 3, 1), dt.date(2020, 7, 1)]
+    out = regimes._forward_fill(series, dates)
+    assert out[dt.date(2020, 3, 1)] == 1.0, "used a value published later"
+    assert out[dt.date(2020, 7, 1)] == 2.0
+
+
+def test_interaction_detects_a_regime_only_effect():
+    """Plant an effect that exists in one regime and not the other."""
+    import datetime as dt
+    import random as _r
+    from sonar.research import panel as pm, regimes
+    rng = _r.Random(2)
+    rows, labels = [], {}
+    d0 = dt.date(2020, 1, 1)
+    for i in range(600):
+        date = d0 + dt.timedelta(days=i)
+        on = i % 2 == 0
+        labels[date] = "a_on" if on else "b_off"
+        for k in range(30):
+            x = rng.gauss(0, 1)
+            y = (0.4 * x if on else 0.0) + rng.gauss(0, 1)
+            rows.append(pm.Row(date=date, symbol=f"S{k}", values={"f": x},
+                               fwd=y, fwd_raw=y))
+    it = regimes.interaction(rows, "f", "test", labels)
+    assert it is not None
+    assert it.a_ic > it.b_ic + 0.1, "missed a genuine regime-only effect"
+    assert abs(it.diff_t) > 3
+
+
+def test_interaction_stays_quiet_when_both_regimes_are_the_same():
+    import datetime as dt
+    import random as _r
+    from sonar.research import panel as pm, regimes
+    rng = _r.Random(21)
+    rows, labels = [], {}
+    d0 = dt.date(2020, 1, 1)
+    for i in range(600):
+        date = d0 + dt.timedelta(days=i)
+        labels[date] = "a_on" if i % 2 == 0 else "b_off"
+        for k in range(30):
+            x = rng.gauss(0, 1)
+            y = 0.2 * x + rng.gauss(0, 1)      # same effect in both regimes
+            rows.append(pm.Row(date=date, symbol=f"S{k}", values={"f": x},
+                               fwd=y, fwd_raw=y))
+    it = regimes.interaction(rows, "f", "test", labels)
+    assert abs(it.diff_t) < 2.5, "invented an interaction where none exists"
