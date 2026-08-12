@@ -126,3 +126,76 @@ def test_controls_exist_and_are_directionless():
     ctrl = [f for f in features.REGISTRY if f.family == "control"]
     assert len(ctrl) >= 2
     assert all(f.expected == 0 for f in ctrl)
+
+
+# --- validation of the validator ----------------------------------------- #
+
+def _synthetic_rows(effect: float, n_dates: int = 900, n_names: int = 40,
+                    seed: int = 4, cls: str = "Equity"):
+    """A panel where the feature genuinely predicts, by construction."""
+    import datetime as dt
+    import random as _r
+    from sonar.research import panel as pm
+    rng = _r.Random(seed)
+    rows = []
+    d0 = dt.date(2020, 1, 1)
+    for d in range(n_dates):
+        date = d0 + dt.timedelta(days=d)
+        for k in range(n_names):
+            x = rng.gauss(0, 1)
+            noise = rng.gauss(0, 1)
+            y = effect * x + noise
+            rows.append(pm.Row(date=date, symbol=f"S{k}", values={"f": x},
+                               fwd=y, fwd_raw=y,
+                               fwd_h={5: y, 10: y * 0.8, 20: y * 0.6, 60: y * 0.3},
+                               cls=cls))
+    return rows
+
+
+def test_blocked_finds_a_consistent_effect():
+    from sonar.research import validate
+    r = validate.blocked(_synthetic_rows(0.25), "f", n_blocks=6)
+    assert r.n_blocks == 6
+    assert r.n_agree == 6, "a real effect should appear in every block"
+    assert r.consistent
+
+
+def test_blocked_rejects_pure_noise():
+    from sonar.research import validate
+    r = validate.blocked(_synthetic_rows(0.0, seed=17), "f", n_blocks=6)
+    assert not r.consistent, "noise must not be called consistent"
+
+
+def test_sign_test_maths():
+    from sonar.research import validate
+    assert validate.binomial_p(6, 6) < 0.05          # all agree
+    assert validate.binomial_p(3, 6) > 0.9           # coin flip
+    assert validate.binomial_p(0, 6) < 0.05          # all disagree, also extreme
+
+
+def test_monotone_decay_accepts_a_fading_signal():
+    from sonar.research import validate
+    pts = [{"mean_ic": 0.05}, {"mean_ic": 0.04}, {"mean_ic": 0.02}, {"mean_ic": 0.01}]
+    assert validate.monotone_decay(pts)
+
+
+def test_monotone_decay_rejects_a_sign_flip():
+    from sonar.research import validate
+    pts = [{"mean_ic": 0.05}, {"mean_ic": -0.04}, {"mean_ic": 0.02}]
+    assert not validate.monotone_decay(pts)
+
+
+def test_monotone_decay_rejects_a_bump():
+    """Noise that peaks at the horizon it was discovered at must fail."""
+    from sonar.research import validate
+    pts = [{"mean_ic": 0.01}, {"mean_ic": 0.06}, {"mean_ic": 0.01}]
+    assert not validate.monotone_decay(pts)
+
+
+def test_by_class_separates_the_universe():
+    from sonar.research import validate
+    rows = _synthetic_rows(0.25, n_dates=300, cls="Equity")
+    rows += _synthetic_rows(0.0, n_dates=300, seed=99, cls="Forex")
+    out = {c["cls"]: c for c in validate.by_class(rows, "f")}
+    assert out["Equity"]["mean_ic"] > out["Forex"]["mean_ic"] + 0.05, \
+        "a class-specific effect must not be smeared across classes"

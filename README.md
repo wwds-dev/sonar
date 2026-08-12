@@ -126,6 +126,59 @@ what is worth a human look, explicitly *not* a profit predictor.
 What is still untested: SONAR's own word-list **sentiment**. Wikipedia pageviews measure attention
 volume, not tone, so the direction half of the news idea has never been put on trial.
 
+## Chasing the one lead, and killing it
+
+The study above left a single candidate: `dist_52w_high` — proximity to the
+52-week high — at t = +3.39 in the holdout. `sonar/research/validate.py` puts a
+lead through three tests a real effect should pass and a lucky one should not.
+
+**1. Consistency across non-overlapping periods.** Six blocks, five years:
+
+| period | IC | t |
+|---|---|---|
+| 2022-04 → 2023-01 | +0.045 | +0.61 |
+| 2023-01 → 2023-09 | −0.033 | −0.67 |
+| 2023-09 → 2024-05 | +0.036 | +0.84 |
+| 2024-05 → 2025-01 | +0.028 | +0.65 |
+| 2025-01 → 2025-10 | +0.015 | +0.44 |
+| **2025-10 → 2026-06** | **+0.136** | **+3.90** |
+
+The entire effect lives in the final block — which *is* the earlier study's
+holdout window. That is the whole explanation of the +3.39, and the reason a
+single holdout cannot be trusted no matter how it is embargoed.
+
+**2. Decay across horizons.** A signal being used up fades smoothly. This one
+goes +0.026 (5d), +0.028 (10d), +0.037 (20d), +0.034 (60d) — it *rises* to the
+horizon it was discovered at and falls after. That is the shape of noise found
+by looking.
+
+**3. Where it appears.** The 52-week-high anomaly is an *equity* effect with a
+behavioural story about anchoring on a salient price. Measured by class:
+
+| class | IC | t |
+|---|---|---|
+| Crypto | +0.087 | +2.84 |
+| Equity | +0.002 | +0.09 |
+
+It is absent exactly where the theory says it should be strongest, and present
+only where the theory does not apply. The mechanism is not the stated one.
+
+**The comparison that settles it.** Every candidate was run against the same
+tests as the controls, and they are indistinguishable:
+
+| feature | blocks agreeing | sign-test p | beats noise floor |
+|---|---|---|---|
+| dist_52w_high | 5/6 | 0.219 | 1/6 |
+| attention_z | 4/6 | 0.688 | 0/6 |
+| reversal_1 | 4/6 | 0.688 | 0/6 |
+| mom_250_ex1m | 4/6 | 0.688 | 1/6 |
+| *random_control* | *4/6* | *0.688* | — |
+| *price_level* | *3/6* | *1.000* | — |
+
+A seeded random number scores 4/6. So does attention. So does reversal. The
+lead is dead, and nothing else in the registry is alive.
+
+
 ## Risk tolerance and horizon
 
 Two knobs, and it matters *where* they apply.

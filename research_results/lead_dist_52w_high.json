@@ -1,0 +1,679 @@
+{
+ "dist_52w_high": {
+  "feature": "dist_52w_high",
+  "blocks": [
+   {
+    "from": "2022-04-28",
+    "to": "2023-01-03",
+    "n_dates": 251,
+    "mean_ic": 0.0445,
+    "t": 0.61
+   },
+   {
+    "from": "2023-01-04",
+    "to": "2023-09-11",
+    "n_dates": 251,
+    "mean_ic": -0.0334,
+    "t": -0.67
+   },
+   {
+    "from": "2023-09-12",
+    "to": "2024-05-19",
+    "n_dates": 251,
+    "mean_ic": 0.03578,
+    "t": 0.84
+   },
+   {
+    "from": "2024-05-20",
+    "to": "2025-01-25",
+    "n_dates": 251,
+    "mean_ic": 0.02755,
+    "t": 0.65
+   },
+   {
+    "from": "2025-01-26",
+    "to": "2025-10-03",
+    "n_dates": 251,
+    "mean_ic": 0.01451,
+    "t": 0.44
+   },
+   {
+    "from": "2025-10-04",
+    "to": "2026-06-11",
+    "n_dates": 251,
+    "mean_ic": 0.13602,
+    "t": 3.9
+   }
+  ],
+  "n_blocks": 6,
+  "n_agree": 5,
+  "sign_p": 0.2188,
+  "consistent": false,
+  "mean_ic": 0.03749,
+  "decay": [
+   {
+    "horizon": 5,
+    "n_dates": 1507,
+    "mean_ic": 0.02629,
+    "t": 2.27
+   },
+   {
+    "horizon": 10,
+    "n_dates": 1507,
+    "mean_ic": 0.02818,
+    "t": 1.82
+   },
+   {
+    "horizon": 20,
+    "n_dates": 1507,
+    "mean_ic": 0.03726,
+    "t": 1.76
+   },
+   {
+    "horizon": 60,
+    "n_dates": 1507,
+    "mean_ic": 0.03401,
+    "t": 1.12
+   }
+  ],
+  "decays_monotonically": false,
+  "by_class": [
+   {
+    "cls": "Crypto",
+    "n_dates": 1507,
+    "n_rows": 16577,
+    "mean_ic": 0.08719,
+    "t": 2.84
+   },
+   {
+    "cls": "Equity",
+    "n_dates": 935,
+    "n_rows": 93554,
+    "mean_ic": 0.00199,
+    "t": 0.09
+   }
+  ],
+  "controls": [
+   {
+    "name": "random_control",
+    "n_agree": 4,
+    "n_blocks": 6,
+    "sign_p": 0.6875,
+    "mean_ic": 0.00792
+   },
+   {
+    "name": "price_level",
+    "n_agree": 3,
+    "n_blocks": 6,
+    "sign_p": 1.0,
+    "mean_ic": -0.0041
+   }
+  ],
+  "control_block_t_floor": 2.28,
+  "blocks_beating_floor": 1,
+  "verdict": "FAILS \u2014 NOT consistent (5/6 blocks, p=0.219); no orderly decay across horizons; 1/6 blocks beat the control noise floor (|t|>2.28). the single-window result was period-specific, not a signal."
+ },
+ "attention_z": {
+  "feature": "attention_z",
+  "blocks": [
+   {
+    "from": "2022-04-28",
+    "to": "2023-01-03",
+    "n_dates": 92,
+    "mean_ic": 0.05004,
+    "t": 1.97
+   },
+   {
+    "from": "2023-01-04",
+    "to": "2023-09-11",
+    "n_dates": 172,
+    "mean_ic": 0.01876,
+    "t": 1.01
+   },
+   {
+    "from": "2023-09-12",
+    "to": "2024-05-19",
+    "n_dates": 173,
+    "mean_ic": -0.00566,
+    "t": -0.34
+   },
+   {
+    "from": "2024-05-20",
+    "to": "2025-01-25",
+    "n_dates": 171,
+    "mean_ic": -0.0061,
+    "t": -0.37
+   },
+   {
+    "from": "2025-01-26",
+    "to": "2025-10-03",
+    "n_dates": 174,
+    "mean_ic": 0.03432,
+    "t": 1.73
+   },
+   {
+    "from": "2025-10-04",
+    "to": "2026-06-11",
+    "n_dates": 153,
+    "mean_ic": 0.01034,
+    "t": 0.47
+   }
+  ],
+  "n_blocks": 6,
+  "n_agree": 4,
+  "sign_p": 0.6875,
+  "consistent": false,
+  "mean_ic": 0.01429,
+  "decay": [
+   {
+    "horizon": 5,
+    "n_dates": 935,
+    "mean_ic": 0.00629,
+    "t": 0.94
+   },
+   {
+    "horizon": 10,
+    "n_dates": 935,
+    "mean_ic": 0.01257,
+    "t": 1.62
+   },
+   {
+    "horizon": 20,
+    "n_dates": 935,
+    "mean_ic": 0.01429,
+    "t": 1.72
+   },
+   {
+    "horizon": 60,
+    "n_dates": 935,
+    "mean_ic": 0.00914,
+    "t": 0.72
+   }
+  ],
+  "decays_monotonically": false,
+  "by_class": [
+   {
+    "cls": "Equity",
+    "n_dates": 935,
+    "n_rows": 93554,
+    "mean_ic": 0.01429,
+    "t": 1.72
+   }
+  ],
+  "controls": [
+   {
+    "name": "random_control",
+    "n_agree": 4,
+    "n_blocks": 6,
+    "sign_p": 0.6875,
+    "mean_ic": 0.00792
+   },
+   {
+    "name": "price_level",
+    "n_agree": 3,
+    "n_blocks": 6,
+    "sign_p": 1.0,
+    "mean_ic": -0.0041
+   }
+  ],
+  "control_block_t_floor": 2.28,
+  "blocks_beating_floor": 0,
+  "verdict": "FAILS \u2014 NOT consistent (4/6 blocks, p=0.688); no orderly decay across horizons; 0/6 blocks beat the control noise floor (|t|>2.28). the single-window result was period-specific, not a signal."
+ },
+ "reversal_1": {
+  "feature": "reversal_1",
+  "blocks": [
+   {
+    "from": "2022-04-28",
+    "to": "2023-01-03",
+    "n_dates": 251,
+    "mean_ic": 0.01673,
+    "t": 0.96
+   },
+   {
+    "from": "2023-01-04",
+    "to": "2023-09-11",
+    "n_dates": 251,
+    "mean_ic": -0.00253,
+    "t": -0.17
+   },
+   {
+    "from": "2023-09-12",
+    "to": "2024-05-19",
+    "n_dates": 251,
+    "mean_ic": 0.00455,
+    "t": 0.36
+   },
+   {
+    "from": "2024-05-20",
+    "to": "2025-01-25",
+    "n_dates": 251,
+    "mean_ic": -0.00897,
+    "t": -0.52
+   },
+   {
+    "from": "2025-01-26",
+    "to": "2025-10-03",
+    "n_dates": 251,
+    "mean_ic": 0.01685,
+    "t": 1.27
+   },
+   {
+    "from": "2025-10-04",
+    "to": "2026-06-11",
+    "n_dates": 251,
+    "mean_ic": 0.01551,
+    "t": 1.2
+   }
+  ],
+  "n_blocks": 6,
+  "n_agree": 4,
+  "sign_p": 0.6875,
+  "consistent": false,
+  "mean_ic": 0.00702,
+  "decay": [
+   {
+    "horizon": 5,
+    "n_dates": 1507,
+    "mean_ic": -0.01734,
+    "t": -2.58
+   },
+   {
+    "horizon": 10,
+    "n_dates": 1507,
+    "mean_ic": -0.00947,
+    "t": -1.41
+   },
+   {
+    "horizon": 20,
+    "n_dates": 1507,
+    "mean_ic": 0.00687,
+    "t": 1.12
+   },
+   {
+    "horizon": 60,
+    "n_dates": 1507,
+    "mean_ic": 0.01005,
+    "t": 1.66
+   }
+  ],
+  "decays_monotonically": false,
+  "by_class": [
+   {
+    "cls": "Crypto",
+    "n_dates": 1507,
+    "n_rows": 16577,
+    "mean_ic": 0.02135,
+    "t": 2.49
+   },
+   {
+    "cls": "Equity",
+    "n_dates": 935,
+    "n_rows": 93554,
+    "mean_ic": -0.00027,
+    "t": -0.04
+   }
+  ],
+  "controls": [
+   {
+    "name": "random_control",
+    "n_agree": 4,
+    "n_blocks": 6,
+    "sign_p": 0.6875,
+    "mean_ic": 0.00792
+   },
+   {
+    "name": "price_level",
+    "n_agree": 3,
+    "n_blocks": 6,
+    "sign_p": 1.0,
+    "mean_ic": -0.0041
+   }
+  ],
+  "control_block_t_floor": 2.28,
+  "blocks_beating_floor": 0,
+  "verdict": "FAILS \u2014 NOT consistent (4/6 blocks, p=0.688); no orderly decay across horizons; 0/6 blocks beat the control noise floor (|t|>2.28). the single-window result was period-specific, not a signal."
+ },
+ "mom_250_ex1m": {
+  "feature": "mom_250_ex1m",
+  "blocks": [
+   {
+    "from": "2022-04-28",
+    "to": "2023-01-03",
+    "n_dates": 251,
+    "mean_ic": 0.00897,
+    "t": 0.11
+   },
+   {
+    "from": "2023-01-04",
+    "to": "2023-09-11",
+    "n_dates": 251,
+    "mean_ic": 0.00774,
+    "t": 0.17
+   },
+   {
+    "from": "2023-09-12",
+    "to": "2024-05-19",
+    "n_dates": 251,
+    "mean_ic": -0.00513,
+    "t": -0.09
+   },
+   {
+    "from": "2024-05-20",
+    "to": "2025-01-25",
+    "n_dates": 251,
+    "mean_ic": -0.01041,
+    "t": -0.21
+   },
+   {
+    "from": "2025-01-26",
+    "to": "2025-10-03",
+    "n_dates": 251,
+    "mean_ic": 0.00148,
+    "t": 0.04
+   },
+   {
+    "from": "2025-10-04",
+    "to": "2026-06-11",
+    "n_dates": 251,
+    "mean_ic": 0.16227,
+    "t": 3.7
+   }
+  ],
+  "n_blocks": 6,
+  "n_agree": 4,
+  "sign_p": 0.6875,
+  "consistent": false,
+  "mean_ic": 0.02749,
+  "decay": [
+   {
+    "horizon": 5,
+    "n_dates": 1507,
+    "mean_ic": 0.01248,
+    "t": 1.06
+   },
+   {
+    "horizon": 10,
+    "n_dates": 1507,
+    "mean_ic": 0.01946,
+    "t": 1.2
+   },
+   {
+    "horizon": 20,
+    "n_dates": 1507,
+    "mean_ic": 0.02724,
+    "t": 1.15
+   },
+   {
+    "horizon": 60,
+    "n_dates": 1507,
+    "mean_ic": 0.02529,
+    "t": 0.68
+   }
+  ],
+  "decays_monotonically": false,
+  "by_class": [
+   {
+    "cls": "Crypto",
+    "n_dates": 1507,
+    "n_rows": 16577,
+    "mean_ic": 0.03691,
+    "t": 1.04
+   },
+   {
+    "cls": "Equity",
+    "n_dates": 935,
+    "n_rows": 93554,
+    "mean_ic": 0.04702,
+    "t": 1.78
+   }
+  ],
+  "controls": [
+   {
+    "name": "random_control",
+    "n_agree": 4,
+    "n_blocks": 6,
+    "sign_p": 0.6875,
+    "mean_ic": 0.00792
+   },
+   {
+    "name": "price_level",
+    "n_agree": 3,
+    "n_blocks": 6,
+    "sign_p": 1.0,
+    "mean_ic": -0.0041
+   }
+  ],
+  "control_block_t_floor": 2.28,
+  "blocks_beating_floor": 1,
+  "verdict": "FAILS \u2014 NOT consistent (4/6 blocks, p=0.688); no orderly decay across horizons; 1/6 blocks beat the control noise floor (|t|>2.28). the single-window result was period-specific, not a signal."
+ },
+ "random_control": {
+  "feature": "random_control",
+  "blocks": [
+   {
+    "from": "2022-04-28",
+    "to": "2023-01-03",
+    "n_dates": 251,
+    "mean_ic": -0.00115,
+    "t": -0.04
+   },
+   {
+    "from": "2023-01-04",
+    "to": "2023-09-11",
+    "n_dates": 251,
+    "mean_ic": 0.01347,
+    "t": 1.43
+   },
+   {
+    "from": "2023-09-12",
+    "to": "2024-05-19",
+    "n_dates": 251,
+    "mean_ic": 0.01544,
+    "t": 1.01
+   },
+   {
+    "from": "2024-05-20",
+    "to": "2025-01-25",
+    "n_dates": 251,
+    "mean_ic": 0.02068,
+    "t": 2.04
+   },
+   {
+    "from": "2025-01-26",
+    "to": "2025-10-03",
+    "n_dates": 251,
+    "mean_ic": 0.00669,
+    "t": 0.85
+   },
+   {
+    "from": "2025-10-04",
+    "to": "2026-06-11",
+    "n_dates": 251,
+    "mean_ic": -0.00763,
+    "t": -0.54
+   }
+  ],
+  "n_blocks": 6,
+  "n_agree": 4,
+  "sign_p": 0.6875,
+  "consistent": false,
+  "mean_ic": 0.00792,
+  "decay": [
+   {
+    "horizon": 5,
+    "n_dates": 1507,
+    "mean_ic": 0.00187,
+    "t": 0.37
+   },
+   {
+    "horizon": 10,
+    "n_dates": 1507,
+    "mean_ic": 0.00579,
+    "t": 1.04
+   },
+   {
+    "horizon": 20,
+    "n_dates": 1507,
+    "mean_ic": 0.00827,
+    "t": 1.23
+   },
+   {
+    "horizon": 60,
+    "n_dates": 1507,
+    "mean_ic": 0.00206,
+    "t": 0.32
+   }
+  ],
+  "decays_monotonically": false,
+  "by_class": [
+   {
+    "cls": "Crypto",
+    "n_dates": 1507,
+    "n_rows": 16577,
+    "mean_ic": 0.02274,
+    "t": 2.18
+   },
+   {
+    "cls": "Equity",
+    "n_dates": 935,
+    "n_rows": 93554,
+    "mean_ic": -0.00266,
+    "t": -0.53
+   }
+  ],
+  "controls": [
+   {
+    "name": "random_control",
+    "n_agree": 4,
+    "n_blocks": 6,
+    "sign_p": 0.6875,
+    "mean_ic": 0.00792
+   },
+   {
+    "name": "price_level",
+    "n_agree": 3,
+    "n_blocks": 6,
+    "sign_p": 1.0,
+    "mean_ic": -0.0041
+   }
+  ],
+  "control_block_t_floor": 2.28,
+  "blocks_beating_floor": 0,
+  "verdict": "FAILS \u2014 NOT consistent (4/6 blocks, p=0.688); no orderly decay across horizons; 0/6 blocks beat the control noise floor (|t|>2.28). the single-window result was period-specific, not a signal."
+ },
+ "price_level": {
+  "feature": "price_level",
+  "blocks": [
+   {
+    "from": "2022-04-28",
+    "to": "2023-01-03",
+    "n_dates": 251,
+    "mean_ic": 0.00182,
+    "t": 0.02
+   },
+   {
+    "from": "2023-01-04",
+    "to": "2023-09-11",
+    "n_dates": 251,
+    "mean_ic": -0.01197,
+    "t": -0.33
+   },
+   {
+    "from": "2023-09-12",
+    "to": "2024-05-19",
+    "n_dates": 251,
+    "mean_ic": 0.046,
+    "t": 1.94
+   },
+   {
+    "from": "2024-05-20",
+    "to": "2025-01-25",
+    "n_dates": 251,
+    "mean_ic": -0.05488,
+    "t": -2.28
+   },
+   {
+    "from": "2025-01-26",
+    "to": "2025-10-03",
+    "n_dates": 251,
+    "mean_ic": -0.01355,
+    "t": -0.36
+   },
+   {
+    "from": "2025-10-04",
+    "to": "2026-06-11",
+    "n_dates": 251,
+    "mean_ic": 0.00801,
+    "t": 0.18
+   }
+  ],
+  "n_blocks": 6,
+  "n_agree": 3,
+  "sign_p": 1.0,
+  "consistent": false,
+  "mean_ic": -0.0041,
+  "decay": [
+   {
+    "horizon": 5,
+    "n_dates": 1507,
+    "mean_ic": 0.00522,
+    "t": 0.55
+   },
+   {
+    "horizon": 10,
+    "n_dates": 1507,
+    "mean_ic": 0.00574,
+    "t": 0.43
+   },
+   {
+    "horizon": 20,
+    "n_dates": 1507,
+    "mean_ic": -0.00401,
+    "t": -0.21
+   },
+   {
+    "horizon": 60,
+    "n_dates": 1507,
+    "mean_ic": -0.02156,
+    "t": -0.79
+   }
+  ],
+  "decays_monotonically": false,
+  "by_class": [
+   {
+    "cls": "Crypto",
+    "n_dates": 1507,
+    "n_rows": 16577,
+    "mean_ic": 0.02747,
+    "t": 0.82
+   },
+   {
+    "cls": "Equity",
+    "n_dates": 935,
+    "n_rows": 93554,
+    "mean_ic": -0.06487,
+    "t": -4.67
+   }
+  ],
+  "controls": [
+   {
+    "name": "random_control",
+    "n_agree": 4,
+    "n_blocks": 6,
+    "sign_p": 0.6875,
+    "mean_ic": 0.00792
+   },
+   {
+    "name": "price_level",
+    "n_agree": 3,
+    "n_blocks": 6,
+    "sign_p": 1.0,
+    "mean_ic": -0.0041
+   }
+  ],
+  "control_block_t_floor": 2.28,
+  "blocks_beating_floor": 0,
+  "verdict": "FAILS \u2014 NOT consistent (3/6 blocks, p=1.000); no orderly decay across horizons; 0/6 blocks beat the control noise floor (|t|>2.28). the single-window result was period-specific, not a signal."
+ }
+}
