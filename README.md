@@ -265,6 +265,43 @@ Going live is not a flag in this file. It is a decision for a human with an
 account, and SONAR does not implement it.
 
 
+## Data providers, and the switch behind each one
+
+Everything runs on Yahoo Finance, which is free, broad and **undocumented**. It
+can change shape or start refusing requests without notice, and it already has:
+the `quoteSummary` endpoint used for earnings dates now answers 401. One
+undocumented endpoint carrying the whole app is its largest fragility.
+
+`sonar/providers.py` puts sources behind one interface — a **capability**
+(quotes, bars, FX, crypto), a **tier** (keyless or keyed), and a persisted
+**on/off switch**. A request walks the enabled providers in preference order and
+takes the first that answers, so a vendor going down is a skipped provider
+rather than a broken app.
+
+| provider | tier | serves | note |
+|---|---|---|---|
+| Yahoo | keyless | quotes, bars, FX, crypto | Broad, free, unstable — the reason this exists |
+| CoinGecko | keyless | crypto | Survives a coin being delisted from any one venue |
+| Frankfurter | keyless | FX | ECB reference rates; stable, but daily not live |
+| Finnhub | free key | quotes, bars | Documented and supported — the sturdiest upgrade |
+| Twelve Data | free key | quotes, bars, FX, crypto | Wide coverage, tight request limit |
+| Alpha Vantage | free key | quotes, bars | ~25 requests/day; research only |
+
+Keys go in the same git-ignored `.env` as the Alpaca ones.
+
+**What this immediately revealed.** Switch Yahoo off and crypto still resolves
+via CoinGecko, FX via Frankfurter — but **equities return nothing at all**. They
+have no keyless second source, so a single undocumented endpoint is a single
+point of failure for most of the watchlist. A free Finnhub key is the fix, and
+the layer now makes that visible instead of leaving it to be discovered when
+Yahoo breaks.
+
+**Stooq is deliberately absent.** It appears in most "free market data" lists
+and an earlier version of this README recommended it; both its CSV endpoints
+now return an HTML bot-block page. An adapter would have parsed that into
+silence and looked like a working fallback.
+
+
 ## Risk tolerance and horizon
 
 Two knobs, and it matters *where* they apply.
