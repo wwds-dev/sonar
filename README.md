@@ -231,6 +231,40 @@ screener with real paper trading. `P(profit)` stays pinned at its driftless
 would move it. Nothing here is a reason to trade.
 
 
+## Paper trading through Alpaca (optional)
+
+The built-in book fills instantly at the quoted price with no fees and no queue,
+which makes it an optimistic bound rather than a simulation. Alpaca's **paper**
+environment is the cheap way to do better: real symbols, real market hours, real
+order handling, orders that sit unfilled when the market is shut — and no money
+anywhere.
+
+```bash
+# a free Alpaca PAPER account, then in a git-ignored .env:
+APCA_API_KEY_ID=PK...        # paper keys start with PK
+APCA_API_SECRET_KEY=...
+```
+
+SONAR picks it up automatically and falls back to the internal book if it is
+absent or misconfigured.
+
+**On the guards.** Alpaca's live and paper APIs differ by one hostname, so a
+typo or a stray environment variable is all that separates a simulation from
+real orders. The host is a module constant with no parameter to override; a key
+that is not clearly a paper key (`PK…`) is refused before any request; the
+account is checked at connect time; and the whole set is re-checked on every
+order rather than only at construction. Each failure raises — a broker adapter
+that keeps working after a safety check fails is worse than none.
+
+One trap worth recording, because the tests caught it: a substring check for the
+live host looks like sensible defence in depth and is actively wrong.
+`api.alpaca.markets` is contained in `paper-api.alpaca.markets`, so it rejects
+the only safe URL. The guard uses exact host equality.
+
+Going live is not a flag in this file. It is a decision for a human with an
+account, and SONAR does not implement it.
+
+
 ## Risk tolerance and horizon
 
 Two knobs, and it matters *where* they apply.

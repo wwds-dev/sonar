@@ -10,9 +10,12 @@ stop from :mod:`sonar.scoring`, and let it resolve. Two reasons it exists:
    was opened on, so :mod:`sonar.calibration` can ask the only question that
    matters — did high scores actually win more often?
 
-Everything here is paper. ``PaperBroker`` is the only broker implemented; the
-``Broker`` protocol exists so a real one *could* be dropped in later, but that
-is deliberately not written. Nothing in this file can move real money.
+Everything here is paper. Two brokers implement the ``Broker`` protocol and
+both are simulations: ``PaperBroker`` fills instantly in-process, and
+``AlpacaPaperBroker`` sends real orders to Alpaca's **paper** environment, which
+has real market hours and real order handling but no money. No live broker
+exists, and ``sonar/alpaca.py`` makes the live endpoint structurally
+unreachable rather than merely discouraged.
 
 One honest limit: positions are marked against a **polled** price, so a spike
 that touches a target and reverses between two polls is not seen. Fills are also
@@ -87,14 +90,34 @@ class Position:
 
 
 class Broker(Protocol):
-    """The seam a real broker would sit behind.
+    """The seam a broker sits behind.
 
-    Only :class:`PaperBroker` implements it. A live implementation would place
-    real orders with real money and is intentionally not provided here.
+    :class:`PaperBroker` and Alpaca's paper broker implement it. A live
+    implementation would place real orders with real money and is deliberately
+    not provided.
     """
 
     def execute(self, symbol: str, direction: str, units: float,
                 price: float) -> dict: ...
+
+
+def default_broker():
+    """Alpaca's paper environment when configured, the internal book otherwise.
+
+    Both are paper. The Alpaca path is strictly more honest — real market hours,
+    real order handling, orders that sit unfilled when the market is shut —
+    while the internal one fills instantly at the quoted price and so flatters
+    every result. Neither can reach real money: see sonar/alpaca.py for the
+    guards that make the live endpoint unreachable.
+    """
+    try:
+        from . import alpaca
+        ok, _why = alpaca.available()
+        if ok:
+            return alpaca.AlpacaPaperBroker()
+    except Exception:
+        pass                     # any problem at all falls back to the local book
+    return PaperBroker()
 
 
 class PaperBroker:
