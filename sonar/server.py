@@ -72,10 +72,6 @@ class Handler(BaseHTTPRequestHandler):
             with self.live.lock:
                 self._json(self.live.snapshot)
             return
-        if self.path.startswith("/api/scan"):
-            with self.live.lock:
-                self._json(self.live.scan)
-            return
         if self.path.startswith("/api/assets"):
             with self.live.lock:
                 self._json(self.live.assets)

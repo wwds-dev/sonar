@@ -20,7 +20,7 @@ import time
 from dataclasses import asdict
 
 from . import (assets, enginelock, feeds, horizon, llm, macro, model, news,
-               paths, risk, scanner)
+               paths, risk)
 from .engine import Engine
 from . import calibration, events, portfolio, scoring
 
@@ -79,7 +79,6 @@ class Live:
         # The general paper book: any instrument, long or short. Kept in its own
         # file so the hourly BTC engine's bankroll stays a separate experiment.
         self.book = portfolio.Portfolio(paths.user_data_base() / "portfolio.json")
-        self.scan: dict = {"status": "starting", "suggestions": []}
         self.assets: dict = {"status": "starting", "assets": []}
         self.positions: dict = {"stats": self.book.stats(), "open": [], "closed": []}
         self.calibration: dict = calibration.report(self.book.closed)
@@ -269,7 +268,7 @@ class Live:
         """Assemble the measurements for a subject. Numbers only — the model is
         given the arithmetic layer's output, never asked to invent it."""
         with self.lock:
-            snap, scan, asset_payload = self.snapshot, self.scan, self.assets
+            snap, asset_payload = self.snapshot, self.assets
 
         if kind == "btc":
             candle, sig = snap.get("candle"), snap.get("signal")
@@ -288,20 +287,6 @@ class Live:
                 "market_volume_usd": (market or {}).get("volume"),
             }, self._recent_headlines("crypto"), candle.get("open_time"))
 
-        if kind == "market":
-            for s in scan.get("suggestions", []):
-                if s["id"] == ident:
-                    return (s["question"], {
-                        "category": s["category"],
-                        "market_yes_price": s["yes_price"],
-                        "hours_until_resolution": s["hours_left"],
-                        "volume_24h_usd": s["volume24h"],
-                        "confidence_score_0_100": s["confidence"],
-                        "model_p_up": s.get("model_up"),
-                        "model_edge_vs_market": s.get("edge"),
-                        "news_sentiment": s.get("news_sentiment"),
-                    }, s.get("headlines", []), None)
-            return None, {}, [], None
 
         if kind == "asset":
             for a in asset_payload.get("assets", []):

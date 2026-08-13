@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout,
 from sonar import horizon as hz_mod
 from sonar import llm, paths, risk as risk_mod
 from sonar.core import Live
-from sonar.scanner import _W_CRYPTO, _W_OTHER
 from sonar.assets import _W as ASSET_W
 
 from . import theme
@@ -139,65 +138,6 @@ class Stat(QWidget):
         self.val.setText(text)
         self.val.setStyleSheet(f"color: {(color or theme.INK).name()};")
 
-
-class MarketCard(QFrame):
-    """One ranked prediction market."""
-
-    def __init__(self, s: dict, on_read, parent=None) -> None:
-        super().__init__(parent)
-        self.setObjectName("panel")
-        self.s = s
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(12, 10, 12, 10)
-        lay.setSpacing(6)
-
-        top = QHBoxLayout()
-        q = label(s["question"], font=theme.ui_font(12, True))
-        q.setWordWrap(True)
-        top.addWidget(q, 1)
-        conf = label(f'{s["confidence"]:.0f}', font=theme.mono(16, True))
-        conf.setToolTip("Confidence 0–100: how notable and tradeable this looks.\n"
-                        "NOT the probability you will make money.")
-        top.addWidget(conf, 0, Qt.AlignTop)
-        lay.addLayout(top)
-
-        bar = ComponentBar()
-        bar.set_parts(s.get("comp", {}),
-                      _W_CRYPTO if s.get("side") else _W_OTHER)
-        lay.addWidget(bar)
-
-        meta = QHBoxLayout()
-        meta.setSpacing(14)
-        for text, tip in [
-            (f'{s["category"]}', "Market category"),
-            (f'{s["hours_left"]:.1f}h left', "Time until resolution"),
-            (f'${s["volume24h"]:,.0f} 24h', "24-hour volume"),
-            (f'{s["yes_price"]*100:.1f}¢', "Market's own price for YES"),
-        ]:
-            lb = label(text, "muted", theme.mono(10))
-            lb.setToolTip(tip)
-            meta.addWidget(lb)
-        if s.get("side"):
-            lb = label(f'model {s["side"]} {s["edge"]*100:+.1f}¢',
-                       font=theme.mono(10, True))
-            lb.setStyleSheet(f"color: {theme.side_color(s['side']).name()};")
-            lb.setToolTip("Model probability minus market price — the only true "
-                          "edge signal, and only crypto up/down markets have one.")
-            meta.addWidget(lb)
-        elif s.get("market_lean"):
-            meta.addWidget(label(f'market {s["market_lean"]}', "muted",
-                                 theme.mono(10)))
-        meta.addStretch(1)
-        btn = QPushButton("LLM read")
-        btn.setFont(theme.mono(9))
-        btn.clicked.connect(lambda: on_read("market", s["id"], s["question"]))
-        meta.addWidget(btn)
-        lay.addLayout(meta)
-
-        if s.get("rationale"):
-            r = label(s["rationale"], "muted", theme.mono(10))
-            r.setWordWrap(True)
-            lay.addWidget(r)
 
 
 class AssetRow(QFrame):
@@ -523,7 +463,7 @@ class ReadPanel(QFrame):
             self.body.setText(r["error"])
             self.caveat.setText(
                 "The LLM read is optional and off by default. Everything else "
-                "in SONAR — the model, both scanners, the paper engine — is "
+                "in SONAR — the model, the screener, the paper engine — is "
                 "local arithmetic and keeps working without it.")
             return
         d = r.get("direction", "UNCLEAR")

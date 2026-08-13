@@ -66,293 +66,257 @@
 <div class="wrap">
   <header>
     <span class="brand">◇ <b>SONAR</b> · DOCS</span>
-    <a class="back" href="/">← Back to terminal</a>
+    <a class="back" href="/">← Back to the app</a>
   </header>
 
   <h1>SONAR — how it works</h1>
-  <p class="sub">An honest market scanner: live prices, live prediction-market odds, reputable news, and
-    a probability model — with paper money instead of promises. It began as a recreation of the viral
-    "an AI built an overnight trading bot" dashboard, with the marketing stripped out.</p>
+  <p class="sub">A market scanner and paper-trading terminal that tries very hard
+    not to overstate what it knows. Live prices, live news, a probability model,
+    and five studies that failed to find an edge — all reported plainly.</p>
 
   <div class="callout">
-    <b>The one thing to understand first.</b> SONAR reads <b>real</b> market data and <b>real</b> news,
-    but it never touches real money. There is no exchange account, no wallet, no broker connection, and
-    no order is ever placed anywhere. It exists to show — transparently — how a model and a set of
-    heuristics stack up against live markets, and how thin and noisy any "edge" really is.
+    <b>The one thing to understand first.</b> SONAR reads <b>real</b> market data
+    and <b>real</b> news, but every position is paper. There is no funded
+    account, no wallet, and no route to real money anywhere in the code. It
+    exists to show, transparently, how a model and a set of heuristics actually
+    perform — which, so far, is no better than chance.
   </div>
 
   <div class="toc">
-    <a href="#what">1 · What it is</a>
-    <a href="#data">2 · Data sources</a>
-    <a href="#model">3 · The model</a>
-    <a href="#trading">4 · Paper trading</a>
-    <a href="#warmup">5 · The backtest seed</a>
-    <a href="#panels">6 · Reading the terminal</a>
-    <a href="#scanner">7 · The market scanner</a>
-    <a href="#assets">8 · The assets screener</a>
-    <a href="#btc">9 · Why BTC drives the model</a>
-    <a href="#run">10 · Running it &amp; what it costs</a>
-    <a href="#providers">11 · Data providers: free vs paid</a>
-    <a href="#roadmap">12 · Roadmap</a>
-    <a href="#honesty">13 · Honesty &amp; limits</a>
+    <a href="#tabs">1 · The five tabs</a>
+    <a href="#data">2 · Where the data comes from</a>
+    <a href="#model">3 · The hourly model</a>
+    <a href="#scores">4 · The three numbers</a>
+    <a href="#book">5 · The paper book</a>
+    <a href="#grading">6 · How the score gets graded</a>
+    <a href="#findings">7 · What the research found</a>
+    <a href="#run">8 · Running it &amp; what it costs</a>
+    <a href="#honesty">9 · Honesty &amp; limits</a>
   </div>
 
-  <h2 id="what"><span class="n">1</span>What it is</h2>
-  <p>SONAR has <b>three views</b>, sharing one data layer:</p>
+  <h2 id="tabs"><span class="n">1</span>The five tabs</h2>
   <table>
-    <tr><th>View</th><th>What it does</th><th>Does it assert a side?</th></tr>
-    <tr><td><a href="/">Terminal</a></td>
-      <td>The original BTC hourly up/down paper-trading dashboard. A probability model prices each hour,
-        compares itself to Polymarket, and takes at most one simulated bet per hour.</td>
-      <td><b class="up">Yes</b> — a real (paper) edge, because the model prices the market independently.</td></tr>
-    <tr><td><a href="/scan">Scanner</a></td>
-      <td>Ranks many live Polymarket markets — crypto, economy, politics, geopolitics — by a transparent
-        confidence heuristic, with matched news.</td>
-      <td>Only for crypto up/down markets. Elsewhere: the market's own odds, no call.</td></tr>
-    <tr><td><a href="/scan">Assets</a></td>
-      <td>A screener over real instruments — equities, indices, forex, crypto spot, commodities — with
-        price, momentum, volatility and matched news.</td>
-      <td><b class="down">No</b> — a computed "lean" indicator only. There is no independent model here.</td></tr>
+    <tr><th>Tab</th><th>What it does</th><th>Asserts a direction?</th></tr>
+    <tr><td>Terminal</td>
+      <td>The hourly BTC up/down paper trade. A probability model prices each
+        hour, compares itself to Polymarket, and takes at most one simulated bet.</td>
+      <td><b class="up">Yes</b> — the only place with an independent model</td></tr>
+    <tr><td>Assets</td>
+      <td>26 instruments — equities, indices, FX, 11 crypto, commodities — with
+        price, momentum, volatility, news level, reward:risk, P(profit), and
+        buy / short / read on every row.</td>
+      <td><b class="down">No</b> — direction is yours</td></tr>
+    <tr><td>Wire</td>
+      <td>The live newswire beside the earnings and IPO calendar, and a panel of
+        what the news is currently pointing at.</td>
+      <td>No</td></tr>
+    <tr><td>Book</td>
+      <td>Open paper positions, the calibration table, and the backtest button.</td>
+      <td>—</td></tr>
+    <tr><td>Macro</td>
+      <td>The regime — curve, VIX, real rates, unemployment. Matters mostly at
+        long horizons.</td>
+      <td>No</td></tr>
   </table>
-  <p>The core loop, everywhere: <b>read reality → form a view → compare to the crowd → (on the terminal)
-    act on paper</b>. Run it long enough and the equity curve answers one question: does the model
-    actually beat the market, or is it riding luck? (Spoiler: mostly luck.)</p>
+  <p>A Polymarket board used to sit here and was removed. Mirroring a market's
+    own odds back at you is not analysis — there was no independent model behind
+    any non-crypto row, so each one simply repeated the crowd. Dropping it also
+    removed about 52MB an hour of downloads.</p>
+  <p>The <b>Tooltips</b> switch in the toolbar explains every number on hover.</p>
 
-  <h2 id="data"><span class="n">2</span>Data sources</h2>
-  <p>Everything is a free, public, read-only endpoint. No API keys, no authentication, no write access
-    anywhere. If a feed hiccups, SONAR keeps the last good value rather than crashing.</p>
+  <h2 id="data"><span class="n">2</span>Where the data comes from</h2>
+  <p>All free, public and read-only. No API key is required for anything the app
+    does by default.</p>
   <table>
-    <tr><th>What</th><th>Where from</th><th>Notes</th></tr>
-    <tr><td>BTC/ETH price + hourly candle</td><td>Binance <code>BTCUSDT</code> / <code>ETHUSDT</code></td>
-      <td>The exact source Polymarket uses to resolve these markets. Coinbase <code>BTC-USD</code> is a fallback.</td></tr>
-    <tr><td>Hourly volatility σ</td><td>Binance hourly candles</td>
-      <td>Std-dev of the last ~72 hourly log-returns.</td></tr>
-    <tr><td>Market odds + order book</td><td>Polymarket Gamma + CLOB</td>
-      <td>Implied probability, best bid/ask, resting order sizes.</td></tr>
-    <tr><td>Multi-market scan</td><td>Polymarket Gamma <code>/markets</code></td>
-      <td>Top markets by 24h volume + soonest-resolving, merged and filtered.</td></tr>
-    <tr><td>Equities, indices, forex, commodities</td><td>Yahoo Finance chart endpoint</td>
-      <td>Daily candles + latest price. Free and keyless, but <em>unofficial</em> — see §11.</td></tr>
-    <tr><td>News — financial &amp; political</td><td>BBC Business, BBC Politics, MarketWatch, Yahoo Finance, NPR Business</td>
-      <td>Public RSS.</td></tr>
-    <tr><td>News — tech</td><td>Ars Technica, TechCrunch, The Verge</td>
-      <td>Public RSS/Atom. Tech coverage moves equities, so it feeds the same matcher.</td></tr>
+    <tr><th>What</th><th>Source</th><th>Note</th></tr>
+    <tr><td>Crypto hourly candles</td><td>Binance, Coinbase fallback</td>
+      <td>The exact source Polymarket resolves against.</td></tr>
+    <tr><td>Hourly market odds</td><td>Polymarket Gamma + CLOB</td><td>Read-only.</td></tr>
+    <tr><td>Equities, FX, commodities</td><td>Yahoo Finance</td>
+      <td>Broad and free but <em>undocumented</em>. See the provider layer below.</td></tr>
+    <tr><td>Crypto spot / FX fallback</td><td>CoinGecko, Frankfurter</td>
+      <td>Keyless second sources, so crypto and FX survive Yahoo breaking.</td></tr>
+    <tr><td>Earnings &amp; IPOs</td><td>Nasdaq calendars</td>
+      <td>Used because Yahoo's earnings endpoint now returns 401.</td></tr>
+    <tr><td>News</td><td>Reuters, AP, Bloomberg, FT, BBC, MarketWatch, Yahoo,
+        NPR, CNBC, Ars Technica, TechCrunch, The Verge</td>
+      <td>Wires arrive via Google News; their own feeds are closed. dpa has no
+        usable public feed at all.</td></tr>
+    <tr><td>Macro</td><td>FRED</td><td>Curve, VIX, CPI, unemployment, policy rate.</td></tr>
   </table>
+  <h3>The provider layer</h3>
+  <p>Sources sit behind one interface with a capability (quotes / bars / FX /
+    crypto), a tier (keyless or keyed) and an on-off switch. Requests walk the
+    enabled providers in order and take the first that answers, so a vendor
+    going down is a skipped provider rather than a broken app.</p>
+  <div class="warn"><b>One real fragility, found by building this.</b> Switch
+    Yahoo off and crypto still resolves through CoinGecko and FX through
+    Frankfurter — but <b>equities return nothing</b>. They have no keyless
+    second source, so most of the watchlist depends on a single undocumented
+    endpoint. A free Finnhub key closes that gap.</div>
 
-  <h2 id="model"><span class="n">3</span>The model — a barrier probability</h2>
-  <p>Part-way through the hour we already know the open <code>o</code> and the current price
-    <code>c</code>. What's uncertain is the move over the time that's left. The model treats the rest of
-    the hour as a <em>driftless random walk</em> (Bitcoin's hourly return is, to a good approximation, a
-    coin flip around zero). With <code>σ</code> the per-hour volatility and <code>τ</code> the fraction
-    of the hour remaining:</p>
+  <h2 id="model"><span class="n">3</span>The hourly model</h2>
+  <p>Each hour Polymarket asks whether the BTC/USDT candle will close at or above
+    its open. Part-way through, the open <code>o</code> and current price
+    <code>c</code> are known; the rest is modelled as a driftless random walk
+    with per-hour volatility <code>σ</code> and remaining fraction <code>τ</code>:</p>
   <div class="formula">P(up) = Φ( ln(c / o) / (σ · √τ) )</div>
-  <p>where <code>Φ</code> is the standard normal CDF. In plain words: <em>how many standard deviations
-    of the remaining move is the current price above the open?</em> The further above, and the less time
-    left, the more certain an Up close.</p>
   <ul>
-    <li>At the top of the hour (<code>τ = 1</code>, <code>c = o</code>) it returns exactly <b>0.5</b> —
-      no information, no edge.</li>
-    <li>As the hour runs out (<code>τ → 0</code>) it collapses toward <b>1</b> or <b>0</b> depending
-      only on whether price is currently above or below the open.</li>
+    <li>At the top of the hour (<code>τ=1</code>, <code>c=o</code>) it returns
+      exactly <b>0.5</b> — no information, no edge.</li>
+    <li>As the hour runs out it collapses toward 1 or 0 on the current sign.</li>
   </ul>
-  <p>The model's <em>only</em> disagreement with the market comes from the volatility estimate: it uses
-    <b>realised</b> vol (recent hourly moves) while the market prices its own <b>implied</b> vol. When
-    they differ, there's a thin statistical edge — the realised-vs-implied trade that real quants run.
-    It is small, and frequently negative once you pay the spread.</p>
+  <p>The only disagreement with the market comes from the volatility estimate:
+    SONAR uses <b>realised</b> vol while the market prices its own <b>implied</b>
+    vol. That is a real but thin edge, and frequently negative after the spread.</p>
 
-  <h2 id="trading"><span class="n">4</span>Paper trading — sizing &amp; settlement</h2>
-  <p>The engine holds <b>at most one position per hour</b>. It enters only when both are true:</p>
-  <ul>
-    <li>the absolute edge <code>|model − market|</code> exceeds <b>4¢</b>, and</li>
-    <li>there's a sensible amount of time left (roughly the middle ~70% of the hour — not the noisy first
-      minutes, not the final seconds).</li>
-  </ul>
-  <p>Stake is a <b>capped, half-Kelly</b> fraction of the bankroll — bigger when the edge is bigger, but
-    never more than <b>8%</b> on one hour. Entry crosses the spread (you pay the ask), so the fill price
-    is realistic. Buying the <span class="up">Up</span> share at price <code>p</code> means each share
-    costs <code>p</code> and pays <code>1.00</code> if the hour closes up, <code>0.00</code> if not.</p>
-  <p>At the top of the next hour the position is <b>settled on the real candle</b>: a winning share is
-    worth 1.00, a loser 0.00, and the realised profit or loss updates the bankroll and the equity curve.</p>
-  <div class="callout"><b>Why a below-50% win rate can still show a profit.</b> The model often backs
-    cheap longshots (say 25¢). Those lose most of the time, but each win pays ~4× the stake. A handful of
-    those wins can lift the total even when fewer than half the bets hit — which is exactly why a rising
-    paper balance is <em>not</em> proof of edge. It's usually variance. This is not hypothetical: an
-    earlier run showed <b>+114%</b> on a <b>44% win rate</b>, carried by three longshot hits.</div>
-
-  <h2 id="warmup"><span class="n">5</span>The backtest seed</h2>
-  <p>A brand-new run would have an empty chart, so on first launch the equity curve is seeded with a
-    <b>fair-odds backtest</b> over the last 36 <em>real</em> hours: the model's favoured side, priced at
-    its own fair probability, settled on the real candle. Because the odds are fair, the expected value
-    is ≈ 0 by construction — it illustrates <em>variance</em>, not profit, and invents no counterparty.
-    On the chart these seed hours are the grey segment before the <span class="gold">gold LIVE line</span>;
-    in the trade log they carry a small <code>bt</code> tag.</p>
-
-  <h2 id="panels"><span class="n">6</span>Reading the terminal</h2>
-  <p>Flip on the <b>Tooltips</b> toggle in the header and hover anything for an inline explanation. The
-    panels, in short:</p>
+  <h2 id="scores"><span class="n">4</span>The three numbers</h2>
+  <p>Every Assets row carries three, and they answer different questions.</p>
   <table>
-    <tr><th>Panel</th><th>What it shows</th></tr>
-    <tr><td>Stat tiles</td><td>Bankroll, total P/L, return, win rate, hours resolved, profit factor.</td></tr>
-    <tr><td>Paper Equity Curve</td><td>Bankroll over time; grey = backtest seed, gold line = start of live trading.</td></tr>
-    <tr><td>Current Hour</td><td>Live price, the hour's open, change, range, and the countdown to resolution.</td></tr>
-    <tr><td>Model vs Market</td><td>Model P(up) vs market P(up), the edge between them, σ, and the current signal.</td></tr>
-    <tr><td>Probability Lattice</td><td>A Galton board of end-of-hour outcomes; blue = Up, red = Down, gold line = open.</td></tr>
-    <tr><td>Order Book · "Up"</td><td>Live Polymarket bids/asks and the spread you'd actually pay.</td></tr>
-    <tr><td>BTC Pulse</td><td>Price this hour against the dashed open line.</td></tr>
-    <tr><td>Open Paper Position</td><td>The single simulated bet held this hour, if any.</td></tr>
-    <tr><td>Per-Trade P/L</td><td>Histogram of profit/loss across resolved hours.</td></tr>
-    <tr><td>Trade Log</td><td>Every resolved hour: side, entry, stake, model, outcome, P/L.</td></tr>
+    <tr><th>Number</th><th>What it means</th></tr>
+    <tr><td>CONF</td>
+      <td><b>Notability</b>, 0–100: news 0.35, momentum 0.30, catalyst 0.20,
+        volatility 0.15. It ranks what is worth a look. It is <em>not</em> the
+        odds of profit.</td></tr>
+    <tr><td>R:R</td>
+      <td>Reward divided by risk, from a volatility-scaled target and stop.
+        1.5 means the target sits 1.5× as far away as the stop.</td></tr>
+    <tr><td>P(PROF)</td>
+      <td>The probability of touching the target before the stop.</td></tr>
   </table>
+  <div class="callout"><b>R:R and P(profit) are the same number twice.</b> For a
+    driftless walk the barrier maths fixes the hit rate at
+    <code>stop/(target+stop)</code>, so
+    <code>P(profit) = 1/(1+R:R)</code> and
+    <code>EV = P·target − (1−P)·stop = 0</code> exactly. A fatter target buys a
+    proportionally lower hit rate. No arrangement of barriers creates profit —
+    only <em>drift</em> does, and drift has to be measured before it is used.</div>
+  <p>That is why P(PROF) reads a flat <b>40%</b> across the board and is drawn in
+    grey: with R:R fixed at 1.5 and no measured edge, that is the honest number.
+    It moves only when <a href="#grading">calibration</a> finds real drift.</p>
+  <p>There is deliberately <b>no Bullish/Bearish lean</b>. There used to be; the
+    research below found the momentum behind it was worth nothing, so it was
+    deleted rather than tuned. The NEWS column shows how unusual today's coverage
+    is — Quiet / Normal / Elevated / Spike — which is a notability flag and not a
+    direction.</p>
 
-  <h2 id="scanner"><span class="n">7</span>The market scanner</h2>
-  <p>The <a href="/scan">Scanner</a> widens the tool from one BTC market to <b>many</b> live Polymarket
-    markets across crypto, economics, politics and geopolitics (sports are excluded). Each market gets a
-    <b>confidence score (0–100)</b> — and this is the part to read honestly:</p>
-  <div class="callout"><b>Confidence is not the probability you'll profit.</b> It's a transparent
-    heuristic for how <em>notable and tradeable</em> a setup looks right now, blended from measurable
-    factors. Every card shows the mix as a bar, so it's never a black box.</div>
+  <h2 id="book"><span class="n">5</span>The paper book</h2>
+  <p><b>buy</b> and <b>short</b> open a paper position on any row, sized so that
+    being stopped out costs a fixed slice of the book. Two very different
+    instruments therefore risk the same cash at their stops, which is the only
+    sizing rule that treats them comparably. One position per symbol.</p>
+  <p>Exits are prices, not dates: the target and the stop. History says those
+    resolve in a median of <b>6 trading days</b>, a quarter inside 3 and three
+    quarters inside 10.</p>
+  <h3>Optionally through Alpaca</h3>
+  <p>The built-in book fills instantly at the quoted price with no fees and no
+    queue, which makes it an optimistic bound. Alpaca's <b>paper</b> environment
+    is more honest — real market hours, real order handling, orders that sit
+    unfilled when the market is shut. Add a free paper key to a git-ignored
+    <code>.env</code> and SONAR uses it:</p>
+  <pre><code>APCA_API_KEY_ID=PK...        # paper keys start with PK
+APCA_API_SECRET_KEY=...</code></pre>
+  <div class="warn"><b>On the guards.</b> Alpaca's live and paper APIs differ by
+    one hostname. The host is a module constant with no parameter to override; a
+    key that is not clearly a paper key is refused before any request; the
+    account is checked on connect; and every request re-checks all of it. Each
+    failure raises. <b>Going live is not a setting in this app</b> — it is a
+    decision for a human with an account, and SONAR does not implement it.</div>
+
+  <h2 id="grading"><span class="n">6</span>How the score gets graded</h2>
+  <p>Every closed position carries the confidence it was opened on, so the Book
+    tab can ask the only question that matters: <em>did high scores actually win
+    more often?</em> Hit rate is bucketed by score and compared with what the
+    barrier maths advertised.</p>
+  <p>Below <b>20</b> closed positions it reports nothing at all. A five-win
+    streak is not an edge, and a young install showing an empty table is the
+    honest state rather than a bug.</p>
+  <p>The <b>run backtest</b> button answers the same question in seconds instead
+    of months, by replaying the identical plan over years of real bars — momentum
+    and volatility from prior bars only, then walking forward through actual highs
+    and lows. A bar that spans both barriers scores as a <em>loss</em>, since
+    daily data cannot order them, and costs are excluded. Reality is worse than
+    what it reports, not better.</p>
+
+  <h2 id="findings"><span class="n">7</span>What the research found</h2>
+  <p>Five studies, each more careful than the last. All of them negative.</p>
   <table>
-    <tr><th>Component</th><th>Meaning</th><th>Weight (crypto / other)</th></tr>
-    <tr><td>model edge</td><td>Model probability minus market price — the only true edge signal</td><td>0.30 / —</td></tr>
-    <tr><td>liquidity</td><td>24h volume and book depth</td><td>0.20 / 0.32</td></tr>
-    <tr><td>timing</td><td>How soon it resolves (sooner scores higher — the "quick" view)</td><td>0.15 / 0.26</td></tr>
-    <tr><td>momentum</td><td>How far the odds have moved recently</td><td>0.15 / 0.22</td></tr>
-    <tr><td>news</td><td>Recency-weighted matched headlines</td><td>0.20 / 0.20</td></tr>
+    <tr><th>Question</th><th>Answer</th></tr>
+    <tr><td>Does momentum predict the barrier outcome?</td>
+      <td>No — flat across buckets, and <em>worse</em> than baseline for the
+        largest moves.</td></tr>
+    <tr><td>Does a news/attention spike?</td>
+      <td>No — +0.8 points against a ±3.1 error bar, over 25,504 setups.</td></tr>
+    <tr><td>Does anything sort the cross-section?</td>
+      <td>No — 0 of 16 features survived false-discovery correction over
+        116,563 rows.</td></tr>
+    <tr><td>Did the one surviving lead replicate?</td>
+      <td>No — it lived in a single period, appeared in crypto rather than the
+        equities its theory requires, and had no orderly decay.</td></tr>
+    <tr><td>Does anything work <em>conditionally</em>?</td>
+      <td>No — 0 of 48 feature-by-regime tests, with the floor set by a control.</td></tr>
   </table>
-  <p>A <b>side</b> (Up/Down, on paper) is asserted <em>only</em> for crypto up/down markets, where the
-    barrier model gives an independent probability. For every other market there's no independent model,
-    so the scanner shows the market's own odds and the news around it — no buy/sell call.</p>
-  <h3>News as context</h3>
-  <p>Headlines come from the eight reputable public feeds in §2, keyword-matched to each market and shown
-    with source and link. Matching is deliberately conservative — months, weekdays and stopwords are
-    stripped, and a match needs a distinctive shared term — so a shared "July" can't fake a connection.
-    Two rules: it's <b>context, not a predictor</b> (sentiment is a crude word-list heuristic, labelled as
-    such), and scraped text is treated as <b>untrusted data</b> — the tool reads and summarises it, never
-    acts on anything written inside a headline or article.</p>
+  <div class="callout"><b>The most useful thing the research produced was a
+    warning.</b> In one holdout window a <em>seeded random number</em> — a
+    feature that cannot predict anything — reached t = −1.87, while real features
+    sat at +2.4 to +3.4 and looked like discoveries. Daily cross-sections are
+    correlated, so a single window holds far fewer independent observations than
+    its date count suggests. Candidates are now scored against the noise floor
+    measured in their own window, never a textbook threshold.</div>
+  <p>An earlier version of these docs claimed a news spike was worth +4.9 points.
+    It did not survive a larger sample and fell to +0.8. That claim is recorded
+    as withdrawn rather than quietly deleted, because silently editing it would
+    leave exactly the false impression this project exists to argue against.</p>
+  <p>Two things are still <b>untested</b>, not cleared: SONAR's own word-list
+    <b>sentiment</b> (Wikipedia pageviews measure attention volume, not tone), and
+    anything requiring intraday or order-flow data.</p>
 
-  <h2 id="assets"><span class="n">8</span>The assets screener</h2>
-  <p>The <b>$ Assets</b> tab on the Scanner covers <b>17 real instruments</b>: 7 equities (AAPL, MSFT,
-    NVDA, TSLA, AMZN, GOOGL, META), 3 indices (S&amp;P 500, Nasdaq, Dow), 3 FX pairs (EUR/USD, GBP/USD,
-    USD/JPY), 2 crypto spot (BTC, ETH) and 2 commodities (gold, WTI crude). Each card shows live price,
-    1-day and 5-day change, daily volatility, a sparkline, matched news, and a confidence score.</p>
-  <div class="warn"><b>There is no model here — and that matters.</b> Unlike a prediction market, a stock
-    has no "fair value" SONAR can compute independently. So the <b>Bullish / Bearish / Neutral lean</b> is
-    nothing more than the sign of <em>(5-day momentum + crude news sentiment)</em>. It is a computed
-    technical indicator, shown transparently. It is <b>not</b> a recommendation, and it is not advice.</div>
-  <p>Asset confidence is weighted <b>news 0.45 · momentum 0.35 · volatility 0.20</b> — deliberately
-    news-heavy, because for a real asset "what's happening right now" is the honest thing to surface, and
-    a price move alone tells you little about why.</p>
-
-  <h2 id="btc"><span class="n">9</span>Why BTC drives the model</h2>
-  <p>SONAR now covers many markets and many assets, but the <em>barrier model</em> — the only component
-    that produces a genuine edge — still runs on crypto up/down markets. That's a matter of what can be
-    priced honestly, not a limitation of the code:</p>
-  <ul>
-    <li>The model needs an <b>open, a current price, a volatility and a clock</b>. Crypto hourly markets
-      supply all four, exactly and for free.</li>
-    <li>The resolution source (a single Binance 1-hour candle) is <b>unambiguous</b> — no judgement calls,
-      no disputed outcomes.</li>
-    <li>Polymarket's most liquid cleanly-resolving hourly series is BTC's; ETH has an equivalent one and
-      SONAR prices it the same way. Most other assets have no such market.</li>
-  </ul>
-  <p>For an election, a Fed decision or a stock, there is no comparable independent pricing — so SONAR
-    deliberately declines to invent one. That silence is the honest answer, not a missing feature.</p>
-
-  <h2 id="run"><span class="n">10</span>Running it &amp; what it costs</h2>
-  <p>Zero dependencies — Python 3.11+ standard library only:</p>
-  <pre><code>python3 -m sonar.server        # then open http://127.0.0.1:8787
-# options:  --host 0.0.0.0  --port 9000</code></pre>
-  <p>Leave it running and the equity curve gains a point each hour as markets resolve. State persists to
-    <code>data/state.json</code> (delete that file to reset to a clean $10,000).</p>
+  <h2 id="run"><span class="n">8</span>Running it &amp; what it costs</h2>
+  <p>A native macOS app — PySide6 widgets, every chart drawn with QPainter, no
+    web view.</p>
+  <pre><code>uv venv .venv &amp;&amp; uv pip install -r requirements.txt
+python main.py              # the app
+python main.py --selftest   # check a build's wiring and exit
+python main.py --headless   # the HTTP daemon instead</code></pre>
   <h3>Does it cost money?</h3>
-  <p><b>No.</b> It runs locally on your machine; every data source is a free public API with no key and no
-    billing; it places no trades, so there are no fees; and — worth stating plainly — the running app makes
-    <b>zero AI/LLM calls</b>. The "model" is local arithmetic and the news sentiment is a local word list.
-    Building SONAR used AI; running it does not.</p>
-  <p>The only real resource is <b>bandwidth</b>, measured live:</p>
-  <table>
-    <tr><th>Component</th><th>Cadence</th><th>≈ per hour</th></tr>
-    <tr><td>Market scan</td><td>every 90 s</td><td>~52 MB <span class="muted">(the 150-market list is ~1.3 MB a call)</span></td></tr>
-    <tr><td>Hourly market + order book</td><td>every 15 s</td><td>~3.5 MB</td></tr>
-    <tr><td>News (8 feeds)</td><td>cached 8 min</td><td>~2.2 MB</td></tr>
-    <tr><td>Assets (17 symbols)</td><td>cached 2 min</td><td>~1.7 MB</td></tr>
-    <tr><td>BTC price tick</td><td>every 4 s</td><td>~0.2 MB</td></tr>
-    <tr><td><b>Total</b></td><td></td><td><b>~60 MB/hour ≈ 1.4 GB/day</b> if left running 24/7</td></tr>
-  </table>
-  <p class="muted">Negligible on home broadband; worth knowing on a metered or mobile connection. It's
-    dominated by the market scan — widening that interval to 5 minutes cuts total traffic by roughly 70%.
-    Free APIs may <em>throttle</em> if hammered, but they never bill.</p>
+  <p><b>No.</b> It runs locally, every source is a free public API with no key and
+    no billing, it places no real trades, and the running app makes <b>zero
+    AI/LLM calls</b> — the model is local arithmetic and the news sentiment is a
+    local word list. Building SONAR used AI; running it does not.</p>
+  <p>The only resource is bandwidth, roughly <b>8MB an hour</b> since the
+    Polymarket board was removed — down from about 60MB. Negligible on
+    broadband, and worth knowing on a metered connection.</p>
 
-  <h2 id="providers"><span class="n">11</span>Data providers: free vs paid</h2>
-  <p>SONAR currently runs entirely on free, keyless endpoints. If you want it sturdier or broader, these
-    are the realistic upgrades — and what each actually buys you:</p>
-  <table>
-    <tr><th>Provider</th><th>Covers</th><th>Key?</th><th>What it gets you</th></tr>
-    <tr><td>Yahoo Finance <span class="tag done">in use</span></td><td>stocks, ETFs, indices, FX, futures, crypto</td><td>none</td>
-      <td>Free and broad, but <em>unofficial</em> — it can rate-limit or change shape without notice.</td></tr>
-    <tr><td>Binance / Coinbase <span class="tag done">in use</span></td><td>crypto</td><td>none</td>
-      <td>The resolution source for the hourly markets. Reliable and public.</td></tr>
-    <tr><td>Polymarket <span class="tag done">in use</span></td><td>prediction markets</td><td>none</td>
-      <td>Odds, order books, market metadata. Read-only.</td></tr>
-    <tr><td>Stooq</td><td>stocks, FX, indices</td><td>none</td><td>Free end-of-day CSV. Delayed, but a good fallback.</td></tr>
-    <tr><td>CoinGecko</td><td>crypto</td><td>none</td><td>Broad coin coverage beyond the major exchanges.</td></tr>
-    <tr><td>Frankfurter / exchangerate.host</td><td>forex</td><td>none</td><td>Clean ECB reference rates.</td></tr>
-    <tr><td><b>Finnhub</b></td><td>US stocks, FX, crypto</td><td>free key</td>
-      <td><b>Upgrades SONAR's eyes.</b> A documented, supported API instead of an endpoint that isn't meant
-        for us — plus company news, earnings dates and basic fundamentals.</td></tr>
-    <tr><td>Alpha Vantage / Twelve Data</td><td>stocks, FX, crypto</td><td>free key</td><td>Official-ish; tight free-tier rate limits.</td></tr>
-    <tr><td>Polygon.io / Tiingo</td><td>US stocks</td><td>free tier</td><td>High-quality data; real-time costs money, free is delayed.</td></tr>
-    <tr><td><b>Alpaca</b> <span class="tag plan">planned</span></td><td>US stocks</td><td>free paper key</td>
-      <td><b>Gives SONAR hands — in a sandbox.</b> A real paper-trading account: simulated buys and sells
-        with real market mechanics and fills, so equities get the same honest treatment BTC already has.</td></tr>
-  </table>
-  <p>Rough rule: <b>Finnhub makes the numbers more trustworthy; Alpaca makes the strategy testable.</b>
-    Free tiers are typically delayed ~15 minutes for equities — fine for a screener, useless for
-    high-frequency anything. Any API keys belong in a local, git-ignored <code>.env</code>.</p>
-
-  <h2 id="roadmap"><span class="n">12</span>Roadmap</h2>
-  <table>
-    <tr><th>Item</th><th>Status</th><th>Notes</th></tr>
-    <tr><td>Pluggable providers</td><td><span class="tag plan">planned</span></td>
-      <td>Every source behind one adapter interface, each with its own on/off and free/paid toggle.</td></tr>
-    <tr><td>Alpaca paper trading</td><td><span class="tag plan">planned</span></td>
-      <td>Real simulated equity trades in Alpaca's <b>paper</b> sandbox. Paper endpoint only, guarded at
-        startup; the user supplies their own keys.</td></tr>
-    <tr><td>Read-only account balances</td><td><span class="tag plan">planned</span></td>
-      <td>Revolut and other accounts via an Open Banking aggregator (GoCardless/TrueLayer/Plaid), shown as
-        context. <b>Display only</b> — never moving money.</td></tr>
-    <tr><td>Real-money execution</td><td><span class="tag no">not planned</span></td>
-      <td>SONAR will not place live orders, connect a funded broker for execution, or move real money.
-        See §13.</td></tr>
-  </table>
-
-  <h2 id="honesty"><span class="n">13</span>Honesty &amp; limits</h2>
+  <h2 id="honesty"><span class="n">9</span>Honesty &amp; limits</h2>
   <div class="warn">
-    <b>This is not financial advice, and it places no real trades.</b> Paper P/L predicts nothing about
-    real results. Live trading would mean real fees, real spread, real slippage, and real risk — none of
-    which a simulation pays.
+    <b>This is not financial advice and it places no real trades.</b> Paper P/L
+    predicts nothing about real results. Live trading means real fees, real
+    spread, real slippage and real risk — none of which a simulation pays.
   </div>
   <ul>
-    <li><b>The edge is thin and often negative.</b> Crossing the real bid/ask spread eats most of any
-      realised-vs-implied advantage.</li>
-    <li><b>Small samples lie.</b> Dozens of hours is not enough to distinguish skill from luck; a
-      cheerful return number is usually the latter. See the +114% / 44%-win-rate example in §4.</li>
-    <li><b>Confidence scores are heuristics</b>, not probabilities of profit — and the asset "lean" is
-      momentum plus a word-list, nothing more.</li>
-    <li><b>News is context, never instruction.</b> Sentiment from a small lexicon does not forecast prices,
-      and scraped text is never treated as a command.</li>
-    <li><b>Settlement is approximated</b> at the hour boundary using the contiguous candle price (accurate
-      to within a few dollars), not a separate authoritative fetch.</li>
-    <li><b>The market is efficient.</b> These hourly crypto markets are priced by people doing the same
-      math; persistent free money is not on the table.</li>
+    <li><b>No edge has been found.</b> Five studies, progressively more careful,
+      all negative. That is the expected answer for liquid instruments priced by
+      people running the same arithmetic.</li>
+    <li><b>Confidence is notability</b>, not the probability of profit. P(PROF)
+      is that, and it sits at its driftless baseline because no drift has been
+      measured.</li>
+    <li><b>Small samples lie.</b> Dozens of positions cannot separate skill from
+      luck. An early run showed <b>+114% on a 44% win rate</b>, carried entirely
+      by three longshot wins — variance wearing a costume.</li>
+    <li><b>News is context, never instruction.</b> Scraped text is treated as
+      untrusted data: read and summarised, never acted upon.</li>
+    <li><b>Fills are optimistic.</b> The internal book ignores spread, slippage
+      and fees; the backtest excludes costs and resolves ambiguous bars against
+      you.</li>
   </ul>
-  <p>By design, SONAR stops one step short of acting: it will take you right up to a decision, with its
-    reasoning fully exposed, and leave the decision to you.</p>
+  <p>By design SONAR stops one step short of acting. It will take you up to a
+    decision with its reasoning fully exposed, and leave the decision to you.</p>
 
   <footer>
-    SONAR · paper-trading demonstrator and market scanner · data from Binance, Coinbase, Polymarket,
-    Yahoo Finance and public news RSS · built as an honest counterpart to social-media "AI trading bot"
-    hype. Source lives in the project's <code>sonar/</code> package and <code>static/</code> dashboards.
+    SONAR · paper-trading terminal, market scanner and research apparatus ·
+    data from Binance, Coinbase, Polymarket, Yahoo, CoinGecko, Frankfurter,
+    Nasdaq, FRED and public news RSS · built as an honest counterpart to
+    social-media "AI trading bot" hype.
   </footer>
 </div>
 </body>

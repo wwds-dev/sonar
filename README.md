@@ -10,17 +10,21 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 > probability model priced against a real market. SONAR builds exactly that — and keeps it
 > **paper money** so it can be honest about what it is.
 
-## Three views
+## Five tabs
 
-| View | URL | What it does | Asserts a side? |
-|---|---|---|---|
-| **Terminal** | `/` | BTC hourly up/down paper trading — model prices each hour, compares to Polymarket, takes at most one simulated bet | **Yes** — a real (paper) edge |
-| **Scanner** | `/scan` | Ranks many live Polymarket markets (crypto, economy, politics, geopolitics) by a transparent confidence heuristic, with matched news | Crypto up/down only |
-| **Assets** | tab | Screener over 26 instruments — equities, indices, forex, 11 crypto, commodities — with R:R, P(profit), and buy/short | **No** — direction is yours |
-| **Wire** | tab | Live newswire (Reuters, AP, Bloomberg, FT…) beside the earnings and IPO calendar | no |
-| **Book** | tab | Open paper positions, plus the calibration and backtest that grade the score | — |
+A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no web view.
 
-Plus in-app docs at `/docs`, and a tooltips toggle that explains every number on hover.
+| Tab | What it does | Asserts a direction? |
+|---|---|---|
+| **Terminal** | Hourly BTC up/down paper trade — the model prices each hour, compares to Polymarket, takes at most one simulated bet | **Yes** — the only independent model |
+| **Assets** | 26 instruments (equities, indices, FX, 11 crypto, commodities) with R:R, P(profit), news level, and buy/short per row | **No** — direction is yours |
+| **Wire** | Live newswire, the earnings and IPO calendar, and what the news is pointing at | No |
+| **Book** | Open paper positions, the calibration table, and the backtest button | — |
+| **Macro** | Regime: curve, VIX, real rates, unemployment | No |
+
+A Polymarket board used to sit here and was removed — mirroring a market's own odds back at
+you is not analysis, and dropping it also removed ~52MB/hour of downloads. Full docs live in
+the app behind the **Docs** button, plus a tooltips toggle explaining every number on hover.
 
 ## What's real vs simulated
 
@@ -67,15 +71,13 @@ with live paper trades marked by a gold "LIVE" divider.
 
 ## Confidence scores
 
-Both scanners rank by a **confidence score (0–100)**. Read it honestly: it is a heuristic for
-how *notable and tradeable* something looks — **not** the probability you'll make money. Every
-card shows its component mix as a bar.
+The Assets screen ranks by a **confidence score (0–100)**. Read it honestly: it is a heuristic
+for how *notable* something looks — **not** the probability you'll make money. That is
+`P(profit)`, and it is a separate number. Every row shows its component mix as a bar.
 
-- **Markets** — model edge (crypto only) `0.30`, liquidity `0.20`, timing `0.15`, momentum `0.15`,
-  news `0.20`. Non-crypto markets reweight across the remaining four.
-- **Assets** — news `0.35`, momentum `0.30`, catalyst `0.20`, volatility `0.15`. There is **no
-  directional lean**: the backtest below found momentum carried none, so the row shows a news
-  *level* (Quiet/Normal/Elevated/Spike) and you pick the side with buy or short.
+Weights: news `0.35`, momentum `0.30`, catalyst `0.20`, volatility `0.15`. There is **no
+directional lean** — the research below found momentum carried none, so the row shows a news
+*level* (Quiet / Normal / Elevated / Spike) and you pick the side with buy or short.
 
 News is **context, not a predictor**. Sentiment is a small word-list heuristic, matching is
 deliberately conservative, and scraped text is treated as **untrusted data** — read and
@@ -456,12 +458,21 @@ sonar/
   paths.py     dev vs frozen path resolution — the packaging landmine
   engine.py    paper portfolio: sizing, settlement, persistence, stats, LLM calibration
   llm.py       the optional narrative read (the only module with a dependency)
-  news.py      reputable RSS/Atom (financial, political, tech), matching + sentiment
-  scanner.py   multi-market confidence scoring and ranking
+  news.py      reputable RSS/Atom (financial, political, tech, wires), matching + sentiment
   assets.py    real-asset screener (equities/indices/FX/crypto/commodities)
+  scoring.py   volatility-scaled target/stop → R:R, P(profit), EV, position sizing
+  portfolio.py the general paper book: buy/short anything, mark, settle, persist
+  calibration.py did high scores actually win? the loop that grades the screener
+  backtest.py  replay the plan over years of real bars, with an attention proxy
+  events.py    Nasdaq earnings and IPO calendars — scheduled catalysts
+  universe.py  the tradeable universe from Nasdaq + Wikipedia article resolution
+  providers.py pluggable data sources: capability, tier, and an on/off switch
+  alpaca.py    Alpaca **paper** broker, with the live endpoint made unreachable
+  enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
+  research/    the study apparatus — features, panel, stats, validate, regimes
 ui/
-  app.py       the window — Terminal / Markets / Assets / Macro
+  app.py       the window — Terminal / Assets / Wire / Book / Macro
   charts.py    QPainter charts: equity curve, sparkline, depth, lattice, bars
   theme.py     palette, lifted from the original terminal's CSS
   worker.py    QThreads for the poll loop, LLM reads, and config changes
@@ -478,22 +489,30 @@ static/
 | | |
 |---|---|
 | `GET /api/state` | live snapshot: candle, market, signal, portfolio, calibration |
-| `GET /api/scan` | ranked prediction markets for the current horizon + risk |
 | `GET /api/assets` | the real-asset screen |
 | `GET /api/config` | current risk/horizon, available options, LLM availability |
 | `POST /api/config` | `{"risk": "...", "horizon": "..."}` — switches and rescans |
-| `POST /api/read` | `{"kind": "btc\|market\|asset", "id": "..."}` — one LLM read |
+| `POST /api/read` | `{"kind": "btc\|asset", "id": "..."}` — one LLM read |
 
-## Roadmap
+## What is left
 
-- **Pluggable providers** — every data source behind one adapter interface, each with its own
-  on/off and free/paid toggle (Finnhub, Alpha Vantage, Twelve Data, Polygon, Tiingo, CoinGecko…).
-- **Alpaca paper trading** — real simulated equity trades in Alpaca's **paper** sandbox, so
-  stocks get the same honest treatment BTC already has. Paper endpoint only, guarded at startup.
-- **Read-only balances** — Revolut and other accounts via an Open Banking aggregator, shown as
-  context. Display only, never moving money.
-- **Not planned: real-money execution.** SONAR will not place live orders, connect a funded
-  broker for execution, or move real money.
+The build backlog is finished — providers, Alpaca paper trading, the paper book, the research
+apparatus and the calibration loop all shipped. What remains is not more code:
+
+- **A free Finnhub key.** Equities currently have no keyless second source, so most of the
+  watchlist rides on one undocumented Yahoo endpoint. This is the single highest-value change.
+- **Let the paper book run.** A real track record is the one thing no amount of backtesting
+  substitutes for, and the calibration table stays empty until ~20 positions have closed.
+- **Better data, if the research is ever resumed.** Five studies found nothing in daily bars,
+  free news and macro regimes. Anything further needs intraday bars, order flow, or a news
+  archive with tone — all of which cost money. More features on this data is not the answer.
+
+**Not planned: real-money execution.** SONAR will not place live orders, connect a funded
+broker, or move real money. Going live is a decision for a human with an account.
+
+**Investigated and closed: Revolut.** There is no public retail-investment API, so reading
+holdings is not possible; balances would need a licensed Open Banking aggregator. Reopen only
+as a deliberate project, not a spike.
 
 ## Not advice
 
