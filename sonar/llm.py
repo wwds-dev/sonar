@@ -29,7 +29,7 @@ Dependency boundary
 -------------------
 This is the only module in SONAR that needs a third-party package. The import is
 guarded and happens inside :meth:`LLMReader.read`, so ``feeds``/``model``/
-``news``/``assets``/``scanner``/``engine``/``server`` stay standard-library only
+``news``/``assets``/``engine``/``server`` stay standard-library only
 and the daemon runs with zero dependencies exactly as before. Install
 ``anthropic`` only if you want this panel.
 

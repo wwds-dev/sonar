@@ -37,7 +37,7 @@ the app behind the **Docs** button, plus a tooltips toggle explaining every numb
 
 **No** authentication, **no** write access anywhere, and nothing here can move real money.
 
-The probability model, both scanners and the paper engine make **zero AI/LLM calls** — that is
+The probability model, the asset screener and the paper engine make **zero AI/LLM calls** — that is
 all local arithmetic over public data, and it needs no API key. The one exception is the
 optional **LLM read** (below), which you invoke by hand on a single opportunity and which
 requires an Anthropic key. Leave it off and SONAR runs exactly as it always did: keyless,
@@ -312,16 +312,16 @@ Two knobs, and it matters *where* they apply.
 It was always in the code — hardcoded as four constants at the top of `engine.py` — and is now
 named. It changes what you **stake** and what you **see**, never what something **scores**:
 
-| | edge threshold | Kelly | max stake | min liquidity |
+| | edge threshold | Kelly | max stake | max daily vol |
 |---|---|---|---|---|
-| conservative | 7¢ | ¼ | 3% | $50k |
-| **moderate** (default) | 4¢ | ½ | 8% | $10k |
+| conservative | 7¢ | ¼ | 3% | 4% |
+| **moderate** (default) | 4¢ | ½ | 8% | none |
 | aggressive | 2.5¢ | ¾ | 15% | none |
 
 **Horizon** (`--horizon intraday|week|month`) is about **when**. The hourly engine has no
-horizon to pick — Polymarket's up/down market *is* one hour — so this shapes the two scanners:
-the timing component now **peaks at your horizon** instead of always preferring "soonest", and
-the asset screener switches its momentum window (1d / 5d / 20d) to match.
+horizon to pick — Polymarket's up/down market *is* one hour — so this shapes the asset screener
+only: it switches its momentum window (1d / 5d / 20d) to match, and writes the exit plan
+against that holding period.
 
 Both are live-switchable from `POST /api/config`; the boards rescan immediately.
 
@@ -437,9 +437,11 @@ model would be pointing a careful safety layer at the wrong signal.
 ### What it costs
 
 **Nothing, unless you use the LLM read.** Every data source is a free keyless public API, no
-trades means no fees, and the model, scanners and paper engine make no AI calls at all. The
-only standing resource is bandwidth — roughly **60 MB/hour (~1.4 GB/day)** left running 24/7,
-dominated by the 90-second market scan; widening that to 5 minutes cuts traffic ~70%.
+trades means no fees, and the model, the screener and the paper engine make no AI calls at all.
+The only standing resource is bandwidth — roughly **8 MB/hour (~190 MB/day)** left running 24/7.
+It used to be 60 MB/hour: dropping the multi-market Polymarket board removed ~52 MB/hour, which
+was the single largest thing SONAR downloaded, for a board that mirrored the crowd's own prices
+and could say nothing of its own.
 
 The LLM read is the one paid path: it bills normal Anthropic API rates per invocation, and only
 when you ask for one. It is not wired into any polling loop.
@@ -480,7 +482,6 @@ assets/
   make_icon.py one-off icon generator (QPainter, no extra deps)
 static/
   index.html   the BTC terminal (canvas charts, tooltips)
-  scan.html    the scanner + assets board
   docs.html    in-app documentation
 ```
 

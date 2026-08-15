@@ -2,13 +2,14 @@
 
 This module pulls headlines from a small set of well-known financial and
 political outlets' public RSS feeds, and offers crude keyword matching and
-sentiment so the scanner can show "here is what's in the news around this
-market." Two honesty rules are baked in:
+sentiment so the screener can show "here is what's in the news around this
+asset." Two honesty rules are baked in:
 
 * **It is context, not a predictor.** Headline sentiment does not reliably
-  forecast a market's direction, and nothing here claims it does. The scanner
-  folds a small, transparent news component into a heuristic score and shows the
-  matched headlines so a human can judge them.
+  forecast direction, and nothing here claims it does — a pre-registered study
+  of it across 116,563 asset-days found no edge. The screener folds a small,
+  transparent news component into a heuristic score and shows the matched
+  headlines so a human can judge them.
 * **Scraped text is untrusted data.** Feed contents are treated purely as data
   to display and keyword-match. Instructions that might appear inside a headline
   or article are never followed — this module only ever reads and summarises.
@@ -107,7 +108,7 @@ class Headline:
 
 class NewsCache:
     """Fetches and caches all feeds. News changes slowly, so a long TTL keeps the
-    scanner light on the network."""
+    screener light on the network."""
 
     def __init__(self, ttl: float = 480.0) -> None:
         self.ttl = ttl

@@ -57,7 +57,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/api/read"):
             body = self._read_json_body()
             kind = str(body.get("kind", "btc"))
-            if kind not in ("btc", "market", "asset"):
+            if kind not in ("btc", "asset"):
                 self._json({"error": "bad kind"}, 400)
                 return
             self._json(self.live.read(kind, str(body.get("id", ""))))
@@ -81,9 +81,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         page = {"/": "index.html", "/index.html": "index.html",
-                "/docs": "docs.html", "/docs/": "docs.html", "/docs.html": "docs.html",
-                "/scan": "scan.html", "/scan/": "scan.html",
-                "/scanner": "scan.html", "/scan.html": "scan.html"}.get(self.path)
+                "/docs": "docs.html", "/docs/": "docs.html",
+                "/docs.html": "docs.html"}.get(self.path)
         if page:
             self._send(200, (STATIC / page).read_bytes(), "text/html; charset=utf-8")
             return

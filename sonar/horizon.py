@@ -5,18 +5,14 @@ SONAR runs on two clocks, and a horizon means something different on each:
 * **The hourly engine** (``engine.py``) has no horizon to choose. Polymarket's
   "Bitcoin Up or Down" market *is* one hour; that is fixed by the instrument,
   not by us. Horizon does not apply there.
-* **The scanners** (``scanner.py``, ``assets.py``) genuinely span days to
-  months, and that is where a horizon belongs.
+* **The asset screener** (``assets.py``) genuinely spans days to months, and
+  that is where a horizon belongs.
 
 What a horizon changes
 ----------------------
-1. ``scanner.py`` — the timing component used to decay monotonically ("sooner
-   is always better", hardcoded to a 720-hour scale). With a horizon it instead
-   **peaks at the horizon**: on a one-week setting a market resolving in six
-   days outranks one resolving in two hours. Markets far outside the band are
-   dropped entirely.
-2. ``assets.py`` — selects which momentum window drives the momentum score and
-   the directional lean (1-day, 5-day, or 20-day).
+``assets.py`` — selects which momentum window drives the momentum score and
+the directional lean (1-day, 5-day, or 20-day), and sets the holding period the
+plan is written against.
 
 As with :mod:`sonar.risk`, this shapes *ranking and visibility*. The component
 scores themselves are still measurements.

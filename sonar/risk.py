@@ -9,16 +9,16 @@ The important boundary
 Risk tolerance and confidence are **orthogonal**, and mixing them would break
 both:
 
-* **Confidence** (``scanner.py``, ``assets.py``) measures *the market* —
-  liquidity, timing, momentum, model edge, news coverage. It is a property of
-  the world and must read the same no matter who is looking at it.
+* **Confidence** (``assets.py``) measures *the market* — momentum, volatility,
+  catalysts, news coverage. It is a property of the world and must read the
+  same no matter who is looking at it.
 * **Risk tolerance** (this module) measures *you*. It decides how much of the
   bankroll to put behind a given edge, and how picky to be about what is worth
   showing at all.
 
 So a profile is applied strictly *after* scoring. It changes what you **stake**
 (``kelly_fraction``, ``max_stake_fraction``, ``edge_threshold``, entry timing)
-and what you **see** (``min_liquidity``, ``max_daily_vol`` filters). It never
+and what you **see** (the ``max_daily_vol`` filter). It never
 mutates a confidence number — if it did, the same market would score
 differently for a cautious user than a reckless one, and the score would stop
 being a measurement of anything.
@@ -39,8 +39,7 @@ class RiskProfile:
         ``max_stake_fraction``  hard cap on one hour's stake, as a share of bankroll
         ``enter_tau_min/max``   window of remaining-hour in which entry is allowed
 
-    Filtering (used by the scanners — visibility only, never scoring)
-        ``min_liquidity``       hide prediction markets thinner than this (USD)
+    Filtering (used by the asset screener — visibility only, never scoring)
         ``max_daily_vol``       hide assets whose daily vol exceeds this (fraction)
     """
 
@@ -50,7 +49,6 @@ class RiskProfile:
     max_stake_fraction: float
     enter_tau_min: float
     enter_tau_max: float = 0.80
-    min_liquidity: float = 0.0
     max_daily_vol: float = float("inf")
 
     def kelly_stake(self, bankroll: float, model_side_prob: float,
@@ -78,7 +76,6 @@ CONSERVATIVE = RiskProfile(
     kelly_fraction=0.25,        # quarter-Kelly
     max_stake_fraction=0.03,
     enter_tau_min=0.25,         # leave real time for the thesis to play out
-    min_liquidity=50_000.0,
     max_daily_vol=0.04,
 )
 
@@ -88,7 +85,6 @@ MODERATE = RiskProfile(
     kelly_fraction=0.5,         # half-Kelly
     max_stake_fraction=0.08,
     enter_tau_min=0.12,
-    min_liquidity=10_000.0,
 )
 
 AGGRESSIVE = RiskProfile(
@@ -97,7 +93,6 @@ AGGRESSIVE = RiskProfile(
     kelly_fraction=0.75,
     max_stake_fraction=0.15,
     enter_tau_min=0.08,
-    min_liquidity=0.0,
 )
 
 PROFILES = {p.name: p for p in (CONSERVATIVE, MODERATE, AGGRESSIVE)}

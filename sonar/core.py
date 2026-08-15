@@ -31,7 +31,7 @@ def trade_dict(t) -> dict | None:
 PRICE_EVERY = 4.0            # seconds between price polls
 MARKET_EVERY = 15.0         # seconds between Polymarket polls
 VOL_EVERY = 600.0           # seconds between volatility refreshes
-SCAN_EVERY = 90.0           # seconds between multi-market scans
+SCAN_EVERY = 90.0           # seconds between asset-screen refreshes
 SPARK_MAX = 220             # price points kept for the sparkline
 
 # How long a volatility-scaled target/stop actually takes to resolve, measured
@@ -100,8 +100,8 @@ class Live:
         self._rescan()
 
     def _rescan(self) -> None:
-        """Refresh the multi-market scan and the real-asset screen (heavier,
-        runs rarely). Fetches headlines once and shares them across both."""
+        """Refresh the real-asset screen (heavier, so it runs rarely).
+        Headlines are fetched once here and shared with the screen."""
         try:
             heads = self.news.headlines()
         except Exception:
