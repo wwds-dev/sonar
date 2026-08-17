@@ -90,6 +90,16 @@ FLATTEN_SLIPPAGE = 0.01
 # rather than equality. Small enough that a real difference never hides under it.
 POSITION_EPSILON = 1e-9
 
+# States after which no more fills can arrive. Venues spell these differently
+# and inconsistently, so the set is generous and matching is case-insensitive.
+# Anything unrecognised is treated as *still working*: waiting on an order that
+# is actually finished costs a delay, while settling one that is still live
+# records a fill quantity that can still change.
+TERMINAL_STATUSES = frozenset({
+    "filled", "canceled", "cancelled", "rejected", "expired", "done_for_day",
+    "closed", "stopped",
+})
+
 
 def _f(x, default: float = 0.0) -> float:
     """Coerce a venue-supplied number. Venues send quantities as strings, as
@@ -118,6 +128,18 @@ class BrokerPort(Protocol):
     def cancel(self, order_id: str) -> dict: ...
     def working_orders(self) -> list[dict]: ...
 
+    def order_status(self, coid: str) -> dict:
+        """One order's current state, looked up by *client* order id.
+
+        By client id rather than venue id because that is what survives a crash
+        between the send and the reply: the client id is written to the audit
+        log before the request leaves, the venue's id may never arrive.
+
+        Returns at least ``status``. When terminal, also the filled quantity,
+        the average fill price and any commission — ``filled``/``filled_qty``,
+        ``avg_price``/``filled_avg_price``, ``fee``/``commission`` are all read.
+        """
+
     def positions(self) -> list[dict]:
         """Open positions, each with at least ``symbol`` and a **signed**
         quantity under ``quantity`` (``qty`` is accepted, since venues name it
@@ -141,6 +163,11 @@ class OrderIntent:
     side: str                       # BUY | SELL
     quantity: float
     limit_price: float | None = None
+    # The mark the decision was made at, when it differs from the limit. A
+    # marketable limit is deliberately priced through the book, so measuring
+    # slippage against the limit would score that deliberate offset as a cost
+    # (or, closing, as free money). Cost is measured against this instead.
+    reference_price: float | None = None
     tif: str = "DAY"
     source: str = "manual"          # what proposed it — never what sends it
     note: str = ""
@@ -153,6 +180,11 @@ class OrderIntent:
         if self.limit_price is None:
             return None
         return round(self.quantity * self.limit_price, 2)
+
+    @property
+    def benchmark(self) -> float | None:
+        """The price this order's execution is scored against."""
+        return self.reference_price if self.reference_price else self.limit_price
 
     @property
     def client_order_id(self) -> str:
@@ -190,7 +222,10 @@ class AuditLog:
         except OSError:
             pass          # logging must never break the flow it observes
 
-    def _records(self):
+    def records(self):
+        """Every record, oldest first. Malformed lines are skipped rather than
+        raising: a truncated final line after a crash must not make the whole
+        history unreadable."""
         try:
             with self.path.open() as fh:
                 for line in fh:
@@ -203,12 +238,12 @@ class AuditLog:
 
     def today_count(self, event: str = "submitted") -> int:
         today = date.today().isoformat()
-        return sum(1 for r in self._records()
+        return sum(1 for r in self.records()
                    if r.get("event") == event
                    and str(r.get("iso", "")).startswith(today))
 
     def seen_client_id(self, coid: str) -> bool:
-        return any(r.get("client_order_id") == coid for r in self._records())
+        return any(r.get("client_order_id") == coid for r in self.records())
 
 
 class SimBroker:
@@ -221,12 +256,13 @@ class SimBroker:
     """
 
     def __init__(self, reject: bool = False, fail: bool = False,
-                 equity: float = 100_000.0) -> None:
+                 equity: float = 100_000.0, fee_rate: float = 0.0) -> None:
         self.orders: list[dict] = []
         self._positions: dict[str, dict] = {}
         self.reject = reject      # simulate a venue rejection
         self.fail = fail          # simulate an unknown-outcome failure
         self._equity = equity
+        self.fee_rate = fee_rate  # 0 by default: the simulator is free, and says so
 
     def describe(self) -> dict:
         return {"venue": "simulator", "kind": "paper",
@@ -241,7 +277,8 @@ class SimBroker:
         oid = f"sim-{len(self.orders) + 1}"
         rec = {"order_id": oid, "client_order_id": coid, "symbol": symbol,
                "side": side, "quantity": quantity, "limit_price": limit_price,
-               "status": "Filled", "filled": quantity, "avg_price": limit_price}
+               "status": "Filled", "filled": quantity, "avg_price": limit_price,
+               "fee": round(quantity * limit_price * self.fee_rate, 6)}
         self.orders.append(rec)
         pos = self._positions.setdefault(symbol, {"symbol": symbol, "quantity": 0.0,
                                                   "avg_price": 0.0})
@@ -266,6 +303,12 @@ class SimBroker:
 
     def equity(self) -> float:
         return self._equity
+
+    def order_status(self, coid: str) -> dict:
+        for o in self.orders:
+            if o["client_order_id"] == coid:
+                return dict(o)
+        return {"client_order_id": coid, "status": "unknown"}
 
 
 def side_for_direction(direction: str) -> str:
@@ -521,7 +564,9 @@ class Guard:
             edge = (1.0 - slippage) if side == "SELL" else (1.0 + slippage)
             intent = OrderIntent(
                 symbol=symbol, side=side, quantity=abs(qty),
-                limit_price=round(mark * edge, 8), source="flatten",
+                limit_price=round(mark * edge, 8),
+                reference_price=mark,     # cost is measured against the mark,
+                source="flatten",         # not the offset we chose to cross by
                 note="kill switch", confirmed=True,
                 nonce=f"flat-{symbol}-{abs(qty):.10g}")
 
@@ -570,6 +615,77 @@ class Guard:
         self.halt("kill switch engaged")
         self.audit.write("panic_done", cancelled=cancelled, flattened=flat["flattened"])
         return {"cancelled": cancelled, "flattened": flat["flattened"]}
+
+    # -- settlement: what the order actually cost --------------------------- #
+    @staticmethod
+    def _economics(coid: str, intent: dict, st: dict) -> dict:
+        """Turn a terminal order into the numbers that decide whether to continue.
+
+        Slippage is signed so that **positive always means worse**: paying above
+        the benchmark to buy, or receiving below it to sell. Price improvement
+        comes out negative, which happens often enough with marketable limits
+        that scoring it as a cost would flatter nothing and confuse everything.
+        """
+        side = str(intent.get("side", "")).upper()
+        qty = _f(st.get("filled", st.get("filled_qty")))
+        fill = _f(st.get("avg_price", st.get("filled_avg_price")))
+        fee = _f(st.get("fee", st.get("commission")))
+        ref = _f(intent.get("reference_price")) or _f(intent.get("limit_price"))
+
+        sign = 1.0 if side == "BUY" else -1.0
+        slippage = (fill - ref) * sign * qty if (fill > 0 and ref > 0) else 0.0
+        notional = fill * qty
+        cost = slippage + fee
+        return {
+            "client_order_id": coid, "symbol": intent.get("symbol", ""),
+            "side": side, "status": str(st.get("status", "")).lower(),
+            "quantity": qty, "benchmark": ref, "fill_price": fill,
+            "fee": round(fee, 6), "slippage": round(slippage, 6),
+            "cost": round(cost, 6), "notional": round(notional, 6),
+            "cost_bps": round(cost / notional * 10_000, 3) if notional else 0.0,
+        }
+
+    def settle(self) -> dict:
+        """Poll every unsettled order to a terminal state and record what it cost.
+
+        Paper needs none of this: ``PaperBroker`` fills instantly at the quoted
+        price, so intent and outcome are the same object. A real order is
+        *accepted* first and filled later, partially, or never — and the fill
+        price is the only place the cost of trading actually appears. Without
+        this the book records intentions and calls them holdings.
+
+        Safe to call repeatedly. An order already settled is skipped, and one
+        still working is reported as pending rather than guessed at.
+        """
+        intents: dict[str, dict] = {}
+        settled: set[str] = set()
+        for r in self.audit.records():
+            ev, coid = r.get("event"), r.get("client_order_id")
+            if not coid:
+                continue
+            if ev == "submitted":
+                intents[coid] = r.get("intent") or {}
+            elif ev == "settled":
+                settled.add(coid)
+
+        done, pending, errors = [], [], []
+        for coid, intent in intents.items():
+            if coid in settled:
+                continue
+            try:
+                st = self.broker.order_status(coid)
+            except Exception as exc:
+                errors.append({"client_order_id": coid, "error": str(exc)})
+                continue
+            status = str(st.get("status", "")).lower()
+            if status not in TERMINAL_STATUSES:
+                pending.append({"client_order_id": coid, "status": status})
+                continue
+            rec = self._economics(coid, intent, st)
+            self.audit.write("settled", **rec)
+            done.append(rec)
+
+        return {"settled": done, "pending": pending, "errors": errors}
 
     def reconcile(self, expected: dict[str, float] | None = None) -> dict:
         """Venue state is the truth. Call after any uncertain outcome, and at

@@ -38,9 +38,21 @@ as a fraction of the amount you risk per trade:
 EV = −c   per trade, every trade
 ```
 
-At crypto taker fees of 0.2% a side and 1% of a €2,000 account risked per trade, `c` is
-roughly 4% of the risk unit — about €0.80 a trade. A hundred trades is about €80, and the
-distribution around it is wide enough that a good month proves nothing.
+That is now measurable rather than assumed — `sonar/costs.py` computes it from the audit
+log. Run through the ledger at crypto taker fees of 0.2% a side plus 5bp of slippage, on a
+€2,000 account risking 1% per trade:
+
+```
+20 round trips        fees €16.76 + slippage €4.19
+cost per round trip   €1.05          (50.0 bps per side)
+EV per trade = -c     -€1.05         (5.2% of the €20 risked)
+over 100 trades       -€105
+```
+
+An earlier draft of this section estimated ~4% and ~€0.80; measuring it gives 5.2% and
+€1.05. The estimate was optimistic, which is the usual direction for estimates of this kind
+and the reason the ledger exists. The distribution around that figure is wide enough that a
+good month proves nothing.
 
 **What this means for the code**, which is why it is here and not at the end:
 
@@ -250,8 +262,18 @@ be caught into a dict either. The guard has already halted; the caller needs to 
 Every item here is something `PaperBroker` and `SimBroker` get wrong in your favour.
 
 **Fills are asynchronous.** `SimBroker.place` returns `status: "Filled"`. A real venue
-returns `accepted` or `new`, and the fill arrives later or never. You need an order-state
-poller and a concept of a working order that the current code does not have.
+returns `accepted` or `new`, and the fill arrives later or never.
+
+`Guard.settle()` now handles this half: it polls every submitted-but-unsettled order via
+`BrokerPort.order_status(coid)` — by *client* id, because that is what survives a crash
+between the send and the reply — and records the economics once the order reaches a terminal
+state. Anything not in `TERMINAL_STATUSES` is reported as pending rather than guessed at,
+and an unrecognised status counts as still working: waiting on a finished order costs a
+delay, settling a live one records a fill quantity that can still change.
+
+What is still missing is the *other* half: `Portfolio.enter` records the position the moment
+`execute` returns, so the book holds intent rather than holdings until `settle()` runs. Call
+`settle()` then `reconcile()` on a timer.
 
 **Partial fills exist.** You ask for 40 and get 12, then 9, then the rest — or the rest
 never comes. Position quantity must come from `broker.positions()`, never from the intent
@@ -266,10 +288,32 @@ from `assets.py`.
 decimals differ per instrument. This is the most common first live error. Fetch the
 venue's instrument metadata and round to it before sending.
 
-**Costs are per-instrument and must be measured.** Log for every round trip: intended
-price, fill price, commission, and the difference. After 20 closed trades you will have an
-empirical `c` for §0. If it exceeds what you assumed, the answer is fewer, larger trades —
-or none.
+**Costs are per-instrument and must be measured** — `sonar/costs.py` does it, entirely from
+the audit log, so there is no second store that could disagree with the record.
+
+```python
+from sonar import costs
+costs.summary()          # cost per round trip, or a refusal to name one yet
+costs.round_trips()      # each completed round trip
+costs.orders()           # per-order slippage and fees
+```
+
+Three details that decide whether the number is honest:
+
+- **Slippage is measured against `reference_price`, not the limit.** A marketable limit is
+  priced through the book deliberately; scoring that chosen offset as slippage would invent
+  a cost on every closing order and report free money on the other side. `flatten()` sets
+  the reference to the mark for exactly this reason.
+- **Positive always means worse** — paying above the benchmark to buy, receiving below it to
+  sell. Price improvement comes out negative, which happens often enough with marketable
+  limits that scoring it as a cost would mislead.
+- **A round trip is a return to flat, not a pair of orders.** The ledger walks each symbol's
+  signed quantity and closes a round trip when it reaches zero, so a position closed in
+  pieces counts once. An open position contributes nothing: its cost is not yet known.
+
+`summary()` reports `reliable: False` below `MIN_ROUND_TRIPS` (20) and declines to name a
+figure, the same discipline as `calibration.MIN_SAMPLE`. If the measured `c` exceeds what
+you assumed, the answer is fewer and larger trades — or none.
 
 **Short selling is a different animal.** `portfolio.py` treats SHORT as a sign flip. Live
 it needs a margin account, borrow availability, and carries borrow fees and buy-in risk.

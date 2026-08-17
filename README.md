@@ -440,6 +440,10 @@ an in-process simulator, so every rule in it is testable:
   cannot become a second unguarded route to a venue. Confirmation defaults to *refuse*, and
   a refusal **raises** rather than returning an error dict — `Portfolio.enter` ignores that
   return value, so a dict would leave the book holding a position that was never sent
+- `settle()` polls orders to a terminal state and records what each one actually cost;
+  `sonar/costs.py` turns that into cost per round trip. Slippage is measured against the
+  decision mark rather than the limit, so deliberately crossing the spread is not scored as
+  a cost, and the summary refuses to name a figure below 20 completed round trips
 
 There is deliberately **no live venue wired up**. SONAR's only calibrated model prices the
 Polymarket hourly BTC market, which conventional brokers cannot trade; the assets board, which
@@ -468,7 +472,7 @@ when you ask for one. It is not wired into any polling loop.
 main.py        entry point — app, --selftest, --headless
 sonar/
   core.py      the headless engine driver; both the app and the daemon use it
-  feeds.py     BTC/ETH candles + Polymarket market, order book, multi-market scan
+  feeds.py     BTC/ETH candles + the hourly Polymarket market and its order book
   model.py     barrier probability + Galton-lattice distribution
   risk.py      risk profiles — staking and filtering, never scoring
   horizon.py   return horizons, intraday → year — timing curve + momentum window
@@ -486,6 +490,8 @@ sonar/
   universe.py  the tradeable universe from Nasdaq + Wikipedia article resolution
   providers.py pluggable data sources: capability, tier, and an on/off switch
   alpaca.py    Alpaca **paper** broker, with the live endpoint made unreachable
+  execution.py the order guard: caps, confirmation, idempotency, flatten, audit
+  costs.py     what a round trip actually cost, derived from the audit log
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
   research/    the study apparatus — features, panel, stats, validate, regimes
