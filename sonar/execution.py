@@ -268,6 +268,81 @@ class SimBroker:
         return self._equity
 
 
+def side_for_direction(direction: str) -> str:
+    """Map the portfolio's vocabulary onto an order side.
+
+    LONG/SHORT open, SELL/COVER close. Both closing directions invert: you sell
+    to close a long and buy to close a short. This mirrors the mapping in
+    :mod:`sonar.alpaca`; a test asserts the two stay in agreement.
+    """
+    return "BUY" if direction.upper() in ("LONG", "BUY", "COVER") else "SELL"
+
+
+class GuardedBroker:
+    """Presents :class:`sonar.portfolio.Broker` while enforcing the :class:`Guard`.
+
+    There are two broker seams in SONAR and only one of them is guarded. The
+    portfolio seam — ``execute(symbol, direction, units, price)`` — is what the
+    Book tab calls and where the Alpaca paper adapter sits; it sends market
+    orders and applies no caps, no confirmation and no audit. That is fine for
+    paper and unacceptable for anything else. This class exists so the portfolio
+    seam can be satisfied without a second, unguarded route to a venue existing.
+
+    Confirmation is a constructor argument, and its default is refusal
+    -----------------------------------------------------------------
+    ``confirm`` is called with the *unconfirmed* intent and must return true for
+    the order to go. With no confirmer every order is refused, the same way an
+    empty allowlist permits nothing: a UI that forgets to wire the dialog gets a
+    broker that cannot trade rather than one that trades unattended.
+
+    Rejections raise, deliberately
+    ------------------------------
+    ``Portfolio.enter`` and ``Portfolio.close`` ignore what ``execute`` returns
+    and update the local book regardless. So a refusal reported as
+    ``{"error": ...}`` would leave the book recording a position that was never
+    sent — manufacturing exactly the local-vs-venue divergence that
+    :meth:`Guard.reconcile` exists to catch. Raising aborts before either method
+    mutates anything.
+    """
+
+    def __init__(self, guard: "Guard", confirm=None, source: str = "book") -> None:
+        self.guard = guard
+        self._confirm = confirm
+        self.source = source
+        venue = guard.broker.describe()
+        self.name = f"guarded:{venue.get('venue', 'unknown')}"
+        self.live = str(venue.get("kind", "")).upper() == "LIVE"
+
+    def confirmation_text(self, intent: OrderIntent) -> str:
+        """The exact text a human approves. Live must not look like paper."""
+        v = self.guard.broker.describe()
+        banner = "*** REAL MONEY ***" if self.live else f"[{v.get('kind', '?')}]"
+        return f"{banner}  {v.get('venue', '?')}\n{intent.describe()}"
+
+    def execute(self, symbol: str, direction: str, units: float,
+                price: float) -> dict:
+        intent = OrderIntent(
+            symbol=symbol, side=side_for_direction(direction),
+            quantity=float(units), limit_price=float(price),
+            source=self.source, note=direction.upper())
+
+        if self._confirm is None:
+            self.guard.audit.write("unconfirmable", intent=asdict(intent))
+            raise GuardRejection(
+                "no confirmation handler is attached to this broker, so nothing "
+                "can approve an order. Refusing rather than sending unattended.")
+
+        if not self._confirm(intent):
+            self.guard.audit.write("declined", intent=asdict(intent))
+            raise GuardRejection("declined at the confirmation prompt")
+
+        intent.confirmed = True
+        out = self.guard.submit(intent)
+        return {"symbol": symbol, "direction": direction, "units": intent.quantity,
+                "price": price, "at": time.time(), "broker": self.name,
+                "client_order_id": out["client_order_id"], "reply": out["reply"]}
+
+
 class Guard:
     """The only supported way to submit an order from SONAR."""
 

@@ -10,7 +10,8 @@ import json
 import pytest
 
 from sonar.execution import (DEFAULT_LIMITS, AuditLog, ExecutionError, Guard,
-                             GuardRejection, OrderIntent, SimBroker)
+                             GuardedBroker, GuardRejection, OrderIntent,
+                             SimBroker, side_for_direction)
 
 ALLOW = ("AAPL", "MSFT")
 
@@ -484,3 +485,125 @@ def test_the_equity_check_can_be_switched_off(audit):
 
 def test_status_reports_equity(guard):
     assert guard.status()["equity"] == 100_000.0
+
+
+# --------------------------------------------------------------------------- #
+# GuardedBroker — the portfolio seam, without a second unguarded route to a venue.
+# --------------------------------------------------------------------------- #
+def yes(_intent):
+    return True
+
+
+def no(_intent):
+    return False
+
+
+def test_no_confirmer_means_nothing_can_trade(guard):
+    """Fail closed. A UI that forgets to wire the dialog gets a broker that
+    cannot trade, not one that trades unattended."""
+    gb = GuardedBroker(guard)
+    with pytest.raises(GuardRejection, match="no confirmation handler"):
+        gb.execute("AAPL", "LONG", 1, 100.0)
+    assert guard.broker.positions() == []
+
+
+def test_a_declined_order_is_not_sent(guard):
+    gb = GuardedBroker(guard, confirm=no)
+    with pytest.raises(GuardRejection, match="declined"):
+        gb.execute("AAPL", "LONG", 1, 100.0)
+    assert guard.broker.positions() == []
+
+
+def test_a_confirmed_order_goes_through(guard):
+    gb = GuardedBroker(guard, confirm=yes)
+    out = gb.execute("AAPL", "LONG", 2, 100.0)
+    assert out["client_order_id"].startswith("sonar-")
+    assert guard.broker.positions()[0]["quantity"] == 2
+
+
+def test_the_confirmer_sees_an_unconfirmed_intent(guard):
+    """If the adapter pre-confirmed, the prompt would be decorative."""
+    seen = []
+    GuardedBroker(guard, confirm=lambda i: seen.append(i.confirmed) or True) \
+        .execute("AAPL", "LONG", 1, 100.0)
+    assert seen == [False]
+
+
+@pytest.mark.parametrize("direction,side", [("LONG", "BUY"), ("COVER", "BUY"),
+                                            ("SHORT", "SELL"), ("SELL", "SELL")])
+def test_direction_maps_to_the_right_side(guard, direction, side):
+    seen = {}
+    gb = GuardedBroker(guard, confirm=lambda i: seen.update(side=i.side) or True)
+    gb.execute("AAPL", direction, 1, 100.0)
+    assert seen["side"] == side
+
+
+def test_the_mapping_agrees_with_the_alpaca_adapter():
+    """Two seams, one vocabulary. They must not drift apart."""
+    from sonar import alpaca
+    b = alpaca.AlpacaPaperBroker.__new__(alpaca.AlpacaPaperBroker)
+    for d in ("LONG", "SHORT", "SELL", "COVER", "BUY"):
+        sent = {}
+        b._request = lambda p, m="GET", body=None: sent.update(body or {}) or {}
+        b.execute("AAPL", d, 1, 100.0)
+        assert sent["side"].upper() == side_for_direction(d)
+
+
+def test_the_caps_still_apply_through_the_adapter(guard):
+    gb = GuardedBroker(guard, confirm=yes)
+    with pytest.raises(GuardRejection, match="exceeds per-order cap"):
+        gb.execute("AAPL", "LONG", 1, DEFAULT_LIMITS["max_order_notional"] + 1)
+
+
+def test_the_allowlist_still_applies_through_the_adapter(guard):
+    gb = GuardedBroker(guard, confirm=yes)
+    with pytest.raises(GuardRejection, match="allowlist"):
+        gb.execute("TSLA", "LONG", 1, 100.0)
+
+
+def test_a_live_venue_is_announced_differently(audit):
+    class Liveish(SimBroker):
+        def describe(self):
+            return {"venue": "somewhere-real", "kind": "LIVE", "detail": "real"}
+
+    gb = GuardedBroker(Guard(broker=Liveish(), allowlist=ALLOW, audit=audit),
+                       confirm=yes)
+    assert gb.live is True
+    text = gb.confirmation_text(intent(confirmed=False))
+    assert "REAL MONEY" in text and "somewhere-real" in text
+
+
+def test_a_paper_venue_is_not_dressed_up_as_live(guard):
+    gb = GuardedBroker(guard, confirm=yes)
+    assert gb.live is False
+    assert "REAL MONEY" not in gb.confirmation_text(intent(confirmed=False))
+
+
+def test_a_refusal_raises_rather_than_returning_an_error_dict(guard):
+    """The load-bearing contract.
+
+    Portfolio.enter and Portfolio.close ignore what execute() returns. A refusal
+    reported as a dict would leave the book recording a position that was never
+    sent — the exact divergence reconcile() exists to catch, self-inflicted.
+    """
+    gb = GuardedBroker(guard, confirm=no)
+    with pytest.raises(GuardRejection):
+        gb.execute("AAPL", "LONG", 1, 100.0)
+
+
+def test_the_book_records_nothing_when_the_guard_refuses(tmp_path, audit):
+    """The reason the contract above is what it is, proved end to end."""
+    from sonar.portfolio import Portfolio
+
+    g = Guard(broker=SimBroker(), allowlist=ALLOW, audit=audit)
+    book = Portfolio(tmp_path / "book.json",
+                     broker=GuardedBroker(g, confirm=no))
+    asset = {"symbol": "AAPL", "name": "Apple", "price": 100.0,
+             "volatility": 0.02, "cls": "Equity", "confidence": 50}
+
+    with pytest.raises(GuardRejection):
+        book.enter(asset, "LONG", horizon_days=5, horizon_name="week")
+
+    assert book.open == [], "the book recorded a position that was never sent"
+    assert book.cash == book.starting_cash, "cash moved for an order that never went"
+    assert g.broker.positions() == []

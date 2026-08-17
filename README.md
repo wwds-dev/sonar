@@ -436,6 +436,10 @@ an in-process simulator, so every rule in it is testable:
   position rather than closing twice
 - `reconcile(expected=...)` halts on any disagreement between local state and the venue —
   a position opened by hand in the broker's own app is otherwise invisible
+- `GuardedBroker` fills the portfolio's broker seam through the guard, so the Book tab
+  cannot become a second unguarded route to a venue. Confirmation defaults to *refuse*, and
+  a refusal **raises** rather than returning an error dict — `Portfolio.enter` ignores that
+  return value, so a dict would leave the book holding a position that was never sent
 
 There is deliberately **no live venue wired up**. SONAR's only calibrated model prices the
 Polymarket hourly BTC market, which conventional brokers cannot trade; the assets board, which

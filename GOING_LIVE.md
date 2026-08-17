@@ -196,50 +196,52 @@ live trading impossible to miss in review.
 
 ---
 
-## 4. Routing the app through the guard
+## 4. Routing the app through the guard — **`GuardedBroker` shipped**
 
-The Book tab calls `portfolio.Broker.execute(...)`. To make that path safe, adapt rather
-than replace:
-
-```python
-class GuardedBroker:
-    """Presents the portfolio's Broker interface, enforces the execution Guard.
-
-    The portfolio seam takes market orders and applies no limits. This wraps the
-    guarded path in that shape so the existing UI keeps working without gaining
-    an unguarded route to a live venue.
-    """
-
-    def __init__(self, guard: execution.Guard) -> None:
-        self.guard = guard
-        self.live = True
-        self.name = guard.broker.describe()["venue"]
-
-    def execute(self, symbol, direction, units, price) -> dict:
-        side = "BUY" if direction.upper() in ("LONG", "BUY", "COVER") else "SELL"
-        intent = execution.OrderIntent(
-            symbol=symbol, side=side, quantity=units,
-            limit_price=price,          # never None — the guard rejects unpriced
-            source="book-tab", note=direction.upper())
-        # confirmed stays False. The UI must set it from an explicit human action,
-        # not from the fact that a button was wired up.
-        return self.guard.submit(intent)
-```
-
-Then in `portfolio.default_broker()`, leave the default alone. Live must never be the
-fallback:
+`execution.GuardedBroker` satisfies `portfolio.Broker` while enforcing the `Guard`, so the
+portfolio seam can be filled without a second unguarded route to a venue existing.
 
 ```python
-def default_broker():
-    # unchanged: Alpaca paper if configured, else the internal book.
-    # A live broker is constructed explicitly by the caller, never selected here.
+guard = execution.Guard(broker=<your BrokerPort>, allowlist=("BTC-EUR",),
+                        limits={"max_order_notional": 25.0})
+book  = portfolio.Portfolio(path, broker=execution.GuardedBroker(guard, confirm=ask_user))
 ```
 
-The confirmation must happen in the UI, and the dialog should render
-`intent.describe()` — it exists to be the exact line a human approves — plus
-`guard.broker.describe()["kind"]`. A paper habit of clicking through must not
-survive contact with a live venue, so the live dialog should look different enough
-to interrupt muscle memory.
+**`confirm` defaults to refusal.** It is called with the *unconfirmed* intent and must
+return true for the order to go. With no confirmer every order is refused — a UI that
+forgets to wire the dialog gets a broker that cannot trade rather than one that trades
+unattended, the same principle as the empty allowlist.
+
+### Rejections raise. They do not return an error dict.
+
+This is the part that took reading `portfolio.py` to get right.
+
+`Portfolio.enter` and `Portfolio.close` **ignore what `execute()` returns** and update the
+local book regardless — which is harmless when `PaperBroker.execute` cannot fail, and not
+harmless otherwise. A refusal reported as `{"error": ...}` would leave the book recording a
+position that was never sent, manufacturing exactly the local-vs-venue divergence that
+`reconcile()` exists to catch.
+
+Raising aborts before either method mutates anything: both call `broker.execute` before
+they touch `self.cash` or `self.open`. There is a test that opens a book against a
+declining confirmer and asserts the position list and the cash are both untouched.
+
+`ExecutionError` — the unknown-outcome case — propagates for the same reason, and must not
+be caught into a dict either. The guard has already halted; the caller needs to know.
+
+### Still to do when you wire it up
+
+- **Leave `portfolio.default_broker()` alone.** It returns Alpaca paper or the internal
+  book. A live venue is constructed explicitly by a caller that means it, never selected by
+  a fallback chain.
+- **Render `GuardedBroker.confirmation_text(intent)`** in the dialog rather than composing
+  your own. It prefixes `*** REAL MONEY ***` on a live venue and `[paper]` otherwise, so a
+  habit of clicking through paper prompts does not survive contact with a live one.
+- **Async fills are still unhandled.** `Portfolio.enter` records the position at the
+  intended price the moment `execute` returns. Against a live venue that return means
+  *accepted*, not *filled*. Until an order-state poller exists (§5), the book is a record of
+  intent rather than of holdings — which is survivable only because `reconcile()` will catch
+  the divergence and halt.
 
 ---
 
