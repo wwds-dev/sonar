@@ -427,12 +427,24 @@ an in-process simulator, so every rule in it is testable:
 - unpriced orders rejected: no limit price means no notional to cap
 - an unknown outcome halts the guard rather than retrying, because a retry is how one order
   becomes two
-- append-only audit log, and a kill switch that latches closed
+- notional also capped as a share of equity **read from the venue**, so a stale local bankroll
+  cannot size the next position; a port that cannot report equity is refused
+- append-only audit log
+- a kill switch that cancels, **flattens**, then latches — `flatten()` is exempt from the halt
+  latch and every cap, because a limit that can stop you closing a position is one that traps
+  you in it, and it stays idempotent because a duplicate closing order opens the opposite
+  position rather than closing twice
+- `reconcile(expected=...)` halts on any disagreement between local state and the venue —
+  a position opened by hand in the broker's own app is otherwise invisible
 
 There is deliberately **no live venue wired up**. SONAR's only calibrated model prices the
 Polymarket hourly BTC market, which conventional brokers cannot trade; the assets board, which
 they can trade, explicitly asserts nothing. Connecting execution to the board SONAR does not
 model would be pointing a careful safety layer at the wrong signal.
+
+If you intend to connect one anyway, [GOING_LIVE.md](GOING_LIVE.md) is the implementation
+guide: venue choice, the `BrokerPort` contract, what paper trading hides, and the trap that
+there are **two** broker seams here and only one of them is guarded.
 
 ### What it costs
 

@@ -283,35 +283,45 @@ short TTL before you get throttled mid-submit.
 
 ---
 
-## 6. Changes the guard itself needs before live
+## 6. Changes the guard itself needed before live — **done**
 
-The guard is good, but it was written against a simulator, and three gaps only matter when
-money is real.
+These three gaps were closed in `sonar/execution.py`, with 28 new tests. They are worth
+having whether or not you ever go live: a kill switch that leaves you holding a position is
+a bug in the simulator too.
 
-**`panic()` does not flatten.** It cancels working orders and latches halted. If you are
-long 40 shares when you hit it, you are still long 40 shares — with the guard now refusing
-to let you send the closing order. That is the opposite of a kill switch.
+**`Guard.flatten(prices=None, slippage=0.01)`** — closes every open position, and is the
+half of the kill switch that was missing. `panic()` now cancels working orders, flattens,
+*then* latches, in that order.
 
-Add a `flatten()` that sends closing orders for every open position, and give it two
-properties that look wrong and are not:
+Its exemptions look like holes in the limits and are the opposite. Flatten ignores the halt
+latch, the daily order cap, the notional cap, and the allowlist, because every one of those
+exists to stop you *taking on* exposure and none should be able to stop you shedding it. A
+daily cap you have hit would otherwise leave you holding a position with no way to close it.
 
-- it must be **exempt from the halt latch**, or you can never close after halting;
-- it must be **exempt from the daily order cap**, or a cap you hit is a cap that traps you.
+Idempotency is the one rule that still applies, and it matters more here than anywhere: a
+duplicate closing order does not flatten you twice, it opens the opposite position. The
+nonce is derived from the position itself (`flat-{symbol}-{qty}`) rather than random, so a
+repeat is refused while a genuinely changed holding — a partial fill landed — passes.
 
-It must still be idempotent, because a duplicate closing order does not flatten you twice —
-it opens the opposite position.
+Closing orders are priced *through* the mark: below it to sell, above it to buy. A limit at
+the mark may never fill, which leaves exposure open during the one operation meant to
+remove it; a market order has no worst case at all. A marketable limit crosses the spread
+and still caps the fill. A position with no usable price is **reported, not guessed at**.
 
-**Startup reconciliation is missing.** Before the engine does anything, fetch positions
-from the venue and compare with local state. On any disagreement, halt and require a human.
-`Guard.reconcile()` returns the venue view but nothing calls it at boot and nothing
-compares. Paper never needed this because nothing else could touch the book.
+**`Guard.reconcile(expected=None)`** — unchanged when called bare. Hand it
+`{symbol: signed quantity}` as local state believes it stands, and any disagreement halts
+the guard. Call it at startup: a position opened by hand in the broker's own app is
+invisible to local state, and both directions are caught (venue-only and local-only).
+Comparison uses an epsilon, since crypto quantities are fractional.
 
-**Equity must come from the venue.** `scoring.position_size` sizes from local bankroll.
-Live, fetch equity from the account before sizing. A stale local number after a drawdown
-sizes every subsequent position too large, in the direction that compounds.
+**Equity now comes from the venue.** `BrokerPort.equity()` is required rather than
+optional, and `max_notional_pct_equity` (default 10%) is checked against it on every order.
+Putting the check in the guard rather than in `scoring.position_size` means it holds even
+if the sizing code is wrong — which is the point of a backstop. A port that cannot report
+equity is refused, the same way an empty allowlist permits nothing.
 
-Also revisit `DEFAULT_LIMITS`. `max_order_notional: 500.0` is a sane simulator default and
-probably 20× what you want on day one.
+Still worth doing before you go live: revisit `DEFAULT_LIMITS`. `max_order_notional: 500.0`
+is a sane simulator default and probably 20× what you want on day one.
 
 ---
 
