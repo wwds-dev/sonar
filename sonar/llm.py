@@ -271,3 +271,32 @@ class LLMReader:
             generated=int(started),
             latency_ms=int((time.time() - started) * 1000),
         )
+
+
+def complete(system: str, prompt: str, model: str = MODEL,
+             timeout: float = 120.0, max_tokens: int = MAX_TOKENS) -> tuple[str, str | None]:
+    """A plain-text completion. Returns ``(text, error)``; never raises.
+
+    ``Client.read`` is bound to the opportunity JSON schema. Features that want
+    prose under their own headings — the sports tab is the first — need a
+    completion that is not schema-constrained, but should still go through this
+    module so key resolution and the "is a read even possible" check stay in
+    one place.
+    """
+    ok, why = available()
+    if not ok:
+        return "", why
+    try:
+        import anthropic
+        client = anthropic.Anthropic(timeout=timeout)
+        resp = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        parts = [b.text for b in resp.content if getattr(b, "type", "") == "text"]
+        text = "\n".join(parts).strip()
+        return (text, None) if text else ("", "empty response")
+    except Exception as exc:
+        return "", f"{type(exc).__name__}: {exc}"

@@ -379,8 +379,11 @@ Build a signed `.app`:
 The build script runs `--selftest` **against the frozen binary**, because that is where
 packaging fails: a bundle is read-only and code-signed, so writable state must live in
 `~/Library/Application Support/SONAR/` (writing inside the `.app` breaks the signature and a
-reinstall wipes it), and lazily-imported modules — `anthropic`, here — are invisible to
-PyInstaller's static analysis without an explicit `--hidden-import`.
+reinstall wipes it), and lazily-imported modules — `anthropic`, plus `sonar.execution` and `sonar.costs`
+(nothing imports either yet, so PyInstaller drops them without the hint) — are invisible
+to PyInstaller's static analysis without an explicit `--hidden-import`. `--selftest`
+asserts both are present in the packaged build so a lost hidden-import fails loudly
+rather than silently at the moment the guard is wired up.
 
 Note the frozen app and the source tree keep **separate portfolios**: `~/Library/Application
 Support/SONAR/state.json` versus `data/state.json`. Installing does not inherit a dev bankroll.

@@ -25,17 +25,18 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout,
-                               QLabel, QMainWindow, QPushButton, QScrollArea,
-                               QSizePolicy, QTabWidget, QVBoxLayout, QWidget)
+                               QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
+                               QPushButton, QScrollArea, QSizePolicy, QTabWidget,
+                               QTextBrowser, QVBoxLayout, QWidget)
 
 from sonar import horizon as hz_mod
-from sonar import llm, paths, risk as risk_mod
+from sonar import llm, paths, risk as risk_mod, sports
 from sonar.core import Live
 from sonar.assets import _W as ASSET_W
 
 from . import theme
 from .charts import ComponentBar, DepthChart, EquityCurve, Lattice, Sparkline
-from .worker import BacktestThread, ConfigThread, PollThread, ReadThread
+from .worker import BacktestThread, ConfigThread, PollThread, PropThread, ReadThread
 
 REFRESH_MS = 1000
 # Long enough for macOS to finish collapsing the full-screen Space before the
@@ -514,6 +515,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._wire_tab(), "Wire")
         self.tabs.addTab(self._book_tab(), "Book")
         self.tabs.addTab(self._macro_tab(), "Macro")
+        self.tabs.addTab(self._sports_tab(), "Sports")
         outer.addWidget(self.tabs, 1)
 
         self.status = label("starting…", "faint", theme.mono(9))
@@ -886,6 +888,174 @@ class MainWindow(QMainWindow):
                       [PositionRow(p, self._close_position)
                        for p in pos.get("open", [])],
                       "No open paper positions. Use buy or short on the Assets tab.")
+
+    # -- sports ------------------------------------------------------------ #
+    def _sports_tab(self) -> QWidget:
+        """Prop-bet analysis. NFL today; the sport picker is the extension point.
+
+        Same division as the rest of SONAR: `sonar.sports` does the arithmetic
+        (implied probability, EV, Kelly) and the model is asked only for the
+        narrative on top of it. Paper analysis — nothing here places a wager.
+        """
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(10)
+
+        form = panel()
+        fl = QGridLayout(form)
+        fl.setContentsMargins(14, 12, 14, 12)
+        fl.setHorizontalSpacing(10)
+        fl.setVerticalSpacing(8)
+
+        self.sport_box = QComboBox()
+        for sp in sports.list_sports():
+            self.sport_box.addItem(sp.name, sp.key)
+        self.sport_box.currentIndexChanged.connect(self._sports_sport_changed)
+
+        self.prop_box = QComboBox()
+        self.sports_subject = QLineEdit()
+        self.sports_subject.setPlaceholderText("Player or team")
+        self.sports_line = QLineEdit()
+        self.sports_line.setPlaceholderText("Over 252.5")
+        self.sports_odds = QLineEdit()
+        self.sports_odds.setPlaceholderText("-110")
+        self.sports_context = QLineEdit()
+
+        fl.addWidget(label("SPORT", "faint", theme.mono(8)), 0, 0)
+        fl.addWidget(label("PROP", "faint", theme.mono(8)), 0, 1)
+        fl.addWidget(label("SUBJECT", "faint", theme.mono(8)), 0, 2)
+        fl.addWidget(self.sport_box, 1, 0)
+        fl.addWidget(self.prop_box, 1, 1)
+        fl.addWidget(self.sports_subject, 1, 2)
+        fl.addWidget(label("LINE", "faint", theme.mono(8)), 2, 0)
+        fl.addWidget(label("PRICE", "faint", theme.mono(8)), 2, 1)
+        fl.addWidget(label("CONTEXT", "faint", theme.mono(8)), 2, 2)
+        fl.addWidget(self.sports_line, 3, 0)
+        fl.addWidget(self.sports_odds, 3, 1)
+        fl.addWidget(self.sports_context, 3, 2)
+        fl.setColumnStretch(2, 1)
+        lay.addWidget(form)
+
+        data_p = panel()
+        dl = QVBoxLayout(data_p)
+        dl.setContentsMargins(14, 12, 14, 12)
+        dl.addWidget(label("SUPPORTING DATA", "faint", theme.mono(8)))
+        self.sports_data = QPlainTextEdit()
+        self.sports_data.setPlaceholderText(
+            "Splits, recent games, defensive ranks. The model is told not to "
+            "invent numbers, so what you paste here is what it reasons from.")
+        self.sports_data.setFixedHeight(96)
+        dl.addWidget(self.sports_data)
+
+        row = QHBoxLayout()
+        self.sports_btn = QPushButton("Analyse prop")
+        self.sports_btn.clicked.connect(self._sports_analyse)
+        row.addWidget(self.sports_btn)
+        self.sports_status = label("", "faint", theme.mono(9))
+        row.addWidget(self.sports_status, 1)
+        dl.addLayout(row)
+        lay.addWidget(data_p)
+
+        # The arithmetic, shown whether or not a model read has run.
+        nums = panel()
+        nl = QGridLayout(nums)
+        nl.setContentsMargins(14, 12, 14, 12)
+        nl.setHorizontalSpacing(26)
+        self.sports_stats = {}
+        cells = [("lean", "The model's direction, or NO EDGE"),
+                 ("confidence", "The model's own stated confidence — not a probability"),
+                 ("model win %", "The model's estimated win probability"),
+                 ("price implies", "Break-even win rate the odds demand, vig included"),
+                 ("edge", "Model probability minus what the price implies"),
+                 ("EV / unit", "Expected value per unit staked at this price"),
+                 ("¼ kelly", "A quarter of the full-Kelly stake, as % of bankroll")]
+        for i, (k, tip) in enumerate(cells):
+            st = Stat(k, tip)
+            self.sports_stats[k] = st
+            nl.addWidget(st, 0, i)
+        lay.addWidget(nums)
+
+        self.sports_out = QTextBrowser()
+        self.sports_out.setOpenExternalLinks(False)
+        lay.addWidget(self.sports_out, 1)
+
+        self._sports_sport_changed()
+        return w
+
+    def _sports_sport_changed(self) -> None:
+        sport = sports.get_sport(self.sport_box.currentData())
+        self.prop_box.clear()
+        for pt in sport.prop_types:
+            self.prop_box.addItem(pt.label, pt.key)
+        self.sports_context.setPlaceholderText(sport.context_hint)
+
+    def _sports_analyse(self) -> None:
+        odds_text = self.sports_odds.text().strip()
+        odds = None
+        if odds_text:
+            try:
+                odds = int(odds_text.replace("+", ""))
+                if odds_text.startswith("+"):
+                    odds = abs(odds)
+            except ValueError:
+                self.sports_status.setText("price must be american odds, e.g. -110")
+                return
+
+        sport = sports.get_sport(self.sport_box.currentData())
+        prompt = sports.build_prompt(
+            sport,
+            self.sports_subject.text().strip(),
+            self.prop_box.currentText(),
+            self.sports_line.text().strip(),
+            odds_text,
+            self.sports_context.text().strip(),
+            self.sports_data.toPlainText(),
+        )
+        self._sports_odds = odds
+        self.sports_btn.setEnabled(False)
+        self.sports_status.setText("reading…")
+        self.sports_thread = PropThread(sports.SYSTEM_PROMPT, prompt, self)
+        self.sports_thread.done.connect(self._sports_done)
+        self.sports_thread.start()
+
+    def _sports_done(self, text: str, error: str) -> None:
+        self.sports_btn.setEnabled(True)
+        if error:
+            self.sports_status.setText(error)
+            return
+        self.sports_status.setText("")
+        result = sports.parse_analysis(text)
+        odds = getattr(self, "_sports_odds", None)
+
+        self.sports_stats["lean"].set(result.lean or "—")
+        self.sports_stats["confidence"].set(result.confidence or "—")
+        prob = result.win_probability
+        self.sports_stats["model win %"].set(f"{prob*100:.1f}%" if prob is not None else "—")
+
+        if odds is not None:
+            implied = sports.implied_probability(odds)
+            self.sports_stats["price implies"].set(f"{implied*100:.1f}%")
+            if prob is not None:
+                edge = sports.edge_versus_market(prob, odds)
+                ev = sports.expected_value(prob, odds)
+                self.sports_stats["edge"].set(f"{edge*100:+.1f} pts")
+                self.sports_stats["EV / unit"].set(f"{ev:+.3f}")
+                self.sports_stats["¼ kelly"].set(f"{sports.kelly_fraction(prob, odds)/4*100:.2f}%")
+            else:
+                for k in ("edge", "EV / unit", "¼ kelly"):
+                    self.sports_stats[k].set("—")
+        else:
+            for k in ("price implies", "edge", "EV / unit", "¼ kelly"):
+                self.sports_stats[k].set("—")
+
+        blocks = []
+        for name in sports.SECTIONS:
+            body = result.sections.get(name)
+            if body:
+                blocks.append(f"<b>{name}</b><br>{body.replace(chr(10), '<br>')}")
+        self.sports_out.setHtml("<br><br>".join(blocks) or text.replace("\n", "<br>"))
+
 
     def _macro_tab(self) -> QWidget:
         w = QWidget()

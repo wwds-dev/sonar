@@ -77,3 +77,25 @@ class ConfigThread(QThread):
             self.done.emit(self.live.configure(self.risk_name, self.horizon_name))
         except Exception as exc:
             self.done.emit({"error": str(exc)})
+
+
+class PropThread(QThread):
+    """One sports prop analysis, off the UI thread.
+
+    Separate from ``ReadThread`` because that one goes through ``Live`` and the
+    opportunity JSON schema; a prop read is a plain completion.
+    """
+
+    done = Signal(str, str)
+
+    def __init__(self, system: str, prompt: str, parent=None) -> None:
+        super().__init__(parent)
+        self.system, self.prompt = system, prompt
+
+    def run(self) -> None:                 # noqa: D102
+        from sonar import llm
+        try:
+            text, error = llm.complete(self.system, self.prompt)
+            self.done.emit(text, error or "")
+        except Exception as exc:           # never take the window down
+            self.done.emit("", f"{type(exc).__name__}: {exc}")
