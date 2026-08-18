@@ -78,6 +78,25 @@ def selftest() -> int:
     if snap.stale:
         print("                   (no data — network blocked or first run offline)")
 
+    # Neither of these is reachable from the app's import graph: nothing in the
+    # UI calls the guard yet, and the ledger is read offline. PyInstaller leaves
+    # out what it cannot see, so both are named as hidden imports in
+    # build_app.sh — and checked here, because the day the guard is wired to a
+    # button, a missing module would show up only in the packaged build, at the
+    # moment someone clicks buy.
+    try:
+        from sonar import costs, execution
+        lim = execution.DEFAULT_LIMITS
+        print(f"  execution guard: present — simulator only, no venue wired "
+              f"({lim['max_order_notional']:,.0f}/order, "
+              f"{lim['max_orders_per_day']}/day)")
+        print(f"  cost ledger:     present — needs {costs.MIN_ROUND_TRIPS} "
+              "round trips before it reports")
+    except ImportError as exc:
+        print(f"  execution guard: MISSING ({exc})")
+        problems.append("sonar.execution/sonar.costs are not in this build — "
+                        "add --hidden-import for them in build_app.sh")
+
     if problems:
         print("\nFAILED:")
         for p in problems:

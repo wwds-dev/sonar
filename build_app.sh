@@ -28,6 +28,12 @@ rm -rf build dist "$DIST"
 # The anthropic SDK is only imported lazily inside sonar/llm.py, which
 # PyInstaller's static analysis cannot see — without the hidden-import the
 # packaged app silently loses the LLM read even when the SDK is installed.
+#
+# sonar.execution and sonar.costs are named for a different reason: nothing
+# imports them at all yet, so PyInstaller correctly leaves them out. They are
+# forced in so that wiring the guard to a button later cannot produce a build
+# where it is missing — a failure that would appear only once packaged, at the
+# moment someone clicks buy. main.py --selftest asserts both are present.
 pyinstaller --noconfirm --clean --windowed \
   --name "$APP_NAME" \
   --icon assets/icon.icns \
@@ -36,6 +42,8 @@ pyinstaller --noconfirm --clean --windowed \
   --add-data "assets/icon.icns:assets" \
   --add-data "static:static" \
   --hidden-import anthropic \
+  --hidden-import sonar.execution \
+  --hidden-import sonar.costs \
   --exclude-module PySide6.QtWebEngineCore \
   --exclude-module PySide6.QtWebEngineWidgets \
   --exclude-module PySide6.Qt3DCore \
