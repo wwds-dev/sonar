@@ -1,6 +1,7 @@
-"""Sports prop-bet analysis.
+"""Sports prop-bet analysis — the Playmaker tool.
 
-Ported from Sentinel's NFL agent, generalised so a second sport is a registry
+Ported from Sentinel's NFL agent (which was never a standalone project — it is
+part of SONAR, the betting tool), generalised so a second sport is a registry
 entry rather than a rewrite. NFL is the only sport implemented today; the shape
 below is what an NBA or soccer entry has to fill in.
 

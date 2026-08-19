@@ -22,6 +22,8 @@ is load-bearing.
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout,
@@ -42,6 +44,14 @@ REFRESH_MS = 1000
 # Long enough for macOS to finish collapsing the full-screen Space before the
 # window disappears into the menu bar. Shorter and the empty Space survives.
 FULLSCREEN_EXIT_MS = 350
+
+# How long after hiding itself the window refuses to be reopened by an
+# app-activation event. Leaving macOS full screen animates a Space transition
+# and the app is re-activated when it finishes — *after* the deferred hide has
+# run. The Dock-click handler in main.py then faithfully reopens the window the
+# user just closed, which looks exactly like a close button that does nothing.
+# A real Dock click a second later still works.
+REOPEN_GRACE_MS = 1000
 
 # The Assets table's columns: key, heading, width, tooltip. The header row and
 # every asset row are both built from this one list, so a column can never drift
@@ -496,6 +506,7 @@ class MainWindow(QMainWindow):
         self._bt_thread = None
         self.tray = None            # set by main.py once the app exists
         self.allow_close = False    # flipped only by the tray's Quit action
+        self._hidden_at = 0.0       # when this window last hid itself
         self.setWindowTitle("SONAR")
         self.resize(1180, 820)
         icon = paths.asset_path("icon.icns")
@@ -515,7 +526,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._wire_tab(), "Wire")
         self.tabs.addTab(self._book_tab(), "Book")
         self.tabs.addTab(self._macro_tab(), "Macro")
-        self.tabs.addTab(self._sports_tab(), "Sports")
+        self.tabs.addTab(self._sports_tab(), "Playmaker")
         outer.addWidget(self.tabs, 1)
 
         self.status = label("starting…", "faint", theme.mono(9))
@@ -1380,7 +1391,21 @@ class MainWindow(QMainWindow):
             # black screen. Drop back to a normal window first, and let the
             # Space transition finish before actually hiding.
             self.showNormal()
-            QTimer.singleShot(FULLSCREEN_EXIT_MS, self.hide)
+            QTimer.singleShot(FULLSCREEN_EXIT_MS, self._hide_now)
         else:
-            self.hide()
+            self._hide_now()
         self.tray.note_hidden()
+
+    def _hide_now(self) -> None:
+        """Hide, and remember when — see :meth:`reopen_allowed`."""
+        self._hidden_at = time.monotonic()
+        self.hide()
+
+    def reopen_allowed(self) -> bool:
+        """Is an app activation a real Dock click, or our own hide echoing back?
+
+        Qt cannot tell the two apart: both arrive as ApplicationActivate. The
+        only thing that distinguishes them is timing — the echo lands within a
+        few hundred milliseconds of a hide this window performed itself.
+        """
+        return (time.monotonic() - self._hidden_at) * 1000 > REOPEN_GRACE_MS
