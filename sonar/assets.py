@@ -28,6 +28,7 @@ fails to fetch is simply skipped.
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 import math
 import time
 import urllib.parse
@@ -133,6 +134,11 @@ class AssetSuggestion:
     catalyst: dict = field(default_factory=dict)
 
 
+# Yahoo tolerates this comfortably. Kept modest anyway: the point is to stop
+# paying 26 round trips end to end, not to hammer a free undocumented endpoint.
+FETCH_WORKERS = 8
+
+
 def _get(url: str):
     try:
         req = urllib.request.Request(url, headers=_UA)
@@ -217,8 +223,15 @@ class AssetScanner:
         out: list[AssetSuggestion] = []
         days = hz.momentum_days
         scale = _MOM_SCALE.get(days, 0.10)
-        for symbol, name, cls, kw in WATCHLIST:
-            got = _fetch(symbol, hz.chart_range)
+        # Twenty-six independent chart fetches, and the slowest part of start-up
+        # by a distance: ~6s sequentially against ~1s concurrently. Only the
+        # fetch is parallel — the scoring below is unchanged and still runs in
+        # WATCHLIST order, because map() yields in input order. The screen is
+        # therefore identical to the sequential version, just sooner.
+        with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
+            fetched = list(pool.map(lambda w: _fetch(w[0], hz.chart_range),
+                                    WATCHLIST))
+        for (symbol, name, cls, kw), got in zip(WATCHLIST, fetched):
             if got is None:
                 continue
             price, currency, closes = got

@@ -97,6 +97,19 @@ class Live:
             pass
         self.sigma = model.hourly_sigma(feeds.recent_hourly_returns())
         self._vol_at = time.time()
+        # Publish a snapshot *before* the asset screen refreshes. The Terminal
+        # tab needs only the candle and the hourly market — two fast calls —
+        # while _rescan() fetches 26 charts and 14 news feeds. Doing the heavy
+        # one first left the whole window sitting on "starting…" for ~11s with
+        # everything it needed for the main tab already in hand.
+        #
+        # _scan_at is set first so this poll skips the scan rather than pulling
+        # it forward again; _rescan() re-stamps it immediately after.
+        self._scan_at = time.time()
+        try:
+            self._poll()
+        except Exception:
+            pass
         self._rescan()
 
     def _rescan(self) -> None:

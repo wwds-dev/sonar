@@ -23,6 +23,7 @@ from __future__ import annotations
 import re
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -106,6 +107,11 @@ class Headline:
         return (pos - neg) / (pos + neg) if (pos + neg) else 0.0
 
 
+# Enough to hide the latency of one slow feed without opening fourteen sockets
+# at once against a set of hosts that have no reason to expect it.
+FETCH_WORKERS = 8
+
+
 class NewsCache:
     """Fetches and caches all feeds. News changes slowly, so a long TTL keeps the
     screener light on the network."""
@@ -125,13 +131,26 @@ class NewsCache:
     def _refresh(self) -> None:
         out: list[Headline] = []
         seen: set[str] = set()
-        for name, (url, cat) in FEEDS.items():
-            for h in self._one(name, url, cat):
-                key = h.title.lower().strip()
-                if key in seen:                    # drop duplicate headlines
-                    continue
-                seen.add(key)
-                out.append(h)
+        items = list(FEEDS.items())
+        # Fourteen independent GETs against fourteen different hosts. Run
+        # sequentially this was ~3s of the ~11s the app spent before it could
+        # show anything; concurrently it costs about as long as the slowest
+        # single feed.
+        #
+        # map() yields in *input* order regardless of what finished first, so
+        # dedup still keeps the first feed in FEEDS order to carry a story
+        # rather than whichever host happened to answer fastest. Without that
+        # the attributed source would vary run to run.
+        with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
+            batches = pool.map(lambda kv: self._one(kv[0], kv[1][0], kv[1][1]),
+                               items)
+            for batch in batches:
+                for h in batch:
+                    key = h.title.lower().strip()
+                    if key in seen:                # drop duplicate headlines
+                        continue
+                    seen.add(key)
+                    out.append(h)
         if out:                                    # keep last good set on total failure
             self._headlines = out
 

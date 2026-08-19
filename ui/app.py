@@ -1341,8 +1341,15 @@ class MainWindow(QMainWindow):
         if timer is not None:
             timer.stop()
         self.live.stop()                    # ends the poll loop's wait()
+        # Every QThread this window owns, not just the long-lived ones. A
+        # thread parented here is destroyed when the window is, and Qt aborts
+        # the process if it is still running at that moment — so a thread left
+        # off this list is a crash on quit that only shows up when that feature
+        # happens to be mid-flight. The sports read and the backtest were both
+        # missing, which is how the SIGABRT came back.
         for thread in (getattr(self, "poll", None),
-                       self._read_thread, self._cfg_thread):
+                       self._read_thread, self._cfg_thread,
+                       self._bt_thread, getattr(self, "sports_thread", None)):
             if thread is None or not thread.isRunning():
                 continue
             thread.quit()                   # no-op for run()-override threads
