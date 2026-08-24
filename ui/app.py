@@ -1211,7 +1211,6 @@ class MainWindow(QMainWindow):
     def refresh(self) -> None:
         with self.live.lock:
             snap = dict(self.live.snapshot)
-            scan = dict(self.live.scan)
             assets = dict(self.live.assets)
 
         # The paper book is independent of the hourly engine: it must render
@@ -1230,7 +1229,7 @@ class MainWindow(QMainWindow):
             self.status.setText(f'{snap.get("status", "…")} — first poll can take a moment')
             return
         self._refresh_terminal(snap)
-        self._refresh_cards(scan, assets)
+        self._refresh_cards(assets)
         self._refresh_macro(snap)
         if self.tray is not None:
             self.tray.update_state(snap)
@@ -1238,7 +1237,6 @@ class MainWindow(QMainWindow):
         hz = self.live.horizon
         self.status.setText(
             f'risk {self.live.risk.name} · horizon {hz.name} · '
-            f'{scan.get("n_shown", 0)}/{scan.get("n_scanned", 0)} markets · '
             f'{assets.get("n", 0)} assets · paper money only')
 
     def _refresh_terminal(self, snap: dict) -> None:
@@ -1270,7 +1268,7 @@ class MainWindow(QMainWindow):
             self.stats["win rate"].set(f'{st["win_rate"]:.0f}%')
             self.stats["profile"].set(st.get("risk_profile", "—"))
 
-    def _refresh_cards(self, scan: dict, assets: dict) -> None:
+    def _refresh_cards(self, assets: dict) -> None:
         asig = (assets.get("generated"), assets.get("n"))
         if asig != self._assets_sig:
             self._assets_sig = asig
