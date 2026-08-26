@@ -10,7 +10,7 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 > probability model priced against a real market. SONAR builds exactly that — and keeps it
 > **paper money** so it can be honest about what it is.
 
-## Five tabs
+## Six tabs
 
 A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no web view.
 
@@ -21,6 +21,12 @@ A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no we
 | **Wire** | Live newswire, the earnings and IPO calendar, and what the news is pointing at | No |
 | **Book** | Open paper positions, the calibration table, and the backtest button | — |
 | **Macro** | Regime: curve, VIX, real rates, unemployment | No |
+| **Playmaker** | NFL prop-bet analysis — pick a sport and prop, enter the line, price and any supporting stats, and an LLM read scores it against `sonar.sports`' odds/EV/Kelly arithmetic | — |
+
+Playmaker is `sonar.sports` plus its tab in `ui/app.py`. It was ported from Sentinel's
+NFL agent early on, but it never was a standalone project — the `playmaker` repo
+under `active/` is an empty scaffold reserving the name for a possible future
+split; the working implementation, tests, and this tab are all here.
 
 A Polymarket board used to sit here and was removed — mirroring a market's own odds back at
 you is not analysis, and dropping it also removed ~52MB/hour of downloads. Full docs live in
@@ -401,6 +407,11 @@ the hours they were priced for. So two things protect that.
 item shows bankroll and open position. Quitting is a separate, deliberate menu action — and
 clicking the Dock icon brings the window back if the menu-bar item is hard to find.
 
+Leaving full-screen and hiding are also untangled from each other: exiting a full-screen
+Space and clicking the close button both trigger the macOS activation event a real Dock click
+uses, so for about a second after either one the window ignores that event rather than
+reopening itself the moment it just hid.
+
 **A launchd agent** keeps it running when you are not logged into the app at all:
 
 ```bash
@@ -497,6 +508,7 @@ sonar/
   costs.py     what a round trip actually cost, derived from the audit log
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
+  sports.py    NFL prop-bet arithmetic (odds, implied probability, EV, Kelly) — the Playmaker tab
   research/    the study apparatus — features, panel, stats, validate, regimes
 ui/
   app.py       the window — Terminal / Assets / Wire / Book / Macro
