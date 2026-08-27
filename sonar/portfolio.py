@@ -40,6 +40,11 @@ STARTING_CASH = 10_000.0
 DEFAULT_RISK_FRACTION = 0.01
 
 
+# A position's lifecycle. PENDING exists only for brokers whose fills are
+# asynchronous; see Position.status.
+PENDING, OPEN = "PENDING", "OPEN"
+
+
 @dataclass
 class Position:
     """One paper position, carrying the belief it was opened on."""
@@ -60,6 +65,12 @@ class Position:
     p_profit: float
     horizon: str
     asset_class: str = ""
+    # PENDING until the venue reports a fill. A paper broker fills instantly so
+    # nothing is ever pending there; a real one accepts first and fills later,
+    # partially, or never — and a book that records "open" on acceptance is
+    # recording an intention and calling it a holding.
+    status: str = OPEN
+    client_order_id: str = ""
     # filled on close
     closed_at: float | None = None
     exit: float | None = None
@@ -69,6 +80,11 @@ class Position:
     @property
     def is_open(self) -> bool:
         return self.closed_at is None
+
+    @property
+    def pending(self) -> bool:
+        """Accepted by the venue, not yet filled. No exposure exists yet."""
+        return self.status == PENDING
 
     def unrealised(self, price: float) -> float:
         sign = 1.0 if self.direction == "LONG" else -1.0
@@ -96,6 +112,11 @@ class Broker(Protocol):
     implementation would place real orders with real money and is deliberately
     not provided.
     """
+
+    # True when execute() returns a completed fill, as the internal paper book
+    # does. False means it returns an *acceptance* and the fill lands later —
+    # the book then holds the position PENDING until settlements() reports it.
+    synchronous: bool = True
 
     def execute(self, symbol: str, direction: str, units: float,
                 price: float) -> dict: ...
@@ -129,6 +150,7 @@ class PaperBroker:
 
     live = False
     name = "paper"
+    synchronous = True                 # the fill *is* the return value
 
     def execute(self, symbol: str, direction: str, units: float,
                 price: float) -> dict:
@@ -206,7 +228,8 @@ class Portfolio:
         if units <= 0:
             return None, "not enough cash"
 
-        self.broker.execute(symbol, plan.direction, units, price)
+        reply = self.broker.execute(symbol, plan.direction, units, price) or {}
+        sync = bool(getattr(self.broker, "synchronous", True))
         pos = Position(
             id=uuid.uuid4().hex[:12], symbol=symbol,
             name=asset.get("name", symbol), direction=plan.direction,
@@ -214,8 +237,12 @@ class Portfolio:
             opened_at=time.time(), cash_at_risk=at_risk,
             confidence=float(asset.get("confidence") or 0.0),
             rr=plan.rr, p_profit=plan.p_profit, horizon=horizon_name,
-            asset_class=asset.get("cls", ""))
-        # A short borrows rather than spends; only a long consumes cash.
+            asset_class=asset.get("cls", ""),
+            status=OPEN if sync else PENDING,
+            client_order_id=str(reply.get("client_order_id") or ""))
+        # A short borrows rather than spends; only a long consumes cash. A
+        # pending long reserves it too: the money is committed the moment the
+        # order is accepted, and settle_fills() refunds it if the order dies.
         if pos.direction == "LONG":
             self.cash -= cost
         self.open.append(pos)
@@ -243,12 +270,80 @@ class Portfolio:
         self.save()
         return pos
 
+    def poll_fills(self) -> list[Position]:
+        """Ask the broker which accepted orders have reached a terminal state.
+
+        The order-state poller. Brokers that fill synchronously never have
+        anything pending and never implement ``settlements()``, so this is a
+        no-op for the internal paper book.
+        """
+        if not any(p.pending for p in self.open):
+            return []
+        fetch = getattr(self.broker, "settlements", None)
+        if fetch is None:
+            return []
+        try:
+            records = fetch()
+        except Exception:
+            return []                     # a venue being unreachable is not an error here
+        return self.settle_fills(records or [])
+
+    def settle_fills(self, records: list[dict]) -> list[Position]:
+        """Reconcile pending positions against what the venue actually did.
+
+        A fill is not the order you sent. The quantity can be smaller, the
+        price worse, and the whole thing can be rejected — so the position is
+        rewritten from the venue's numbers rather than confirmed against its
+        own.
+
+        The target and stop are deliberately **not** re-derived from the new
+        entry. They were the thesis; a worse fill eats into the reward it was
+        supposed to pay, which is exactly the cost that should show up in the
+        results rather than being tidied away by moving the barriers.
+        """
+        by_id = {str(r.get("client_order_id") or ""): r for r in records}
+        changed: list[Position] = []
+        for pos in list(self.open):
+            if not pos.pending or pos.client_order_id not in by_id:
+                continue
+            rec = by_id[pos.client_order_id]
+            filled = float(rec.get("quantity") or 0.0)
+            price = float(rec.get("fill_price") or 0.0)
+
+            if filled <= 0 or price <= 0:
+                # Rejected, cancelled, or expired unfilled. Nothing was bought,
+                # so the reservation goes back.
+                if pos.direction == "LONG":
+                    self.cash += pos.units * pos.entry
+                self.open.remove(pos)
+                changed.append(pos)
+                continue
+
+            if pos.direction == "LONG":
+                # Refund what was reserved, charge what it actually cost.
+                self.cash += pos.units * pos.entry
+                self.cash -= filled * price
+            pos.units = filled
+            pos.entry = price
+            pos.cash_at_risk = round(filled * abs(price - pos.stop), 2)
+            pos.status = OPEN
+            changed.append(pos)
+
+        if changed:
+            self.save()
+        return changed
+
     def mark(self, prices: dict[str, float]) -> list[Position]:
-        """Mark open positions and close any whose barrier was touched."""
+        """Mark open positions and close any whose barrier was touched.
+
+        Pending positions are skipped: an order that has not filled carries no
+        exposure, so closing it on a barrier would book a profit or loss on a
+        holding that does not exist.
+        """
         done = []
         for pos in list(self.open):
             price = prices.get(pos.symbol)
-            if price is None:
+            if price is None or pos.pending:
                 continue
             reason = pos.hit(price)
             if reason:
@@ -262,7 +357,9 @@ class Portfolio:
     def equity(self, prices: dict[str, float]) -> float:
         total = self.cash
         for pos in self.open:
-            price = prices.get(pos.symbol, pos.entry)
+            # Pending: the cash is reserved but nothing is owned, so it is
+            # carried at what was committed rather than marked to market.
+            price = pos.entry if pos.pending else prices.get(pos.symbol, pos.entry)
             if pos.direction == "LONG":
                 total += pos.units * price
             else:
@@ -283,12 +380,13 @@ class Portfolio:
             "total_pnl": round(eq - self.starting_cash, 2),
             "return_pct": round((eq / self.starting_cash - 1) * 100, 2),
             "n_open": len(self.open),
+            "n_pending": sum(1 for p in self.open if p.pending),
             "n_closed": len(settled),
             "n_wins": len(wins),
             "win_rate": round(len(wins) / len(settled) * 100, 1) if settled else 0.0,
             "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else None,
             "unrealised": round(sum(p.unrealised(prices.get(p.symbol, p.entry))
-                                    for p in self.open), 2),
+                                    for p in self.open if not p.pending), 2),
             "broker": getattr(self.broker, "name", "paper"),
             "live": bool(getattr(self.broker, "live", False)),
         }

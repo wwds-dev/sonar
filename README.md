@@ -103,6 +103,41 @@ They are the same number twice. A fatter target buys a proportionally lower hit 
 value multiplies out to **exactly zero**. Only *drift* — a real edge — creates profit, and drift is
 only ever supplied by `sonar.calibration` from positions that actually closed. Never assumed.
 
+### The cost floor
+
+That zero is **gross**. Net of what a round trip costs — spread, commission, slippage — the
+expectation is
+
+```
+EV = −c   per trade, every trade
+```
+
+which makes `c` the number that decides whether any of this is worth doing, and the only one
+in the project that can be measured rather than estimated. `sonar/costs.py` measures it from
+the execution audit log:
+
+```python
+from sonar import costs
+costs.summary()        # cost per round trip, or a refusal to name one yet
+```
+
+Run through the ledger at crypto taker fees of 0.2% a side plus 5bp of slippage, on a €2,000
+account risking 1% per trade:
+
+| | |
+|---|---|
+| cost per round trip | **€1.05** (50.0 bps per side) |
+| as a share of the €20 risked | **5.2%** |
+| over 100 trades | **−€105** |
+
+An earlier estimate in `GOING_LIVE.md` put this at ~4% and ~€0.80. Measuring it gave 5.2% and
+€1.05 — the estimate was optimistic, which is the usual direction and the reason the ledger
+exists. `summary()` reports `reliable: False` below 20 completed round trips and declines to
+name a figure, the same threshold and reasoning as `calibration.MIN_SAMPLE`.
+
+Five pre-registered studies failed to find drift to put against that floor. That is the whole
+argument for keeping this on paper, and it is arithmetic rather than caution.
+
 ## What the backtest found
 
 `sonar.backtest` replays the same plan over years of real bars: momentum and volatility from prior
@@ -454,6 +489,11 @@ an in-process simulator, so every rule in it is testable:
   cannot become a second unguarded route to a venue. Confirmation defaults to *refuse*, and
   a refusal **raises** rather than returning an error dict — `Portfolio.enter` ignores that
   return value, so a dict would leave the book holding a position that was never sent
+- the book distinguishes **accepted** from **filled**. A broker declares `synchronous`; when it
+  is false a position is recorded `PENDING`, carries no unrealised P&L, and is never closed on a
+  barrier — `poll_fills()` then rewrites it from the venue's real quantity and price, or refunds
+  the reserved cash if the order died. The target and stop are deliberately *not* re-derived
+  from a worse fill: slippage should eat the reward, not move the goalposts
 - `settle()` polls orders to a terminal state and records what each one actually cost;
   `sonar/costs.py` turns that into cost per round trip. Slippage is measured against the
   decision mark rather than the limit, so deliberately crossing the spread is not scored as

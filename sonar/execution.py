@@ -348,6 +348,9 @@ class GuardedBroker:
     mutates anything.
     """
 
+    # Orders here are accepted, not filled — see Portfolio.poll_fills().
+    synchronous = False
+
     def __init__(self, guard: "Guard", confirm=None, source: str = "book") -> None:
         self.guard = guard
         self._confirm = confirm
@@ -355,6 +358,14 @@ class GuardedBroker:
         venue = guard.broker.describe()
         self.name = f"guarded:{venue.get('venue', 'unknown')}"
         self.live = str(venue.get("kind", "")).upper() == "LIVE"
+
+    def settlements(self) -> list[dict]:
+        """Orders that reached a terminal state since the last call.
+
+        The book uses this to turn its pending positions into real ones at the
+        price the venue actually gave, rather than the price we asked for.
+        """
+        return self.guard.settle()["settled"]
 
     def confirmation_text(self, intent: OrderIntent) -> str:
         """The exact text a human approves. Live must not look like paper."""

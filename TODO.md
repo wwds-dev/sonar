@@ -10,10 +10,10 @@
 
 - [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. Single highest-value change in the project.
 - [ ] `P1` `research` `@me` **Let the paper book run.** The calibration table stays empty until ~20 positions have closed. No amount of backtesting substitutes for a track record.
-- [ ] `P1` `bug` `@ai` Async fills are unhandled — `Portfolio.enter` records the position at the intended price the moment `execute` returns. Against any real venue that means *accepted*, not *filled*. Needs an order-state poller before the book means anything.
-- [ ] `P2` `testing` `@ai` Reconciliation drill as an automated test: mutate the venue behind SONAR's back, assert it detects the divergence and halts
-- [ ] `P2` `testing` `@ai` Kill-switch test — open a position, call `flatten()`, assert flat at the venue rather than only in the log
-- [ ] `P3` `docs` `@ai` Fold the GOING_LIVE §0 arithmetic into the README so the cost floor is visible without opening a second file
+- [x] `P1` `bug` `@ai` ~~Async fills are unhandled.~~ Positions from an asynchronous broker are recorded `PENDING`: no unrealised P&L, never marked against a barrier, cash reserved but refunded if the order dies. `Portfolio.poll_fills()` is the order-state poller, wired into `_mark_book`; it rewrites the position from the venue's real quantity and fill price. Target and stop survive a worse fill on purpose.
+- [x] `P2` `testing` `@ai` ~~Reconciliation drill.~~ `tests/test_drills.py` mutates the venue directly — a position appearing, vanishing, and changing size — and asserts each is detected, halts the guard, and blocks the next order. Includes the control where the two agree and nothing fires.
+- [x] `P2` `testing` `@ai` ~~Kill-switch drill.~~ `tests/test_drills.py` opens positions through the book and asserts the venue is flat afterwards — from a clean guard, from an already-halted one, and with the daily order cap exhausted.
+- [x] `P3` `docs` `@ai` ~~Fold the cost floor into the README.~~ Now a subsection of *Risk, reward, and the probability of profit*, with the measured €1.05 per round trip and the note that the earlier estimate was optimistic.
 
 ## v3 — only if the research is resumed
 

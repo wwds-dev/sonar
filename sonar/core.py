@@ -145,6 +145,11 @@ class Live:
         prices = {a["symbol"]: a["price"] for a in asset_payload.get("assets", [])}
         if not prices:
             return
+        # Turn accepted orders into real ones first. Marking a pending position
+        # against a barrier would settle a holding that does not exist yet, and
+        # the fill price it settles against would be the one we asked for
+        # rather than the one we got. No-op for the internal paper book.
+        self.book.poll_fills()
         self.book.mark(prices)
         report = calibration.report(self.book.closed)
         # Nothing is claimed below the sample threshold; report() enforces that.

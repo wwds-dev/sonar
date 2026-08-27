@@ -119,6 +119,10 @@ class AlpacaPaperBroker:
 
     live = False                       # never true; see the module docstring
     name = "alpaca-paper"
+    # Alpaca's paper environment runs real order handling: an order is accepted
+    # and fills later, or sits unfilled when the market is shut. Saying so is
+    # the point of using it over the internal book.
+    synchronous = False
 
     def __init__(self, key_id: str | None = None, secret: str | None = None,
                  verify: bool = True) -> None:
