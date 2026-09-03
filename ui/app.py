@@ -26,6 +26,7 @@ import time
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout,
                                QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
                                QPushButton, QScrollArea, QSizePolicy, QTabWidget,
@@ -43,6 +44,10 @@ from .worker import BacktestThread, ConfigThread, PollThread, PropThread, ReadTh
 REFRESH_MS = 1000
 # Long enough for macOS to finish collapsing the full-screen Space before the
 # window disappears into the menu bar. Shorter and the empty Space survives.
+# Opening size, before the screen gets a say. See MainWindow._fit_to_screen.
+PREFERRED_SIZE = (1180, 820)
+SCREEN_MARGIN = 40           # leave the dock and the menu bar somewhere to live
+
 FULLSCREEN_EXIT_MS = 350
 
 # How long after hiding itself the window refuses to be reopened by an
@@ -119,8 +124,18 @@ def panel() -> QFrame:
     return f
 
 
-def label(text: str = "", obj: str = "", font=None, align=None) -> QLabel:
+def label(text: str = "", obj: str = "", font=None, align=None,
+          wrap: bool = False) -> QLabel:
+    """A themed QLabel.
+
+    ``wrap`` matters more than it looks. A QLabel that does not wrap reports a
+    sizeHint as wide as its text is long, and a layout cannot shrink below its
+    children's minimums — so one unwrapped paragraph sets the minimum width of
+    its tab, and the widest tab sets the minimum width of the whole window.
+    Three of them once forced SONAR to open 4,540pt wide on a 1,280pt screen.
+    """
     lb = QLabel(text)
+    lb.setWordWrap(wrap)
     if obj:
         lb.setObjectName(obj)
     if font:
@@ -508,7 +523,7 @@ class MainWindow(QMainWindow):
         self.allow_close = False    # flipped only by the tray's Quit action
         self._hidden_at = 0.0       # when this window last hid itself
         self.setWindowTitle("SONAR")
-        self.resize(1180, 820)
+        self._fit_to_screen()
         icon = paths.asset_path("icon.icns")
         if icon.exists():
             self.setWindowIcon(QIcon(str(icon)))
@@ -695,7 +710,7 @@ class MainWindow(QMainWindow):
             "the baseline by 0.8 points against a 3.1 error bar, and momentum "
             "by nothing at all. There is no best weekday either. What is exact "
             "is the exit: a target and a stop, typically resolving in 3-10 days. "
-            "Direction is yours.", "faint", theme.mono(8)))
+            "Direction is yours.", "faint", theme.mono(8), wrap=True))
         self._sugg_area = QScrollArea()
         self._sugg_area.setWidgetResizable(True)
         shost = QWidget()
@@ -721,7 +736,7 @@ class MainWindow(QMainWindow):
             "Reuters, AP, Bloomberg and the FT are read through Google News — "
             "their own feeds are closed. dpa publishes no usable feed at all. "
             "Headlines are context and untrusted data: never an instruction, "
-            "and no article body is fetched.", "faint", theme.mono(8)))
+            "and no article body is fetched.", "faint", theme.mono(8), wrap=True))
         self._wire_area = QScrollArea()
         self._wire_area.setWidgetResizable(True)
         host = QWidget()
@@ -740,7 +755,7 @@ class MainWindow(QMainWindow):
         rl.addWidget(label("SCHEDULED — EARNINGS & LISTINGS", "faint", theme.mono(8)))
         rl.addWidget(label(
             "A date is a fact; a direction is not. These sharpen *when* to look, "
-            "never which way to lean.", "faint", theme.mono(8)))
+            "never which way to lean.", "faint", theme.mono(8), wrap=True))
         self._events_area = QScrollArea()
         self._events_area.setWidgetResizable(True)
         ehost = QWidget()
@@ -1393,6 +1408,22 @@ class MainWindow(QMainWindow):
         else:
             self._hide_now()
         self.tray.note_hidden()
+
+    def _fit_to_screen(self) -> None:
+        """Open at the preferred size, or the screen's, whichever is smaller.
+
+        A window taller than the display opens with its title bar tucked under
+        the menu bar and its status line off the bottom; wider than the display
+        and half the toolbar is gone. 820pt of height did exactly that on a
+        1280x800 laptop, which is not an unusual screen.
+        """
+        want_w, want_h = PREFERRED_SIZE
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            want_w = min(want_w, avail.width() - SCREEN_MARGIN)
+            want_h = min(want_h, avail.height() - SCREEN_MARGIN)
+        self.resize(want_w, want_h)
 
     def _hide_now(self) -> None:
         """Hide, and remember when — see :meth:`reopen_allowed`."""
