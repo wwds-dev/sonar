@@ -40,6 +40,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | Dock-click-reopens-a-hidden-window bug fixed — a Space-transition exit re-fires the same activation event a real Dock click sends; the window now ignores that event for ~1s after it hides itself (`reopen_allowed`) | Aug 2026 |
 | Shutdown crash fixed — the backtest and sports-analysis threads were missing from the quit-time stop list, so a `SIGABRT` landed if either was still running when the window closed | Aug 2026 |
 | Playmaker tab — `sonar/sports.py`'s NFL prop-bet arithmetic got its own tab (renamed from "Sports"), clarified as living here rather than in the standalone `playmaker` scaffold | Aug 2026 |
+| Window-too-wide bug fixed — unwrapped prose labels were setting an unshrinkable minimum window width (opened 4,540pt wide on a 1,280pt screen); labels now wrap and `MainWindow._fit_to_screen()` clamps the opening size to the actual screen | Sep 2026 |
 
 ## Rejected
 
