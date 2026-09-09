@@ -19,3 +19,8 @@ dist/
 data/cache/
 assets/icon.iconset/
 *.spec
+
+# Nested companion repos: agents split into their own repos
+# (gitignored here until each has a GitHub remote and becomes a proper submodule)
+/sonar/macro/
+/sonar/sports/
