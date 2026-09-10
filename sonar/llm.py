@@ -278,7 +278,7 @@ def complete(system: str, prompt: str, model: str = MODEL,
     """A plain-text completion. Returns ``(text, error)``; never raises.
 
     ``Client.read`` is bound to the opportunity JSON schema. Features that want
-    prose under their own headings — the sports tab is the first — need a
+    prose under their own headings — the Playmaker tab is the first — need a
     completion that is not schema-constrained, but should still go through this
     module so key resolution and the "is a read even possible" check stay in
     one place.

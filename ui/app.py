@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout,
                                QTextBrowser, QVBoxLayout, QWidget)
 
 from sonar import horizon as hz_mod
-from sonar import llm, paths, risk as risk_mod, sports
+from sonar import llm, paths, playmaker, risk as risk_mod
 from sonar.core import Live
 from sonar.assets import _W as ASSET_W
 
@@ -541,7 +541,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._wire_tab(), "Wire")
         self.tabs.addTab(self._book_tab(), "Book")
         self.tabs.addTab(self._macro_tab(), "Macro")
-        self.tabs.addTab(self._sports_tab(), "Playmaker")
+        self.tabs.addTab(self._playmaker_tab(), "Playmaker")
         outer.addWidget(self.tabs, 1)
 
         self.status = label("starting…", "faint", theme.mono(9))
@@ -915,11 +915,11 @@ class MainWindow(QMainWindow):
                        for p in pos.get("open", [])],
                       "No open paper positions. Use buy or short on the Assets tab.")
 
-    # -- sports ------------------------------------------------------------ #
-    def _sports_tab(self) -> QWidget:
+    # -- playmaker ------------------------------------------------------------ #
+    def _playmaker_tab(self) -> QWidget:
         """Prop-bet analysis. NFL today; the sport picker is the extension point.
 
-        Same division as the rest of SONAR: `sonar.sports` does the arithmetic
+        Same division as the rest of SONAR: `sonar.playmaker` does the arithmetic
         (implied probability, EV, Kelly) and the model is asked only for the
         narrative on top of it. Paper analysis — nothing here places a wager.
         """
@@ -935,31 +935,31 @@ class MainWindow(QMainWindow):
         fl.setVerticalSpacing(8)
 
         self.sport_box = QComboBox()
-        for sp in sports.list_sports():
+        for sp in playmaker.list_sports():
             self.sport_box.addItem(sp.name, sp.key)
-        self.sport_box.currentIndexChanged.connect(self._sports_sport_changed)
+        self.sport_box.currentIndexChanged.connect(self._playmaker_sport_changed)
 
         self.prop_box = QComboBox()
-        self.sports_subject = QLineEdit()
-        self.sports_subject.setPlaceholderText("Player or team")
-        self.sports_line = QLineEdit()
-        self.sports_line.setPlaceholderText("Over 252.5")
-        self.sports_odds = QLineEdit()
-        self.sports_odds.setPlaceholderText("-110")
-        self.sports_context = QLineEdit()
+        self.playmaker_subject = QLineEdit()
+        self.playmaker_subject.setPlaceholderText("Player or team")
+        self.playmaker_line = QLineEdit()
+        self.playmaker_line.setPlaceholderText("Over 252.5")
+        self.playmaker_odds = QLineEdit()
+        self.playmaker_odds.setPlaceholderText("-110")
+        self.playmaker_context = QLineEdit()
 
         fl.addWidget(label("SPORT", "faint", theme.mono(8)), 0, 0)
         fl.addWidget(label("PROP", "faint", theme.mono(8)), 0, 1)
         fl.addWidget(label("SUBJECT", "faint", theme.mono(8)), 0, 2)
         fl.addWidget(self.sport_box, 1, 0)
         fl.addWidget(self.prop_box, 1, 1)
-        fl.addWidget(self.sports_subject, 1, 2)
+        fl.addWidget(self.playmaker_subject, 1, 2)
         fl.addWidget(label("LINE", "faint", theme.mono(8)), 2, 0)
         fl.addWidget(label("PRICE", "faint", theme.mono(8)), 2, 1)
         fl.addWidget(label("CONTEXT", "faint", theme.mono(8)), 2, 2)
-        fl.addWidget(self.sports_line, 3, 0)
-        fl.addWidget(self.sports_odds, 3, 1)
-        fl.addWidget(self.sports_context, 3, 2)
+        fl.addWidget(self.playmaker_line, 3, 0)
+        fl.addWidget(self.playmaker_odds, 3, 1)
+        fl.addWidget(self.playmaker_context, 3, 2)
         fl.setColumnStretch(2, 1)
         lay.addWidget(form)
 
@@ -967,19 +967,19 @@ class MainWindow(QMainWindow):
         dl = QVBoxLayout(data_p)
         dl.setContentsMargins(14, 12, 14, 12)
         dl.addWidget(label("SUPPORTING DATA", "faint", theme.mono(8)))
-        self.sports_data = QPlainTextEdit()
-        self.sports_data.setPlaceholderText(
+        self.playmaker_data = QPlainTextEdit()
+        self.playmaker_data.setPlaceholderText(
             "Splits, recent games, defensive ranks. The model is told not to "
             "invent numbers, so what you paste here is what it reasons from.")
-        self.sports_data.setFixedHeight(96)
-        dl.addWidget(self.sports_data)
+        self.playmaker_data.setFixedHeight(96)
+        dl.addWidget(self.playmaker_data)
 
         row = QHBoxLayout()
-        self.sports_btn = QPushButton("Analyse prop")
-        self.sports_btn.clicked.connect(self._sports_analyse)
-        row.addWidget(self.sports_btn)
-        self.sports_status = label("", "faint", theme.mono(9))
-        row.addWidget(self.sports_status, 1)
+        self.playmaker_btn = QPushButton("Analyse prop")
+        self.playmaker_btn.clicked.connect(self._playmaker_analyse)
+        row.addWidget(self.playmaker_btn)
+        self.playmaker_status = label("", "faint", theme.mono(9))
+        row.addWidget(self.playmaker_status, 1)
         dl.addLayout(row)
         lay.addWidget(data_p)
 
@@ -988,7 +988,7 @@ class MainWindow(QMainWindow):
         nl = QGridLayout(nums)
         nl.setContentsMargins(14, 12, 14, 12)
         nl.setHorizontalSpacing(26)
-        self.sports_stats = {}
+        self.playmaker_stats = {}
         cells = [("lean", "The model's direction, or NO EDGE"),
                  ("confidence", "The model's own stated confidence — not a probability"),
                  ("model win %", "The model's estimated win probability"),
@@ -998,26 +998,26 @@ class MainWindow(QMainWindow):
                  ("¼ kelly", "A quarter of the full-Kelly stake, as % of bankroll")]
         for i, (k, tip) in enumerate(cells):
             st = Stat(k, tip)
-            self.sports_stats[k] = st
+            self.playmaker_stats[k] = st
             nl.addWidget(st, 0, i)
         lay.addWidget(nums)
 
-        self.sports_out = QTextBrowser()
-        self.sports_out.setOpenExternalLinks(False)
-        lay.addWidget(self.sports_out, 1)
+        self.playmaker_out = QTextBrowser()
+        self.playmaker_out.setOpenExternalLinks(False)
+        lay.addWidget(self.playmaker_out, 1)
 
-        self._sports_sport_changed()
+        self._playmaker_sport_changed()
         return w
 
-    def _sports_sport_changed(self) -> None:
-        sport = sports.get_sport(self.sport_box.currentData())
+    def _playmaker_sport_changed(self) -> None:
+        sport = playmaker.get_sport(self.sport_box.currentData())
         self.prop_box.clear()
         for pt in sport.prop_types:
             self.prop_box.addItem(pt.label, pt.key)
-        self.sports_context.setPlaceholderText(sport.context_hint)
+        self.playmaker_context.setPlaceholderText(sport.context_hint)
 
-    def _sports_analyse(self) -> None:
-        odds_text = self.sports_odds.text().strip()
+    def _playmaker_analyse(self) -> None:
+        odds_text = self.playmaker_odds.text().strip()
         odds = None
         if odds_text:
             try:
@@ -1025,62 +1025,62 @@ class MainWindow(QMainWindow):
                 if odds_text.startswith("+"):
                     odds = abs(odds)
             except ValueError:
-                self.sports_status.setText("price must be american odds, e.g. -110")
+                self.playmaker_status.setText("price must be american odds, e.g. -110")
                 return
 
-        sport = sports.get_sport(self.sport_box.currentData())
-        prompt = sports.build_prompt(
+        sport = playmaker.get_sport(self.sport_box.currentData())
+        prompt = playmaker.build_prompt(
             sport,
-            self.sports_subject.text().strip(),
+            self.playmaker_subject.text().strip(),
             self.prop_box.currentText(),
-            self.sports_line.text().strip(),
+            self.playmaker_line.text().strip(),
             odds_text,
-            self.sports_context.text().strip(),
-            self.sports_data.toPlainText(),
+            self.playmaker_context.text().strip(),
+            self.playmaker_data.toPlainText(),
         )
-        self._sports_odds = odds
-        self.sports_btn.setEnabled(False)
-        self.sports_status.setText("reading…")
-        self.sports_thread = PropThread(sports.SYSTEM_PROMPT, prompt, self)
-        self.sports_thread.done.connect(self._sports_done)
-        self.sports_thread.start()
+        self._playmaker_odds = odds
+        self.playmaker_btn.setEnabled(False)
+        self.playmaker_status.setText("reading…")
+        self.playmaker_thread = PropThread(playmaker.SYSTEM_PROMPT, prompt, self)
+        self.playmaker_thread.done.connect(self._playmaker_done)
+        self.playmaker_thread.start()
 
-    def _sports_done(self, text: str, error: str) -> None:
-        self.sports_btn.setEnabled(True)
+    def _playmaker_done(self, text: str, error: str) -> None:
+        self.playmaker_btn.setEnabled(True)
         if error:
-            self.sports_status.setText(error)
+            self.playmaker_status.setText(error)
             return
-        self.sports_status.setText("")
-        result = sports.parse_analysis(text)
-        odds = getattr(self, "_sports_odds", None)
+        self.playmaker_status.setText("")
+        result = playmaker.parse_analysis(text)
+        odds = getattr(self, "_playmaker_odds", None)
 
-        self.sports_stats["lean"].set(result.lean or "—")
-        self.sports_stats["confidence"].set(result.confidence or "—")
+        self.playmaker_stats["lean"].set(result.lean or "—")
+        self.playmaker_stats["confidence"].set(result.confidence or "—")
         prob = result.win_probability
-        self.sports_stats["model win %"].set(f"{prob*100:.1f}%" if prob is not None else "—")
+        self.playmaker_stats["model win %"].set(f"{prob*100:.1f}%" if prob is not None else "—")
 
         if odds is not None:
-            implied = sports.implied_probability(odds)
-            self.sports_stats["price implies"].set(f"{implied*100:.1f}%")
+            implied = playmaker.implied_probability(odds)
+            self.playmaker_stats["price implies"].set(f"{implied*100:.1f}%")
             if prob is not None:
-                edge = sports.edge_versus_market(prob, odds)
-                ev = sports.expected_value(prob, odds)
-                self.sports_stats["edge"].set(f"{edge*100:+.1f} pts")
-                self.sports_stats["EV / unit"].set(f"{ev:+.3f}")
-                self.sports_stats["¼ kelly"].set(f"{sports.kelly_fraction(prob, odds)/4*100:.2f}%")
+                edge = playmaker.edge_versus_market(prob, odds)
+                ev = playmaker.expected_value(prob, odds)
+                self.playmaker_stats["edge"].set(f"{edge*100:+.1f} pts")
+                self.playmaker_stats["EV / unit"].set(f"{ev:+.3f}")
+                self.playmaker_stats["¼ kelly"].set(f"{playmaker.kelly_fraction(prob, odds)/4*100:.2f}%")
             else:
                 for k in ("edge", "EV / unit", "¼ kelly"):
-                    self.sports_stats[k].set("—")
+                    self.playmaker_stats[k].set("—")
         else:
             for k in ("price implies", "edge", "EV / unit", "¼ kelly"):
-                self.sports_stats[k].set("—")
+                self.playmaker_stats[k].set("—")
 
         blocks = []
-        for name in sports.SECTIONS:
+        for name in playmaker.SECTIONS:
             body = result.sections.get(name)
             if body:
                 blocks.append(f"<b>{name}</b><br>{body.replace(chr(10), '<br>')}")
-        self.sports_out.setHtml("<br><br>".join(blocks) or text.replace("\n", "<br>"))
+        self.playmaker_out.setHtml("<br><br>".join(blocks) or text.replace("\n", "<br>"))
 
 
     def _macro_tab(self) -> QWidget:
@@ -1369,11 +1369,11 @@ class MainWindow(QMainWindow):
         # thread parented here is destroyed when the window is, and Qt aborts
         # the process if it is still running at that moment — so a thread left
         # off this list is a crash on quit that only shows up when that feature
-        # happens to be mid-flight. The sports read and the backtest were both
+        # happens to be mid-flight. The Playmaker read and the backtest were both
         # missing, which is how the SIGABRT came back.
         for thread in (getattr(self, "poll", None),
                        self._read_thread, self._cfg_thread,
-                       self._bt_thread, getattr(self, "sports_thread", None)):
+                       self._bt_thread, getattr(self, "playmaker_thread", None)):
             if thread is None or not thread.isRunning():
                 continue
             thread.quit()                   # no-op for run()-override threads
