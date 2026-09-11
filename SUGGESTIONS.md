@@ -13,6 +13,10 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 3 | Calibration table auto-refresh once ≥20 paper positions have closed | feature | M | PLANNED |
 | 4 | Week-over-week scan deltas from the cached scans already on disk | feature | M | IDEA |
 | 5 | Intraday bars or order flow as a research input — the only honest way to reopen the study | research | XL | IDEA |
+| 6 | Volatility *forecast* instead of trailing realised vol — the one target the evidence says is predictable, and the plan already consumes it (`CONFIDENCE.md` §8) | research | M | PLANNED |
+| 7 | Turn news/vol/catalyst from levels into surprises against each instrument's own baseline (`CONFIDENCE.md` §5) | research | S | PLANNED |
+| 8 | Cross-sectional z-scoring within asset class, so a score means the same thing for a coin and a currency (`CONFIDENCE.md` §3) | research | S | PLANNED |
+| 9 | Daily GPR-style political index computed from the newswire SONAR already reads (`CONFIDENCE.md` §7.1) | feature | M | IDEA |
 
 ## Safety rails
 

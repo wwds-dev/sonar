@@ -89,6 +89,12 @@ News is **context, not a predictor**. Sentiment is a small word-list heuristic, 
 deliberately conservative, and scraped text is treated as **untrusted data** — read and
 summarised, never acted upon.
 
+[CONFIDENCE.md](CONFIDENCE.md) is the research file on how this score is built versus how the
+institutional process builds one — cross-sectional standardisation, benchmark-relative
+momentum, levels versus surprises, a daily GPR-style political index from the newswire already
+being read, and the argument that the thing worth forecasting here is **volatility**, not
+direction.
+
 ## Risk, reward, and the probability of profit
 
 Targets and stops are scaled to how much a thing actually moves, so `reward:risk = k_target/k_stop`.
