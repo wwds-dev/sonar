@@ -21,7 +21,7 @@ A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no we
 | **Wire** | Live newswire, the earnings and IPO calendar, and what the news is pointing at | No |
 | **Book** | Open paper positions, the calibration table, and the backtest button | — |
 | **Macro** | Regime: curve, VIX, real rates, unemployment | No |
-| **Lab** | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component | — |
+| **Lab** | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
 | **Playmaker** | NFL prop-bet analysis — pick a sport and prop, enter the line, price and any supporting stats, and an LLM read scores it against `sonar.playmaker`'s odds/EV/Kelly arithmetic | — |
 
 Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
@@ -557,6 +557,7 @@ sonar/
   costs.py     what a round trip actually cost, derived from the audit log
   institutions.py central-bank releases, FOMC and speeches — scheduled catalysts
   venues.py    where a row could actually be traded, and where it could not
+  replay.py    step through history one setup at a time — grades you, not the model
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
   playmaker/   NFL prop-bet arithmetic (odds, implied probability, EV, Kelly) — the Playmaker tab

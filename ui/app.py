@@ -1012,7 +1012,157 @@ class MainWindow(QMainWindow):
             "<p style='color:#7c8798'>No run yet. A whole-watchlist 2y replay takes "
             "a few seconds and hits the network once per instrument.</p>")
         lay.addWidget(self.lab_out, 1)
+
+        # --- replay: the same history, but you make the calls ---------------- #
+        rep = panel()
+        rl = QVBoxLayout(rep)
+        rl.setContentsMargins(14, 12, 14, 12)
+        rl.setSpacing(6)
+        rl.addWidget(label("REPLAY — YOUR CALLS", "faint", theme.mono(8)))
+        rl.addWidget(label(
+            "The run above grades the model. This grades you. One setup at a "
+            "time on real history, with everything after the cursor withheld — "
+            "the chart stops where you are, so there is nothing to peek at. "
+            "Call it or skip it; the model's call on the same setup is scored "
+            "alongside yours either way, so skipping the hard ones cannot look "
+            "like skill.",
+            "faint", theme.mono(8), wrap=True))
+
+        rrow = QHBoxLayout()
+        self.rep_symbol = QComboBox()
+        for sym, name, cls, _kw in asset_mod.WATCHLIST:
+            self.rep_symbol.addItem(f"{name} ({sym})", sym)
+        self.rep_stake = QSpinBox()
+        self.rep_stake.setRange(10, 10_000)
+        self.rep_stake.setValue(100)
+        self.rep_stake.setPrefix("risk ")
+        self.rep_stake.setSuffix(" per call")
+        self.rep_start = QPushButton("Start replay")
+        self.rep_start.setFixedWidth(130)
+        self.rep_start.clicked.connect(self._replay_start)
+        rrow.addWidget(self.rep_symbol, 1)
+        rrow.addWidget(self.rep_stake)
+        rrow.addWidget(self.rep_start)
+        rl.addLayout(rrow)
+
+        self.rep_setup = label("", "muted", theme.mono(10))
+        self.rep_setup.setWordWrap(True)
+        rl.addWidget(self.rep_setup)
+        self.rep_spark = Sparkline(46)
+        self.rep_spark.setFixedHeight(52)
+        rl.addWidget(self.rep_spark)
+
+        arow = QHBoxLayout()
+        self.rep_long = QPushButton("Buy")
+        self.rep_short = QPushButton("Short")
+        self.rep_skip = QPushButton("Skip")
+        for b, choice in ((self.rep_long, "LONG"), (self.rep_short, "SHORT"),
+                          (self.rep_skip, "SKIP")):
+            b.setFixedWidth(92)
+            b.setEnabled(False)
+            b.clicked.connect(lambda _=False, c=choice: self._replay_decide(c))
+            arow.addWidget(b)
+        self.rep_last = label("", "faint", theme.mono(9))
+        arow.addWidget(self.rep_last, 1)
+        rl.addLayout(arow)
+
+        self.rep_card = QTextBrowser()
+        self.rep_card.setOpenExternalLinks(False)
+        self.rep_card.setFixedHeight(150)
+        self.rep_card.setHtml("<p style='color:#7c8798'>No replay running.</p>")
+        rl.addWidget(self.rep_card)
+        lay.addWidget(rep)
         return w
+
+    # -- replay ------------------------------------------------------------- #
+    def _replay_start(self) -> None:
+        from sonar import backtest, replay as replay_mod
+        sym = self.rep_symbol.currentData()
+        self.rep_last.setText(f"loading {sym}…")
+        QApplication.processEvents()
+        bars = backtest.fetch_bars(sym, "5y")
+        if bars is None or len(bars.close) < 120:
+            self.rep_last.setText(f"no usable history for {sym}")
+            return
+        self._replay = replay_mod.Session(
+            bars, horizon_days=self.lab_horizon.value(),
+            step=self.lab_step.value(), stake=float(self.rep_stake.value()))
+        self.rep_last.setText(f"{len(bars.close)} bars loaded")
+        self._replay_render()
+
+    def _replay_decide(self, choice: str) -> None:
+        sess = getattr(self, "_replay", None)
+        if sess is None:
+            return
+        d = sess.decide(choice)
+        if d is not None:
+            if d.choice == "SKIP":
+                self.rep_last.setText(
+                    f"skipped · the model went {d.model_direction} "
+                    f"and it {('won' if d.model_outcome == 'TARGET' else 'lost')}")
+            else:
+                won = d.outcome == "TARGET"
+                self.rep_last.setText(
+                    f"{d.choice} → {d.outcome} after {d.bars_held} bars · "
+                    f"{'+' if won else ''}{d.pnl:,.2f}")
+        self._replay_render()
+
+    def _replay_render(self) -> None:
+        sess = getattr(self, "_replay", None)
+        if sess is None:
+            return
+        setup = sess.current()
+        for b in (self.rep_long, self.rep_short, self.rep_skip):
+            b.setEnabled(setup is not None)
+        if setup is None:
+            self.rep_setup.setText("History exhausted — the scorecard below is final.")
+            self.rep_spark.set_values([])
+        else:
+            import datetime as _dt
+            day = _dt.datetime.utcfromtimestamp(setup.t).strftime("%Y-%m-%d")
+            # Deliberately no model_direction here: showing the algorithm's call
+            # before yours would turn this into a test of whether you agree with
+            # it, which is a different and much less interesting question.
+            self.rep_setup.setText(
+                f"{setup.symbol} · {day} · {setup.price:,.4f}   "
+                f"momentum {setup.momentum * 100:+.2f}%   "
+                f"vol {setup.volatility * 100:.2f}%/day   "
+                f"score {setup.confidence:.0f}   "
+                f"target {setup.target_long:,.4f} / stop {setup.stop_long:,.4f} "
+                f"(long)   R:R {setup.rr:.2f}")
+            self.rep_spark.set_values(setup.closes[-60:])
+        self.rep_card.setHtml(self._scorecard_html(sess.scorecard()))
+
+    @staticmethod
+    def _scorecard_html(c: dict) -> str:
+        you = c.get("your_hit_rate")
+        model = c.get("model_hit_rate")
+        pnl, mpnl = c.get("your_pnl", 0.0), c.get("model_pnl", 0.0)
+
+        def money(x):
+            colour = "#98c379" if x > 0 else ("#e06c75" if x < 0 else "#7c8798")
+            return f"<b style='color:{colour}'>{x:+,.2f}</b>"
+
+        rows = [
+            ("Setups seen", f"{c['n_setups']}  ({c['n_taken']} called, "
+                            f"{c['n_skipped']} skipped)"),
+            ("Your hit rate", "—" if you is None else
+             f"{you * 100:.1f}%" + (f" ±{2 * c['your_std_error'] * 100:.1f}"
+                                    if c.get("your_std_error") else "")),
+            ("Model, same setups", "—" if model is None else f"{model * 100:.1f}%"),
+            ("Barrier baseline", f"{c['predicted'] * 100:.1f}%"),
+            ("Your P&amp;L", money(pnl)),
+            ("Model P&amp;L", money(mpnl)),
+            ("Agreed with the model", f"{c['agreed_with_model']} of {c['n_taken']}"),
+        ]
+        body = "".join(
+            f"<tr><td style='padding:1px 16px 1px 0;color:#7c8798'>{k}</td>"
+            f"<td style='padding:1px 0'>{v}</td></tr>" for k, v in rows)
+        return (f"<table>{body}</table>"
+                f"<p style='color:#7c8798;margin:6px 0 0'>{c['verdict']}</p>"
+                f"<p style='color:#5c6370;margin:2px 0'>Risk {c['stake']:,.0f} per "
+                "call; a win pays the reward-to-risk multiple. Sized by risk so a "
+                "coin and a currency pair cost the same to be wrong about.</p>")
 
     def _lab_symbols(self) -> list[str]:
         want = self.lab_universe.currentData()
