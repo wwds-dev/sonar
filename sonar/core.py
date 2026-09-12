@@ -19,8 +19,8 @@ import time
 
 from dataclasses import asdict
 
-from . import (assets, enginelock, feeds, horizon, institutions, llm, macro,
-               model, news, paths, risk)
+from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
+               institutions, llm, macro, model, news, paths, risk)
 from .engine import Engine
 from . import calibration, events, portfolio, scoring
 
@@ -89,6 +89,9 @@ class Live:
         # a direction: see sonar/institutions.py.
         self.institutions = institutions.InstitutionCache()
         self.inst: dict = {"n": 0, "recent": [], "pressure": {}}
+        # Says what changed, never what to do about it — see sonar/alerts.py.
+        self.alert_engine = alerts_mod.AlertEngine()
+        self.alerts: list[dict] = []
         self.reader = llm.LLMReader()
         self.last_read: dict | None = None
 
@@ -137,8 +140,11 @@ class Live:
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
             self._mark_book(ap)
+            fired = self.alert_engine.scan(ap, (self.inst or {}).get("pressure"))
             with self.lock:
                 self.assets = ap
+                if fired:
+                    self.alerts = self.alert_engine.recent()
         except Exception:
             pass
         self._scan_at = time.time()

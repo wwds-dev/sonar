@@ -715,9 +715,32 @@ class MainWindow(QMainWindow):
     def _wire_tab(self) -> QWidget:
         """Breaking headlines, and the calendar of what is already scheduled."""
         w = QWidget()
-        lay = QHBoxLayout(w)
-        lay.setContentsMargins(0, 8, 0, 0)
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(0, 8, 0, 0)
+        outer.setSpacing(8)
+        cols = QWidget()
+        lay = QHBoxLayout(cols)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
+
+        alerts_panel = panel()
+        al = QVBoxLayout(alerts_panel)
+        al.setContentsMargins(14, 10, 14, 10)
+        al.setSpacing(4)
+        al.addWidget(label("WHAT CHANGED", "faint", theme.mono(8)))
+        al.addWidget(label(
+            "Fires on a transition, not on a level — news rising to Spike, "
+            "volatility breaking from an instrument's own recent range, a "
+            "scheduled catalyst arriving, heavy policy traffic. It tells you "
+            "something moved and stops there: the score is a notability "
+            "heuristic, five studies found no directional edge, and the "
+            "blended score's measured IC is negative, so an alert shouting BUY "
+            "would point at the wrong instruments with a straight face.",
+            "faint", theme.mono(8), wrap=True))
+        self.alert_list = label("nothing yet", "muted", theme.mono(9))
+        self.alert_list.setWordWrap(True)
+        al.addWidget(self.alert_list)
+        outer.addWidget(alerts_panel)
 
         sugg = panel()
         sl = QVBoxLayout(sugg)
@@ -786,11 +809,26 @@ class MainWindow(QMainWindow):
         self._events_area.setWidget(ehost)
         rl.addWidget(self._events_area, 1)
         lay.addWidget(right, 2)
+        outer.addWidget(cols, 1)
 
         self._wire_sig = None
         return w
 
+    def _refresh_alerts(self) -> None:
+        with self.live.lock:
+            rows = list(self.live.alerts)
+        if not rows:
+            self.alert_list.setText("nothing yet — alerts need one scan to "
+                                    "compare against")
+            return
+        out = []
+        for a in rows[:6]:
+            age = f"  ·  data {a['data_age_s'] // 60:.0f} min old" if a["stale"] else ""
+            out.append(f"· {a['symbol']} — {a['message']}{age}")
+        self.alert_list.setText("\n".join(out))
+
     def _refresh_wire(self) -> None:
+        self._refresh_alerts()
         try:
             heads = self.live.news.headlines()
             ev = self.live.events.payload()
