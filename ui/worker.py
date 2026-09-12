@@ -46,19 +46,28 @@ class ReadThread(QThread):
 
 class BacktestThread(QThread):
     """Replaying years of bars over the whole watchlist takes seconds and hits
-    the network, so it never runs on the refresh timer — only when asked."""
+    the network, so it never runs on the refresh timer — only when asked.
+
+    The Lab tab drives the same replay with the parameters exposed, which is why
+    everything below the symbol list is settable rather than fixed.
+    """
 
     done = Signal(dict)
+    progress = Signal(str, int)
 
-    def __init__(self, symbols, horizon_days: int, parent=None) -> None:
+    def __init__(self, symbols, horizon_days: int, parent=None, *,
+                 rng: str = "2y", step: int = 3, with_news: bool = False) -> None:
         super().__init__(parent)
         self.symbols, self.horizon_days = symbols, horizon_days
+        self.rng, self.step, self.with_news = rng, step, with_news
 
     def run(self) -> None:                 # noqa: D102
         from sonar import backtest
         try:
-            self.done.emit(backtest.run(self.symbols,
-                                        horizon_days=self.horizon_days))
+            self.done.emit(backtest.run(
+                self.symbols, horizon_days=self.horizon_days, rng=self.rng,
+                step=self.step, with_news=self.with_news,
+                progress=lambda sym, n: self.progress.emit(sym, n)))
         except Exception as exc:
             self.done.emit({"n": 0, "verdict": f"{type(exc).__name__}: {exc}"})
 

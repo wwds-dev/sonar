@@ -10,7 +10,7 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 > probability model priced against a real market. SONAR builds exactly that — and keeps it
 > **paper money** so it can be honest about what it is.
 
-## Six tabs
+## Seven tabs
 
 A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no web view.
 
@@ -21,6 +21,7 @@ A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no we
 | **Wire** | Live newswire, the earnings and IPO calendar, and what the news is pointing at | No |
 | **Book** | Open paper positions, the calibration table, and the backtest button | — |
 | **Macro** | Regime: curve, VIX, real rates, unemployment | No |
+| **Lab** | Replay the plan over real bars with the parameters exposed — universe, range, horizon, sampling step — and compare the realised hit rate against what the barrier maths predicted | — |
 | **Playmaker** | NFL prop-bet analysis — pick a sport and prop, enter the line, price and any supporting stats, and an LLM read scores it against `sonar.playmaker`'s odds/EV/Kelly arithmetic | — |
 
 Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
@@ -39,7 +40,7 @@ the app behind the **Docs** button, plus a tooltips toggle explaining every numb
 | BTC/ETH price + hourly candle — Binance (the actual Polymarket resolution source), Coinbase fallback | The bankroll ($10,000 paper) |
 | Polymarket odds, best bid/ask, order books, market metadata | Every position — **no exchange, no wallet, no order placed anywhere** |
 | Equities/indices/FX/commodities — Yahoo Finance | The P&L |
-| News — Reuters, AP, Bloomberg, FT, BBC, MarketWatch, Yahoo, NPR, CNBC, Ars Technica, TechCrunch, The Verge | |
+| News — 24 feeds across nine press blocs: Reuters, AP, Bloomberg, FT, BBC, MarketWatch, Yahoo, NPR, CNBC, Ars Technica, TechCrunch, The Verge, plus Al Jazeera, Anadolu, Global Times, SCMP, TASS, Times of India, The Hindu, Japan Times, AllAfrica and Folha | |
 
 **No** authentication, **no** write access anywhere, and nothing here can move real money.
 
@@ -84,6 +85,8 @@ for how *notable* something looks — **not** the probability you'll make money.
 Weights: news `0.35`, momentum `0.30`, catalyst `0.20`, volatility `0.15`. There is **no
 directional lean** — the research below found momentum carried none, so the row shows a news
 *level* (Quiet / Normal / Elevated / Spike) and you pick the side with buy or short.
+
+Sources span nine press blocs, and each feed is tagged with its origin and whether it is state-directed. That is not decoration: `news.bloc_spread()` can then tell a story carried across five blocs from one outlet running the same line all day, and flag coverage that is state-only — evidence about a government rather than corroboration of an event. A geopolitical signal built on Anglo-American outlets alone measures what one bloc is talking about.
 
 News is **context, not a predictor**. Sentiment is a small word-list heuristic, matching is
 deliberately conservative, and scraped text is treated as **untrusted data** — read and

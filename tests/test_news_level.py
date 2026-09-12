@@ -7,6 +7,7 @@ directional claim — momentum's lean was removed on evidence and must not creep
 back in through this field.
 """
 
+import time
 from types import SimpleNamespace
 
 from sonar.assets import news_level
@@ -79,3 +80,60 @@ def test_generic_crypto_story_no_longer_covers_every_coin():
     from sonar.assets import WATCHLIST
     coins = [kw for s, _n, c, kw in WATCHLIST if c == "Crypto" and s != "BTC-USD"]
     assert not any("crypto" in kw for kw in coins)
+
+
+# --- source diversity ------------------------------------------------------ #
+def _h(source, origin, state=False):
+    from sonar.news import Headline
+    return Headline(title=f"story from {source}", link="", source=source,
+                    category="political", ts=int(time.time()),
+                    origin=origin, state=state)
+
+
+def test_every_feed_declares_an_origin():
+    """A feed with no origin silently counts as US press and skews the spread."""
+    from sonar.news import FEEDS
+    assert all(f.origin for f in FEEDS.values())
+
+
+def test_the_wire_is_not_only_western():
+    """The point of the non-Western sources: a geopolitical signal built on one
+    bloc measures what that bloc is talking about."""
+    from sonar.news import FEEDS
+    western = {"us", "uk", "eu"}
+    assert {f.origin for f in FEEDS.values()} - western, "no non-Western origins"
+
+
+def test_state_outlets_are_marked():
+    from sonar.news import FEEDS
+    assert any(f.state for f in FEEDS.values())
+    assert not FEEDS["Reuters"].state
+
+
+def test_spread_counts_distinct_blocs():
+    from sonar.news import bloc_spread
+    out = bloc_spread([_h("Reuters", "uk"), _h("Al Jazeera", "mena"),
+                       _h("SCMP", "china")])
+    assert out["n_blocs"] == 3
+    assert out["blocs"] == ["china", "mena", "uk"]
+
+
+def test_one_bloc_shouting_is_not_three_blocs_agreeing():
+    from sonar.news import bloc_spread
+    one = bloc_spread([_h("TASS", "russia", True)] * 5)
+    many = bloc_spread([_h("Reuters", "uk"), _h("AP", "us"), _h("SCMP", "china")])
+    assert one["n_blocs"] == 1 and many["n_blocs"] == 3, \
+        "headline count alone cannot separate these; spread must"
+
+
+def test_state_only_coverage_is_flagged():
+    from sonar.news import bloc_spread
+    assert bloc_spread([_h("TASS", "russia", True),
+                        _h("Global Times", "china", True)])["state_only"] is True
+    assert bloc_spread([_h("TASS", "russia", True),
+                        _h("Reuters", "uk")])["state_only"] is False
+
+
+def test_empty_matches_do_not_claim_spread():
+    from sonar.news import bloc_spread
+    assert bloc_spread([])["n_blocs"] == 0

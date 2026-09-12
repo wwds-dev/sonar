@@ -27,14 +27,16 @@ import time
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication
-from PySide6.QtWidgets import (QComboBox, QFrame, QGridLayout, QHBoxLayout,
-                               QLabel, QLineEdit, QMainWindow, QPlainTextEdit,
-                               QPushButton, QScrollArea, QSizePolicy, QTabWidget,
-                               QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
+                               QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+                               QPlainTextEdit, QPushButton, QScrollArea,
+                               QSizePolicy, QSpinBox, QTabWidget, QTextBrowser,
+                               QVBoxLayout, QWidget)
 
 from sonar import horizon as hz_mod
 from sonar import llm, paths, playmaker, risk as risk_mod
 from sonar.core import Live
+from sonar import assets as asset_mod
 from sonar.assets import _W as ASSET_W
 
 from . import theme
@@ -519,6 +521,7 @@ class MainWindow(QMainWindow):
         self._read_thread = None
         self._cfg_thread = None
         self._bt_thread = None
+        self._lab_thread = None
         self.tray = None            # set by main.py once the app exists
         self.allow_close = False    # flipped only by the tray's Quit action
         self._hidden_at = 0.0       # when this window last hid itself
@@ -541,6 +544,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._wire_tab(), "Wire")
         self.tabs.addTab(self._book_tab(), "Book")
         self.tabs.addTab(self._macro_tab(), "Macro")
+        self.tabs.addTab(self._lab_tab(), "Lab")
         self.tabs.addTab(self._playmaker_tab(), "Playmaker")
         outer.addWidget(self.tabs, 1)
 
@@ -914,6 +918,166 @@ class MainWindow(QMainWindow):
                       [PositionRow(p, self._close_position)
                        for p in pos.get("open", [])],
                       "No open paper positions. Use buy or short on the Assets tab.")
+
+    # -- lab ---------------------------------------------------------------- #
+    def _lab_tab(self) -> QWidget:
+        """Run the algorithm against history, with the knobs exposed.
+
+        The Book tab's backtest button answers one fixed question. This answers
+        whichever one you ask, and the point is falsification rather than
+        reassurance: change the reward:risk and watch the realised hit rate move
+        to meet `1/(1+R:R)`, because that identity is the claim the whole app
+        rests on. If it ever stops holding, something here is wrong.
+
+        Everything runs on real bars through `sonar.backtest` — the same replay
+        the research used, not a separate toy.
+        """
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+
+        head = panel()
+        hl = QVBoxLayout(head)
+        hl.setContentsMargins(14, 12, 14, 12)
+        hl.setSpacing(6)
+        hl.addWidget(label("SIMULATE AND TEST", "faint", theme.mono(8)))
+        hl.addWidget(label(
+            "Replays the plan over real historical bars: momentum and volatility "
+            "from prior bars only, then walks forward through actual highs and "
+            "lows. A bar that spans both barriers counts as a loss, because daily "
+            "data cannot say which came first, and costs are excluded — so the "
+            "truth is worse than whatever this prints.",
+            "faint", theme.mono(8), wrap=True))
+
+        form = QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(4)
+
+        self.lab_universe = QComboBox()
+        self.lab_universe.addItem("Whole watchlist", "all")
+        for cls in ("Equity", "Index", "Forex", "Crypto", "Commodity"):
+            self.lab_universe.addItem(cls, cls)
+        self.lab_range = QComboBox()
+        for r in ("1y", "2y", "5y", "10y"):
+            self.lab_range.addItem(r, r)
+        self.lab_range.setCurrentText("2y")
+
+        self.lab_horizon = QSpinBox()
+        self.lab_horizon.setRange(1, 250)
+        self.lab_horizon.setValue(5)
+        self.lab_step = QSpinBox()
+        self.lab_step.setRange(1, 30)
+        self.lab_step.setValue(3)
+        self.lab_news = QCheckBox("include attention (one extra request per symbol)")
+
+        for col, cap in enumerate(("UNIVERSE", "RANGE", "HORIZON (DAYS)", "STEP (BARS)")):
+            form.addWidget(label(cap, "faint", theme.mono(8)), 0, col)
+        form.addWidget(self.lab_universe, 1, 0)
+        form.addWidget(self.lab_range, 1, 1)
+        form.addWidget(self.lab_horizon, 1, 2)
+        form.addWidget(self.lab_step, 1, 3)
+        hl.addLayout(form)
+        hl.addWidget(self.lab_news)
+
+        row = QHBoxLayout()
+        self.lab_btn = QPushButton("Run simulation")
+        self.lab_btn.setFixedWidth(150)
+        self.lab_btn.clicked.connect(self._lab_run)
+        row.addWidget(self.lab_btn)
+        self.lab_status = label("", "faint", theme.mono(9))
+        row.addWidget(self.lab_status, 1)
+        hl.addLayout(row)
+        lay.addWidget(head)
+
+        self.lab_out = QTextBrowser()
+        self.lab_out.setOpenExternalLinks(False)
+        self.lab_out.setHtml(
+            "<p style='color:#7c8798'>No run yet. A whole-watchlist 2y replay takes "
+            "a few seconds and hits the network once per instrument.</p>")
+        lay.addWidget(self.lab_out, 1)
+        return w
+
+    def _lab_symbols(self) -> list[str]:
+        want = self.lab_universe.currentData()
+        rows = [(sym, cls) for sym, _name, cls, _kw in asset_mod.WATCHLIST]
+        if want == "all":
+            return [s for s, _ in rows]
+        return [s for s, cls in rows if cls == want]
+
+    def _lab_run(self) -> None:
+        if self._lab_thread is not None and self._lab_thread.isRunning():
+            return
+        symbols = self._lab_symbols()
+        if not symbols:
+            self.lab_status.setText("no instruments in that class")
+            return
+        self.lab_btn.setEnabled(False)
+        self.lab_status.setText(f"replaying {len(symbols)} instruments…")
+        self._lab_thread = BacktestThread(
+            symbols, self.lab_horizon.value(), self,
+            rng=self.lab_range.currentData(), step=self.lab_step.value(),
+            with_news=self.lab_news.isChecked())
+        self._lab_thread.progress.connect(
+            lambda sym, n: self.lab_status.setText(f"{sym} — {n} setups so far"))
+        self._lab_thread.done.connect(self._lab_done)
+        self._lab_thread.start()
+
+    def _lab_done(self, r: dict) -> None:
+        self.lab_btn.setEnabled(True)
+        n = r.get("n", 0)
+        self.lab_status.setText(f"{n:,} resolved setups" if n else "no result")
+        self.lab_out.setHtml(self._lab_html(r))
+
+    @staticmethod
+    def _lab_html(r: dict) -> str:
+        if not r.get("n"):
+            return (f"<p style='color:#e06c75'>{r.get('verdict', 'nothing resolved')}"
+                    "</p>")
+        hit, pred = r["hit_rate"], r["predicted"]
+        se, delta = r["std_error"], r["delta"]
+        within = abs(delta) <= 2 * se
+        colour = "#7c8798" if within else "#e5c07b"
+        rows = [
+            ("Resolved setups", f"{r['n']:,} across {r.get('symbols', 0)} instruments"),
+            ("Realised hit rate", f"{hit * 100:.2f}%"),
+            ("Predicted by the barrier maths", f"{pred * 100:.2f}%"),
+            ("Difference", f"{delta * 100:+.2f} pts  (±{2 * se * 100:.2f} at 2 s.e.)"),
+            ("Expectancy", f"{r['expectancy_r']:+.3f} R per setup"),
+            ("Implied drift", f"{r['implied_edge_sigma']:+.4f} σ"),
+            ("Average hold", f"{r['avg_bars_held']:.1f} bars"),
+        ]
+        body = "".join(
+            f"<tr><td style='padding:2px 18px 2px 0;color:#7c8798'>{k}</td>"
+            f"<td style='padding:2px 0'><b>{v}</b></td></tr>" for k, v in rows)
+        out = [f"<table>{body}</table>",
+               f"<p style='color:{colour}'><b>{r['verdict']}</b></p>"]
+
+        if within:
+            out.append("<p style='color:#7c8798'>The difference sits inside its own "
+                       "error bar, which is what a model with no edge is supposed to "
+                       "look like. That is the result, not a failure to find one.</p>")
+
+        for title, key in (("Momentum buckets", "buckets"),
+                           ("Attention buckets", "attention_buckets")):
+            bk = r.get(key) or []
+            if not bk:
+                continue
+            head = "".join(f"<th style='text-align:left;padding-right:16px'>{h}</th>"
+                           for h in ("bucket", "n", "hit rate", "vs baseline"))
+            body = "".join(
+                "<tr>" + "".join(
+                    f"<td style='padding-right:16px'>{c}</td>" for c in (
+                        b.get("label", "?"), f"{b.get('n', 0):,}",
+                        f"{b.get('hit_rate', 0) * 100:.1f}%",
+                        f"{b.get('delta', 0) * 100:+.1f}")) + "</tr>"
+                for b in bk)
+            out.append(f"<h4 style='margin:14px 0 4px'>{title}</h4>"
+                       f"<table>{head}{body}</table>")
+
+        if r.get("news_verdict"):
+            out.append(f"<p style='color:#7c8798'>{r['news_verdict']}</p>")
+        return "".join(out)
 
     # -- playmaker ------------------------------------------------------------ #
     def _playmaker_tab(self) -> QWidget:
@@ -1373,7 +1537,8 @@ class MainWindow(QMainWindow):
         # missing, which is how the SIGABRT came back.
         for thread in (getattr(self, "poll", None),
                        self._read_thread, self._cfg_thread,
-                       self._bt_thread, getattr(self, "playmaker_thread", None)):
+                       self._bt_thread, self._lab_thread,
+                       getattr(self, "playmaker_thread", None)):
             if thread is None or not thread.isRunning():
                 continue
             thread.quit()                   # no-op for run()-override threads
