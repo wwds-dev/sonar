@@ -37,6 +37,7 @@ from sonar import horizon as hz_mod
 from sonar import llm, paths, playmaker, risk as risk_mod
 from sonar.core import Live
 from sonar import assets as asset_mod
+from sonar import venues
 from sonar.assets import _W as ASSET_W
 
 from . import theme
@@ -186,7 +187,22 @@ class AssetRow(QFrame):
         name.setContentsMargins(0, 0, 0, 0)
         name.setSpacing(0)
         name.addWidget(label(a["name"], font=theme.ui_font(12, True)))
-        name.addWidget(label(f'{a["symbol"]}  ·  {a["cls"]}', "faint", theme.mono(9)))
+        # Where this could actually be bought, and the marker for when it could
+        # not. A board that ranks an index, a futures contract and a delisted
+        # coin alongside buyable shares — without saying which is which — is
+        # inviting an order that cannot be placed. Nine of twenty-six rows are
+        # not tradeable as shown, so the marker is not an edge case.
+        v = venues.where(a["symbol"], a.get("cls", ""))
+        mark = "" if (v.tradeable and not v.proxy) else ("  ⊘" if not v.tradeable
+                                                         else "  ↗")
+        sub = label(f'{a["symbol"]}  ·  {a["cls"]}{mark}', "faint", theme.mono(9))
+        if mark:
+            sub.setStyleSheet(
+                f"color: {(theme.DOWN if not v.tradeable else theme.GOLD).name()};")
+        name.addWidget(sub)
+        holder.setToolTip(f"{a['name']} ({a['symbol']})\n\n{v.summary()}"
+                          f"\n\nVenue list checked {venues.CHECKED}. "
+                          "Reference only — not advice, and availability changes.")
         lay.addWidget(holder)
 
         spark = Sparkline(38)

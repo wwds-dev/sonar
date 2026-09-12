@@ -556,6 +556,7 @@ sonar/
   execution.py the order guard: caps, confirmation, idempotency, flatten, audit
   costs.py     what a round trip actually cost, derived from the audit log
   institutions.py central-bank releases, FOMC and speeches — scheduled catalysts
+  venues.py    where a row could actually be traded, and where it could not
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
   playmaker/   NFL prop-bet arithmetic (odds, implied probability, EV, Kelly) — the Playmaker tab
