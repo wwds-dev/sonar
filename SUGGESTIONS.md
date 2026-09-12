@@ -17,6 +17,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 7 | Turn news/vol/catalyst from levels into surprises against each instrument's own baseline (`CONFIDENCE.md` §5) | research | S | PLANNED |
 | 8 | Cross-sectional z-scoring within asset class, so a score means the same thing for a coin and a currency (`CONFIDENCE.md` §3) | research | S | PLANNED |
 | 9 | Daily GPR-style political index computed from the newswire SONAR already reads (`CONFIDENCE.md` §7.1) | feature | M | IDEA |
+| 10 | **Volatility component is INVERTED** — first attribution run over 1,632 setups gave IC −0.09, top quintile 11 points *behind* the bottom, and removing it raises the blend's IC. The 0.15 weight is pushing the wrong instruments up the board. Flip the sign or drop it | research | S | PLANNED |
 
 ## Safety rails
 

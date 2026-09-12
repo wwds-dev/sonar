@@ -1077,6 +1077,74 @@ class MainWindow(QMainWindow):
 
         if r.get("news_verdict"):
             out.append(f"<p style='color:#7c8798'>{r['news_verdict']}</p>")
+        out.append(MainWindow._attribution_html(r.get("attribution") or {}))
+        return "".join(out)
+
+    # The colours carry the recommendation, so a glance is enough to see which
+    # component is the problem one.
+    _VERDICT_COLOUR = {"KEEP": "#98c379", "INVERTED": "#e06c75",
+                       "DROP": "#e06c75", "WEAK": "#e5c07b",
+                       "UNCLEAR": "#7c8798", "not measured": "#5c6370"}
+
+    @staticmethod
+    def _attribution_html(a: dict) -> str:
+        """Which components earned their weight — the part you act on.
+
+        A hit rate tells you whether the model as a whole worked. This tells you
+        *which piece* of it did, which is the only version of that question you
+        can do anything with.
+        """
+        rows = a.get("components") or []
+        if not rows:
+            return ("<h4 style='margin:16px 0 4px'>Component attribution</h4>"
+                    f"<p style='color:#7c8798'>{a.get('note', 'not enough setups')}"
+                    "</p>")
+
+        head = "".join(f"<th style='text-align:left;padding-right:14px'>{h}</th>"
+                       for h in ("component", "weight", "IC", "top−bottom",
+                                 "blend without it", "verdict"))
+        body = []
+        for c in rows:
+            sp = c.get("spread") or {}
+            spread = sp.get("spread")
+            se = sp.get("se")
+            colour = MainWindow._VERDICT_COLOUR.get(c.get("verdict"), "#7c8798")
+            cells = (
+                c.get("component", "?"),
+                f"{c.get('weight', 0):.2f}" if c.get("weight") is not None else "—",
+                f"{c['ic']:+.3f}" if c.get("ic") is not None else "—",
+                (f"{spread * 100:+.1f} ±{2 * se * 100:.1f}"
+                 if spread is not None and se else "—"),
+                (f"{c['blend_ic_without']:+.3f}"
+                 if c.get("blend_ic_without") is not None else "—"),
+                f"<b style='color:{colour}'>{c.get('verdict', '—')}</b>",
+            )
+            body.append("<tr>" + "".join(
+                f"<td style='padding:2px 14px 2px 0'>{x}</td>" for x in cells) + "</tr>")
+
+        out = ["<h4 style='margin:16px 0 4px'>Component attribution</h4>",
+               f"<table>{head}{''.join(body)}</table>"]
+
+        blend = a.get("blend_ic")
+        if blend is not None:
+            note = ("" if blend > 0 else
+                    " — a negative blend IC means the score as a whole is ranking "
+                    "the wrong way round, not merely failing to rank")
+            out.append(f"<p style='color:#7c8798'>Blended score IC "
+                       f"<b>{blend:+.3f}</b> over {a.get('n', 0):,} resolved "
+                       f"setups{note}.</p>")
+
+        for c in rows:
+            if c.get("why") and c.get("verdict") not in ("not measured",):
+                colour = MainWindow._VERDICT_COLOUR.get(c["verdict"], "#7c8798")
+                out.append(f"<p style='color:{colour};margin:2px 0'><b>"
+                           f"{c['component']}</b> — {c['why']}</p>")
+
+        if a.get("catalyst"):
+            out.append(f"<p style='color:#5c6370'>catalyst — {a['catalyst']}</p>")
+        out.append("<p style='color:#5c6370'>p-values go through Benjamini-Hochberg "
+                   f"together at q={a.get('fdr_q', 0.1)}: testing four components and "
+                   "reporting the best one is how noise gets published.</p>")
         return "".join(out)
 
     # -- playmaker ------------------------------------------------------------ #
@@ -1266,6 +1334,25 @@ class MainWindow(QMainWindow):
         self.regime_bar.setFixedHeight(9)
         hl.addWidget(self.regime_bar)
         lay.addWidget(head)
+
+        inst = panel()
+        il = QVBoxLayout(inst)
+        il.setContentsMargins(14, 12, 14, 12)
+        il.setSpacing(4)
+        il.addWidget(label("CENTRAL BANK COMMUNICATION", "faint", theme.mono(8)))
+        self.inst_level = label("—", font=theme.mono(15, True))
+        il.addWidget(self.inst_level)
+        il.addWidget(label(
+            "Policy releases and speeches from the Fed and the Bank of England — "
+            "the rare catalyst that is scheduled and public. Heavy traffic means "
+            "the rate path is being repriced, which widens the distribution for "
+            "everything priced off it. Which way it widens is not something this "
+            "can know, and it does not claim to.",
+            "faint", theme.mono(8), wrap=True))
+        self.inst_list = label("", "muted", theme.mono(9))
+        self.inst_list.setWordWrap(True)
+        il.addWidget(self.inst_list)
+        lay.addWidget(inst)
 
         grid = panel()
         gl = QGridLayout(grid)
@@ -1468,7 +1555,20 @@ class MainWindow(QMainWindow):
             lay.addWidget(wdg)
         lay.addStretch(1)
 
+    def _refresh_institutions(self) -> None:
+        with self.live.lock:
+            inst = dict(self.live.inst)
+        pr = inst.get("pressure") or {}
+        level = pr.get("level", "—")
+        self.inst_level.setText(level)
+        self.inst_level.setStyleSheet(
+            f"color: {(theme.GOLD if level == 'Heavy' else theme.MUTED).name()};")
+        rows = [f"· [{e['institution']}] {e['title'][:88]}"
+                for e in (inst.get("policy") or inst.get("recent") or [])[:5]]
+        self.inst_list.setText("\n".join(rows) or "nothing on the wire yet")
+
     def _refresh_macro(self, snap: dict) -> None:
+        self._refresh_institutions()
         mc = snap.get("macro")
         if not mc:
             self.regime_lb.setText("—")

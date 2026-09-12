@@ -19,8 +19,8 @@ import time
 
 from dataclasses import asdict
 
-from . import (assets, enginelock, feeds, horizon, llm, macro, model, news,
-               paths, risk)
+from . import (assets, enginelock, feeds, horizon, institutions, llm, macro,
+               model, news, paths, risk)
 from .engine import Engine
 from . import calibration, events, portfolio, scoring
 
@@ -84,6 +84,11 @@ class Live:
         self.calibration: dict = calibration.report(self.book.closed)
         self._scan_at = 0.0
         self.macro = macro.MacroCache()
+        # Scheduled institutional communication — central banks are the most
+        # market-moving thing on a published calendar. A variance input, not
+        # a direction: see sonar/institutions.py.
+        self.institutions = institutions.InstitutionCache()
+        self.inst: dict = {"n": 0, "recent": [], "pressure": {}}
         self.reader = llm.LLMReader()
         self.last_read: dict | None = None
 
@@ -124,6 +129,11 @@ class Live:
         # crowd's own prices with no independent model behind them. Dropping it
         # also drops ~52MB/hour — it was the single largest thing SONAR
         # downloaded, for a screen that could not say anything of its own.
+        try:
+            with self.lock:
+                self.inst = self.institutions.payload()
+        except Exception:
+            pass
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
             self._mark_book(ap)

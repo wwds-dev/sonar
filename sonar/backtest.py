@@ -226,6 +226,12 @@ def _resolve(bars: Bars, start: int, direction: str, target: float,
     return "TIMEOUT", min(max_bars, len(bars) - start - 1)
 
 
+def _mom_scale(horizon_days: int) -> float:
+    """The saturation point assets.py uses for this horizon."""
+    from .assets import _MOM_SCALE
+    return _MOM_SCALE.get(horizon_days, 0.10)
+
+
 def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
                k_target: float = scoring.K_TARGET,
                k_stop: float = scoring.K_STOP,
@@ -254,10 +260,19 @@ def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
         row = {"symbol": bars.symbol, "t": bars.time[i],
                "direction": plan.direction, "momentum": mom,
                "vol": vol, "outcome": outcome, "bars_held": held,
-               "predicted": plan.p_profit, "rr": plan.rr, "attention": None}
+               "predicted": plan.p_profit, "rr": plan.rr, "attention": None,
+               # The component scores exactly as assets.py computes them live,
+               # so attribution measures the shipped score and not a
+               # reconstruction of it that could quietly differ.
+               "c_momentum": min(1.0, abs(mom) / _mom_scale(horizon_days)),
+               "c_volatility": min(1.0, vol / 0.03),
+               "c_news": None}
         if attention:
             day = dt.datetime.utcfromtimestamp(bars.time[i]).strftime("%Y%m%d")
             row["attention"] = attention_z(attention, day)
+            # Attention z mapped onto the 0-1 shape the live news component has.
+            if row["attention"] is not None:
+                row["c_news"] = max(0.0, min(1.0, (row["attention"] + 1.0) / 4.0))
         out.append(row)
     return out
 
@@ -343,6 +358,7 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
     summary["attention_buckets"] = _attention_buckets(trials)
     summary["news_verdict"] = _news_verdict(summary["attention_buckets"])
     summary["timing"] = timing(trials)
+    summary["attribution"] = attribute(trials)
     return summary
 
 
@@ -388,6 +404,186 @@ def _news_verdict(buckets: list[dict]) -> str:
             if spike and spike["significant"] else
             "Some attention levels shift the odds: ")
     return lead + "; ".join(parts) + " — beyond two standard errors."
+
+
+# Thresholds for the verdicts in attribute(). Deliberately conservative: a
+# component has to earn its place, and "no evidence either way" is a different
+# answer from "this is dead weight".
+IC_KEEP = 0.02          # below this an IC is not worth a weight, whatever its p
+SPREAD_KEEP = 0.02      # 2 points of hit rate between best and worst quintile
+
+
+def _quintile_spread(trials: list[dict], key: str) -> dict:
+    """Hit rate in the top fifth by this component, minus the bottom fifth.
+
+    The question a weight is making a claim about: does ranking on this
+    component actually sort winners from losers? Quintiles rather than a
+    correlation because the score is used to *rank*, and a spread is the thing
+    a human can check against the board in front of them.
+    """
+    rows = [t for t in trials if t.get(key) is not None]
+    if len(rows) < 50:
+        return {"n": len(rows), "spread": None, "se": None}
+    rows.sort(key=lambda t: t[key])
+    cut = max(1, len(rows) // 5)
+    bottom, top = rows[:cut], rows[-cut:]
+
+    def hit(rs):
+        return sum(1 for t in rs if t["outcome"] == "TARGET") / len(rs)
+
+    h_top, h_bot = hit(top), hit(bottom)
+    # Standard error on a difference of two proportions.
+    se = math.sqrt(max(h_top * (1 - h_top), 1e-9) / len(top)
+                   + max(h_bot * (1 - h_bot), 1e-9) / len(bottom))
+    return {"n": len(rows), "n_per_side": cut, "top": round(h_top, 4),
+            "bottom": round(h_bot, 4), "spread": round(h_top - h_bot, 4),
+            "se": round(se, 4)}
+
+
+def attribute(trials: list[dict], q: float = 0.10) -> dict:
+    """Which components of the confidence score actually earn their weight.
+
+    The score blends four components with fixed weights. This asks, of each one,
+    the only question a weight is a claim about: **does ranking on it sort
+    winners from losers?** Three readings per component, because one is easy to
+    fool:
+
+    * **IC** — rank correlation between the component and the outcome, across
+      every resolved setup.
+    * **Quintile spread** — hit rate in the top fifth minus the bottom fifth,
+      with the standard error on that difference. This is what a human can check
+      by eye against the live board.
+    * **Leave-one-out** — the IC of the blended score with this component
+      removed. If dropping it does not lower the blend's IC, the weight is
+      buying nothing.
+
+    p-values go through Benjamini-Hochberg together, because testing four
+    components and reporting the best one is how noise gets published.
+
+    The catalyst component is absent by construction and said so rather than
+    faked: the replay has no historical earnings calendar, so there is nothing
+    to attribute it against. An untested component is not a passing one.
+    """
+    from .research import stats
+
+    resolved = [t for t in trials if t.get("outcome") in ("TARGET", "STOP")]
+    if len(resolved) < 50:
+        return {"n": len(resolved), "components": [],
+                "note": "too few resolved setups to attribute anything"}
+
+    wins = [1.0 if t["outcome"] == "TARGET" else 0.0 for t in resolved]
+    names = {"c_momentum": "momentum", "c_volatility": "volatility",
+             "c_news": "news"}
+
+    rows, pvals = [], []
+    for key, label in names.items():
+        have = [t for t in resolved if t.get(key) is not None]
+        if len(have) < 50:
+            rows.append({"component": label, "n": len(have), "ic": None,
+                         "verdict": "not measured",
+                         "why": "no historical series for this component"})
+            pvals.append(1.0)
+            continue
+        xs = [t[key] for t in have]
+        ys = [1.0 if t["outcome"] == "TARGET" else 0.0 for t in have]
+        ic = stats.spearman(xs, ys)
+        t_stat, _se = stats.newey_west_t(
+            [(x - sum(xs) / len(xs)) * (y - sum(ys) / len(ys)) for x, y in zip(xs, ys)])
+        pv = stats.normal_p(t_stat)
+        spread = _quintile_spread(have, key)
+        rows.append({"component": label, "n": len(have),
+                     "ic": None if ic is None else round(ic, 4),
+                     "p": round(pv, 4), "spread": spread,
+                     "weight": _live_weight(label)})
+        pvals.append(pv)
+
+    keep = stats.benjamini_hochberg(pvals, q=q)
+    blend_ic = _blend_ic(resolved, list(names))
+    for row, survives in zip(rows, keep):
+        if row.get("ic") is None:
+            continue
+        without = _blend_ic(resolved, [k for k in names if names[k] != row["component"]])
+        row["blend_ic"] = None if blend_ic is None else round(blend_ic, 4)
+        row["blend_ic_without"] = None if without is None else round(without, 4)
+        row["loo_cost"] = (None if (blend_ic is None or without is None)
+                           else round(blend_ic - without, 4))
+        row["survives_fdr"] = bool(survives)
+        row.update(_verdict_for(row))
+    return {"n": len(resolved), "components": rows,
+            "blend_ic": None if blend_ic is None else round(blend_ic, 4),
+            "fdr_q": q,
+            "catalyst": "not measured — the replay has no historical earnings "
+                        "calendar, so the catalyst weight is untested rather "
+                        "than validated"}
+
+
+def _live_weight(label: str) -> float:
+    from .assets import _W
+    return _W.get(label, 0.0)
+
+
+def _blend_ic(trials: list[dict], keys: list[str]) -> float | None:
+    """IC of the weighted blend built from exactly these components."""
+    from .research import stats
+    from .assets import _W
+    names = {"c_momentum": "momentum", "c_volatility": "volatility",
+             "c_news": "news"}
+    # Only components actually present in this replay. Demanding all of them
+    # meant the blend could never be scored whenever attention was off, which
+    # is the default — so leave-one-out silently returned nothing.
+    keys = [k for k in keys
+            if sum(1 for t in trials if t.get(k) is not None) >= 50]
+    usable = [t for t in trials if all(t.get(k) is not None for k in keys)]
+    if len(usable) < 50 or not keys:
+        return None
+    xs = []
+    for t in usable:
+        w_sum = sum(_W[names[k]] for k in keys) or 1.0
+        xs.append(sum(_W[names[k]] * t[k] for k in keys) / w_sum)
+    ys = [1.0 if t["outcome"] == "TARGET" else 0.0 for t in usable]
+    return stats.spearman(xs, ys)
+
+
+def _verdict_for(row: dict) -> dict:
+    """Turn the three readings into one recommendation a person can act on.
+
+    The verdict that matters most is INVERTED. A component with a *significant
+    negative* IC is not merely useless — it is being added with a positive
+    weight, so it actively pushes losers up the ranking. That is worse than
+    dead weight and the opposite of what a passing p-value usually means.
+    """
+    ic = row.get("ic")
+    sp = row.get("spread") or {}
+    spread, se = sp.get("spread"), sp.get("se")
+    strong_spread = (spread is not None and se
+                     and abs(spread) > 2 * se and abs(spread) >= SPREAD_KEEP)
+    loo = row.get("loo_cost")
+    significant = bool(row.get("survives_fdr")) and abs(ic or 0.0) >= IC_KEEP
+
+    def phrase() -> str:
+        if spread is None:
+            return ""
+        verb = "beats" if spread > 0 else "trails"
+        return (f"the top quintile {verb} the bottom by "
+                f"{abs(spread) * 100:.1f} points")
+
+    if significant and strong_spread and (ic or 0) < 0:
+        return {"verdict": "INVERTED",
+                "why": f"IC {ic:+.3f} is significant and *negative* — {phrase()}. "
+                       "Added with a positive weight, this component pushes the "
+                       "wrong instruments up the board. Flip its sign or drop it."}
+    if significant and strong_spread:
+        return {"verdict": "KEEP", "why": f"IC {ic:+.3f} survives FDR and {phrase()}"}
+    if loo is not None and loo <= 0:
+        return {"verdict": "DROP",
+                "why": "removing it does not lower the blend's IC — the weight "
+                       "is buying nothing"}
+    if abs(ic or 0.0) < IC_KEEP and not strong_spread:
+        return {"verdict": "WEAK",
+                "why": f"IC {ic:+.3f} and no quintile spread beyond its own error "
+                       "bar; carrying weight it has not earned"}
+    return {"verdict": "UNCLEAR",
+            "why": "readings disagree — more setups needed before cutting it"}
 
 
 def timing(trials: list[dict]) -> dict:
