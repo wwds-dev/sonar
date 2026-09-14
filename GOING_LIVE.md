@@ -159,7 +159,9 @@ you check than take a stale table on faith.
 
 ## 3. Writing the BrokerPort
 
-Create `sonar/venues/<name>.py`. It implements five methods and knows nothing about SONAR.
+Create `sonar/brokers/<name>.py`. It implements five methods and knows nothing about
+SONAR. (Not `sonar/venues/` — `venues.py` is now a module about where a watchlist row
+could be traded, which is a different question from how to send an order there.)
 
 ```python
 class LiveBroker:
