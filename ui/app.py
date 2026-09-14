@@ -37,6 +37,7 @@ from sonar import horizon as hz_mod
 from sonar import llm, paths, playmaker, risk as risk_mod
 from sonar.core import Live
 from sonar import assets as asset_mod
+from sonar import news as news_mod
 from sonar import venues
 from sonar.assets import _W as ASSET_W
 
@@ -846,8 +847,14 @@ class MainWindow(QMainWindow):
 
         fresh = sorted((h for h in heads if h.dated),
                        key=lambda h: h.ts, reverse=True)[:60]
-        self.wire_meta.setText(f'{len(heads)} headlines · '
-                               f'{len({h.source for h in heads})} sources')
+        # Spread, not just volume. Twenty-four feeds all repeating one bloc is
+        # a different picture from the same count across nine, and the header is
+        # the cheapest place to make that visible.
+        spread = news_mod.bloc_spread(heads)
+        state = spread["state_share"]
+        self.wire_meta.setText(
+            f'{len(heads)} headlines · {len({h.source for h in heads})} sources · '
+            f'{spread["n_blocs"]} press blocs · {state * 100:.0f}% state-directed')
         rows = []
         for h in fresh:
             rows.append(TickerRow(h))

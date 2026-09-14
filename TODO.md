@@ -6,15 +6,48 @@
 
 ---
 
-## v2 — current
+## v2 — shipped
 
-- [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. Single highest-value change in the project.
+Everything below landed. What remains in v2 is two items that need an account
+and time rather than code, kept at the top.
+
+- [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. No code needed — `providers.py` already registers Finnhub at preference 5, ahead of Yahoo, and picks the key up from `FINNHUB_API_KEY` in a git-ignored `.env`. Also removes the ~15-minute quote delay during market hours.
 - [ ] `P1` `research` `@me` **Let the paper book run.** The calibration table stays empty until ~20 positions have closed. No amount of backtesting substitutes for a track record.
-- [x] `P1` `bug` `@ai` ~~Async fills are unhandled.~~ Positions from an asynchronous broker are recorded `PENDING`: no unrealised P&L, never marked against a barrier, cash reserved but refunded if the order dies. `Portfolio.poll_fills()` is the order-state poller, wired into `_mark_book`; it rewrites the position from the venue's real quantity and fill price. Target and stop survive a worse fill on purpose.
-- [x] `P2` `testing` `@ai` ~~Reconciliation drill.~~ `tests/test_drills.py` mutates the venue directly — a position appearing, vanishing, and changing size — and asserts each is detected, halts the guard, and blocks the next order. Includes the control where the two agree and nothing fires.
-- [x] `P2` `testing` `@ai` ~~Kill-switch drill.~~ `tests/test_drills.py` opens positions through the book and asserts the venue is flat afterwards — from a clean guard, from an already-halted one, and with the daily order cap exhausted.
-- [x] `P3` `docs` `@ai` ~~Fold the cost floor into the README.~~ Now a subsection of *Risk, reward, and the probability of profit*, with the measured €1.05 per round trip and the note that the earlier estimate was optimistic.
-- [x] `P1` `bug` `@ai` ~~Window opened wider than the screen.~~ SONAR once opened **4,540pt wide** on a 1,280pt display — an unwrapped `QLabel` reports a sizeHint as wide as its text, a layout can't shrink below its children's minimums, and a `QTabWidget`'s minimum is its widest tab's, so one long prose label silently overrode every `resize()` call. Fixed: `label(..., wrap=True)` on the long prose labels, plus `MainWindow._fit_to_screen()` (`ui/app.py`) which opens at `PREFERRED_SIZE` (1180×820) or the actual screen's available geometry minus a margin, whichever is smaller, instead of an unconditional `resize(1180, 820)`. Covered by `tests/test_layout.py` (5 tests, measuring `minimumSizeHint()` against a 1280×775 13" MacBook baseline rather than whatever screen the test runner has).
+
+### Execution and the paper book
+
+- [x] `P1` `bug` `@ai` ~~Async fills are unhandled.~~ Positions from an asynchronous broker are recorded `PENDING`: no unrealised P&L, never marked against a barrier, cash reserved but refunded if the order dies. `Portfolio.poll_fills()` is the order-state poller, wired into `_mark_book`; it rewrites the position from the venue's real quantity and fill price. Target and stop survive a worse fill on purpose — slippage should eat the reward, not move the goalposts.
+- [x] `P2` `testing` `@ai` ~~Reconciliation drill.~~ `tests/test_drills.py` mutates the venue directly — a position appearing, vanishing, changing size — and asserts each is detected, halts the guard, and blocks the next order. Includes the control where the two agree and nothing fires.
+- [x] `P2` `testing` `@ai` ~~Kill-switch drill.~~ Opens positions through the book and asserts the venue is flat afterwards — from a clean guard, from an already-halted one, and with the daily order cap exhausted.
+- [x] `P2` `feature` `@ai` ~~`GuardedBroker`~~ fills the portfolio's broker seam through the execution guard, so the Book tab cannot become a second unguarded route to a venue. Confirmation defaults to *refuse*; a rejection **raises** rather than returning an error dict, because `Portfolio.enter` ignores that return value and a dict would leave the book holding a position that was never sent.
+- [x] `P2` `feature` `@ai` ~~Cost ledger.~~ `sonar/costs.py` derives cost per round trip from the audit log — slippage measured against the decision mark rather than the limit, positive always meaning worse, and a refusal to name a figure below 20 completed round trips.
+
+### The app itself
+
+- [x] `P1` `bug` `@ai` ~~Window opened wider than the screen.~~ SONAR once opened **4,540pt wide** on a 1,280pt display: an unwrapped `QLabel` reports a sizeHint as wide as its text, a layout cannot shrink below its children's minimums, and a `QTabWidget`'s minimum is its widest tab's — so one long prose label silently overrode every `resize()`. Fixed with `label(..., wrap=True)` and `_fit_to_screen()`. Covered by `tests/test_layout.py`, which measures against a 1280×775 baseline rather than whatever screen the runner has.
+- [x] `P0` `bug` `@ai` ~~The window never started.~~ `refresh()` still read `Live.scan`, deleted when the Polymarket board went. It threw on every timer tick before drawing anything, so the app sat on "starting…" forever. `tests/test_refresh.py` now builds the real window against a real `Live` and calls the real `refresh()` for every status it can hit — the coverage whose absence let this ship.
+- [x] `P1` `bug` `@ai` ~~Close button appeared dead.~~ Leaving macOS full screen re-activates the app when the Space transition finishes, *after* the deferred hide — so the Dock-click handler reopened the window it had just hidden. `reopen_allowed()` ignores an activation within a second of a self-hide.
+- [x] `P1` `performance` `@ai` ~~Start-up took ~11s.~~ News and asset fetches now run concurrently, and `warmup()` publishes a snapshot before the heavy screen refresh instead of after. **11s → 1.8s**, first data at 1.7s.
+- [x] `P1` `bug` `@ai` ~~SIGABRT on quit.~~ `shutdown()` did not name every QThread the window owns. Qt aborts when a running thread is destroyed, so quitting during a backtest died with SIGABRT. Every thread is now listed, with a test asserting it.
+
+### Data
+
+- [x] `P2` `feature` `@ai` ~~The newswire read one bloc.~~ Ten non-Western sources added, each verified live: Al Jazeera, Anadolu, Global Times, SCMP, TASS, Times of India, The Hindu, Japan Times, AllAfrica, Folha. 24 feeds, nine press blocs, each tagged with origin and whether it is state-directed. `news.bloc_spread()` distinguishes a story carried across five blocs from one outlet repeating itself, and flags state-only coverage — evidence about a government rather than corroboration of an event. Shown in the newswire header.
+- [x] `P2` `feature` `@ai` ~~Scheduled institutional events.~~ `sonar/institutions.py` — Fed press, FOMC, Fed speeches, Bank of England. Every source probed before inclusion and the failures recorded rather than dropped silently. The policy filter is load-bearing: most of what the Fed publishes is administrative, and counting it would repeat the volume-is-not-signal mistake. `pressure()` is a variance reading with no direction field, and a test asserts it has none.
+- [x] `P2` `feature` `@ai` ~~Where each row could actually be traded.~~ `sonar/venues.py`: **nine of twenty-six rows cannot be bought as shown.** PRIIPs closes SPY/VOO/QQQ to EU retail; Monero was delisted by Binance globally and Kraken across the EEA; currency exchange is not an FX position. Marker and tooltip per row, with the verification date carried.
+
+### Testing the algorithm
+
+- [x] `P1` `feature` `@ai` ~~Lab tab.~~ Replays the plan over real bars with universe, range, horizon and step exposed, reporting the realised hit rate beside what the barrier maths predicted with its 2 s.e. band.
+- [x] `P1` `feature` `@ai` ~~Component attribution.~~ Asks of each component the question its weight is a claim about — does ranking on it sort winners from losers? — three ways: IC, quintile spread, and leave-one-out. Verdicts are KEEP / WEAK / DROP / **INVERTED**, p-values through Benjamini-Hochberg together. Catalyst reports *not measured* rather than passing.
+- [x] `P1` `feature` `@ai` ~~Replay mode.~~ `sonar/replay.py` grades **you**: one setup at a time on real history with everything after the cursor withheld, no rewind, the model scored on the same setups whether you skip or not, and risk-sized P&L so a coin and a currency pair cost the same to be wrong about.
+- [x] `P2` `feature` `@ai` ~~Alerts.~~ Fire on a transition rather than a level, with a cooldown and a silent first scan. They say what changed and never what to do about it — a test asserts no alert can contain buy, short or "immediately".
+
+### Documentation
+
+- [x] `P3` `docs` `@ai` ~~Fold the cost floor into the README.~~ With the measured €1.05 per round trip and the note that the earlier estimate was optimistic.
+- [x] `P2` `docs` `@ai` ~~`CONFIDENCE.md`~~ — how the institutional process builds a score versus how this one does: cross-sectional standardisation, benchmark-relative momentum, levels versus surprises, a daily GPR-style political index from the newswire already being read, and the argument that the thing worth forecasting here is volatility rather than direction.
+- [x] `P2` `docs` `@ai` ~~In-app docs rewritten for seven tabs~~, adding the Lab, alerts and venue sections. The previous version described five tabs and knew nothing about half the app.
 
 ## v3 — only if the research is resumed
 

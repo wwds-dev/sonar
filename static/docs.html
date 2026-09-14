@@ -83,18 +83,20 @@
   </div>
 
   <div class="toc">
-    <a href="#tabs">1 · The five tabs</a>
+    <a href="#tabs">1 · The seven tabs</a>
     <a href="#data">2 · Where the data comes from</a>
     <a href="#model">3 · The hourly model</a>
     <a href="#scores">4 · The three numbers</a>
     <a href="#book">5 · The paper book</a>
-    <a href="#grading">6 · How the score gets graded</a>
-    <a href="#findings">7 · What the research found</a>
-    <a href="#run">8 · Running it &amp; what it costs</a>
-    <a href="#honesty">9 · Honesty &amp; limits</a>
+    <a href="#lab">6 · Testing it yourself</a>
+    <a href="#alerts">7 · Alerts &amp; where you could trade</a>
+    <a href="#grading">8 · How the score gets graded</a>
+    <a href="#findings">9 · What the research found</a>
+    <a href="#run">10 · Running it &amp; what it costs</a>
+    <a href="#honesty">11 · Honesty &amp; limits</a>
   </div>
 
-  <h2 id="tabs"><span class="n">1</span>The five tabs</h2>
+  <h2 id="tabs"><span class="n">1</span>The seven tabs</h2>
   <table>
     <tr><th>Tab</th><th>What it does</th><th>Asserts a direction?</th></tr>
     <tr><td>Terminal</td>
@@ -107,16 +109,26 @@
         buy / short / read on every row.</td>
       <td><b class="down">No</b> — direction is yours</td></tr>
     <tr><td>Wire</td>
-      <td>The live newswire beside the earnings and IPO calendar, and a panel of
-        what the news is currently pointing at.</td>
+      <td>The live newswire — 24 feeds across nine press blocs — beside the
+        earnings and IPO calendar, a panel of what the news is pointing at, and
+        alerts on what changed since the last scan.</td>
       <td>No</td></tr>
     <tr><td>Book</td>
       <td>Open paper positions, the calibration table, and the backtest button.</td>
       <td>—</td></tr>
     <tr><td>Macro</td>
-      <td>The regime — curve, VIX, real rates, unemployment. Matters mostly at
-        long horizons.</td>
+      <td>The regime — curve, VIX, real rates, unemployment — plus central-bank
+        communication: Fed releases, FOMC, speeches, Bank of England.</td>
       <td>No</td></tr>
+    <tr><td>Lab</td>
+      <td>Replay the model over real history with the knobs exposed, see which
+        components of the score earn their weight, and step through history
+        making your own calls. See <a href="#lab">§6</a>.</td>
+      <td>—</td></tr>
+    <tr><td>Playmaker</td>
+      <td>Sports prop-bet arithmetic — implied probability, expected value and a
+        Kelly stake from a line you supply, with an optional model read on top.</td>
+      <td>—</td></tr>
   </table>
   <p>A Polymarket board used to sit here and was removed. Mirroring a market's
     own odds back at you is not analysis — there was no independent model behind
@@ -223,7 +235,107 @@ APCA_API_SECRET_KEY=...</code></pre>
     failure raises. <b>Going live is not a setting in this app</b> — it is a
     decision for a human with an account, and SONAR does not implement it.</div>
 
-  <h2 id="grading"><span class="n">6</span>How the score gets graded</h2>
+  <h2 id="lab"><span class="n">6</span>Testing it yourself</h2>
+  <p>The Lab tab exists so none of this has to be taken on trust. Everything in
+    it runs on real historical bars through the same replay the research used.</p>
+
+  <h3>Simulate</h3>
+  <p>Pick a universe, a range, a horizon and a sampling step, and the model is
+    replayed over every decision point in that window. The result reports the
+    realised hit rate <em>beside</em> what the barrier maths predicted, with the
+    two-standard-error band — because a hit rate on its own means nothing. When
+    the difference sits inside its error bar the tab says so plainly: that is
+    the result, not a failure to find one.</p>
+
+  <h3>Attribute</h3>
+  <p>A hit rate tells you whether the model worked. It cannot tell you
+    <em>which part</em> of it did, and that is the only version of the question
+    you can act on. Each component of the confidence score is asked the question
+    its weight is a claim about — does ranking on this sort winners from
+    losers? — three ways:</p>
+  <table>
+    <tr><th>Reading</th><th>What it answers</th></tr>
+    <tr><td>IC</td><td>Rank correlation between the component and the outcome.</td></tr>
+    <tr><td>Quintile spread</td><td>Hit rate in the top fifth minus the bottom
+      fifth, with the error bar on that difference.</td></tr>
+    <tr><td>Leave-one-out</td><td>The blend's IC without this component. If
+      dropping it does not lower the blend, the weight is buying nothing.</td></tr>
+  </table>
+  <p>The verdicts are <b>KEEP</b>, <b>WEAK</b>, <b>DROP</b> and
+    <b class="down">INVERTED</b>. The last one matters most: a component with a
+    significant <em>negative</em> IC is not merely useless — carried with a
+    positive weight it actively pushes the wrong instruments up the board.
+    p-values go through Benjamini-Hochberg together, because testing four
+    components and reporting the best one is how noise gets published.</p>
+  <p>The catalyst component reports <b>not measured</b> rather than passing: the
+    replay has no historical earnings calendar, and an untested component must
+    not read as a validated one.</p>
+
+  <h3>Replay</h3>
+  <p>The simulation grades the model. Replay grades <b>you</b>. The app's whole
+    position on the asset board is that direction is your call, and this is where
+    you find out whether those calls are any good.</p>
+  <p>You get one setup at a time on real history — price, momentum, volatility,
+    the score, the target and the stop — and you buy, short or skip. Everything
+    after the cursor is withheld: the chart stops where you are, and the later
+    bars are not in the object the screen was handed, so there is nothing to peek
+    at even by accident. There is no going back, because retaking a decision
+    whose outcome you have seen is the same problem wearing a different hat.</p>
+  <p>The model's call on the same setup is scored alongside yours <em>whether or
+    not you skip</em>, so skipping the hard ones cannot look like skill. Each
+    call risks a fixed amount and a win pays the reward-to-risk multiple —
+    risk-sized rather than notional, so being wrong about a volatile coin costs
+    exactly what being wrong about a quiet currency pair costs. Otherwise the
+    P&amp;L would be measuring volatility instead of judgement.</p>
+  <p>The scorecard reports your hit rate with its error bar next to the model's
+    and the barrier baseline. Below twenty resolved calls it refuses to draw a
+    conclusion, which is the same rule the app applies to itself.</p>
+
+  <h2 id="alerts"><span class="n">7</span>Alerts &amp; where you could trade</h2>
+
+  <h3>Alerts say what changed</h3>
+  <p>An alert is a delivery mechanism for the confidence score, and that score is
+    a <em>notability</em> heuristic — so that is all an alert says. It never says
+    buy, it never says short, and there is a test asserting those words cannot
+    appear in one.</p>
+  <p>That is the evidence rather than caution. Five studies found no directional
+    edge, and the attribution above measured the blended score's IC as
+    <em>negative</em> — so an alert firing on a high score and shouting BUY would
+    be pointing at the wrong instruments with an air of authority. The honest
+    route to a directional alert runs through the calibration table: once the
+    paper book has a measured edge, gating on that is earned.</p>
+  <p>Alerts fire on a <b>transition</b>, not a level. "News went Normal →
+    Spike" happens once; "news <em>is</em> Spike" would re-fire every ninety
+    seconds until the story aged out, which teaches you to ignore the feature.
+    Rises only, one hour of cooldown per instrument and kind, and the first scan
+    after a restart sets the baseline silently.</p>
+  <p>Every alert carries the age of the data it fired on. An equity quote outside
+    market hours can be six hours old, and an alert that does not admit that is
+    claiming an immediacy it does not have.</p>
+
+  <h3>Where you could actually trade it</h3>
+  <p>The board scores an index, two futures contracts and a delisted coin next to
+    ordinary shares. <b>Nine of twenty-six rows cannot be bought as shown</b>, so
+    every row carries a marker and a tooltip saying what you would actually buy
+    and where — or that you could not.</p>
+  <table>
+    <tr><th>Marker</th><th>Meaning</th></tr>
+    <tr><td><b class="gold">↗</b></td><td>Tradeable through something else — an
+      index through a UCITS ETF, a futures contract through an ETC.</td></tr>
+    <tr><td><b class="down">⊘</b></td><td>Not available on any mainstream
+      regulated venue.</td></tr>
+  </table>
+  <p>Three specifics worth knowing. US-domiciled ETFs — SPY, VOO, QQQ — are
+    closed to EU retail entirely under PRIIPs, because they publish no Key
+    Information Document; the UCITS versions are the route. Monero was delisted
+    by Binance globally in February 2024 and by Kraken across the whole EEA in
+    October 2024, so it is legal to own and not buyable here. And converting EUR
+    to USD in a banking app is <em>not</em> holding an FX position, though the
+    apps that do the first are routinely assumed to do the second.</p>
+  <p>This is reference information, not advice, and it goes stale — the tooltip
+    carries the date it was last verified.</p>
+
+  <h2 id="grading"><span class="n">8</span>How the score gets graded</h2>
   <p>Every closed position carries the confidence it was opened on, so the Book
     tab can ask the only question that matters: <em>did high scores actually win
     more often?</em> Hit rate is bucketed by score and compared with what the
@@ -238,7 +350,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     daily data cannot order them, and costs are excluded. Reality is worse than
     what it reports, not better.</p>
 
-  <h2 id="findings"><span class="n">7</span>What the research found</h2>
+  <h2 id="findings"><span class="n">9</span>What the research found</h2>
   <p>Five studies, each more careful than the last. All of them negative.</p>
   <table>
     <tr><th>Question</th><th>Answer</th></tr>
@@ -271,7 +383,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     <b>sentiment</b> (Wikipedia pageviews measure attention volume, not tone), and
     anything requiring intraday or order-flow data.</p>
 
-  <h2 id="run"><span class="n">8</span>Running it &amp; what it costs</h2>
+  <h2 id="run"><span class="n">10</span>Running it &amp; what it costs</h2>
   <p>A native macOS app — PySide6 widgets, every chart drawn with QPainter, no
     web view.</p>
   <pre><code>uv venv .venv &amp;&amp; uv pip install -r requirements.txt
@@ -287,7 +399,7 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     Polymarket board was removed — down from about 60MB. Negligible on
     broadband, and worth knowing on a metered connection.</p>
 
-  <h2 id="honesty"><span class="n">9</span>Honesty &amp; limits</h2>
+  <h2 id="honesty"><span class="n">11</span>Honesty &amp; limits</h2>
   <div class="warn">
     <b>This is not financial advice and it places no real trades.</b> Paper P/L
     predicts nothing about real results. Live trading means real fees, real

@@ -205,8 +205,12 @@ Two facts make this directly actionable here:
 
 - The **official index is monthly**, released around the 10th. That is useless for
   a 3–10 day hold. The daily variant exists but has not been reliably maintained.
-- **SONAR already reads fourteen newswires continuously**, including BBC politics
-  and the wire services, and already parses and timestamps every headline.
+- **SONAR already reads twenty-four newswires continuously** across nine press
+  blocs — including BBC politics, the wire services, Al Jazeera, Global Times and
+  TASS — and already parses and timestamps every headline, tagged with its origin
+  and whether the outlet is state-directed. That last part matters here: GPR
+  counts threat-category articles as a share of total, and knowing which bloc
+  each article came from turns one index into one per bloc.
 
 So the honest move is not to download GPR — it is to **compute a GPR-style index
 locally, daily, from the feed SONAR already has**, using the published category
