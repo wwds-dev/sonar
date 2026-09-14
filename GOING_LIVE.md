@@ -117,6 +117,17 @@ routes *through* the guard (§4).
 
 You are in Germany, which rules out most of the obvious answers.
 
+`sonar/venues.py` now carries the verified per-instrument version of this — what
+you would actually buy for each watchlist row, whether you can buy it at all, and
+the date it was last checked. Three of its findings bear directly on the table
+below: **PRIIPs closes US-domiciled ETFs to EU retail entirely** (no Key
+Information Document, so SPY, VOO and QQQ cannot be sold to you — the UCITS
+wrappers are the route), **Monero has been delisted from every mainstream
+regulated venue** (Binance globally Feb 2024, Kraken across the whole EEA Oct
+2024), and **currency exchange is not an FX position** — converting EUR to USD in
+a banking app is not being long USD, though the apps that do the first are
+routinely assumed to do the second.
+
 | Venue | API | Reality for a German retail account |
 |---|---|---|
 | **Trade Republic** | none | No public API. Already investigated and closed — see README. |
@@ -412,6 +423,15 @@ Do not skip stages. Each one is designed to fail cheaply.
    evidence the edge is zero — then the honest read is that this is a well-built machine
    for a market that does not pay, and the right move is to stop at stage 5. Deciding that
    deliberately, with your own numbers, is a real outcome and worth the €50 it cost.
+
+Stage 0, which did not exist when this was written: **the Lab tab.** It replays
+the plan over real bars, reports the realised hit rate beside what the barrier
+maths predicted, and attributes the score component by component — IC, quintile
+spread, leave-one-out, p-values through Benjamini-Hochberg together. It costs
+nothing and takes seconds, so any change proposed here should be checked there
+before a cent is committed. The first thing it found was a *negative* IC on the
+volatility component (`CONFIDENCE.md` §10a): real, large, not an artefact, and
+still short of the time-block bar — which is the shape most findings here have.
 
 ---
 
