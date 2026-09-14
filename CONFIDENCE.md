@@ -393,6 +393,64 @@ is not a reason to ignore it — it is the choice, stated plainly, and it belong
 to whoever owns the product rather than to the arithmetic. Flipping the sign
 would buy a better ranking and cost the thing the score honestly measures.
 
+## 10b. The three structural fixes, pre-registered and measured
+
+§3, §4 and §5 proposed fixes on the grounds that they were structurally right
+rather than that they would predict. Three hypotheses were written down with
+their failure conditions **before** anything was measured, and then measured over
+11,123 resolved setups at a 20-day horizon.
+
+| # | Hypothesis | Predicted | Measured | Verdict |
+|---|---|---|---|---|
+| H1 | volatility as a surprise (`vol₁₀/vol₆₀`) rather than a level | IC moves toward zero | −0.0885 → **−0.0337** | supported on aggregate |
+| H2 | momentum residualised against its asset class | \|IC\| **rises** | 0.0237 → **0.0097** | **failed** — it fell |
+| H3 | components z-scored within asset class | blend IC improves | −0.0553 → **−0.0242** | supported on aggregate |
+
+**H2 failed on the criterion I set for it.** The prediction was that stripping
+the class move would leave a *more* informative residual. It left a less
+informative one. Benchmark-relative momentum is standard practice everywhere in
+the industry and it did not transfer here, and the pre-registration is why that
+is reportable rather than quietly dropped.
+
+**H3 subsumes H1.** Z-scoring within class already removes the asset-class
+artefact that the surprise ratio was invented to remove — the shipped
+`min(1, vol/0.03)` is close to a dummy for "is this crypto", and standardising
+against peers fixes that directly. Combining both is *worse* than H3 alone
+(−0.0337 against −0.0242), which is what redundant corrections look like.
+
+### None of them clears the consistency bar
+
+Across six non-overlapping periods, every one of them lands at **5 of 6, sign
+test p = 0.22** — the identical bar that killed `dist_52w_high` and the inverted
+volatility result. That is now four candidates that looked strong in aggregate
+and could not hold across regimes.
+
+There is one thing in the block table that is not about prediction. The shipped
+blend swings from −0.153 to +0.070 across those periods; the z-scored blend
+stays between −0.094 and +0.012. **A range of 0.22 versus 0.11** — the
+standardised score is markedly more stable regime to regime, whatever its mean.
+Stability is a different claim from predictive power, and it is the one a
+notability score should probably be judged on.
+
+### The blocker that decides it
+
+H3 is structurally right regardless of any IC: a score that reads 0.9 for a coin
+and 0.1 for a currency pair *because of what they are* is not comparable across
+the board, and comparability is the whole point of a ranking. But it cannot be
+implemented as specified on this watchlist:
+
+```
+Crypto 11 · Equity 7 · Index 3 · Forex 3 · Commodity 2
+```
+
+A median and MAD over **two** instruments is not a standardisation, it is noise
+with a z in front of it. Three of five classes have three or fewer members. So
+the honest options are to standardise against the whole board rather than the
+class — which reintroduces exactly the asset-class contamination the fix was for
+— or to grow the watchlist until the classes can carry it.
+
+Nothing was shipped. The score is unchanged.
+
 ## 11. What not to do
 
 - **Do not add more features to daily bars and re-run the same study.** That is
