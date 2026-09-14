@@ -18,7 +18,7 @@ A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no we
 |---|---|---|
 | **Terminal** | Hourly BTC up/down paper trade — the model prices each hour, compares to Polymarket, takes at most one simulated bet | **Yes** — the only independent model |
 | **Assets** | 26 instruments (equities, indices, FX, 11 crypto, commodities) with R:R, P(profit), news level, and buy/short per row | **No** — direction is yours |
-| **Wire** | Live newswire, the earnings and IPO calendar, and what the news is pointing at | No |
+| **Wire** | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
 | **Book** | Open paper positions, the calibration table, and the backtest button | — |
 | **Macro** | Regime: curve, VIX, real rates, unemployment | No |
 | **Lab** | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
@@ -558,6 +558,7 @@ sonar/
   institutions.py central-bank releases, FOMC and speeches — scheduled catalysts
   venues.py    where a row could actually be traded, and where it could not
   replay.py    step through history one setup at a time — grades you, not the model
+  alerts.py    what changed — fires on transitions, never asserts a direction
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
   playmaker/   NFL prop-bet arithmetic (odds, implied probability, EV, Kelly) — the Playmaker tab
