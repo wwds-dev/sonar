@@ -17,7 +17,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 7 | Turn news/vol/catalyst from levels into surprises against each instrument's own baseline (`CONFIDENCE.md` §5) | research | S | PLANNED |
 | 8 | Cross-sectional z-scoring within asset class, so a score means the same thing for a coin and a currency (`CONFIDENCE.md` §3) | research | S | PLANNED |
 | 9 | Daily GPR-style political index computed from the newswire SONAR already reads (`CONFIDENCE.md` §7.1) | feature | M | IDEA |
-| 10 | **Volatility component is INVERTED** — first attribution run over 1,632 setups gave IC −0.09, top quintile 11 points *behind* the bottom, and removing it raises the blend's IC. The 0.15 weight is pushing the wrong instruments up the board. Flip the sign or drop it | research | S | PLANNED |
+| 10 | **Volatility component is inverted for ranking** — 10 of 12 configurations show a negative IC, quintile gradient 45.3%→34.5%, and the tie-break artefact is ruled out (zero ambiguous bars). But it fails the time-block test at 5/6, p=0.22, with the most recent period reversing — so the weights are unchanged. Also a design question, not only an empirical one: high volatility is correct for *notability* and backwards for *ranking winners* (`CONFIDENCE.md` §10a) | research | M | BLOCKED |
 
 ## Safety rails
 

@@ -317,6 +317,78 @@ Two additions specific to this work:
 
 ---
 
+## 10a. The volatility component, chased and not quite caught
+
+The component attribution in the Lab tab produced the project's first
+evidence-backed lead against its own score, and following it properly is worth
+recording — including where it stopped.
+
+**The lead.** Volatility carries a weight of 0.15 and a *negative* information
+coefficient: ranking instruments up for being volatile ranks them down for
+winning. Over 11,373 resolved setups at a 20-day horizon the quintile gradient
+is clean and almost monotonic:
+
+| volatility quintile | hit rate |
+|---|---|
+| Q1 (lowest) | 45.3% |
+| Q2 | 47.5% |
+| Q3 | 40.9% |
+| Q4 | 37.8% |
+| Q5 (highest) | **34.5%** |
+
+Against a 40.0% baseline, and a 10.8-point spread end to end.
+
+**It is not an artefact of the tie-break.** `_resolve` scores a bar that spans
+both barriers as a loss, and wider daily ranges mean more such bars — so a
+high-volatility instrument could be marked down by the rule rather than by the
+market. Measured directly: **zero ambiguous bars in any quintile.** The barriers
+are scaled to volatility and sit roughly 4.5 vol-days apart at this horizon, so a
+single bar spanning both essentially never happens. The hypothesis is dead and
+the effect is real.
+
+**It holds cross-sectionally.** Twelve configurations across five asset classes
+and two horizons: the IC is negative in ten, significantly inverted in five, and
+leave-one-out says removing the component *raises* the blend's IC in ten. Only
+forex leans the other way, and only at the longer horizon.
+
+**It does not clear the time-block test**, which is the one that has killed
+every previous lead in this project:
+
+| period | low-vol | high-vol | spread |
+|---|---|---|---|
+| 2021-10 → 2022-08 | 46.2% | 29.8% | +16.4 |
+| 2022-08 → 2023-06 | 47.5% | 28.8% | +18.7 |
+| 2023-06 → 2024-03 | 44.9% | 42.0% | +2.9 |
+| 2024-03 → 2024-12 | 40.1% | 31.9% | +8.2 |
+| 2024-12 → 2025-10 | 60.7% | 34.3% | +26.4 |
+| 2025-10 → 2026-08 | 33.5% | 42.5% | **−9.0** |
+
+Five of six agree, which is a sign-test p of **0.22** — nowhere near the bar, and
+the most recent period reverses outright. `dist_52w_high` died on exactly this
+test after looking stronger in aggregate.
+
+**So the weights are unchanged.** The lead is real, large, consistent with the
+well-documented low-volatility anomaly, and still one regime away from being a
+finding. Six blocks cannot separate "a real effect that recently paused" from
+"an effect that was always regime-dependent", and guessing between those is how
+the +4.9 attention claim got published and withdrawn.
+
+### The part that is a conclusion
+
+Chasing it surfaced something the arithmetic cannot settle: **the score is being
+asked to do two jobs that point opposite ways here.**
+
+* As a **notability** heuristic — its stated and only claimed job — high
+  volatility belongs with a positive weight. Something *is* happening to a
+  moving instrument, and that is what the number says.
+* As a **ranking that sorts winners**, which the app explicitly disclaims, the
+  same component is backwards.
+
+"INVERTED" is therefore only a defect under a job the score does not claim. That
+is not a reason to ignore it — it is the choice, stated plainly, and it belongs
+to whoever owns the product rather than to the arithmetic. Flipping the sign
+would buy a better ranking and cost the thing the score honestly measures.
+
 ## 11. What not to do
 
 - **Do not add more features to daily bars and re-run the same study.** That is
