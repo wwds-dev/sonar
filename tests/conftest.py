@@ -110,9 +110,8 @@ def no_thread_termination(monkeypatch):
     monkeypatch.setattr(QThread, "terminate", refuse)
 
 
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers", "network: test genuinely needs a live network connection")
+#: The `network` marker is declared in pyproject.toml, which also deselects it
+#: by default. Opt in with `pytest -m network`.
 
 
 #: The hang guard is `faulthandler_timeout` in pyproject.toml, not here. Setting

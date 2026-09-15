@@ -29,3 +29,13 @@ packages = ["sonar"]
 # test, so a session-wide timer set in pytest_configure is silently disarmed.
 faulthandler_timeout = 60
 faulthandler_exit_on_timeout = true
+
+# Tests that genuinely need the internet are opt-in: run them with
+# `pytest -m network`. They are real checks — they confirm ESPN still serves
+# every league in the registry — but a suite that reaches the network is a
+# suite that fails when someone else rate-limits you, and one that varies from
+# 3 to 16 seconds depending on their latency. Both were happening here.
+addopts = "-m 'not network'"
+markers = [
+    "network: test genuinely needs a live network connection (deselected by default)",
+]
