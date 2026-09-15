@@ -22,12 +22,22 @@ A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no we
 | **Book** | Open paper positions, the calibration table, and the backtest button | — |
 | **Macro** | Regime: curve, VIX, real rates, unemployment | No |
 | **Lab** | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
-| **Playmaker** | NFL prop-bet analysis — pick a sport and prop, enter the line, price and any supporting stats, and an LLM read scores it against `sonar.playmaker`'s odds/EV/Kelly arithmetic | — |
+| **Playmaker** | Sports prop pricing — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
 
 Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
 Sentinel's NFL agent early on but was never a standalone project, and the scaffold
 that once reserved the name under `active/` has been removed. The package is its
 own git repo nested here — versioned separately, but not a separate app.
+
+It now holds the same line the rest of SONAR does. A language model's percentage
+cannot size a bet: `staking.Estimate` carries a source with every probability and
+returns a zero stake for a narrative one. Both sides of a market are required,
+because a margin is how far prices sum past certainty and one side cannot reveal
+it. The feature with an actual published track record is the cross-book screen —
+Kaunitz, Zhong & Kreiner (2017) — which finds where books disagree with each
+other rather than predicting anything. `sonar/playmaker/MODELS.md` surveys the
+sports models that work and sets the build order; read it before changing the
+scoring.
 
 A Polymarket board used to sit here and was removed — mirroring a market's own odds back at
 you is not analysis, and dropping it also removed ~52MB/hour of downloads. Full docs live in
@@ -561,10 +571,13 @@ sonar/
   alerts.py    what changed — fires on transitions, never asserts a direction
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
-  playmaker/   NFL prop-bet arithmetic (odds, implied probability, EV, Kelly) — the Playmaker tab
+  playmaker/   sports prop pricing — the Playmaker tab
+    devig.py   three devig methods (multiplicative, Clarke power, Shin), cross-book consensus, outlier screen
+    staking.py Estimate (probability + interval + source); Kelly at the interval's low end
+    MODELS.md  what the successful sports models do, and the staged plan
   research/    the study apparatus — features, panel, stats, validate, regimes
 ui/
-  app.py       the window — Terminal / Assets / Wire / Book / Macro
+  app.py       the window — Terminal / Assets / Wire / Book / Macro / Lab / Playmaker
   charts.py    QPainter charts: equity curve, sparkline, depth, lattice, bars
   theme.py     palette, lifted from the original terminal's CSS
   worker.py    QThreads for the poll loop, LLM reads, and config changes
