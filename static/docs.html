@@ -689,14 +689,26 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
   <p>Scored walk-forward — every prediction made by a model that had seen only
     earlier games:</p>
   <table>
-    <tr><th>League</th><th>Games</th><th>Brier</th><th>Baseline</th><th>Skill</th><th>Verdict</th></tr>
-    <tr><td>NFL</td><td>1,338</td><td>0.2286</td><td>0.2459</td><td class="up">+0.071</td><td>KEEP</td></tr>
+    <tr><th>Sport</th><th>Results</th><th>Brier</th><th>Baseline</th><th>Skill</th><th>Verdict</th></tr>
+    <tr><td>International Football</td><td>5,842</td><td>0.1525</td><td>0.1834</td><td class="up">+0.168</td><td>KEEP</td></tr>
+    <tr><td>College Football</td><td>1,823</td><td>0.2057</td><td>0.2380</td><td class="up">+0.136</td><td>KEEP</td></tr>
     <tr><td>NBA</td><td>2,793</td><td>0.2177</td><td>0.2474</td><td class="up">+0.120</td><td>KEEP</td></tr>
-    <tr><td>Premier League</td><td>1,500</td><td>0.1590</td><td>0.1847</td><td class="up">+0.139</td><td>KEEP</td></tr>
+    <tr><td>NFL</td><td>1,338</td><td>0.2286</td><td>0.2459</td><td class="up">+0.071</td><td>KEEP</td></tr>
+    <tr><td>MMA</td><td>3,369</td><td>0.2455</td><td>0.2463</td><td class="gold">+0.003</td><td>WEAK</td></tr>
   </table>
-  <p>Dixon-Coles on 1,125 Premier League matches, tested on 375 it had never
-    seen: a home advantage of 1.155 goals-multiplier and a ranked probability
-    score of 0.2149, against a published bar around 0.20.</p>
+  <div class="callout"><b>MMA barely works, and the app says so.</b> Across
+    3,369 fights Elo beat the base rate by three thousandths — the ratings
+    themselves look sensible (the fighters at the top are the ones you would
+    name), but they predict almost nothing a coin could not. That is not a
+    surprise: fighters compete twice a year, styles matter more than general
+    strength, and one punch ends it. The verdict is WEAK rather than KEEP, which
+    <em>doubles</em> the uncertainty band on any MMA estimate and shrinks the
+    stake accordingly. A model that cannot tell you much should not be allowed
+    to sound like it can.</div>
+  <p>Dixon-Coles, fitted separately on club-league matches to check the
+    implementation: home advantage 1.155 goals-multiplier, ranked probability
+    score <b>0.2149</b> on held-out matches against a published bar around
+    0.20.</p>
   <p class="muted">Beating the base rate is a real result and a modest one. It
     is <em>not</em> the same as beating a bookmaker, who starts from a better
     price than the base rate and charges you the margin in §1 on top.</p>
