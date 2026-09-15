@@ -1448,13 +1448,43 @@ class MainWindow(QMainWindow):
         nl.setContentsMargins(14, 12, 14, 12)
         nl.setHorizontalSpacing(26)
         self.playmaker_stats = {}
-        cells = [("books", "How many books were read"),
-                 ("margin", "The first book's overround — what it charges to take the bet"),
-                 ("fair", "Consensus probability of the first side, margin removed (Shin)"),
-                 ("book spread", "How far the books disagree about that, one standard error"),
-                 ("best edge", "Largest gap between one book's price and its peers' consensus"),
-                 ("EV / unit", "Expected value per unit staked on that best price"),
-                 ("stake", "Kelly at the low end of the interval, capped — 0 when nothing qualifies")]
+        cells = [
+            ("books",
+             "How many bookmakers' prices were read.\n"
+             "Three is the minimum for the screen below: with fewer there is no "
+             "consensus for any one book to be out of line with."),
+            ("margin",
+             "The bookmaker's cut, built into the price.\n"
+             "Add up what both sides imply and you get more than 100% — the "
+             "excess is what the book keeps. 4.8% is standard. It is why "
+             "betting at random loses money slowly even when you are right half "
+             "the time."),
+            ("fair",
+             "The chance of the first outcome once the bookmaker's cut is "
+             "removed.\n"
+             "This is the market's real opinion. The price you are offered "
+             "always implies something worse than this."),
+            ("book spread",
+             "How much the bookmakers disagree with each other.\n"
+             "Tight means they are confident and you should be sceptical of any "
+             "gap you find; wide means the true price is genuinely unclear."),
+            ("best edge",
+             "The biggest gap between one book's price and what all the others "
+             "think, in percentage points.\n"
+             "This is not a prediction about who wins — only that one bookmaker "
+             "disagrees with the rest."),
+            ("EV / unit",
+             "What you would expect to win or lose per 1 staked, on average, if "
+             "that gap is real.\n"
+             "+0.05 means five pence expected profit per pound. Negative means "
+             "the price is not worth taking."),
+            ("stake",
+             "What fraction of a bankroll the Kelly formula suggests — the size "
+             "that grows money fastest over many bets without risking ruin.\n"
+             "Sized at the pessimistic end of the estimate and capped, so it "
+             "reads 0 whenever the edge might not be real. 0 is the normal "
+             "answer."),
+        ]
         for i, (k, tip) in enumerate(cells):
             st = Stat(k, tip)
             self.playmaker_stats[k] = st
@@ -1703,14 +1733,47 @@ class MainWindow(QMainWindow):
         gl.setContentsMargins(14, 12, 14, 12)
         gl.setHorizontalSpacing(26)
         self.macro_stats = {}
-        cells = [("10y", "10-year Treasury yield"),
-                 ("curve", "10y minus 2y. Negative = inverted, the classic "
-                           "recession signal."),
-                 ("fed funds", "Effective policy rate"),
-                 ("VIX", "The market's own forward volatility estimate"),
-                 ("real 10y", "10-year yield minus CPI year-over-year"),
-                 ("CPI y/y", "Headline inflation, year-over-year"),
-                 ("unemployment", "Rate, with 12-month change")]
+        # Every tooltip here says what the number is in plain words first, then
+        # how to read it. These are the figures a reader is least likely to
+        # already know, and a tooltip that only restates the label ("effective
+        # policy rate") helps nobody who needed the tooltip.
+        cells = [
+            ("10y",
+             "What the US government pays to borrow for ten years.\n"
+             "The benchmark almost everything else is priced against — "
+             "mortgages, company debt, and what a share is worth today.\n"
+             "Rising means borrowing is getting dearer everywhere."),
+            ("curve",
+             "The ten-year rate minus the two-year rate.\n"
+             "Normally positive: lending for longer pays more. When it goes "
+             "negative — 'inverted' — lenders expect rates to be cut, which "
+             "usually means they expect a downturn.\n"
+             "It has preceded most US recessions, with a lag of a year or more."),
+            ("fed funds",
+             "The interest rate the US central bank sets.\n"
+             "The lever it pulls to cool inflation (raise) or support growth "
+             "(cut). Every other rate takes its cue from this one."),
+            ("VIX",
+             "How much movement the options market is paying up for over the "
+             "next month, in annualised percent.\n"
+             "Below 15 is calm, above 25 is nervous, above 35 is a crisis.\n"
+             "It says how big the swings may be, never which way."),
+            ("real 10y",
+             "The ten-year rate after subtracting inflation — what a lender "
+             "actually earns in purchasing power.\n"
+             "Negative means cash parked in government debt loses value over "
+             "time, which pushes money toward shares and gold."),
+            ("CPI y/y",
+             "How much consumer prices have risen over twelve months.\n"
+             "The number central banks are targeting, usually at 2%. Well "
+             "above it and rates tend to rise; well below and they tend to fall."),
+            ("unemployment",
+             "The share of people looking for work who cannot find it, and how "
+             "it has moved over a year.\n"
+             "The level matters less than the direction: a rate that has turned "
+             "up over twelve months is one of the more reliable recession "
+             "signals there is."),
+        ]
         for i, (k, tip) in enumerate(cells):
             s = Stat(k, tip)
             self.macro_stats[k] = s

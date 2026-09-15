@@ -83,20 +83,176 @@
   </div>
 
   <div class="toc">
-    <a href="#tabs">1 · The seven tabs</a>
-    <a href="#data">2 · Where the data comes from</a>
-    <a href="#model">3 · The hourly model</a>
-    <a href="#scores">4 · The three numbers</a>
-    <a href="#book">5 · The paper book</a>
-    <a href="#lab">6 · Testing it yourself</a>
-    <a href="#alerts">7 · Alerts &amp; where you could trade</a>
-    <a href="#grading">8 · How the score gets graded</a>
-    <a href="#findings">9 · What the research found</a>
-    <a href="#run">10 · Running it &amp; what it costs</a>
-    <a href="#honesty">11 · Honesty &amp; limits</a>
+    <a href="#learn">1 · Start here — plain English</a>
+    <a href="#tabs">2 · The seven tabs</a>
+    <a href="#data">3 · Where the data comes from</a>
+    <a href="#model">4 · The hourly model</a>
+    <a href="#scores">5 · The three numbers</a>
+    <a href="#book">6 · The paper book</a>
+    <a href="#lab">7 · Testing it yourself</a>
+    <a href="#alerts">8 · Alerts &amp; where you could trade</a>
+    <a href="#grading">9 · How the score gets graded</a>
+    <a href="#findings">10 · What the research found</a>
+    <a href="#run">11 · Running it &amp; what it costs</a>
+    <a href="#honesty">12 · Honesty &amp; limits</a>
+    <a href="#playmaker">13 · Playmaker — sports bets</a>
   </div>
 
-  <h2 id="tabs"><span class="n">1</span>The seven tabs</h2>
+  <h2 id="learn"><span class="n">1</span>Start here — plain English</h2>
+  <p>You do not need a finance background to use this. This section explains
+    what the app is for, the one idea worth holding onto, and every piece of
+    jargon you will meet in it. Everything after this assumes you have read it.</p>
+
+  <h3>What SONAR actually does</h3>
+  <p>It watches the price and the news flow of 26 things you could invest in —
+    shares, indices, currencies, commodities, crypto — and flags the ones where
+    something unusual is happening. You can then take a position with
+    <b>pretend money</b> and watch, over weeks, whether those flags were worth
+    anything. There is no real account anywhere in it.</p>
+  <p>The point is not to be told what to buy. The point is to find out whether
+    a thing that <em>looks</em> like a signal actually pays — which is a
+    question almost nobody asks honestly, including most people selling you
+    signals.</p>
+
+  <div class="callout"><b>The one idea to hold onto.</b> A high
+    <b>confidence score</b> means <em>“something is going on here, worth a
+    look”</em>. It does <em>not</em> mean “this will go up”. SONAR deliberately
+    refuses to tell you which way to bet, because five separate studies across
+    116,563 asset-days failed to find any reliable way to tell. Anything that
+    claims otherwise, here or elsewhere, is guessing.</div>
+
+  <h3>Words you will meet</h3>
+  <p>Roughly in the order you will bump into them.</p>
+  <table>
+    <tr><th>Word</th><th>What it means</th></tr>
+    <tr><td>Position</td><td>A bet you currently hold on something. You open it
+      and later close it; the difference is your profit or loss.</td></tr>
+    <tr><td>Long / short</td><td><b>Long</b> = you own it and profit if it rises.
+      <b>Short</b> = the reverse, you profit if it falls.</td></tr>
+    <tr><td>Paper trading</td><td>Doing all of that with imaginary money, to
+      test an idea without risking anything. Everything in SONAR is paper.</td></tr>
+    <tr><td>Volatility</td><td>How much a price jumps around, day to day. High
+      volatility means bigger swings in <em>both</em> directions — it says
+      nothing about which way.</td></tr>
+    <tr><td>Momentum</td><td>How much something has already moved recently.
+      A description of the past. Whether it predicts the future is exactly what
+      §10 tested, and the answer was no.</td></tr>
+    <tr><td>Stop / target</td><td>Two prices you decide in advance: the
+      <b>stop</b> is where you give up and take the loss, the <b>target</b> is
+      where you take the profit. Setting both before you enter is the single
+      most useful discipline in this whole app.</td></tr>
+    <tr><td>R:R</td><td>Reward divided by risk. If your target is 15% away and
+      your stop is 10% away, that is 1.5. A bigger number sounds better and is
+      not free — see §5.</td></tr>
+    <tr><td>Mark to market</td><td>What a position is worth <em>right now</em>
+      if you closed it this second, as opposed to what you paid.</td></tr>
+    <tr><td>Drawdown</td><td>How far your money has fallen from its best point.
+      The number that actually makes people quit.</td></tr>
+    <tr><td>Horizon</td><td>How far ahead you are looking — a day, a week, a
+      month. It changes which numbers SONAR shows you, because a signal that
+      matters over a month is noise over a day.</td></tr>
+    <tr><td>Basis point</td><td>One hundredth of a percent. “50 bps” = 0.5%.
+      Used because “half a percent of a percent” gets confusing fast.</td></tr>
+  </table>
+
+  <h3>Words about probability</h3>
+  <table>
+    <tr><th>Word</th><th>What it means</th></tr>
+    <tr><td>Base rate</td><td>How often a thing happens in general, before you
+      know anything specific. If home teams win 54% of the time, that is the
+      base rate, and any model has to beat it to be worth having.</td></tr>
+    <tr><td>Expected value</td><td>What you would win or lose <em>on average</em>
+      per attempt if you repeated a bet forever. Positive is worth taking,
+      negative is not, however good any single outcome looks.</td></tr>
+    <tr><td>Calibration</td><td>Whether the numbers mean what they say: of all
+      the things called 70% likely, did about 70% actually happen? A model can
+      be confident and useless; calibration is the check that catches it.</td></tr>
+    <tr><td>Out-of-sample</td><td>Testing a model on data it has never seen. The
+      opposite — scoring it on the data it learned from — makes anything look
+      brilliant and is the most common way people fool themselves.</td></tr>
+    <tr><td>Backtest</td><td>Running a strategy over history to see what it
+      would have done. Useful, and easy to abuse: see §10 for five that were
+      run properly and found nothing.</td></tr>
+    <tr><td>Brier score</td><td>A mark out of one for a set of probability
+      guesses, where lower is better. 0 is perfect foresight, 0.25 is a coin
+      flip on everything.</td></tr>
+  </table>
+
+  <h3>Words in the Playmaker tab</h3>
+  <table>
+    <tr><th>Word</th><th>What it means</th></tr>
+    <tr><td>Odds</td><td>The price of a bet. <b>−150</b> means stake 150 to win
+      100; <b>+130</b> means stake 100 to win 130. The bigger the number after
+      a plus, the less likely the bookmaker thinks it is.</td></tr>
+    <tr><td>Implied probability</td><td>The chance a price is quietly claiming.
+      −150 implies 60%. Turn every price into one of these and you can compare
+      a bookmaker's opinion with your own.</td></tr>
+    <tr><td>The vig</td><td>Also margin, juice or overround — the bookmaker's
+      cut. Add up what both sides of a market imply and you get more than 100%;
+      the excess is theirs. Usually about 4.8%. It is why betting at random
+      loses money even when you win half the time.</td></tr>
+    <tr><td>Devigging</td><td>Taking that cut back out to see what the
+      bookmaker really thinks. Sounds like a detail; it is the difference
+      between a real edge and an imaginary one, and <em>how</em> you do it
+      changes the answer — see §13.</td></tr>
+    <tr><td>Kelly</td><td>A formula for how much of your money to put on a bet
+      so it grows fastest over many bets without going broke. Famously
+      aggressive, so Playmaker uses a fraction of it and sizes on the
+      pessimistic end of what it believes.</td></tr>
+    <tr><td>Closing line</td><td>The final price before an event starts, at a
+      serious bookmaker. It is the most accurate probability that exists for a
+      sporting event, and beating it consistently is the only real proof anyone
+      knows what they are doing.</td></tr>
+  </table>
+
+  <h3>Words in the Macro tab</h3>
+  <p>Macro means the whole economy, as opposed to any one company. These six
+    numbers are the weather everything else happens in.</p>
+  <table>
+    <tr><th>Word</th><th>What it means</th></tr>
+    <tr><td>Yield</td><td>What a government pays to borrow. The 10-year yield is
+      the benchmark nearly everything else is priced against — mortgages,
+      company debt, and what a share is worth today.</td></tr>
+    <tr><td>Yield curve</td><td>The 10-year rate minus the 2-year rate. Normally
+      positive, because lending for longer should pay more. When it goes
+      <b>negative</b> — “inverted” — lenders are betting rates will be cut,
+      which usually means they expect a downturn. It has preceded most US
+      recessions, often by a year or more.</td></tr>
+    <tr><td>Fed funds</td><td>The interest rate the US central bank sets — the
+      lever it pulls to cool inflation (raise) or support growth (cut). Every
+      other rate takes its cue from it.</td></tr>
+    <tr><td>VIX</td><td>How much movement traders are paying up for over the
+      next month. Under 15 is calm, over 25 is nervous, over 35 is a crisis.
+      Like volatility, it says how big — never which way.</td></tr>
+    <tr><td>CPI</td><td>How much consumer prices rose over a year. Central banks
+      usually target 2%. Well above and rates tend to rise; well below and they
+      tend to fall.</td></tr>
+    <tr><td>Real yield</td><td>The 10-year rate after subtracting inflation —
+      what a lender actually earns in purchasing power. Negative means money
+      sitting in government debt is losing value, which pushes it toward shares
+      and gold.</td></tr>
+  </table>
+
+  <h3>Which tab do I want?</h3>
+  <table>
+    <tr><th>If you want to…</th><th>Go to</th></tr>
+    <tr><td>See what is unusual across all 26 markets right now</td>
+      <td><b>Assets</b> — sort by CONF and read the NEWS column</td></tr>
+    <tr><td>Read the news driving it</td><td><b>Wire</b></td></tr>
+    <tr><td>Take a pretend position and track it</td><td><b>Book</b></td></tr>
+    <tr><td>Understand the economic backdrop</td><td><b>Macro</b></td></tr>
+    <tr><td>Check whether any of this actually works</td>
+      <td><b>Lab</b> — and §10, which says it mostly does not</td></tr>
+    <tr><td>Price a sports bet</td><td><b>Playmaker</b></td></tr>
+    <tr><td>Watch the hourly Bitcoin model</td><td><b>Terminal</b></td></tr>
+  </table>
+
+  <div class="callout warn"><b>What this app will not do.</b> It will not tell
+    you what to buy, it cannot place a real trade, and it is not financial
+    advice. It is an instrument for finding out whether an idea holds up — and
+    so far its honest answer about most of them has been no.</div>
+
+  <h2 id="tabs"><span class="n">2</span>The seven tabs</h2>
   <table>
     <tr><th>Tab</th><th>What it does</th><th>Asserts a direction?</th></tr>
     <tr><td>Terminal</td>
@@ -123,12 +279,12 @@
     <tr><td>Lab</td>
       <td>Replay the model over real history with the knobs exposed, see which
         components of the score earn their weight, and step through history
-        making your own calls. See <a href="#lab">§6</a>.</td>
+        making your own calls. See <a href="#lab">§7</a>.</td>
       <td>—</td></tr>
     <tr><td>Playmaker</td>
-      <td>Sports prop pricing across nine sports — NFL, NBA, MLB, NHL, the
-        Premier League, the Champions League, NCAA basketball, UFC and
-        ATP tennis. Paste what each book is offering and it removes
+      <td>Sports prop pricing across nine sports — NFL, NBA, MLB, NHL,
+        Premier League, Champions League, NCAA Basketball, UFC and
+        Tennis (ATP). Paste what each book is offering and it removes
         the margin three ways, shows where they disagree, and flags any book
         out of line with its peers. The model read is commentary — it cannot
         size a stake.</td>
@@ -140,7 +296,7 @@
     removed about 52MB an hour of downloads.</p>
   <p>The <b>Tooltips</b> switch in the toolbar explains every number on hover.</p>
 
-  <h2 id="data"><span class="n">2</span>Where the data comes from</h2>
+  <h2 id="data"><span class="n">3</span>Where the data comes from</h2>
   <p>All free, public and read-only. No API key is required for anything the app
     does by default.</p>
   <table>
@@ -171,7 +327,7 @@
     second source, so most of the watchlist depends on a single undocumented
     endpoint. A free Finnhub key closes that gap.</div>
 
-  <h2 id="model"><span class="n">3</span>The hourly model</h2>
+  <h2 id="model"><span class="n">4</span>The hourly model</h2>
   <p>Each hour Polymarket asks whether the BTC/USDT candle will close at or above
     its open. Part-way through, the open <code>o</code> and current price
     <code>c</code> are known; the rest is modelled as a driftless random walk
@@ -186,7 +342,7 @@
     SONAR uses <b>realised</b> vol while the market prices its own <b>implied</b>
     vol. That is a real but thin edge, and frequently negative after the spread.</p>
 
-  <h2 id="scores"><span class="n">4</span>The three numbers</h2>
+  <h2 id="scores"><span class="n">5</span>The three numbers</h2>
   <p>Every Assets row carries three, and they answer different questions.</p>
   <table>
     <tr><th>Number</th><th>What it means</th></tr>
@@ -216,7 +372,7 @@
     is — Quiet / Normal / Elevated / Spike — which is a notability flag and not a
     direction.</p>
 
-  <h2 id="book"><span class="n">5</span>The paper book</h2>
+  <h2 id="book"><span class="n">6</span>The paper book</h2>
   <p><b>buy</b> and <b>short</b> open a paper position on any row, sized so that
     being stopped out costs a fixed slice of the book. Two very different
     instruments therefore risk the same cash at their stops, which is the only
@@ -239,7 +395,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     failure raises. <b>Going live is not a setting in this app</b> — it is a
     decision for a human with an account, and SONAR does not implement it.</div>
 
-  <h2 id="lab"><span class="n">6</span>Testing it yourself</h2>
+  <h2 id="lab"><span class="n">7</span>Testing it yourself</h2>
   <p>The Lab tab exists so none of this has to be taken on trust. Everything in
     it runs on real historical bars through the same replay the research used.</p>
 
@@ -295,7 +451,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     and the barrier baseline. Below twenty resolved calls it refuses to draw a
     conclusion, which is the same rule the app applies to itself.</p>
 
-  <h2 id="alerts"><span class="n">7</span>Alerts &amp; where you could trade</h2>
+  <h2 id="alerts"><span class="n">8</span>Alerts &amp; where you could trade</h2>
 
   <h3>Alerts say what changed</h3>
   <p>An alert is a delivery mechanism for the confidence score, and that score is
@@ -339,7 +495,7 @@ APCA_API_SECRET_KEY=...</code></pre>
   <p>This is reference information, not advice, and it goes stale — the tooltip
     carries the date it was last verified.</p>
 
-  <h2 id="grading"><span class="n">8</span>How the score gets graded</h2>
+  <h2 id="grading"><span class="n">9</span>How the score gets graded</h2>
   <p>Every closed position carries the confidence it was opened on, so the Book
     tab can ask the only question that matters: <em>did high scores actually win
     more often?</em> Hit rate is bucketed by score and compared with what the
@@ -354,7 +510,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     daily data cannot order them, and costs are excluded. Reality is worse than
     what it reports, not better.</p>
 
-  <h2 id="findings"><span class="n">9</span>What the research found</h2>
+  <h2 id="findings"><span class="n">10</span>What the research found</h2>
   <p>Five studies, each more careful than the last. All of them negative.</p>
   <table>
     <tr><th>Question</th><th>Answer</th></tr>
@@ -387,7 +543,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     <b>sentiment</b> (Wikipedia pageviews measure attention volume, not tone), and
     anything requiring intraday or order-flow data.</p>
 
-  <h2 id="run"><span class="n">10</span>Running it &amp; what it costs</h2>
+  <h2 id="run"><span class="n">11</span>Running it &amp; what it costs</h2>
   <p>A native macOS app — PySide6 widgets, every chart drawn with QPainter, no
     web view.</p>
   <pre><code>uv venv .venv &amp;&amp; uv pip install -r requirements.txt
@@ -403,7 +559,7 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     Polymarket board was removed — down from about 60MB. Negligible on
     broadband, and worth knowing on a metered connection.</p>
 
-  <h2 id="honesty"><span class="n">11</span>Honesty &amp; limits</h2>
+  <h2 id="honesty"><span class="n">12</span>Honesty &amp; limits</h2>
   <div class="warn">
     <b>This is not financial advice and it places no real trades.</b> Paper P/L
     predicts nothing about real results. Live trading means real fees, real
@@ -427,6 +583,109 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
   </ul>
   <p>By design SONAR stops one step short of acting. It will take you up to a
     decision with its reasoning fully exposed, and leave the decision to you.</p>
+
+  <h2 id="playmaker"><span class="n">13</span>Playmaker — pricing a sports bet</h2>
+  <p>The same discipline as the rest of the app, pointed at sport. It prices a
+    wager rather than predicting one, and it will not let a language model size
+    a bet for you.</p>
+
+  <h3>Nine sports</h3>
+  <p>The sport picker offers NFL, NBA, MLB, NHL, Premier League, Champions
+    League, NCAA Basketball, UFC and Tennis (ATP) — 81 prop types between them,
+    named here exactly as the dropdown names them. Adding a sport needs no new
+    maths: the pricing is pure odds arithmetic and never learns what it is
+    pricing, which is why a three-way football market needed no special case.</p>
+
+  <h3>Getting the bookmaker's cut out</h3>
+  <p>A price implies a probability, but it implies a <em>worse</em> one than the
+    bookmaker really believes, because their margin is baked in (see
+    <a href="#learn">§1</a>). Removing it is called devigging, and there are
+    three defensible ways to do it that give different answers:</p>
+  <table>
+    <tr><th>Method</th><th>How it splits the margin</th></tr>
+    <tr><td>Multiplicative</td><td>Evenly, in proportion to each price. The one
+      every online calculator uses — and the one comparative studies rank
+      <b>last</b> on every measure.</td></tr>
+    <tr><td>Power</td><td>Clarke's method: find the exponent that makes the
+      probabilities sum to 1. Best or equal-best in the same comparison.</td></tr>
+    <tr><td>Shin</td><td>Treats the margin as the bookmaker's protection against
+      people who know something. Generally the best calibrated, and what
+      Playmaker uses by default.</td></tr>
+  </table>
+  <p>This is not hair-splitting. On a <code>−2000 / +1100</code> market the
+    proportional method calls the longshot <b>8.05%</b> and Shin calls it
+    <b>6.55%</b> — 23% apart. Run it the other way and the proportional method
+    invents an edge on the favourite that is not there. The tab prints all three
+    side by side so you can see the disagreement rather than take it on
+    trust.</p>
+
+  <div class="callout"><b>One price tells you nothing.</b> A margin is defined
+    as the amount by which a market's prices sum past certainty, so you cannot
+    see it from one side. <code>−110</code> on its own is equally consistent
+    with a coin flip carrying normal juice and with a genuine 52.4% favourite
+    quoted at no margin at all. Playmaker asks for every side of the market
+    because the arithmetic requires it.</div>
+
+  <h3>The cross-book screen</h3>
+  <p>The one approach here with a published track record, and it does not
+    forecast anything. Kaunitz, Zhong and Kreiner (2017) took the odds many
+    bookmakers were already publishing, formed a consensus, and bet only where
+    one book was a clear outlier against it. Profitable over a ten-year
+    simulation and five months of real staked money.</p>
+  <p>Paste three or more books into the tab and it runs exactly that. Each
+    row's consensus excludes that row's own book, so a price cannot vote for
+    itself. It says nothing about who wins — only that one bookmaker disagrees
+    with the rest.</p>
+  <div class="callout warn"><b>The same paper's other finding.</b> The
+    bookmakers limited the accounts that kept winning. The edge is real and the
+    capacity for it is very small. Anyone who quotes the first half of that
+    result without the second is selling you something.</div>
+
+  <h3>The models, and what they scored</h3>
+  <p>Three, all chosen because they have genuine track records rather than
+    because they are clever:</p>
+  <table>
+    <tr><th>Model</th><th>What it does</th></tr>
+    <tr><td>Elo</td><td>A rating per team that moves after every game, scaled by
+      the margin and corrected so that strong teams' ratings do not run away.
+      The reviewed literature says a tuned Elo captures most of what any
+      pre-match model can.</td></tr>
+    <tr><td>Dixon-Coles</td><td>For football: an attack and a defence strength
+      per team producing a full distribution over scorelines, so the draw, the
+      total and both-teams-to-score all fall out of one fit. Older matches count
+      for less, on a half-life of about a year.</td></tr>
+    <tr><td>Pythagorean</td><td>A cross-check: expected win rate from goals or
+      points scored and conceded, which predicts a team's <em>future</em> record
+      better than its current one does.</td></tr>
+  </table>
+  <p>Scored walk-forward — every prediction made by a model that had seen only
+    earlier games:</p>
+  <table>
+    <tr><th>League</th><th>Games</th><th>Brier</th><th>Baseline</th><th>Skill</th><th>Verdict</th></tr>
+    <tr><td>NFL</td><td>1,338</td><td>0.2286</td><td>0.2459</td><td class="up">+0.071</td><td>KEEP</td></tr>
+    <tr><td>NBA</td><td>2,793</td><td>0.2177</td><td>0.2474</td><td class="up">+0.120</td><td>KEEP</td></tr>
+    <tr><td>Premier League</td><td>1,500</td><td>0.1590</td><td>0.1847</td><td class="up">+0.139</td><td>KEEP</td></tr>
+  </table>
+  <p>Dixon-Coles on 1,125 Premier League matches, tested on 375 it had never
+    seen: a home advantage of 1.155 goals-multiplier and a ranked probability
+    score of 0.2149, against a published bar around 0.20.</p>
+  <p class="muted">Beating the base rate is a real result and a modest one. It
+    is <em>not</em> the same as beating a bookmaker, who starts from a better
+    price than the base rate and charges you the margin in §1 on top.</p>
+
+  <h3>What cannot size a bet</h3>
+  <p>The tab also asks a language model to read the matchup. Its opinion is
+    shown and is explicitly <b>not</b> used for the edge, the expected value or
+    the stake. It used to be: a percentage scraped out of prose with a pattern
+    match, turned into a Kelly stake. Correct arithmetic wrapped around an
+    unmeasured number reads as far more credible than either half deserves,
+    which is the most dangerous shape a tool like this can take.</p>
+  <p>Every probability now carries where it came from. A model's may size a bet
+    only after it has been measured out of sample, and its interval is set by
+    its <em>measured</em> calibration error rather than by anything it claims
+    about itself. Stakes are sized at the pessimistic end of that interval, so
+    an honest uncertainty that spans break-even produces no bet at all — which
+    is the answer a single number can never give.</p>
 
   <footer>
     SONAR · paper-trading terminal, market scanner and research apparatus ·
