@@ -46,6 +46,7 @@ and time rather than code, kept at the top.
 - [x] `P1` `bug` `@ai` ~~Close button appeared dead.~~ Leaving macOS full screen re-activates the app when the Space transition finishes, *after* the deferred hide — so the Dock-click handler reopened the window it had just hidden. `reopen_allowed()` ignores an activation within a second of a self-hide.
 - [x] `P1` `performance` `@ai` ~~Start-up took ~11s.~~ News and asset fetches now run concurrently, and `warmup()` publishes a snapshot before the heavy screen refresh instead of after. **11s → 1.8s**, first data at 1.7s.
 - [x] `P1` `bug` `@ai` ~~SIGABRT on quit.~~ `shutdown()` did not name every QThread the window owns. Qt aborts when a running thread is destroyed, so quitting during a backtest died with SIGABRT. Every thread is now listed, with a test asserting it.
+- [x] `P0` `bug` `@ai` ~~Closing SONAR could leave a blank white window that never went away.~~ `_refresh_wire()` fetched on the UI thread whenever the news (8 min TTL) or events cache aged out — a coin flip every eight minutes on whether the event loop blocked up to 30s, painting nothing and ignoring input. The Wire path now reads cache-only (`news.cached()`, `events.cached_payload()`); `tests/test_ui_thread.py` and `test_refresh.py` assert nothing reaches the network from a real window with both caches aged out.
 
 ### Data
 

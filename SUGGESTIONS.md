@@ -48,6 +48,9 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | Shutdown crash fixed — the backtest and Playmaker threads were missing from the quit-time stop list, so a `SIGABRT` landed if either was still running when the window closed | Aug 2026 |
 | Playmaker tab — `sonar/playmaker/`'s NFL prop-bet arithmetic got its own tab (renamed from "Sports"), and the module was renamed to match | Aug 2026 |
 | Window-too-wide bug fixed — unwrapped prose labels were setting an unshrinkable minimum window width (opened 4,540pt wide on a 1,280pt screen); labels now wrap and `MainWindow._fit_to_screen()` clamps the opening size to the actual screen | Sep 2026 |
+| Closing SONAR could leave a blank white window that never went away — the Wire tab was fetching news/events on the UI thread whenever their cache aged out; fixed to read cache-only, with tests asserting no network access from the UI thread | Sep 2026 |
+| In-app docs (`docs.html`) gained a plain-English "Start here" intro, a 24-term glossary, and a "which tab do I want" table; a new section documents Playmaker for the first time | Sep 2026 |
+| Playmaker gained native prediction models — Elo (FiveThirtyEight's published form), Dixon-Coles for football, Pythagorean as a cross-check, fed by a keyless ESPN adapter; NFL/NBA/EPL all came back KEEP on walk-forward skill | Sep 2026 |
 
 ## Rejected
 

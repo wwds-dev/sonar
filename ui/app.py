@@ -1435,6 +1435,8 @@ class MainWindow(QMainWindow):
             "Pinnacle    -148  +128\nBetMGM      -150  +210")
         self.playmaker_books.setFixedHeight(84)
         bl.addWidget(self.playmaker_books)
+        self.playmaker_capability = label("", "faint", theme.mono(9), wrap=True)
+        bl.addWidget(self.playmaker_capability)
         lay.addWidget(books_p)
 
         data_p = panel()
@@ -1536,6 +1538,37 @@ class MainWindow(QMainWindow):
                        "Pinnacle    -148  +128\n"
                        "BetMGM      -150  +210")
         self.playmaker_books.setPlaceholderText(example)
+        self.playmaker_capability.setText(self._capability_note(sport))
+
+    @staticmethod
+    def _capability_note(sport) -> str:
+        """Say plainly what this sport can and cannot do.
+
+        The pricing half works everywhere — it is odds arithmetic and knows
+        nothing about the sport. The rating half does not: a golf tournament is
+        a finishing order across a hundred-odd players, not a contest between
+        two sides, and cycling has no results feed at all. Leaving the reader
+        to infer that from an empty panel would be the kind of silence that
+        reads as a bug.
+        """
+        if sport.model == "dixon_coles":
+            rated = ("Rated by Dixon-Coles over every international competition "
+                     "these sides play — one pool of national-team ratings.")
+        elif sport.model == "elo" and sport.shape == "winners":
+            rated = ("Rated by Elo on wins and losses. No scoreline exists in "
+                     "this sport, so there is no margin of victory to learn from.")
+        elif sport.model == "elo":
+            rated = "Rated by Elo, with margin of victory and home advantage."
+        elif not sport.has_results:
+            rated = ("No results feed exists for this sport, so nothing here "
+                     "rates a competitor. Everything below still works — "
+                     "removing the margin and screening the books is arithmetic "
+                     "that needs no data.")
+        else:
+            rated = ("A finishing order across a large field, not a contest "
+                     "between two sides, so no head-to-head model applies. "
+                     "Everything below still works — pricing needs no model.")
+        return rated
 
     # -- the arithmetic half: local, instant, no model involved --------------- #
     def _playmaker_price(self) -> tuple[list, str]:

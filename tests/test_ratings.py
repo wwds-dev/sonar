@@ -12,6 +12,7 @@ import datetime as dt
 
 import pytest
 
+from sonar import playmaker
 from sonar.playmaker import ratings as r
 from sonar.playmaker import results as res
 from sonar.playmaker import scoring as sc
@@ -75,11 +76,47 @@ def test_a_date_range_is_walked_in_chunks_that_cover_it():
         assert start == end + dt.timedelta(days=1)   # no gap, no overlap
 
 
-def test_a_sport_with_no_league_cannot_be_fetched():
-    from sonar.playmaker import Sport, PropType
-    nowhere = Sport("x", "X", (PropType("a", "A", "u"),), "hint")
-    with pytest.raises(ValueError, match="no results league"):
-        res.fetch_range(nowhere, DAY, DAY)
+def test_a_sport_with_no_feed_says_so_rather_than_failing_obscurely():
+    with pytest.raises(ValueError, match="no results feed"):
+        res.fetch_range("cycling", DAY, DAY)
+
+
+def test_a_field_event_cannot_be_forced_into_a_result_table():
+    """Golf has a feed, but a finishing order across 132 players is not a
+    `Game` and no amount of parsing makes it one."""
+    with pytest.raises(ValueError, match="field event"):
+        res.fetch_range("golf", DAY, DAY)
+
+
+def _bout(a, b, a_won, completed=True):
+    return {"events": [{"date": "2026-01-01T00:00Z", "competitions": [
+        {"date": "2026-01-01T00:00Z",
+         "status": {"type": {"completed": completed}},
+         "competitors": [
+             {"order": 1, "winner": a_won, "athlete": {"displayName": a}},
+             {"order": 2, "winner": not a_won if a_won is not None else False,
+              "athlete": {"displayName": b}}]}]}]}
+
+
+def test_a_fight_card_is_read_as_one_bout_per_competition():
+    payload = _bout("A", "B", True)
+    payload["events"][0]["competitions"].append(
+        _bout("C", "D", False)["events"][0]["competitions"][0])
+    bouts = res.parse_bouts(payload)
+    assert len(bouts) == 2
+    assert bouts[0].home == "A" and bouts[0].result == 1.0
+    assert bouts[1].home == "C" and bouts[1].result == 0.0
+
+
+def test_a_draw_or_no_contest_is_skipped_rather_than_scored_as_half():
+    """Usually a foul or an injury — it says nothing about who is better."""
+    payload = _bout("A", "B", False)
+    payload["events"][0]["competitions"][0]["competitors"][1]["winner"] = False
+    assert res.parse_bouts(payload) == []
+
+
+def test_an_unfinished_fight_is_skipped():
+    assert res.parse_bouts(_bout("A", "B", True, completed=False)) == []
 
 
 # --------------------------------------------------------------------------- #
@@ -191,12 +228,28 @@ def test_every_registered_sport_has_settings():
 
 def test_the_sports_with_borrowed_settings_are_marked_as_such():
     """Honest bookkeeping: a stand-in must not read as a published figure."""
-    assert r.UNTUNED == {"ncaab", "ufc", "atp"}
-    assert "nfl" not in r.UNTUNED
+    assert r.UNTUNED == {"ncaaf", "mma"}
+    assert "nfl" not in r.UNTUNED and "nba" not in r.UNTUNED
 
 
-def test_the_sports_that_can_draw_are_configured_for_it():
-    assert r.config_for("epl").draws and r.config_for("nhl").draws
+def test_mma_has_no_home_advantage():
+    """No venue effect, so the corner ESPN happens to list first must not be
+    handed an edge by the model."""
+    assert r.config_for("mma").home_advantage == 0.0
+
+
+def test_a_fighter_s_rating_moves_further_than_a_team_s():
+    """Two or three bouts a year against eighty-odd games: each has to count
+    for more, or a fighter's rating never leaves where it started."""
+    assert r.config_for("mma").k > r.config_for("nba").k
+
+
+def test_college_football_carries_a_bigger_home_field_than_the_nfl():
+    assert r.config_for("ncaaf").home_advantage > r.config_for("nfl").home_advantage
+
+
+def test_the_sport_that_can_draw_is_configured_for_it():
+    assert r.config_for("intl_football").draws
     assert not r.config_for("nfl").draws
 
 
@@ -212,15 +265,16 @@ def test_outscoring_the_opposition_predicts_winning():
 
 
 def test_a_tighter_scoring_sport_takes_a_higher_exponent():
-    """Which is why the NBA's is 13.91 and baseball's is 1.83."""
-    assert r.PYTHAGOREAN_EXPONENTS["nba"] > r.PYTHAGOREAN_EXPONENTS["mlb"]
+    """Which is why the NBA's is 13.91 and the NFL's is 2.37 — basketball
+    scores cluster far more tightly."""
+    assert r.PYTHAGOREAN_EXPONENTS["nba"] > r.PYTHAGOREAN_EXPONENTS["nfl"]
 
 
 def test_no_exponent_is_invented_for_a_sport_without_one():
     """Guessing one would make the cross-check worse than not having it."""
-    assert set(r.PYTHAGOREAN_EXPONENTS) == {"mlb", "nfl", "nba", "nhl"}
-    table = r.fit([game("A", "B", 3, 1)], "epl")
-    assert r.pythagorean_for(table, "A", "epl") is None
+    assert set(r.PYTHAGOREAN_EXPONENTS) == {"nfl", "nba"}
+    table = r.fit([game("A", "B", 3, 1)], "intl_football")
+    assert r.pythagorean_for(table, "A", "intl_football") is None
 
 
 def test_the_cross_check_reads_a_fitted_table():
@@ -324,3 +378,115 @@ def test_the_burn_in_is_not_scored():
 def test_a_summary_reads_as_a_sentence():
     score = sc.score_predictions([(0.9, 1.0)] * 900 + [(0.1, 0.0)] * 900)
     assert "KEEP" in score.summary and "Brier" in score.summary
+
+
+# --------------------------------------------------------------------------- #
+# Fetching a window, and noticing when the answer was cut short
+# --------------------------------------------------------------------------- #
+class _FakeResponse:
+    def __init__(self, payload):
+        import json
+        self._body = json.dumps(payload).encode()
+    def read(self, *a):
+        return self._body
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        return False
+
+
+_SERIAL = [0]
+
+
+def _payload(n, day="2026-01-01T00:00Z"):
+    """`n` completed fixtures, all distinct — so deduplication cannot hide a
+    window that was or was not split."""
+    base = _SERIAL[0]
+    _SERIAL[0] += n
+    return {"events": [
+        {"date": day, "competitions": [{
+            "date": day,
+            "status": {"type": {"completed": True}},
+            "competitors": [
+                {"homeAway": "home", "score": 3, "team": {"abbreviation": f"H{i}"}},
+                {"homeAway": "away", "score": 1, "team": {"abbreviation": f"A{i}"}},
+            ]}]} for i in range(base, base + n)]}
+
+
+def _serve(monkeypatch, sizes):
+    """Answer successive requests with the given event counts, recording spans."""
+    _SERIAL[0] = 0
+    calls = []
+    queue = list(sizes)
+
+    def fake_urlopen(request, timeout=None):
+        calls.append(request.full_url)
+        return _FakeResponse(_payload(queue.pop(0) if queue else 0))
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    return calls
+
+
+def test_a_window_that_comes_back_capped_is_split(monkeypatch):
+    """ESPN truncates rather than paginating, and does not say so. A response
+    at exactly the cap has probably lost games, and silently short history is
+    worse than slow history — it fits a rating on half a season."""
+    calls = _serve(monkeypatch, [res.PAGE_LIMIT, 2, 2])
+    got = res.fetch_range("nba", DAY, DAY + dt.timedelta(days=60), pause=0)
+    assert len(calls) == 3, "the capped window should have been halved"
+    assert len(got) == 4
+
+
+def test_an_uncapped_window_is_left_alone(monkeypatch):
+    calls = _serve(monkeypatch, [3])
+    res.fetch_range("nba", DAY, DAY + dt.timedelta(days=60), pause=0)
+    assert len(calls) == 1
+
+
+def test_splitting_gives_up_rather_than_recursing_forever(monkeypatch):
+    """A day that genuinely holds more than the cap cannot be split further."""
+    calls = _serve(monkeypatch, [res.PAGE_LIMIT] * 2000)
+    span = 200
+    res.fetch_range("nba", DAY, DAY + dt.timedelta(days=span), pause=0)
+    # Each 90-day chunk halves at most MAX_SPLITS deep, so it can make at most
+    # 2**(MAX_SPLITS+1) - 1 requests. Anything beyond that is runaway recursion.
+    chunks = -(-(span + 1) // res.CHUNK_DAYS)
+    assert len(calls) <= chunks * (2 ** (res.MAX_SPLITS + 1) - 1)
+
+
+def test_a_sport_with_many_leagues_fetches_each_of_them(monkeypatch):
+    calls = _serve(monkeypatch, [1] * 200)
+    res.fetch_range("intl_football", DAY, DAY + dt.timedelta(days=30), pause=0)
+    paths = {c.split("/sports/")[1].split("/scoreboard")[0] for c in calls}
+    assert paths == set(playmaker.get_sport("intl_football").espn_paths)
+
+
+def test_the_same_fixture_from_two_windows_is_only_counted_once(monkeypatch):
+    """ESPN returns a fixture in every window that touches it."""
+    def fake_urlopen(request, timeout=None):
+        return _FakeResponse({"events": [
+            {"date": "2026-01-01T00:00Z", "competitions": [{
+                "date": "2026-01-01T00:00Z",
+                "status": {"type": {"completed": True}},
+                "competitors": [
+                    {"homeAway": "home", "score": 3, "team": {"abbreviation": "H"}},
+                    {"homeAway": "away", "score": 1, "team": {"abbreviation": "A"}},
+                ]}]}]})
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    got = res.fetch_range("nba", DAY, DAY + dt.timedelta(days=200), pause=0)
+    assert len(got) == 1, "the same fixture from two windows must deduplicate"
+
+
+def test_a_throttled_request_backs_off_rather_than_hammering(monkeypatch):
+    """403 and 429 both mean slow down. Retrying at full speed is how you get
+    blocked for longer."""
+    import urllib.error
+    slept = []
+    monkeypatch.setattr("time.sleep", lambda s: slept.append(s))
+
+    def refuse(request, timeout=None):
+        raise urllib.error.HTTPError(request.full_url, 429, "Too Many", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", refuse)
+    assert res.fetch_range("nba", DAY, DAY, pause=0) == []
+    assert slept and max(slept) >= res.THROTTLED_PAUSE_S

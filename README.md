@@ -35,9 +35,14 @@ returns a zero stake for a narrative one. Both sides of a market are required,
 because a margin is how far prices sum past certainty and one side cannot reveal
 it. The feature with an actual published track record is the cross-book screen —
 Kaunitz, Zhong & Kreiner (2017) — which finds where books disagree with each
-other rather than predicting anything. `sonar/playmaker/MODELS.md` surveys the
-sports models that work and sets the build order; read it before changing the
-scoring.
+other rather than predicting anything.
+
+It now predicts, too: Elo in FiveThirtyEight's published form, Dixon-Coles for
+football, and Pythagorean as a cross-check, fed by a keyless ESPN results adapter.
+Nothing predicts until it has been measured, the same gate `calibration.py` applies
+on the markets side — NFL, NBA and EPL all came back KEEP on walk-forward skill
+(+0.071 / +0.120 / +0.139). `sonar/playmaker/MODELS.md` surveys the models and
+carries the staged plan; read it before changing the scoring.
 
 A Polymarket board used to sit here and was removed — mirroring a market's own odds back at
 you is not analysis, and dropping it also removed ~52MB/hour of downloads. Full docs live in
@@ -451,6 +456,22 @@ Support/SONAR/state.json` versus `data/state.json`. Installing does not inherit 
 Leave it running and the equity curve grows by one point each hour as markets resolve. The
 active risk profile is saved with the state, so a bankroll keeps the profile it was built
 under; delete the state file to reset to a clean $10,000.
+
+### Tests
+
+```bash
+./run-tests.sh                 # the suite, 300s budget
+./run-tests.sh -k playmaker    # anything after the script is passed through
+TEST_BUDGET_S=60 ./run-tests.sh
+```
+
+Three tests build a real `MainWindow`, and PySide6 occasionally leaves a pthread
+mutex orphaned when those windows are torn down — the main thread then blocks
+unkillable from inside itself, a hang pytest's own `faulthandler_timeout`
+(`pyproject.toml`) cannot catch because the dump would need the very lock that is
+held. `run-tests.sh` bounds the suite from outside the process instead, sampling
+the stack before killing it — see the open TODO item for what's already been
+ruled out.
 
 ### Uptime
 

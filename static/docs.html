@@ -282,9 +282,9 @@
         making your own calls. See <a href="#lab">§7</a>.</td>
       <td>—</td></tr>
     <tr><td>Playmaker</td>
-      <td>Sports prop pricing across nine sports — NFL, NBA, MLB, NHL,
-        Premier League, Champions League, NCAA Basketball, UFC and
-        Tennis (ATP). Paste what each book is offering and it removes
+      <td>Sports prop pricing across seven sports — NFL, College Football,
+        NBA, MMA (UFC), International Football, Golf and Cycling. Paste what
+        each book is offering and it removes
         the margin three ways, shows where they disagree, and flags any book
         out of line with its peers. The model read is commentary — it cannot
         size a stake.</td>
@@ -589,12 +589,40 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     wager rather than predicting one, and it will not let a language model size
     a bet for you.</p>
 
-  <h3>Nine sports</h3>
-  <p>The sport picker offers NFL, NBA, MLB, NHL, Premier League, Champions
-    League, NCAA Basketball, UFC and Tennis (ATP) — 81 prop types between them,
-    named here exactly as the dropdown names them. Adding a sport needs no new
-    maths: the pricing is pure odds arithmetic and never learns what it is
-    pricing, which is why a three-way football market needed no special case.</p>
+  <h3>Seven sports, in three shapes</h3>
+  <p>NFL, College Football, NBA, MMA (UFC), International Football, Golf and
+    Cycling — 67 prop types between them, named here exactly as the dropdown
+    names them. Football means <b>international team games only</b>: World Cup,
+    Euros, Copa América, Gold Cup, AFCON, Nations League, every confederation's
+    qualifiers and friendlies. No club competitions.</p>
+  <p>The <b>pricing</b> half of the tab works identically for all seven — it is
+    odds arithmetic and never learns what it is pricing. The <b>rating</b> half
+    does not, because a result does not mean the same thing in each:</p>
+  <table>
+    <tr><th>Shape</th><th>Sports</th><th>What can be fitted</th></tr>
+    <tr><td>Two sides, a scoreline</td><td>NFL, College Football, NBA,
+      International Football</td>
+      <td>Elo with margin of victory. Football also gets Dixon-Coles, which
+        produces a whole distribution over scorelines.</td></tr>
+    <tr><td>Two sides, no scoreline</td><td>MMA</td>
+      <td>Elo on wins and losses. There is no margin to learn from, so the
+        model correctly degenerates to plain Elo.</td></tr>
+    <tr><td>A field</td><td>Golf, Cycling</td>
+      <td><b>Nothing.</b> A hundred-odd competitors and a finishing order is not
+        a contest between two sides. Pretending Elo applies would be inventing
+        an answer rather than admitting there isn't one.</td></tr>
+  </table>
+  <div class="callout"><b>Cycling has no results feed at all.</b> ESPN serves no
+    cycling endpoint, and the free alternatives are unofficial scrapers of a
+    single site. So cycling is priced and screened like any other sport — that
+    arithmetic needs no data — and nothing here rates a rider. The tab says so
+    when you select it, rather than showing you an empty panel and letting you
+    wonder.</div>
+  <p>International football pools <b>fourteen competitions</b> into one set of
+    national-team ratings. National sides play a handful of times a year, so
+    splitting them by tournament would leave no single competition with enough
+    matches to fit on — and a side's form in a qualifier is evidence about it at
+    the Euros.</p>
 
   <h3>Getting the bookmaker's cut out</h3>
   <p>A price implies a probability, but it implies a <em>worse</em> one than the
