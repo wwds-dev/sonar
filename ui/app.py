@@ -1469,11 +1469,28 @@ class MainWindow(QMainWindow):
         return w
 
     def _playmaker_sport_changed(self) -> None:
+        """Repoint the prop list, the context hint and the price example.
+
+        A three-way sport wants three prices per book, so the placeholder shows
+        three. Nothing else changes: the devigging and the screen take N
+        outcomes and never learn which sport they are pricing.
+        """
         sport = playmaker.get_sport(self.sport_box.currentData())
         self.prop_box.clear()
         for pt in sport.prop_types:
             self.prop_box.addItem(pt.label, pt.key)
         self.playmaker_context.setPlaceholderText(sport.context_hint)
+        if sport.outcomes == 3:
+            example = ("DraftKings  +150  +240  +180\n"
+                       "Pinnacle    +155  +235  +175\n"
+                       "Bet365      +148  +245  +182\n"
+                       "BetMGM      +150  +400  +180")
+        else:
+            example = ("DraftKings  -150  +130\n"
+                       "FanDuel     -155  +132\n"
+                       "Pinnacle    -148  +128\n"
+                       "BetMGM      -150  +210")
+        self.playmaker_books.setPlaceholderText(example)
 
     # -- the arithmetic half: local, instant, no model involved --------------- #
     def _playmaker_price(self) -> tuple[list, str]:

@@ -22,7 +22,7 @@ A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no we
 | **Book** | Open paper positions, the calibration table, and the backtest button | — |
 | **Macro** | Regime: curve, VIX, real rates, unemployment | No |
 | **Lab** | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
-| **Playmaker** | Sports prop pricing — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
+| **Playmaker** | Sports prop pricing across **nine sports** (NFL, NBA, MLB, NHL, EPL, UCL, NCAAB, UFC, ATP) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
 
 Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
 Sentinel's NFL agent early on but was never a standalone project, and the scaffold
@@ -571,7 +571,7 @@ sonar/
   alerts.py    what changed — fires on transitions, never asserts a direction
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
-  playmaker/   sports prop pricing — the Playmaker tab
+  playmaker/   sports prop pricing, nine sports — the Playmaker tab
     devig.py   three devig methods (multiplicative, Clarke power, Shin), cross-book consensus, outlier screen
     staking.py Estimate (probability + interval + source); Kelly at the interval's low end
     MODELS.md  what the successful sports models do, and the staged plan
