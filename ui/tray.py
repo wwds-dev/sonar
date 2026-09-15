@@ -1,13 +1,21 @@
-"""Menu-bar presence — so closing the window does not stop the engine.
+"""Menu-bar presence — the bankroll at a glance, and a Quit that is always there.
 
 SONAR is a daemon wearing an app. The equity curve only means something if
 positions settle on the hours they were priced for, and the calibration table
-only fills as trades resolve. A window you close taking the engine with it
-quietly destroys both.
+only fills as trades resolve.
 
-So the close button **hides**. The poll thread keeps running, the menu bar shows
-the bankroll, and quitting is a deliberate act with its own menu item. The first
-close says so once, rather than leaving you wondering where the window went.
+The close button used to **hide** for that reason, keeping the engine alive
+behind a menu-bar icon. It was reported as a bug twice, which settles the
+question of whether the notification explaining it was enough: on macOS the red
+button closes, and an app that survives it reads as an app ignoring you. Close
+now quits.
+
+Uptime still has a door, and a better one — `sonar --headless` runs the same
+engine with no Qt at all. That is what `sonar/core.py` was split out for.
+
+So this icon is now a readout rather than a lifeline: it shows the bankroll
+while the app runs, and carries a Quit for reaching the app when its window is
+behind something.
 
 The icon is drawn as a macOS *template* image — a monochrome mask the system
 recolours for light and dark menu bars — because a coloured icon looks wrong in
@@ -53,7 +61,6 @@ class Tray(QSystemTrayIcon):
         super().__init__(_tray_icon(), app)
         self.window = window
         self.app = app
-        self._warned = False
 
         menu = QMenu()
         self.state_action = QAction("starting…", menu)
@@ -92,18 +99,6 @@ class Tray(QSystemTrayIcon):
         self.window.allow_close = True
         self.hide()
         self.app.quit()
-
-    def note_hidden(self) -> None:
-        """Explain the first disappearing act, once."""
-        if self._warned:
-            return
-        self._warned = True
-        if self.supportsMessages():
-            self.showMessage(
-                "SONAR is still running",
-                "The engine keeps settling hours in the background. "
-                "Open it from the menu bar, or quit from there.",
-                self.icon(), 6000)
 
     def update_state(self, snap: dict) -> None:
         """Refresh the menu-bar readout from the live snapshot."""

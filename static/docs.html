@@ -559,7 +559,17 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     Polymarket board was removed — down from about 60MB. Negligible on
     broadband, and worth knowing on a metered connection.</p>
 
-  <h2 id="honesty"><span class="n">12</span>Honesty &amp; limits</h2>
+    <h3>Closing it</h3>
+  <p>The close button <b>quits</b>. It used to hide to the menu bar and leave the
+    engine running — the equity curve only means something if positions settle
+    on the hours they were priced for — but on macOS the red button closes, and
+    an app that survives it reads as one that ignored you.</p>
+  <p>If you want the engine running without the window, that is what the daemon
+    is for: <code>python main.py --headless</code>, or the launchd agent in
+    <code>scripts/install_agent.sh</code>. The menu-bar item is a readout and a
+    second Quit, not the only way back in.</p>
+
+<h2 id="honesty"><span class="n">12</span>Honesty &amp; limits</h2>
   <div class="warn">
     <b>This is not financial advice and it places no real trades.</b> Paper P/L
     predicts nothing about real results. Live trading means real fees, real
