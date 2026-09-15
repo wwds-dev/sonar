@@ -44,6 +44,10 @@ pyinstaller --noconfirm --clean --windowed \
   --hidden-import anthropic \
   --hidden-import sonar.execution \
   --hidden-import sonar.costs \
+  --hidden-import sonar.playmaker.results \
+  --hidden-import sonar.playmaker.ratings \
+  --hidden-import sonar.playmaker.poisson \
+  --hidden-import sonar.playmaker.scoring \
   --exclude-module PySide6.QtWebEngineCore \
   --exclude-module PySide6.QtWebEngineWidgets \
   --exclude-module PySide6.Qt3DCore \

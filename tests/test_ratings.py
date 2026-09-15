@@ -68,13 +68,6 @@ def test_margin_total_and_result():
     assert game("A", "B", 2, 2).result == 0.5
 
 
-def test_a_date_range_is_walked_in_chunks_that_cover_it():
-    spans = list(res._chunks(dt.date(2026, 1, 1), dt.date(2026, 3, 15), days=30))
-    assert spans[0][0] == dt.date(2026, 1, 1)
-    assert spans[-1][1] == dt.date(2026, 3, 15)
-    for (_, end), (start, _) in zip(spans, spans[1:]):
-        assert start == end + dt.timedelta(days=1)   # no gap, no overlap
-
 
 def test_a_sport_with_no_feed_says_so_rather_than_failing_obscurely():
     with pytest.raises(ValueError, match="no results feed"):
@@ -427,31 +420,55 @@ def _serve(monkeypatch, sizes):
     return calls
 
 
-def test_a_window_that_comes_back_capped_is_split(monkeypatch):
-    """ESPN truncates rather than paginating, and does not say so. A response
-    at exactly the cap has probably lost games, and silently short history is
-    worse than slow history — it fits a rating on half a season."""
-    calls = _serve(monkeypatch, [res.PAGE_LIMIT, 2, 2])
-    got = res.fetch_range("nba", DAY, DAY + dt.timedelta(days=60), pause=0)
-    assert len(calls) == 3, "the capped window should have been halved"
-    assert len(got) == 4
 
 
-def test_an_uncapped_window_is_left_alone(monkeypatch):
+def test_a_whole_year_is_asked_for_before_months_are(monkeypatch):
+    """A sport here can be fourteen competitions. Thirty-day windows made six
+    years of international football over a thousand requests; a year per league
+    is eighty-four, and the sparse competitions never need months at all."""
     calls = _serve(monkeypatch, [3])
-    res.fetch_range("nba", DAY, DAY + dt.timedelta(days=60), pause=0)
+    res.fetch_range("nba", dt.date(2025, 3, 1), dt.date(2025, 4, 1), pause=0)
     assert len(calls) == 1
+    assert "dates=2025" in calls[0]
 
 
-def test_splitting_gives_up_rather_than_recursing_forever(monkeypatch):
-    """A day that genuinely holds more than the cap cannot be split further."""
-    calls = _serve(monkeypatch, [res.PAGE_LIMIT] * 2000)
-    span = 200
-    res.fetch_range("nba", DAY, DAY + dt.timedelta(days=span), pause=0)
-    # Each 90-day chunk halves at most MAX_SPLITS deep, so it can make at most
-    # 2**(MAX_SPLITS+1) - 1 requests. Anything beyond that is runaway recursion.
-    chunks = -(-(span + 1) // res.CHUNK_DAYS)
-    assert len(calls) <= chunks * (2 ** (res.MAX_SPLITS + 1) - 1)
+def test_a_capped_year_falls_back_to_months(monkeypatch):
+    """ESPN truncates and says nothing — no cursor, no total, no error. A
+    response holding exactly the limit has lost fixtures, and short history
+    that looks healthy is worse than slow history."""
+    calls = _serve(monkeypatch, [res.PAGE_LIMIT] + [1] * 12)
+    res.fetch_range("nba", dt.date(2025, 1, 1), dt.date(2025, 12, 31), pause=0)
+    assert len(calls) == 13, "one year, then its twelve months"
+    assert "dates=202501" in calls[1] and "dates=202512" in calls[12]
+
+
+def test_results_outside_the_window_asked_for_are_dropped(monkeypatch):
+    """A year is fetched whole, so it carries fixtures either side of the
+    range the caller wanted."""
+    def fake_urlopen(request, timeout=None):
+        return _FakeResponse({"events": [
+            {"date": f"2025-0{m}-15T00:00Z", "competitions": [{
+                "date": f"2025-0{m}-15T00:00Z",
+                "status": {"type": {"completed": True}},
+                "competitors": [
+                    {"homeAway": "home", "score": 3, "team": {"abbreviation": f"H{m}"}},
+                    {"homeAway": "away", "score": 1, "team": {"abbreviation": f"A{m}"}},
+                ]}]} for m in (1, 5, 9)]})
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    got = res.fetch_range("nba", dt.date(2025, 4, 1), dt.date(2025, 6, 30), pause=0)
+    assert [g.date.month for g in got] == [5]
+
+
+def test_a_400_is_taken_as_an_empty_window_not_an_error(monkeypatch):
+    """A league with nothing in a given year answers 400. Retrying is pointless
+    and treating it as a failure would lose the years around it."""
+    import urllib.error
+    slept = []
+    monkeypatch.setattr("time.sleep", lambda s: slept.append(s))
+    monkeypatch.setattr("urllib.request.urlopen", lambda r, timeout=None: (_ for _ in ()).throw(
+        urllib.error.HTTPError(r.full_url, 400, "Bad Request", {}, None)))
+    assert res.fetch_range("nba", DAY, DAY, pause=0) == []
+    assert slept == [], "a 400 should not be retried"
 
 
 def test_a_sport_with_many_leagues_fetches_each_of_them(monkeypatch):

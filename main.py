@@ -97,6 +97,24 @@ def selftest() -> int:
         problems.append("sonar.execution/sonar.costs are not in this build — "
                         "add --hidden-import for them in build_app.sh")
 
+    # Same trap, second time. The Playmaker models are reached only when
+    # someone opens that tab and asks for a rating, so nothing imports them at
+    # start-up and PyInstaller cannot see them. Left out, the tab would look
+    # fine until the moment it was used — in the packaged build only.
+    try:
+        from sonar import playmaker
+        from sonar.playmaker import poisson, ratings, results, scoring  # noqa: F401
+        rated = [s.key for s in playmaker.list_sports() if s.has_model]
+        unfed = [s.key for s in playmaker.list_sports() if not s.has_results]
+        print(f"  playmaker:       {len(playmaker.list_sports())} sports, "
+              f"{len(rated)} rated ({', '.join(rated)})")
+        if unfed:
+            print(f"                   no results feed: {', '.join(unfed)}")
+    except ImportError as exc:
+        print(f"  playmaker:       MISSING ({exc})")
+        problems.append("sonar.playmaker's model modules are not in this build "
+                        "— add --hidden-import for them in build_app.sh")
+
     if problems:
         print("\nFAILED:")
         for p in problems:
