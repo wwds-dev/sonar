@@ -6,6 +6,23 @@
 
 ---
 
+## Open
+
+- [ ] `P2` `bug` `@ai` **The window tests wedge about one run in three.**
+      Sampling a hung process shows the main thread in `PyThread_release_lock`
+      waiting on a pthread mutex that a torn-down Qt thread never released —
+      a deadlock below Python, so `faulthandler_timeout` cannot fire (the dump
+      needs the lock that is held). `./run-tests.sh` bounds it from outside the
+      process and samples the stack before killing, which is the mitigation, not
+      the fix. Ruled out already, so nobody repeats the search: the network
+      (blocked, still hangs), shared state (`tmp_path`, still hangs), the poll
+      thread (no-op'd, still hangs), undrained `deleteLater` (drained, got
+      *worse* — 3/5), and cross-file window accumulation (each file in its own
+      process, 1/5). Next thing to try is a session-scoped window fixture, or
+      `pytest-forked`. The app itself is unaffected.
+
+---
+
 ## v2 — shipped
 
 Everything below landed. What remains in v2 is two items that need an account
