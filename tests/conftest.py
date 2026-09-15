@@ -16,8 +16,6 @@ built. A test that wants a fetch to succeed has to say so by patching the layer
 it is exercising, which is what the provider tests already do.
 """
 
-import faulthandler
-import os
 import socket
 import urllib.request
 
@@ -112,20 +110,15 @@ def no_thread_termination(monkeypatch):
     monkeypatch.setattr(QThread, "terminate", refuse)
 
 
-#: Abort the run and dump every thread rather than hanging. A Qt thread that
-#: deadlocks the interpreter cannot be interrupted from Python, so the only way
-#: out is a hard abort — but an abort that prints where each thread is stuck is
-#: worth far more than a process that sits at 0.9% CPU until someone notices.
-WATCHDOG_S = float(os.environ.get("SONAR_TEST_WATCHDOG", "120"))
-
-
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "network: test genuinely needs a live network connection")
-    if WATCHDOG_S > 0:
-        faulthandler.enable()
-        faulthandler.dump_traceback_later(WATCHDOG_S, exit=True)
 
 
-def pytest_unconfigure(config):
-    faulthandler.cancel_dump_traceback_later()
+#: The hang guard is `faulthandler_timeout` in pyproject.toml, not here. Setting
+#: it from `pytest_configure` with `faulthandler.dump_traceback_later()` looks
+#: equivalent and is not: pytest's own faulthandler plugin cancels any pending
+#: dump around each test and in `pytest_exception_interact`, so a session-wide
+#: timer set that way is disarmed the first time anything raises. It fired
+#: correctly on a one-test reproduction and then failed to fire on the full
+#: suite, which is exactly the shape of bug a guard must not have.

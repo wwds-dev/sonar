@@ -15,3 +15,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["sonar"]
+
+[tool.pytest.ini_options]
+# Abort a test that has been running for a minute and print every thread's
+# stack. The whole suite takes about fifteen seconds, so anything near this is
+# wedged, not slow — and a Qt thread that deadlocks the interpreter cannot be
+# interrupted from Python, so a hard abort with a traceback is the only way out.
+# One run here sat blocked for 5h50m before anyone noticed; see tests/conftest.py.
+#
+# This is pytest's own faulthandler plugin rather than a call in conftest.
+# Calling faulthandler.dump_traceback_later() directly does not survive: the
+# plugin cancels any pending dump in pytest_exception_interact and around each
+# test, so a session-wide timer set in pytest_configure is silently disarmed.
+faulthandler_timeout = 60
+faulthandler_exit_on_timeout = true
