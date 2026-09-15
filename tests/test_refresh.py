@@ -81,3 +81,26 @@ def test_repeated_refresh_is_stable(window):
                             "lattice": {}, "market": {}, "portfolio": {}}
     for _ in range(5):
         window.refresh()
+
+
+def test_the_wire_never_fetches_from_the_ui_thread(window, monkeypatch):
+    """The blank-window bug, pinned down.
+
+    With both caches aged out, rendering the Wire must still not go near the
+    network. If it does, the event loop stops for up to half a minute and the
+    window turns into a white rectangle that ignores the close button — which
+    is what a user saw and reported.
+    """
+    from sonar.events import EventsCache
+    from sonar.news import NewsCache
+
+    attempts = []
+    monkeypatch.setattr(NewsCache, "_refresh", lambda self: attempts.append("news"))
+    monkeypatch.setattr(EventsCache, "refresh",
+                        lambda self, *a, **k: attempts.append("events"))
+    window.live.news._at = 0.0
+    window.live.events._at = 0.0
+
+    window._refresh_wire()
+
+    assert attempts == [], f"the UI thread tried to fetch: {attempts}"

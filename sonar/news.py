@@ -169,11 +169,29 @@ class NewsCache:
         self._headlines: list[Headline] = []
 
     def headlines(self) -> list[Headline]:
+        """Fresh headlines, fetching if the cache has aged out.
+
+        **Never call this from the UI thread.** A refresh is twenty-four HTTP
+        GETs at a ten-second timeout each; eight at a time, that is up to half a
+        minute during which the caller cannot do anything else. On the UI thread
+        that means the event loop stops, the window stops painting, and SONAR
+        looks like it has crashed. Use :meth:`cached` there — the poll thread
+        keeps this warm.
+        """
         now = time.time()
         if now - self._at > self.ttl or not self._headlines:
             self._refresh()
             self._at = now
         return self._headlines
+
+    def cached(self) -> list[Headline]:
+        """Whatever the last refresh produced. Never fetches, never blocks.
+
+        Empty until the poll thread's first pass, which is the correct thing to
+        show for a second — an empty panel that repaints beats a full one that
+        arrives thirty seconds late behind a frozen window.
+        """
+        return list(self._headlines)
 
     def _refresh(self) -> None:
         out: list[Headline] = []

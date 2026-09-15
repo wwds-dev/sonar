@@ -149,7 +149,19 @@ class EventsCache:
         return list(self._listings)
 
     def payload(self) -> dict:
+        """The calendar, fetching if it has aged out.
+
+        **Not for the UI thread** — see :meth:`sonar.news.NewsCache.headlines`
+        for why. :meth:`cached_payload` is the non-blocking one.
+        """
         self._ensure()
+        return self._build()
+
+    def cached_payload(self) -> dict:
+        """The calendar as last fetched. Never fetches, never blocks."""
+        return self._build()
+
+    def _build(self) -> dict:
         return {
             "generated": int(self._at),
             "n_earnings": len(self._earnings),

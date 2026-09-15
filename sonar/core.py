@@ -127,6 +127,13 @@ class Live:
             heads = self.news.headlines()
         except Exception:
             heads = []
+        # Warm the calendar here too. Nothing on this thread used to touch it,
+        # so the first Wire render after its six-hour TTL expired did the fetch
+        # on the UI thread — the one place it must never happen.
+        try:
+            self.events.payload()
+        except Exception:
+            pass
         hz, profile = self.horizon, self.risk
         # The multi-market Polymarket board was removed: it mirrored the
         # crowd's own prices with no independent model behind them. Dropping it

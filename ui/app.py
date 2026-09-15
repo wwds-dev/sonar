@@ -830,10 +830,25 @@ class MainWindow(QMainWindow):
         self.alert_list.setText("\n".join(out))
 
     def _refresh_wire(self) -> None:
+        """Render the Wire from what the poll thread has already fetched.
+
+        These two reads used to be `news.headlines()` and `events.payload()`,
+        both of which fetch when their cache ages out — twenty-four feeds at a
+        ten-second timeout, and a calendar walk, on the *UI thread*. Whichever
+        of the two threads reached an expired cache first did the work, so every
+        eight minutes there was a chance the window froze for up to half a
+        minute: the event loop stopped, nothing repainted, and SONAR showed a
+        blank white rectangle that ignored the close button.
+
+        The cache-only accessors cannot fetch. If the poll thread has not
+        filled them yet the panel is briefly empty, which is the right
+        trade — an empty panel that repaints beats a full one behind a frozen
+        window.
+        """
         self._refresh_alerts()
         try:
-            heads = self.live.news.headlines()
-            ev = self.live.events.payload()
+            heads = self.live.news.cached()
+            ev = self.live.events.cached_payload()
         except Exception:
             return
         # The asset scan has to be part of this key. Suggestions are built from
