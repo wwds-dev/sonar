@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
 
 from sonar import horizon as hz_mod
 from sonar import llm, paths, playmaker, risk as risk_mod
+from sonar.playmaker import devig as pm_devig, staking as pm_staking
 from sonar.core import Live
 from sonar import assets as asset_mod
 from sonar import news as news_mod
@@ -1362,9 +1363,10 @@ class MainWindow(QMainWindow):
     def _playmaker_tab(self) -> QWidget:
         """Prop-bet analysis. NFL today; the sport picker is the extension point.
 
-        Same division as the rest of SONAR: `sonar.playmaker` does the arithmetic
-        (implied probability, EV, Kelly) and the model is asked only for the
-        narrative on top of it. Paper analysis — nothing here places a wager.
+        The arithmetic is local and instant — devigging and the cross-book
+        screen need no network and no model. The LLM read runs afterwards on a
+        thread and is commentary only: `sonar.playmaker.staking` refuses to let
+        a narrative estimate size a stake. Paper analysis; nothing places a wager.
         """
         w = QWidget()
         lay = QVBoxLayout(w)
@@ -1387,8 +1389,6 @@ class MainWindow(QMainWindow):
         self.playmaker_subject.setPlaceholderText("Player or team")
         self.playmaker_line = QLineEdit()
         self.playmaker_line.setPlaceholderText("Over 252.5")
-        self.playmaker_odds = QLineEdit()
-        self.playmaker_odds.setPlaceholderText("-110")
         self.playmaker_context = QLineEdit()
 
         fl.addWidget(label("SPORT", "faint", theme.mono(8)), 0, 0)
@@ -1398,13 +1398,29 @@ class MainWindow(QMainWindow):
         fl.addWidget(self.prop_box, 1, 1)
         fl.addWidget(self.playmaker_subject, 1, 2)
         fl.addWidget(label("LINE", "faint", theme.mono(8)), 2, 0)
-        fl.addWidget(label("PRICE", "faint", theme.mono(8)), 2, 1)
-        fl.addWidget(label("CONTEXT", "faint", theme.mono(8)), 2, 2)
+        fl.addWidget(label("CONTEXT", "faint", theme.mono(8)), 2, 1)
         fl.addWidget(self.playmaker_line, 3, 0)
-        fl.addWidget(self.playmaker_odds, 3, 1)
-        fl.addWidget(self.playmaker_context, 3, 2)
+        fl.addWidget(self.playmaker_context, 3, 1, 1, 2)
         fl.setColumnStretch(2, 1)
         lay.addWidget(form)
+
+        books_p = panel()
+        bl = QVBoxLayout(books_p)
+        bl.setContentsMargins(14, 12, 14, 12)
+        bl.addWidget(label("PRICES BY BOOK", "faint", theme.mono(8)))
+        bl.addWidget(label(
+            "One book per line: its name, then its price for every side of the "
+            "market. Both sides are required — a margin is how far a market's "
+            "prices sum past certainty, so a single price cannot reveal one. "
+            "Three books or more turns on the outlier screen.",
+            "muted", theme.mono(9), wrap=True))
+        self.playmaker_books = QPlainTextEdit()
+        self.playmaker_books.setPlaceholderText(
+            "DraftKings  -150  +130\nFanDuel     -155  +132\n"
+            "Pinnacle    -148  +128\nBetMGM      -150  +210")
+        self.playmaker_books.setFixedHeight(84)
+        bl.addWidget(self.playmaker_books)
+        lay.addWidget(books_p)
 
         data_p = panel()
         dl = QVBoxLayout(data_p)
@@ -1418,7 +1434,7 @@ class MainWindow(QMainWindow):
         dl.addWidget(self.playmaker_data)
 
         row = QHBoxLayout()
-        self.playmaker_btn = QPushButton("Analyse prop")
+        self.playmaker_btn = QPushButton("Price it")
         self.playmaker_btn.clicked.connect(self._playmaker_analyse)
         row.addWidget(self.playmaker_btn)
         self.playmaker_status = label("", "faint", theme.mono(9))
@@ -1432,13 +1448,13 @@ class MainWindow(QMainWindow):
         nl.setContentsMargins(14, 12, 14, 12)
         nl.setHorizontalSpacing(26)
         self.playmaker_stats = {}
-        cells = [("lean", "The model's direction, or NO EDGE"),
-                 ("confidence", "The model's own stated confidence — not a probability"),
-                 ("model win %", "The model's estimated win probability"),
-                 ("price implies", "Break-even win rate the odds demand, vig included"),
-                 ("edge", "Model probability minus what the price implies"),
-                 ("EV / unit", "Expected value per unit staked at this price"),
-                 ("¼ kelly", "A quarter of the full-Kelly stake, as % of bankroll")]
+        cells = [("books", "How many books were read"),
+                 ("margin", "The first book's overround — what it charges to take the bet"),
+                 ("fair", "Consensus probability of the first side, margin removed (Shin)"),
+                 ("book spread", "How far the books disagree about that, one standard error"),
+                 ("best edge", "Largest gap between one book's price and its peers' consensus"),
+                 ("EV / unit", "Expected value per unit staked on that best price"),
+                 ("stake", "Kelly at the low end of the interval, capped — 0 when nothing qualifies")]
         for i, (k, tip) in enumerate(cells):
             st = Stat(k, tip)
             self.playmaker_stats[k] = st
@@ -1459,29 +1475,130 @@ class MainWindow(QMainWindow):
             self.prop_box.addItem(pt.label, pt.key)
         self.playmaker_context.setPlaceholderText(sport.context_hint)
 
+    # -- the arithmetic half: local, instant, no model involved --------------- #
+    def _playmaker_price(self) -> tuple[list, str]:
+        """Parse the book table and render everything the numbers alone support."""
+        for key in self.playmaker_stats:
+            self.playmaker_stats[key].set("—")
+        text = self.playmaker_books.toPlainText().strip()
+        if not text:
+            return [], ("<b>No prices yet.</b><br>Enter at least one book's prices "
+                        "for both sides of the market. Three books turns on the "
+                        "cross-book screen, which is the part with a track record.")
+        try:
+            quotes = pm_devig.parse_quotes(text)
+        except ValueError as exc:
+            self.playmaker_status.setText(str(exc))
+            return [], f"<b>Could not read the prices.</b><br>{exc}"
+
+        self.playmaker_stats["books"].set(str(len(quotes)))
+        first = quotes[0]
+        self.playmaker_stats["margin"].set(f"{pm_devig.overround(first.odds)*100:.2f}%")
+
+        blocks = [self._devig_html(first)]
+
+        cons = pm_devig.consensus(quotes)
+        self.playmaker_stats["fair"].set(f"{cons.probability[0]*100:.1f}%")
+        se = cons.standard_error(0)
+        self.playmaker_stats["book spread"].set(
+            "—" if se != se else f"±{se*100:.2f} pts")
+
+        opportunities = []
+        if len(quotes) >= 3:
+            opportunities = pm_devig.screen(quotes, min_edge=0.005)
+            blocks.append(self._screen_html(quotes, cons, opportunities))
+        else:
+            blocks.append(
+                "<b>CROSS-BOOK SCREEN</b><br>"
+                f"Needs three books; {len(quotes)} entered. This is the one "
+                "approach here with a published track record — Kaunitz, Zhong "
+                "&amp; Kreiner (2017) found real profit betting nothing but "
+                "outliers against a multi-book consensus. With one or two books "
+                "there is no consensus to be an outlier against.")
+
+        if opportunities:
+            best = opportunities[0]
+            est = pm_staking.from_consensus(
+                pm_devig.consensus(quotes, exclude=best.book), best.outcome)
+            assessment = pm_staking.assess(est, best.odds, fair=best.fair)
+            self.playmaker_stats["best edge"].set(f"{best.edge*100:+.2f} pts")
+            self.playmaker_stats["EV / unit"].set(f"{best.expected_value:+.3f}")
+            self.playmaker_stats["stake"].set(f"{assessment.fraction*100:.2f}%")
+            blocks.append(
+                "<b>STAKE</b><br>"
+                f"{assessment.note}.<br>"
+                f"Estimate {est.probability*100:.1f}% "
+                f"({est.low*100:.1f}–{est.high*100:.1f}%), from {est.basis}.")
+        elif len(quotes) >= 3:
+            self.playmaker_stats["best edge"].set("none")
+            self.playmaker_stats["EV / unit"].set("—")
+            self.playmaker_stats["stake"].set("0.00%")
+        return opportunities, "<br><br>".join(blocks)
+
+    def _devig_html(self, quote) -> str:
+        """The three methods side by side — the argument for not using the usual one."""
+        rows = []
+        for name, probs in pm_devig.all_methods(quote.odds).items():
+            cells = "".join(f"<td align=right>&nbsp;&nbsp;{p*100:.2f}%</td>" for p in probs)
+            mark = " &larr; used" if name == pm_devig.DEFAULT_METHOD else ""
+            rows.append(f"<tr><td>{name}{mark}</td>{cells}</tr>")
+        sides = "".join(f"<td align=right>&nbsp;&nbsp;{o:+d}</td>" for o in quote.odds)
+        return (f"<b>FAIR PRICE — {quote.book}</b><br>"
+                "<table cellspacing=0 cellpadding=2>"
+                f"<tr><td><i>price</i></td>{sides}</tr>{''.join(rows)}</table>"
+                "The three are all defensible ways to remove the same margin, and "
+                "they disagree — most on longshots. The proportional method every "
+                "calculator quotes is the one comparative studies rank last; it "
+                "reads a favourite as cheaper and a longshot as dearer than it is.")
+
+    def _screen_html(self, quotes, cons, opportunities) -> str:
+        """Which book is out of line with the others, and by how much."""
+        if not opportunities:
+            return ("<b>CROSS-BOOK SCREEN</b><br>"
+                    f"{len(quotes)} books, none materially out of line with the "
+                    "others. That is the common and correct answer — the market "
+                    "agreeing with itself is not a missed opportunity.")
+        rows = []
+        for o in opportunities:
+            flag = " <b>outlier</b>" if o.is_outlier else ""
+            z = "—" if o.z != o.z else f"{o.z:.1f}&sigma;"
+            rows.append(
+                f"<tr><td>{o.book}{flag}</td><td align=right>&nbsp;&nbsp;side {o.outcome+1}</td>"
+                f"<td align=right>&nbsp;&nbsp;{o.odds:+d}</td>"
+                f"<td align=right>&nbsp;&nbsp;{o.fair*100:.1f}%</td>"
+                f"<td align=right>&nbsp;&nbsp;{o.edge*100:+.2f}</td>"
+                f"<td align=right>&nbsp;&nbsp;{o.expected_value:+.3f}</td>"
+                f"<td align=right>&nbsp;&nbsp;{z}</td></tr>")
+        return ("<b>CROSS-BOOK SCREEN</b><br>"
+                "<table cellspacing=0 cellpadding=2>"
+                "<tr><td><i>book</i></td><td align=right><i>&nbsp;&nbsp;side</i></td>"
+                "<td align=right><i>&nbsp;&nbsp;price</i></td>"
+                "<td align=right><i>&nbsp;&nbsp;peers say</i></td>"
+                "<td align=right><i>&nbsp;&nbsp;edge</i></td>"
+                "<td align=right><i>&nbsp;&nbsp;EV</i></td>"
+                "<td align=right><i>&nbsp;&nbsp;z</i></td></tr>"
+                f"{''.join(rows)}</table>"
+                "Each row's peers exclude that row's own book, so a price cannot "
+                "vote for itself. This says nothing about who wins — only that "
+                "one book disagrees with the rest.")
+
     def _playmaker_analyse(self) -> None:
-        odds_text = self.playmaker_odds.text().strip()
-        odds = None
-        if odds_text:
-            try:
-                odds = int(odds_text.replace("+", ""))
-                if odds_text.startswith("+"):
-                    odds = abs(odds)
-            except ValueError:
-                self.playmaker_status.setText("price must be american odds, e.g. -110")
-                return
+        self.playmaker_status.setText("")
+        opportunities, html = self._playmaker_price()
+        self.playmaker_out.setHtml(html)
+        self._playmaker_html = html
 
         sport = playmaker.get_sport(self.sport_box.currentData())
+        books = self.playmaker_books.toPlainText().strip()
         prompt = playmaker.build_prompt(
             sport,
             self.playmaker_subject.text().strip(),
             self.prop_box.currentText(),
             self.playmaker_line.text().strip(),
-            odds_text,
+            books.splitlines()[0] if books else "",
             self.playmaker_context.text().strip(),
             self.playmaker_data.toPlainText(),
         )
-        self._playmaker_odds = odds
         self.playmaker_btn.setEnabled(False)
         self.playmaker_status.setText("reading…")
         self.playmaker_thread = PropThread(playmaker.SYSTEM_PROMPT, prompt, self)
@@ -1489,41 +1606,40 @@ class MainWindow(QMainWindow):
         self.playmaker_thread.start()
 
     def _playmaker_done(self, text: str, error: str) -> None:
+        """Attach the model's read to the numbers — as commentary, not as input.
+
+        Nothing here touches the stat cells. The percentage the model states is
+        shown and explicitly marked unusable for sizing; `staking.Estimate`
+        enforces that in the arithmetic, this only explains it.
+        """
         self.playmaker_btn.setEnabled(True)
         if error:
             self.playmaker_status.setText(error)
             return
         self.playmaker_status.setText("")
         result = playmaker.parse_analysis(text)
-        odds = getattr(self, "_playmaker_odds", None)
+        est = pm_staking.from_narrative(result.win_probability, result.confidence)
 
-        self.playmaker_stats["lean"].set(result.lean or "—")
-        self.playmaker_stats["confidence"].set(result.confidence or "—")
-        prob = result.win_probability
-        self.playmaker_stats["model win %"].set(f"{prob*100:.1f}%" if prob is not None else "—")
-
-        if odds is not None:
-            implied = playmaker.implied_probability(odds)
-            self.playmaker_stats["price implies"].set(f"{implied*100:.1f}%")
-            if prob is not None:
-                edge = playmaker.edge_versus_market(prob, odds)
-                ev = playmaker.expected_value(prob, odds)
-                self.playmaker_stats["edge"].set(f"{edge*100:+.1f} pts")
-                self.playmaker_stats["EV / unit"].set(f"{ev:+.3f}")
-                self.playmaker_stats["¼ kelly"].set(f"{playmaker.kelly_fraction(prob, odds)/4*100:.2f}%")
-            else:
-                for k in ("edge", "EV / unit", "¼ kelly"):
-                    self.playmaker_stats[k].set("—")
+        head = ["<b>MODEL READ — commentary only</b>"]
+        if est is not None:
+            head.append(
+                f"States {est.probability*100:.1f}% ({result.lean or 'no lean'}, "
+                f"confidence {result.confidence or 'unstated'}). "
+                "Not used for the edge, the EV or the stake above: a language "
+                "model's percentage is not a measurement, and feeding one to "
+                "Kelly is the defect this tab was rebuilt to remove.")
         else:
-            for k in ("price implies", "edge", "EV / unit", "¼ kelly"):
-                self.playmaker_stats[k].set("—")
+            head.append(f"Lean {result.lean or '—'}, "
+                        f"confidence {result.confidence or '—'}; no figure stated.")
 
-        blocks = []
+        blocks = ["<br>".join(head)]
         for name in playmaker.SECTIONS:
             body = result.sections.get(name)
             if body:
                 blocks.append(f"<b>{name}</b><br>{body.replace(chr(10), '<br>')}")
-        self.playmaker_out.setHtml("<br><br>".join(blocks) or text.replace("\n", "<br>"))
+        narrative = "<br><br>".join(blocks) or text.replace("\n", "<br>")
+        before = getattr(self, "_playmaker_html", "")
+        self.playmaker_out.setHtml(f"{before}<br><br><hr>{narrative}" if before else narrative)
 
 
     def _macro_tab(self) -> QWidget:
