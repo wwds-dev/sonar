@@ -154,10 +154,10 @@ def run_app() -> int:
     class SonarApp(QApplication):
         """Clicking the Dock icon brings the window back.
 
-        Closing now quits, so this is no longer the escape hatch it was built
-        as — but macOS can still hide an app's windows (Cmd-H), and a running
-        process with nothing on screen needs a way back. macOS sends
-        ApplicationActivate on a Dock click; this makes that the way in.
+        Because the close button hides rather than quits, a user who cannot
+        find the menu-bar item would otherwise have a running process and no
+        way to reach it. macOS sends ApplicationActivate on a Dock click; this
+        makes that the second, obvious way back in.
         """
 
         window = None
@@ -189,11 +189,8 @@ def run_app() -> int:
     # route out — tray Quit, Cmd-Q, logout — which closeEvent alone does not.
     app.aboutToQuit.connect(win.shutdown)
 
-    # The menu-bar item is a readout and a second Quit, not a lifeline: closing
-    # the window quits outright. `setQuitOnLastWindowClosed(False)` stays so
-    # that a transient window disappearing cannot end the process on its own —
-    # MainWindow.closeEvent calls quit() explicitly instead, which is the only
-    # route that should.
+    # The engine must outlive the window — closing it would abandon a priced
+    # position before it settles. Only the tray's Quit ends the process.
     if QSystemTrayIcon.isSystemTrayAvailable():
         app.setQuitOnLastWindowClosed(False)
         tray = Tray(win, app)

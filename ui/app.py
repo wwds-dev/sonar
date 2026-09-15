@@ -2106,25 +2106,41 @@ class MainWindow(QMainWindow):
             thread.wait(500)
 
     def closeEvent(self, e) -> None:
-        """Close means quit.
+        """Hide, don't quit — see ui/tray.py for why.
 
-        This used to hide to the menu bar and leave the engine running, on the
-        reasoning that closing mid-hour abandons a priced position before it
-        settles. The reasoning is sound and the behaviour was still wrong: on
-        macOS the red button closes, and an app that keeps running after it
-        reads as an app that has ignored you. It was reported twice as a bug,
-        which is the answer to whether the notification explaining it was
-        enough.
+        Closing the window while the engine is mid-hour would abandon a priced
+        position before it settles, which is exactly the data the app exists to
+        collect. Quitting is available, but it is a deliberate act from the
+        menu bar rather than the side effect of a close button.
 
-        Uptime has a proper door. `sonar --headless` runs the same engine with
-        no Qt at all, which is what `sonar/core.py` was split out for — the
-        equity curve needs a daemon, not a hidden window.
+        This has been reported as broken twice, and **both times the design was
+        fine and the hide was not**. Once because leaving a full-screen Space
+        re-activated the app after the deferred hide had run, so the Dock
+        handler reopened the window it had just closed (`reopen_allowed`). Once
+        because the UI thread was blocked in a network fetch, so the event loop
+        never ran and the window sat on screen painting nothing
+        (`tests/test_ui_thread.py`).
+
+        So the thing to check when someone says the close button does nothing is
+        whether the window actually became invisible — not whether it should
+        have quit. `tests/test_window_close.py` asserts it does, which nothing
+        did before.
         """
-        self.timer.stop()
-        if self.tray is not None:
-            self.tray.hide()
-        e.accept()
-        QApplication.instance().quit()
+        if getattr(self, "allow_close", False) or self.tray is None:
+            self.timer.stop()
+            e.accept()
+            return
+        e.ignore()
+        if self.isFullScreen():
+            # Hiding a full-screen window leaves its macOS Space behind with
+            # nothing in it — the user closes SONAR and is left staring at a
+            # black screen. Drop back to a normal window first, and let the
+            # Space transition finish before actually hiding.
+            self.showNormal()
+            QTimer.singleShot(FULLSCREEN_EXIT_MS, self._hide_now)
+        else:
+            self._hide_now()
+        self.tray.note_hidden()
 
     def _fit_to_screen(self) -> None:
         """Open at the preferred size, or the screen's, whichever is smaller.
@@ -2143,12 +2159,7 @@ class MainWindow(QMainWindow):
         self.resize(want_w, want_h)
 
     def _hide_now(self) -> None:
-        """Hide, and remember when — see :meth:`reopen_allowed`.
-
-        No longer reached from the close button, which quits. Still reached
-        when macOS hides the app (Cmd-H), which is the case `reopen_allowed`
-        was written for.
-        """
+        """Hide, and remember when — see :meth:`reopen_allowed`."""
         self._hidden_at = time.monotonic()
         self.hide()
 

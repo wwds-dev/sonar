@@ -1,4 +1,4 @@
-"""Tests for the close button: it quits, and the window really goes away.
+"""Tests for the close button actually closing the window.
 
 The reported symptom was a close button that did nothing: click it and the
 window stayed on screen. It was not the hide failing. Leaving macOS full screen
@@ -76,8 +76,18 @@ def test_the_guard_uses_a_monotonic_clock():
 
 
 # --------------------------------------------------------------------------- #
-# Close means quit
+# The window has to actually disappear
 # --------------------------------------------------------------------------- #
+class FakeTray:
+    """Enough tray for closeEvent. The real one needs a menu bar."""
+
+    def __init__(self):
+        self.notices = 0
+
+    def note_hidden(self):
+        self.notices += 1
+
+
 @pytest.fixture
 def window(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
@@ -87,53 +97,61 @@ def window(tmp_path, monkeypatch):
     monkeypatch.setattr(worker.PollThread, "run", lambda self: None)
     from sonar.core import Live
 
-    app = QApplication.instance() or QApplication([])
+    QApplication.instance() or QApplication([])
     win = MainWindow(Live())
+    win.tray = FakeTray()
+    win.show()
     yield win
+    win.allow_close = True
     win.shutdown()
 
 
-def test_closing_the_window_quits_the_app(window, monkeypatch):
-    """Reported twice: close it and it is still running.
+def test_closing_hides_the_window(window):
+    """The property nothing checked before, and the one that broke twice.
 
-    It used to hide to the menu bar deliberately, so the engine could keep
-    settling hours. Sound reasoning, wrong behaviour — on macOS the red button
-    closes, and an app that survives it reads as one that ignored you. Uptime
-    lives in `sonar --headless` now.
+    Both reports of "the close button does nothing" were this — the window
+    staying on screen — not a disagreement about whether it should quit.
     """
     from PySide6.QtGui import QCloseEvent
-    from PySide6.QtWidgets import QApplication
 
-    quits = []
-    monkeypatch.setattr(QApplication.instance(), "quit", lambda: quits.append(1))
+    assert window.isVisible()
+    window.closeEvent(QCloseEvent())
+    assert not window.isVisible(), "the window is still on screen after a close"
+
+
+def test_closing_does_not_quit(window):
+    """Deliberate: the engine keeps settling hours in the background, and the
+    equity curve only means anything if it does. Quit lives in the menu bar."""
+    from PySide6.QtGui import QCloseEvent
 
     event = QCloseEvent()
     window.closeEvent(event)
-
-    assert event.isAccepted(), "the close was refused — the window would stay"
-    assert quits == [1], "the window closed but the app kept running"
+    assert not event.isAccepted(), "the close was accepted — Qt would tear down the app"
 
 
-def test_closing_stops_the_refresh_timer(window, monkeypatch):
-    """A timer still firing into a torn-down window is how the blank-window
-    class of bug starts."""
+def test_the_first_close_explains_where_the_window_went(window):
     from PySide6.QtGui import QCloseEvent
-    from PySide6.QtWidgets import QApplication
 
-    monkeypatch.setattr(QApplication.instance(), "quit", lambda: None)
     window.closeEvent(QCloseEvent())
-    assert not window.timer.isActive()
+    assert window.tray.notices == 1
 
 
-def test_closing_does_not_depend_on_a_tray_existing(window, monkeypatch):
-    """The tray is set by main.py after construction, so it is None in tests and
-    in --headless. Close must still quit either way."""
+def test_a_deliberate_quit_is_allowed_through(window):
+    """The menu bar's Quit sets allow_close, and that must not be hidden away."""
     from PySide6.QtGui import QCloseEvent
-    from PySide6.QtWidgets import QApplication
 
-    quits = []
-    monkeypatch.setattr(QApplication.instance(), "quit", lambda: quits.append(1))
+    window.allow_close = True
+    event = QCloseEvent()
+    window.closeEvent(event)
+    assert event.isAccepted()
+
+
+def test_a_window_with_no_tray_closes_for_real(window):
+    """--headless and the test suite have no tray. With nowhere to hide to,
+    refusing the close would leave a window nobody can shut."""
+    from PySide6.QtGui import QCloseEvent
+
     window.tray = None
     event = QCloseEvent()
     window.closeEvent(event)
-    assert event.isAccepted() and quits == [1]
+    assert event.isAccepted()

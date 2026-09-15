@@ -478,19 +478,14 @@ ruled out.
 SONAR is a daemon wearing an app: the equity curve only means something if positions settle on
 the hours they were priced for. So two things protect that.
 
-**The close button quits.** It used to hide to the menu bar, keeping the engine alive on the
-reasoning above. The reasoning is right and the behaviour was still wrong: on macOS the red
-button closes, and an app that survives it reads as an app that has ignored you. It was
-reported as a bug twice, which answers whether the notification explaining it was enough.
+**The close button hides.** The window disappears, the engine keeps running, and the menu-bar
+item shows bankroll and open position. Quitting is a separate, deliberate menu action — and
+clicking the Dock icon brings the window back if the menu-bar item is hard to find.
 
-Uptime belongs to the daemon, not to a hidden window — which is what `sonar/core.py` was
-split out for. Use the launchd agent below, or `python main.py --headless` for the same
-engine with no Qt at all. The menu-bar item is now a readout (bankroll, open position) and a
-second Quit for when the window is behind something, rather than the only way back in.
-
-macOS can still hide the app itself (⌘H), so the Dock-click handler stays: exiting a
-full-screen Space fires the same activation event a real Dock click does, and for about a
-second after a hide the window ignores it rather than reopening itself immediately.
+Leaving full-screen and hiding are also untangled from each other: exiting a full-screen
+Space and clicking the close button both trigger the macOS activation event a real Dock click
+uses, so for about a second after either one the window ignores that event rather than
+reopening itself the moment it just hid.
 
 **A launchd agent** keeps it running when you are not logged into the app at all:
 
