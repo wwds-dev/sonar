@@ -8,7 +8,12 @@ estimated.
 
 ## 0. Where we are
 
-**666 tests. 61% of statements, 6,579 statements total, 2,373 unexecuted.**
+**743 tests. 61% of statements** (6,580 total, 2,357 unexecuted).
+
+> **Progress, 2026-09-16.** Steps 1 and 2 below are done. `model.py` went 39% →
+> **100%** and `engine.py` 38% → **100%**. The overall figure barely moved,
+> which is the point: these are 217 statements out of 6,580, and they were the
+> two that mattered most. Writing them found a real bug — see §1.
 
 That number is respectable and it hides something worse than a low one would:
 the coverage is almost exactly inverted against importance.
@@ -17,8 +22,8 @@ the coverage is almost exactly inverted against importance.
 |---|---|
 | Playmaker — the newest code | 86–100% |
 | `execution.py`, `replay.py`, `calibration.py`, `costs.py`, `alerts.py` | 94–96% |
-| **`sonar/engine.py` — the paper-trading engine** | **38%** |
-| **`sonar/model.py` — the probability model** | **39%** |
+| ~~`sonar/engine.py` — the paper-trading engine~~ | ~~38%~~ → **100%** |
+| ~~`sonar/model.py` — the probability model~~ | ~~39%~~ → **100%** |
 | `sonar/core.py` — the engine driver | 34% |
 | `sonar/feeds.py` — price and candle ingestion | 30% |
 | `sonar/server.py`, `ui/tray.py` | **0%** |
@@ -34,7 +39,22 @@ and what the Book records — is the least tested in the project.
 These two modules produce every number a user acts on. Nothing else on this list
 matters as much.
 
-### `sonar/model.py` (39%)
+### `sonar/model.py` — **done, 100%**
+
+Writing these found a ten-point bug on the main tab. `prob_up` is a closed form
+and `lattice_distribution` is a binomial approximation of the same quantity;
+`rows` is even, so the lattice always has an exact-middle bin, and when
+price == open — where every hour starts — that bin sits on the barrier holding
+21% of the distribution. `up: end_price >= open_` gave all of it to "up", so
+the caption under the Terminal tab's lattice read **60.5%** while the signal
+directly above it read **50.0%**.
+
+Neither implementation looked wrong alone. Testing them against fixed values
+would not have found it; testing them **against each other** did. That is the
+lesson worth carrying to the rest of this list — wherever two pieces of code
+compute the same thing, the cross-check is the test with the highest yield.
+
+### ~~`sonar/model.py` (39%)~~ — the original plan
 
 Untested: `prob_up`, `side`, `abs_edge`, `evaluate`, `lattice_distribution`,
 `hourly_sigma`, `_phi`.
@@ -52,7 +72,18 @@ What to pin down:
 - `lattice_distribution` sums to 1, is centred on spot, and widens with sigma.
 - `evaluate` and `abs_edge` agree with `prob_up` rather than drifting from it.
 
-### `sonar/engine.py` (38%)
+### `sonar/engine.py` — **done, 100%**
+
+39 tests against a real engine and a real state file. Verified they *bite*
+rather than merely execute, with five deliberate mutations — wrong barrier
+side, two positions in one hour, entries priced at the midpoint, uncapped
+stake, skipped entry window — all five caught.
+
+**Mutation-checking is worth repeating for the rest of this list.** Coverage
+says a line ran; it does not say an assertion would have noticed if the line
+were wrong.
+
+### ~~`sonar/engine.py` (38%)~~ — the original plan
 
 Untested: `tick`, `_maybe_enter`, `finalize`, `stats`, `save`, `_load`, `_tau`,
 `seed_backtest`, `llm_calibration`.
@@ -205,12 +236,14 @@ Re-measure with:
 
 ## 8. Order to do it in
 
-1. `model.py` — five tests, no fixtures needed, protects every number on screen.
-2. `engine.py` — the tick/enter/settle path, on a synthetic book.
+1. ~~`model.py`~~ — **done**, 100%, and it found the lattice bug.
+2. ~~`engine.py`~~ — **done**, 100%, mutation-checked.
 3. `feeds.py` — split parse from fetch, test the parsers on saved payloads.
 4. `server.py` — it is the answer for uptime now, and has never been run by a test.
 5. The Book tab's trade path end to end.
 6. `universe.py`, `charts.py`, `tray.py` formatting.
 7. `research/features.py` — before the next study leans on it.
 
-Steps 1 and 2 are the ones worth doing this week. The rest can wait.
+Steps 1 and 2 are done. **Step 3 is next**, and the cross-check lesson applies
+there too: `feeds.py` has two independent hourly-candle sources (Binance and
+Coinbase) that should agree, and nothing compares them.
