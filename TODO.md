@@ -8,6 +8,29 @@
 
 ## Open
 
+- [ ] `P1` `testing` `@ai` **The probability model has no tests at all.**
+      `sonar/model.py` is 39% covered and `prob_up`, `lattice_distribution`,
+      `hourly_sigma`, `evaluate`, `abs_edge` and the hand-rolled `_phi` have
+      zero test references. That is every number the Terminal tab is built
+      around. `TESTING.md` §1 names the five tests to write.
+- [ ] `P1` `testing` `@ai` **The paper engine's tick/enter/settle path is
+      untested.** `sonar/engine.py` is 38%; `tick`, `_maybe_enter`, `finalize`,
+      `stats`, `save` and `_load` have no tests. These decide what goes in the
+      book and what the equity curve says. `TESTING.md` §1.
+- [ ] `P2` `testing` `@ai` **Split parse from fetch in `feeds.py` and
+      `universe.py`** (30% and 17%) so the parsers can be tested on saved
+      payloads, the way `playmaker/results.py` already is. A payload-shape
+      change currently zeroes a price silently rather than raising.
+      `TESTING.md` §2.
+- [ ] `P2` `testing` `@ai` **`server.py` has never been run by a test** (0%),
+      and it is now the documented answer for uptime. `TESTING.md` §2.
+- [ ] `P2` `feature` `@ai` **The Lab tab cannot test the Playmaker models.**
+      It measures the markets algorithm only — the Elo/Dixon-Coles scoring runs
+      from a script, not the UI, so there is no way to re-run it after a change
+      from inside the app. Everything it needs exists in
+      `playmaker/scoring.py`.
+
+
 - [ ] `P2` `bug` `@ai` **The window tests wedge about one run in three.**
       Sampling a hung process shows the main thread in `PyThread_release_lock`
       waiting on a pthread mutex that a torn-down Qt thread never released —
