@@ -112,7 +112,19 @@ def lattice_distribution(price: float, open_: float, sigma: float, tau: float,
         log_move = (2 * k - rows) * step
         end_price = price * math.exp(log_move)
         prob = math.comb(rows, k) / (2 ** rows)        # symmetric binomial
-        bins.append({"k": k, "price": round(end_price, 2),
-                     "prob": prob, "up": end_price >= open_})
-    p_up = sum(b["prob"] for b in bins if b["up"])
+        at_barrier = math.isclose(end_price, open_, rel_tol=1e-12)
+        bins.append({"k": k, "price": round(end_price, 2), "prob": prob,
+                     "up": end_price >= open_, "at_barrier": at_barrier})
+    # A bin sitting exactly on the barrier is a tie, not a win. The continuous
+    # model puts no mass on a single point; the lattice puts a real point mass
+    # there, and counting all of it as "up" biases the total.
+    #
+    # It is not a rounding-sized bias either. `rows` is even, so there is always
+    # an exact-middle bin, and at the top of the hour — price == open, where
+    # every hour starts — that bin is 21% of the whole distribution. The caption
+    # under the Terminal tab's lattice read "P(up) = 60.5%" while the signal
+    # directly above it read 50.0%: the same quantity, from two implementations,
+    # ten points apart. Splitting the tie makes them agree exactly.
+    p_up = sum(b["prob"] / 2.0 if b["at_barrier"] else b["prob"]
+               for b in bins if b["up"])
     return {"rows": rows, "open": open_, "bins": bins, "p_up": p_up}
