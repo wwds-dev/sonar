@@ -74,26 +74,53 @@ class Candle:
         return self.price >= self.open
 
 
-def _binance_hour(symbol: str = "BTCUSDT") -> Candle | None:
-    rows = _get(f"{BINANCE}/klines?symbol={symbol}&interval=1h&limit=1")
+# The two exchanges disagree about everything except the numbers: Binance sends
+# [open_time_ms, open, high, low, close, ...] and Coinbase sends
+# [time_s, low, high, open, close, volume]. Same candle, different order, one in
+# milliseconds and one in seconds. Parsing is split from fetching so both can be
+# checked against a saved payload — and, more usefully, against each other.
+def parse_binance_klines(rows, symbol: str = "BTCUSDT") -> Candle | None:
+    """Binance `/klines`: [open_time_ms, open, high, low, close, ...]."""
     if not rows:
         return None
-    o, h, l, c = (float(rows[0][i]) for i in (1, 2, 3, 4))
+    try:
+        o, h, l, c = (float(rows[0][i]) for i in (1, 2, 3, 4))
+        open_time = int(rows[0][0]) // 1000
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
     label = symbol.replace("USDT", "/USDT")
     return Candle(open=o, price=c, high=h, low=l,
-                  open_time=int(rows[0][0]) // 1000, source=f"Binance {label}")
+                  open_time=open_time, source=f"Binance {label}")
+
+
+def parse_coinbase_candles(rows, now: float | None = None) -> Candle | None:
+    """Coinbase `/candles`: [time_s, low, high, open, close, volume].
+
+    Picks the row for the hour in progress, falling back to the newest — which
+    is what Coinbase returns first.
+    """
+    if not rows:
+        return None
+    now_hr = int(now if now is not None else time.time()) // 3600 * 3600
+    try:
+        row = next((r for r in rows if int(r[0]) == now_hr), rows[0])
+        return Candle(open=float(row[3]), price=float(row[4]), high=float(row[2]),
+                      low=float(row[1]), open_time=int(row[0]),
+                      source="Coinbase BTC-USD")
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
+
+
+def _binance_hour(symbol: str = "BTCUSDT") -> Candle | None:
+    return parse_binance_klines(
+        _get(f"{BINANCE}/klines?symbol={symbol}&interval=1h&limit=1"), symbol)
 
 
 def _coinbase_hour() -> Candle | None:
     """Reconstruct the current hour from Coinbase 1h candles."""
-    rows = _get(f"https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=3600")
-    if not rows:
-        return None
-    now_hr = int(time.time()) // 3600 * 3600
-    row = next((r for r in rows if int(r[0]) == now_hr), rows[0])
-    # coinbase candle: [time, low, high, open, close, volume]
-    return Candle(open=float(row[3]), price=float(row[4]), high=float(row[2]),
-                  low=float(row[1]), open_time=int(row[0]), source="Coinbase BTC-USD")
+    return parse_coinbase_candles(
+        _get("https://api.exchange.coinbase.com/products/BTC-USD/candles"
+             "?granularity=3600"))
 
 
 def is_stale(candle: Candle, max_age_hours: float = MAX_CANDLE_AGE_HOURS) -> bool:
@@ -124,13 +151,26 @@ def recent_hourly_returns(symbol: str = "BTCUSDT", limit: int = 72) -> list[floa
     """Log-returns of the last ``limit`` closed hourly candles — used to
     estimate realised volatility. Falls back to a reasonable default if the
     feed is unavailable."""
-    rows = _get(f"{BINANCE}/klines?symbol={symbol}&interval=1h&limit={limit + 1}")
+    return log_returns_from_klines(
+        _get(f"{BINANCE}/klines?symbol={symbol}&interval=1h&limit={limit + 1}"))
+
+
+def log_returns_from_klines(rows) -> list[float]:
+    """Hour-on-hour log returns from Binance klines, skipping bad rows.
+
+    A zero or negative close is the shape a delisted or halted pair sends, and
+    `log()` of it would take the volatility estimate — and therefore every
+    probability downstream — with it.
+    """
     if not rows or len(rows) < 3:
         return []
     import math
-    closes = [float(r[4]) for r in rows]
+    try:
+        closes = [float(r[4]) for r in rows]
+    except (TypeError, ValueError, IndexError, KeyError):
+        return []
     return [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))
-            if closes[i - 1] > 0]
+            if closes[i - 1] > 0 and closes[i] > 0]
 
 
 # --------------------------------------------------------------------------- #
@@ -210,11 +250,21 @@ def _fill_book(book: MarketBook, depth: int = 12) -> None:
     data = _get(f"{CLOB}/book?token_id={book.up_token}")
     if not data:
         return
-    bids = sorted(((_f(b["price"]), _f(b["size"])) for b in data.get("bids", [])),
-                  key=lambda x: -x[0])[:depth]
-    asks = sorted(((_f(a["price"]), _f(a["size"])) for a in data.get("asks", [])),
-                  key=lambda x: x[0])[:depth]
-    book.bids, book.asks = bids, asks
+    book.bids, book.asks = parse_order_book(data, depth)
+
+
+def parse_order_book(data: dict, depth: int = 12):
+    """Best `depth` bids and asks, each sorted toward the touch.
+
+    Sort order is the whole job: the engine reads `bids[0]`/`asks[0]` as the
+    best price available, so getting either direction wrong prices every entry
+    against the far side of the book instead of the near one.
+    """
+    bids = sorted(((_f(b.get("price")), _f(b.get("size")))
+                   for b in data.get("bids") or []), key=lambda x: -x[0])[:depth]
+    asks = sorted(((_f(a.get("price")), _f(a.get("size")))
+                   for a in data.get("asks") or []), key=lambda x: x[0])[:depth]
+    return bids, asks
 
 
 # --------------------------------------------------------------------------- #
@@ -270,16 +320,38 @@ def historical_decision_points(hours: int = 36, decision_minute: int = 40,
         if cursor > (hourly[-1]["t"] + 3600) * 1000:
             break
 
+    return assemble_decision_points(hourly, minute_close, hours,
+                                    decision_minute, vol_window)
+
+
+def assemble_decision_points(hourly: list[dict], minute_close: dict[int, float],
+                             hours: int, decision_minute: int = 40,
+                             vol_window: int = 24) -> list[dict]:
+    """Turn hourly candles plus minute closes into one row per decision point.
+
+    Split out from the fetching so the part that can be wrong is testable. The
+    part that can be wrong is **causality**: `sigma` for hour *i* is computed
+    from `closes[i - vol_window : i]`, strictly earlier hours. Include hour *i*
+    itself and the backtest is being told the volatility of the hour it is
+    predicting, which inflates the result in a way that looks entirely
+    plausible — the classic lookahead bug, and the reason this warm-up exists at
+    all is to be honest.
+
+    An hour whose decision-minute price is missing is skipped rather than
+    interpolated. A made-up price is worse than a shorter curve.
+    """
+    import math
+
     closes = [h["close"] for h in hourly]
     out = []
-    for i in range(len(hourly) - hours, len(hourly)):
+    for i in range(max(0, len(hourly) - hours), len(hourly)):
         h = hourly[i]
         dec_price = minute_close.get(h["t"] + decision_minute * 60)
         if dec_price is None:
             continue
         prior = closes[max(0, i - vol_window):i]
         rets = [math.log(prior[j] / prior[j - 1]) for j in range(1, len(prior))
-                if prior[j - 1] > 0]
+                if prior[j - 1] > 0 and prior[j] > 0]
         sigma = (math.sqrt(sum((x - sum(rets) / len(rets)) ** 2 for x in rets)
                            / (len(rets) - 1)) if len(rets) > 3 else 0.0045)
         out.append({"open_time": h["t"], "open": h["open"], "close": h["close"],
