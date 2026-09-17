@@ -8,9 +8,9 @@ estimated.
 
 ## 0. Where we are
 
-**838 tests. 64% of statements** (6,598 total, 2,191 unexecuted).
+**868 tests. 64% of statements** (6,598 total, 2,141 unexecuted).
 
-> **Progress.** Steps 1–4 are done. `model.py` 39% → **100%**, `engine.py`
+> **Progress.** Steps 1–5 are done. `model.py` 39% → **100%**, `engine.py`
 > 38% → **100%**, `feeds.py` 30% → **82%**, `server.py` 0% → **92%**. The overall figure barely moves,
 > which is the point: these are the modules that mattered, not the biggest ones.
 > Writing them found a real bug (§1) and made a lookahead bug in the warm-up a
@@ -21,11 +21,17 @@ estimated.
 > lattice bug, and neither implementation looked wrong alone. And *mutation-check*
 > anything important: deliberately break the code and confirm a test notices.
 > Coverage says a line ran, not that an assertion would have caught it being
-> wrong. Twenty-eight mutations across these four modules: twenty-seven caught,
-> and **the one that slipped is the argument for the practice**. A test asserted
-> `b"SONAR" in body` to prove `/docs` served the manual — but the app page
-> contains "SONAR" too, so wiring `/docs` to `index.html` passed happily.
-> Coverage was green either way. Assert on something only the right answer has.
+> wrong. **Thirty-three mutations so far; thirty-one caught first time**, and
+> the two that slipped were worth more than the thirty-one that did not:
+>
+> * A test asserted `b"SONAR" in body` to prove `/docs` served the manual — but
+>   the app page contains "SONAR" too, so wiring `/docs` to `index.html` passed
+>   happily. *Assert on something only the right answer has.*
+> * A test claimed the no-prices guard in `_mark_book` stops an empty scan
+>   wiping the board. It does not — `open_rows({})` falls back to entry prices
+>   and returns exactly what it returned before. The test passed for the wrong
+>   reason and documented a rationale that was untrue. *A green test is not
+>   evidence that the reason you wrote it is real.*
 
 That number is respectable and it hides something worse than a low one would:
 the coverage is almost exactly inverted against importance.
@@ -179,6 +185,20 @@ findings rather than crash — the worst kind of bug to leave untested.
 
 ---
 
+## 3a. The trade path — **done**
+
+`Live.trade` / `Live.close_position` (the layer between a click and the book)
+and the Book tab's handlers. 30 tests.
+
+Found a shape inconsistency: every reply carries `{ok, message, position}`
+except the unknown-symbol and unknown-id paths, which omitted `position`
+entirely — a `KeyError` waiting on the failure branch only. Nothing reads it
+today, which is why nobody had hit it; the HTTP API is one route away from
+exposing it.
+
+`core.py` is 43% now. The rest of it is the poll loop, which needs the whole
+network layer stubbed and is its own piece of work.
+
 ## 4. What the UI needs
 
 `ui/app.py` is 61%, which is high for a 1,879-line window, and the three tests
@@ -265,10 +285,16 @@ Re-measure with:
 2. ~~`engine.py`~~ — **done**, 100%, mutation-checked.
 3. ~~`feeds.py`~~ — **done**, 82%, and it made the lookahead bug testable.
 4. ~~`server.py`~~ — **done**, 92%.
-5. The Book tab's trade path end to end.
+5. ~~The Book tab's trade path end to end.~~ — **done**.
 6. `universe.py`, `charts.py`, `tray.py` formatting.
 7. `research/features.py` — before the next study leans on it.
 
-Steps 1–4 are done, and they were the ones that mattered. **Step 5 is next** —
-the Book tab's trade path end to end, which is the last place a user action
-reaches the engine without a test between them.
+Steps 1–5 are done, and they were the ones that mattered — every path a number
+takes from a feed, through the model and the engine, to a row in the book, now
+has tests under it.
+
+**What is left is lower stakes and can be picked up in any order**: `universe.py`
+(17%) and `charts.py` (22%) are string handling and geometry; `tray.py` (0%) is
+formatting over a snapshot dict; `research/features.py` (31%) matters before the
+next study leans on it; and `core.py`'s poll loop needs the network layer stubbed
+the way `feeds.py` now allows.
