@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
@@ -541,7 +541,13 @@ class MainWindow(QMainWindow):
         self._bt_thread = None
         self._lab_thread = None
         self.tray = None            # set by main.py once the app exists
-        self.allow_close = False    # flipped only by the tray's Quit action
+        self.allow_close = False    # released by a real quit — see eventFilter
+        # Cmd-Q, the Dock's Quit and a logout all arrive at the *application* as
+        # QEvent.Quit, never at this window, so the guard below has to watch for
+        # them here.
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
         self._hidden_at = 0.0       # when this window last hid itself
         self.setWindowTitle("SONAR")
         self._fit_to_screen()
@@ -2104,6 +2110,28 @@ class MainWindow(QMainWindow):
             # nothing to corrupt — the engine persists on every write.
             thread.terminate()
             thread.wait(500)
+
+    def eventFilter(self, obj, e) -> bool:
+        """Let a genuine quit through the hide-on-close guard.
+
+        Reported as "used Cmd-Q and the app didn't close". macOS asks the app to
+        terminate, and **Qt implements that by sending a close event to every
+        window** — so a window that ignores one cancels the quit. `closeEvent`
+        ignored every close except the tray's, because the tray's Quit was the
+        only thing that ever set `allow_close`.
+
+        From full screen it was worse than a no-op. `closeEvent` had already run
+        `showNormal()` and scheduled the deferred hide, so the window dropped out
+        of full screen and sat there blank while the process stayed alive —
+        which is what the screenshot showed.
+
+        Watching for `QEvent.Quit` here rather than in `main.py` keeps the
+        release next to the guard it releases, and makes it testable without
+        building the real application subclass.
+        """
+        if e.type() == QEvent.Type.Quit:
+            self.allow_close = True
+        return super().eventFilter(obj, e)
 
     def closeEvent(self, e) -> None:
         """Hide, don't quit — see ui/tray.py for why.

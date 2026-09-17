@@ -155,3 +155,39 @@ def test_a_window_with_no_tray_closes_for_real(window):
     event = QCloseEvent()
     window.closeEvent(event)
     assert event.isAccepted()
+
+
+# --------------------------------------------------------------------------- #
+# Cmd-Q — reported as "used Cmd+Q and the app didn't close"
+# --------------------------------------------------------------------------- #
+def test_a_quit_in_progress_lets_the_close_through(window):
+    """Cmd-Q on macOS asks the app to terminate, and Qt implements that by
+    sending a close event to every window. A window that ignores it **cancels
+    the quit** — which is exactly what the hide-on-close guard did, because only
+    the tray's Quit ever set `allow_close`.
+
+    From full screen it was worse than a no-op: closeEvent had already called
+    showNormal() and scheduled the deferred hide, so the window dropped out of
+    full screen and sat there blank while the app stayed running.
+    """
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QCloseEvent
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    QApplication.sendEvent(app, QEvent(QEvent.Type.Quit))
+
+    event = QCloseEvent()
+    window.closeEvent(event)
+    assert event.isAccepted(), "the close was refused, which cancels Cmd-Q"
+
+
+def test_an_ordinary_close_is_still_refused_after_a_quit_was_handled(window):
+    """The flag must belong to the quit that set it, not leak into the next
+    window the user opens."""
+    from PySide6.QtGui import QCloseEvent
+
+    window.allow_close = False
+    event = QCloseEvent()
+    window.closeEvent(event)
+    assert not event.isAccepted()
