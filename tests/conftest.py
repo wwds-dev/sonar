@@ -22,6 +22,30 @@ import urllib.request
 import pytest
 
 
+#: Captured before anything patches them, so a test that genuinely needs a
+#: socket can ask for one back. See the `loopback` fixture.
+_REAL_CONNECT = socket.socket.connect
+_REAL_CONNECT_EX = socket.socket.connect_ex
+_REAL_URLOPEN = urllib.request.urlopen
+
+
+@pytest.fixture
+def loopback(monkeypatch):
+    """Restore real sockets, for talking to a server this test started itself.
+
+    The blanket ban exists to stop tests reaching the *internet* — someone
+    else's uptime, someone else's rate limit, and a hang with no timeout. A
+    server bound to 127.0.0.1 by the test that is about to query it is none of
+    those things, and faking the handler plumbing to avoid it would test the
+    fake rather than the server.
+
+    Narrow on purpose: ask for it by name, and only where it is warranted.
+    """
+    monkeypatch.setattr(socket.socket, "connect", _REAL_CONNECT)
+    monkeypatch.setattr(socket.socket, "connect_ex", _REAL_CONNECT_EX)
+    monkeypatch.setattr(urllib.request, "urlopen", _REAL_URLOPEN)
+
+
 class NetworkUsedInTest(OSError):
     """Raised instead of opening a socket. Names the test that tried.
 

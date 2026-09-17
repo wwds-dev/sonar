@@ -113,3 +113,11 @@ def test_the_background_scan_warms_both_caches(monkeypatch, tmp_path):
         pass                 # the screen itself needs data we have not stubbed
     assert "news" in warmed
     assert "events" in warmed, "the calendar is still not warmed in the background"
+
+
+def test_the_network_ban_still_holds_for_tests_that_did_not_ask(monkeypatch):
+    """`tests/test_server.py` opts back into sockets with the `loopback`
+    fixture, so this checks the ban is still the default for everyone else."""
+    import urllib.request
+    with pytest.raises(OSError):
+        urllib.request.urlopen("http://example.invalid/", timeout=1)
