@@ -234,7 +234,10 @@ class Live:
             rows = list(self.assets.get("assets", []))
         asset = next((a for a in rows if a["symbol"] == symbol), None)
         if asset is None:
-            return {"ok": False, "message": f"unknown symbol {symbol}"}
+            # Same shape as every other return from here. A caller reading
+            # result["position"] should not have to know which failure it hit.
+            return {"ok": False, "message": f"unknown symbol {symbol}",
+                    "position": None}
         pos, msg = self.book.enter(
             asset, direction, self.horizon.momentum_days, self.horizon.name,
             risk_fraction=self.risk.max_stake_fraction / 8.0)
@@ -248,7 +251,8 @@ class Live:
         prices = {a["symbol"]: a["price"] for a in rows}
         pos = next((p for p in self.book.open if p.id == pos_id), None)
         if pos is None:
-            return {"ok": False, "message": "no such open position"}
+            return {"ok": False, "message": "no such open position",
+                    "position": None}
         closed = self.book.close(pos.id, prices.get(pos.symbol, pos.entry), "MANUAL")
         self._mark_book({"assets": rows})
         return {"ok": True, "message": f"closed {closed.symbol}",

@@ -104,3 +104,51 @@ def test_the_wire_never_fetches_from_the_ui_thread(window, monkeypatch):
     window._refresh_wire()
 
     assert attempts == [], f"the UI thread tried to fetch: {attempts}"
+
+
+# --------------------------------------------------------------------------- #
+# The Book tab's buttons — the last step of the trade path
+# --------------------------------------------------------------------------- #
+def _row(symbol="BTC-USD", price=100.0, vol=0.03):
+    return {"symbol": symbol, "price": price, "volatility": vol,
+            "name": symbol, "confidence": 70.0, "cls": "Crypto"}
+
+
+def test_buying_from_the_board_reports_success(window):
+    window.live.assets = {"assets": [_row()]}
+    window._trade("BTC-USD", "LONG")
+    assert "\u2713" in window.status.text()
+    assert "paper money only" in window.status.text()
+
+
+def test_a_refused_trade_says_so_rather_than_failing_silently(window):
+    window.live.assets = {"assets": [_row()]}
+    window._trade("NOPE", "LONG")
+    assert "\u26a0" in window.status.text()
+    assert "NOPE" in window.status.text()
+
+
+def test_buying_forces_both_boards_to_redraw(window):
+    """Without clearing the cached signatures the user clicks buy and nothing
+    changes until the next 90-second tick — which is indistinguishable from the
+    button being dead, and is exactly how the Assets read button once behaved."""
+    window.live.assets = {"assets": [_row()]}
+    window._assets_sig = "stale"
+    window._book_sig = "stale"
+    window._trade("BTC-USD", "LONG")
+    assert window._assets_sig is None
+    assert window._book_sig is None
+
+
+def test_closing_from_the_book_reports_success_and_redraws(window):
+    window.live.assets = {"assets": [_row()]}
+    pos_id = window.live.trade("BTC-USD", "LONG")["position"]["id"]
+    window._book_sig = "stale"
+    window._close_position(pos_id)
+    assert "\u2713" in window.status.text()
+    assert window._book_sig is None
+
+
+def test_closing_something_that_is_not_open_warns(window):
+    window._close_position("not-a-real-id")
+    assert "\u26a0" in window.status.text()
