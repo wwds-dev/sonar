@@ -99,3 +99,46 @@ def test_the_daemon_serves_it(route):
 def test_the_build_regenerates_it_before_packaging():
     """Otherwise a bundle can ship a page that has drifted from the plan."""
     assert "build_testplan.py" in (ROOT / "build_app.sh").read_text()
+
+
+def test_the_generator_terminates_on_every_heading_level():
+    """It did not, once. A `###` subheading is not `## `, so it fell through to
+    the paragraph branch — where `startswith('#')` stopped the loop before it
+    consumed anything, and the cursor never advanced. The generator spun
+    forever, which in a build script means a hung build with no error.
+    """
+    import subprocess
+    import sys
+
+    source = "\n".join([
+        "# Title", "", "## 1. Section", "", "### A subheading", "",
+        "Some prose.", "", "#### Deeper still", "", "| # | Steps | Expected |",
+        "|---|---|---|", "| 1.1 | do a thing | it happens |", "",
+    ])
+    script = (
+        "import pathlib, sys;"
+        f"sys.path.insert(0, {str(ROOT / 'scripts')!r});"
+        "import build_testplan as b;"
+        f"b.SOURCE = pathlib.Path({str(ROOT)!r}) / '__probe__.md';"
+        "b.SOURCE.write_text(sys.stdin.read());"
+        "out = b.build();"
+        "b.SOURCE.unlink();"
+        "print(len(out))"
+    )
+    result = subprocess.run([sys.executable, "-c", script], input=source,
+                            capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert int(result.stdout.strip()) > 0
+
+
+def test_subheadings_reach_the_page():
+    assert "<h3>" in PAGE.read_text()
+
+
+def test_the_paper_investment_loop_is_covered():
+    """The question this section was added to answer: can you evaluate and hold
+    positions, and find out whether they were worth taking, without real money."""
+    md = SOURCE.read_text()
+    for needed in ("closes **itself**", "calibration table", "cash at risk",
+                   "excludes costs", "1.05"):
+        assert needed in md, f"the paper loop no longer covers: {needed}"

@@ -101,7 +101,12 @@ running even when short of time — the list doubles as this project's bug histo
 
 ---
 
-## 5. Book
+## 5. Book — the paper investment loop
+
+This is the part that answers "would this position have been worth taking",
+with no real money anywhere. **5.1–5.8 are the mechanics; 5.9–5.16 are the loop
+that makes them mean something**, and that loop is the entire case for the app
+existing. Some of it cannot be checked in one sitting — those cases say so.
 
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
@@ -113,6 +118,31 @@ running even when short of time — the list doubles as this project's bug histo
 | 5.6 | | Read the stats | bankroll · total P&L · win rate · profit factor. Profit factor is blank with no losses — not zero, not a crash. |
 | 5.7 | | Press **run backtest** | Completes and reports; says it is price-only and excludes costs |
 | 5.8 | | Quit and relaunch; return to Book | Open position and bankroll **survive the restart** |
+
+### Evaluating a candidate before committing to it
+
+| # | ⚠ | Steps | Expected |
+|---|---|---|---|
+| 5.9 | | On Assets, pick a row and read **R:R** and **P(PROF)** together | R:R 1.50 and P(PROF) 40% — and `0.40 × 1.50 − 0.60 = 0` exactly. The pair is **expected-value zero by construction**, not a forecast. |
+| 5.10 | | Read **CONF** on the same row, then its tooltip | It says plainly that confidence is *notability*, **not** the odds of profit. If a row makes you feel it is a good bet, that is the number doing something it is not entitled to do. |
+| 5.11 | | Open the position and read its **target** and **stop** | Both set from volatility, before entry. A position with no barriers never resolves and is never falsifiable. |
+| 5.12 | | Change the **risk profile** and open a position on another row | Size changes, barriers do not: at €10,000 the cash at risk is ~€37.50 conservative, ~€100 moderate, ~€187.50 aggressive. Risk appetite moves the stake, never the plan. |
+
+### The loop that makes it falsifiable
+
+| # | ⚠ | Steps | Expected |
+|---|---|---|---|
+| 5.13 | | Leave a position open and watch it over a session | Unrealised P&L and the progress bar move with price. Progress is measured from the stop toward the target. |
+| 5.14 | ⚠ | Leave positions open **over days**, until one touches a barrier | It closes **itself** — outcome TARGET or STOP, not MANUAL. Nothing about the app is falsifiable unless positions resolve without you. |
+| 5.15 | | After a position resolves by itself, re-read the calibration table | The count of closed positions has gone up. It needs **20** before it will report anything at all. |
+| 5.16 | | Once 20 have closed, read what calibration says | Either it measures drift and `P(PROF)` moves off 40%, or it does not and 40% stands. **Both are real answers.** This is the only thing in the app that can settle whether the score is worth anything. |
+
+### What the paper P&L does not include
+
+| # | ⚠ | Steps | Expected |
+|---|---|---|---|
+| 5.17 | | Read the Book's P&L, then `README.md` §"The cost floor" | The book's P&L **excludes costs**. The measured floor is **€1.05 per round trip** (50 bps per side), so a real version of the same trade is €1.05 worse. |
+| 5.18 | ⚠ | Ask whether the app told you that anywhere you would have seen it | Today it does not — the caveat is in the Lab and backtest captions and in the README, not on the Book tab. **A paper P&L that reads better than reality is the single most misleading thing this app could show.** Log it if it still is not surfaced. |
 
 ---
 

@@ -53,6 +53,8 @@ STYLE = """
   h2{font-size:15px;margin:30px 0 8px;padding-bottom:6px;
     border-bottom:1px solid var(--border);letter-spacing:.06em}
   h2 .n{color:var(--gold);margin-right:8px}
+  h3{font-size:12.5px;margin:20px 0 4px;color:var(--up);letter-spacing:.04em;
+    text-transform:uppercase}
   p{margin:8px 0} ul,ol{margin:8px 0;padding-left:22px}
 
   .callout{border:1px solid rgba(232,184,75,.35);background:rgba(232,184,75,.06);
@@ -192,6 +194,11 @@ def render(md: str) -> str:
             i += 1
             continue
 
+        if line.startswith('### '):
+            body.append(f'<h3>{inline(line[4:].strip())}</h3>')
+            i += 1
+            continue
+
         if line.startswith('## '):
             title = line[3:].strip()
             m = re.match(r'(\d+)\.\s+(.*)', title)
@@ -231,8 +238,17 @@ def render(md: str) -> str:
             i += 1
             continue
 
+        # Belt and braces: if a line reaches here that every branch above
+        # declined *and* this loop refuses, `i` never advances and the
+        # generator spins forever. A `###` heading did exactly that — it is not
+        # `## `, so it fell through to here, and `startswith('#')` then stopped
+        # the loop on its first check. Consume at least one line, always.
+        start = i
         para = []
         while i < len(lines) and lines[i].strip() and not lines[i].startswith(('#', '|', '- ', '```', '---')):
+            para.append(lines[i].strip())
+            i += 1
+        if i == start:
             para.append(lines[i].strip())
             i += 1
         text = ' '.join(para)

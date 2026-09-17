@@ -36,6 +36,8 @@
   h2{font-size:15px;margin:30px 0 8px;padding-bottom:6px;
     border-bottom:1px solid var(--border);letter-spacing:.06em}
   h2 .n{color:var(--gold);margin-right:8px}
+  h3{font-size:12.5px;margin:20px 0 4px;color:var(--up);letter-spacing:.04em;
+    text-transform:uppercase}
   p{margin:8px 0} ul,ol{margin:8px 0;padding-left:22px}
 
   .callout{border:1px solid rgba(232,184,75,.35);background:rgba(232,184,75,.06);
@@ -90,7 +92,7 @@
   <h1>v2 acceptance test plan</h1>
 
   <div class="bar">
-    <span class="count"><b id="done">0</b> / <b id="total">80</b> checked
+    <span class="count"><b id="done">0</b> / <b id="total">90</b> checked
       &middot; <span class="ok"><b id="passed">0</b> passed</span>
       &middot; <span class="bad"><b id="failed">0</b> failed</span></span>
     <span class="track"><i class="p" id="pbar"></i><i class="f" id="fbar"></i></span>
@@ -164,7 +166,8 @@
 <tr data-case="4.4"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">4.4</td><td class="flag"></td><td>Read the alerts panel</td><td>Lists alerts, or says nothing is firing</td></tr>
 <tr data-case="4.5"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">4.5</td><td class="flag">⚠</td><td>Read every alert carefully</td><td><b>None contains "buy", "sell", "short" or "immediately".</b> An alert is a notability flag, never an instruction.</td></tr>
 </table>
-<h2><span class="n">5</span>Book</h2>
+<h2><span class="n">5</span>Book — the paper investment loop</h2>
+<p>This is the part that answers "would this position have been worth taking", with no real money anywhere. <b>5.1–5.8 are the mechanics; 5.9–5.16 are the loop that makes them mean something</b>, and that loop is the entire case for the app existing. Some of it cannot be checked in one sitting — those cases say so.</p>
 <table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
 <tr data-case="5.1"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.1</td><td class="flag"></td><td>Find the positions opened in 3.8 / 3.9</td><td>Both listed with entry, target, stop, unrealised P&amp;L, progress bar</td></tr>
 <tr data-case="5.2"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.2</td><td class="flag"></td><td>Check a LONG's barriers</td><td>stop &lt; entry &lt; target</td></tr>
@@ -174,6 +177,25 @@
 <tr data-case="5.6"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.6</td><td class="flag"></td><td>Read the stats</td><td>bankroll · total P&amp;L · win rate · profit factor. Profit factor is blank with no losses — not zero, not a crash.</td></tr>
 <tr data-case="5.7"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.7</td><td class="flag"></td><td>Press <b>run backtest</b></td><td>Completes and reports; says it is price-only and excludes costs</td></tr>
 <tr data-case="5.8"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.8</td><td class="flag"></td><td>Quit and relaunch; return to Book</td><td>Open position and bankroll <b>survive the restart</b></td></tr>
+</table>
+<h3>Evaluating a candidate before committing to it</h3>
+<table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
+<tr data-case="5.9"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.9</td><td class="flag"></td><td>On Assets, pick a row and read <b>R:R</b> and <b>P(PROF)</b> together</td><td>R:R 1.50 and P(PROF) 40% — and <code>0.40 × 1.50 − 0.60 = 0</code> exactly. The pair is <b>expected-value zero by construction</b>, not a forecast.</td></tr>
+<tr data-case="5.10"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.10</td><td class="flag"></td><td>Read <b>CONF</b> on the same row, then its tooltip</td><td>It says plainly that confidence is <em>notability</em>, <b>not</b> the odds of profit. If a row makes you feel it is a good bet, that is the number doing something it is not entitled to do.</td></tr>
+<tr data-case="5.11"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.11</td><td class="flag"></td><td>Open the position and read its <b>target</b> and <b>stop</b></td><td>Both set from volatility, before entry. A position with no barriers never resolves and is never falsifiable.</td></tr>
+<tr data-case="5.12"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.12</td><td class="flag"></td><td>Change the <b>risk profile</b> and open a position on another row</td><td>Size changes, barriers do not: at €10,000 the cash at risk is ~€37.50 conservative, ~€100 moderate, ~€187.50 aggressive. Risk appetite moves the stake, never the plan.</td></tr>
+</table>
+<h3>The loop that makes it falsifiable</h3>
+<table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
+<tr data-case="5.13"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.13</td><td class="flag"></td><td>Leave a position open and watch it over a session</td><td>Unrealised P&amp;L and the progress bar move with price. Progress is measured from the stop toward the target.</td></tr>
+<tr data-case="5.14"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.14</td><td class="flag">⚠</td><td>Leave positions open <b>over days</b>, until one touches a barrier</td><td>It closes <b>itself</b> — outcome TARGET or STOP, not MANUAL. Nothing about the app is falsifiable unless positions resolve without you.</td></tr>
+<tr data-case="5.15"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.15</td><td class="flag"></td><td>After a position resolves by itself, re-read the calibration table</td><td>The count of closed positions has gone up. It needs <b>20</b> before it will report anything at all.</td></tr>
+<tr data-case="5.16"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.16</td><td class="flag"></td><td>Once 20 have closed, read what calibration says</td><td>Either it measures drift and <code>P(PROF)</code> moves off 40%, or it does not and 40% stands. <b>Both are real answers.</b> This is the only thing in the app that can settle whether the score is worth anything.</td></tr>
+</table>
+<h3>What the paper P&amp;L does not include</h3>
+<table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
+<tr data-case="5.17"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.17</td><td class="flag"></td><td>Read the Book's P&amp;L, then <code>README.md</code> §"The cost floor"</td><td>The book's P&amp;L <b>excludes costs</b>. The measured floor is <b>€1.05 per round trip</b> (50 bps per side), so a real version of the same trade is €1.05 worse.</td></tr>
+<tr data-case="5.18"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.18</td><td class="flag">⚠</td><td>Ask whether the app told you that anywhere you would have seen it</td><td>Today it does not — the caveat is in the Lab and backtest captions and in the README, not on the Book tab. <b>A paper P&amp;L that reads better than reality is the single most misleading thing this app could show.</b> Log it if it still is not surfaced.</td></tr>
 </table>
 <h2><span class="n">6</span>Macro</h2>
 <table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
