@@ -444,11 +444,13 @@ Build a signed `.app`:
 The build script runs `--selftest` **against the frozen binary**, because that is where
 packaging fails: a bundle is read-only and code-signed, so writable state must live in
 `~/Library/Application Support/SONAR/` (writing inside the `.app` breaks the signature and a
-reinstall wipes it), and lazily-imported modules — `anthropic`, plus `sonar.execution` and `sonar.costs`
-(nothing imports either yet, so PyInstaller drops them without the hint) — are invisible
-to PyInstaller's static analysis without an explicit `--hidden-import`. `--selftest`
-asserts both are present in the packaged build so a lost hidden-import fails loudly
-rather than silently at the moment the guard is wired up.
+reinstall wipes it), and lazily-imported modules — `anthropic`, `sonar.execution`, `sonar.costs`,
+and `sonar.playmaker`'s model modules (`results`, `ratings`, `poisson`, `scoring` — reached only
+when someone opens the Playmaker tab and asks for a rating, so nothing imports them at start-up)
+— are invisible to PyInstaller's static analysis without an explicit `--hidden-import`.
+`--selftest` asserts all of them are present in the packaged build so a lost hidden-import fails
+loudly rather than silently — the playmaker case shipped the same trap a second time before it
+was caught.
 
 Note the frozen app and the source tree keep **separate portfolios**: `~/Library/Application
 Support/SONAR/state.json` versus `data/state.json`. Installing does not inherit a dev bankroll.
@@ -472,6 +474,12 @@ unkillable from inside itself, a hang pytest's own `faulthandler_timeout`
 held. `run-tests.sh` bounds the suite from outside the process instead, sampling
 the stack before killing it — see the open TODO item for what's already been
 ruled out.
+
+`TESTING.md` is the coverage roadmap: what's tested, what isn't, and the order to fix it
+in. Tier 1 is done — `model.py` and `engine.py` both went from ~39% to **100%**, mutation-checked,
+and writing the engine's cross-check test found a real ten-point disagreement between the app's
+two ways of computing P(up) (a lattice bin sitting exactly on the barrier), since fixed. Tier 2
+(`feeds.py`, `server.py`) is next.
 
 ### Uptime
 

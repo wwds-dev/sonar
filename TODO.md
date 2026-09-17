@@ -8,15 +8,16 @@
 
 ## Open
 
-- [ ] `P1` `testing` `@ai` **The probability model has no tests at all.**
-      `sonar/model.py` is 39% covered and `prob_up`, `lattice_distribution`,
-      `hourly_sigma`, `evaluate`, `abs_edge` and the hand-rolled `_phi` have
-      zero test references. That is every number the Terminal tab is built
-      around. `TESTING.md` §1 names the five tests to write.
-- [ ] `P1` `testing` `@ai` **The paper engine's tick/enter/settle path is
-      untested.** `sonar/engine.py` is 38%; `tick`, `_maybe_enter`, `finalize`,
-      `stats`, `save` and `_load` have no tests. These decide what goes in the
-      book and what the equity curve says. `TESTING.md` §1.
+- [x] `P1` `testing` `@ai` ~~The probability model has no tests at all.~~
+      `sonar/model.py` went 39% → **100%**. Writing the tests found a real bug:
+      `prob_up` (closed form) and `lattice_distribution` (binomial approximation)
+      disagreed by ten points at the top of every hour, because the lattice's
+      exact-middle bin sits exactly on the barrier when price == open and handed
+      all of it to "up". Fixed by splitting that bin. `TESTING.md` §1.
+- [x] `P1` `testing` `@ai` ~~The paper engine's tick/enter/settle path is
+      untested.~~ `sonar/engine.py` went 38% → **100%**: 39 tests against a real
+      engine and state file, mutation-checked (five deliberate bugs planted,
+      all five caught). `TESTING.md` §1.
 - [ ] `P2` `testing` `@ai` **Split parse from fetch in `feeds.py` and
       `universe.py`** (30% and 17%) so the parsers can be tested on saved
       payloads, the way `playmaker/results.py` already is. A payload-shape

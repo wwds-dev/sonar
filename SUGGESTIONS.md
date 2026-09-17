@@ -51,6 +51,8 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | Closing SONAR could leave a blank white window that never went away — the Wire tab was fetching news/events on the UI thread whenever their cache aged out; fixed to read cache-only, with tests asserting no network access from the UI thread | Sep 2026 |
 | In-app docs (`docs.html`) gained a plain-English "Start here" intro, a 24-term glossary, and a "which tab do I want" table; a new section documents Playmaker for the first time | Sep 2026 |
 | Playmaker gained native prediction models — Elo (FiveThirtyEight's published form), Dixon-Coles for football, Pythagorean as a cross-check, fed by a keyless ESPN adapter; NFL/NBA/EPL all came back KEEP on walk-forward skill | Sep 2026 |
+| Testing roadmap tier 1 — `model.py` and `engine.py` (the two modules the Terminal tab and the Book are built on) taken from 39%/38% coverage to 100%, mutation-checked; found and fixed a real ten-point disagreement between `prob_up` and `lattice_distribution` on the Terminal tab. See `TESTING.md` | Sep 2026 |
+| Playmaker packaging trap fixed — its model modules (`results`, `ratings`, `poisson`, `scoring`) were invisible to PyInstaller until first used, the same shape as the earlier `anthropic`/`execution`/`costs` trap; `build_app.sh` now hidden-imports them and `--selftest` checks for their presence | Sep 2026 |
 
 ## Rejected
 
