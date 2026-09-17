@@ -251,6 +251,24 @@ claim of any kind.
 
 ## 8. The redirect with evidence behind it: forecast volatility, not direction
 
+> **Built, 2026-09-17 — `sonar/volatility.py`.** Measured over 26 instruments
+> and five years of daily bars, scored by QLIKE against the volatility that
+> actually followed. GARCH wins below ten days (+11.6% at 3d, +17.8% at 5d);
+> a 250-day trailing window wins above it (+5.6% at 20d); the quarter horizon
+> already used one.
+>
+> **The first answer was wrong, and the control is why we know.** Against the
+> incumbent, GARCH scored +24.49% on 26/26 instruments and 6/6 time blocks. On a
+> synthetic random walk with *constant* volatility — nothing to cluster on — it
+> still "won" by 27%. The confound was sample size: GARCH saw 250 days and the
+> incumbent saw 22, because the scan fetched a one-month chart. A plain
+> trailing-250 beat GARCH on both synthetic and real data.
+>
+> What survived is narrower and real: GARCH loses where there is no clustering
+> and wins on real data at short horizons, which is the effect actually being
+> claimed. Recorded here because the first number was the most impressive result
+> this project has produced and it was an artefact.
+
 The five nulls all tested **direction**. Volatility was never the target.
 
 The literature is consistent that news and investor attention predict **realised
