@@ -49,8 +49,17 @@ def feature(name: str, family: str, expected: int, rationale: str):
 # helpers
 # --------------------------------------------------------------------------- #
 def _rets(closes: Series) -> Series:
+    """Log returns, skipping any bar that cannot produce one.
+
+    Both ends need the guard, not just the denominator. A zero *close* — the
+    shape a halted or delisted feed sends — makes this `log(0)`, which raises,
+    and `panel.build` wraps every feature call in a bare `except Exception`. So
+    the whole column comes back None and the study reports "no signal" rather
+    than "this instrument had a bad bar". Six features shared this helper.
+    """
     return [math.log(closes[i] / closes[i - 1])
-            for i in range(1, len(closes)) if closes[i - 1] > 0]
+            for i in range(1, len(closes))
+            if closes[i - 1] > 0 and closes[i] > 0]
 
 
 def _mean(xs: Series) -> float:
