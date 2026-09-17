@@ -8,10 +8,10 @@ estimated.
 
 ## 0. Where we are
 
-**812 tests. 62% of statements** (6,598 total, 2,276 unexecuted).
+**838 tests. 64% of statements** (6,598 total, 2,191 unexecuted).
 
-> **Progress.** Steps 1–3 are done. `model.py` 39% → **100%**, `engine.py`
-> 38% → **100%**, `feeds.py` 30% → **82%**. The overall figure barely moves,
+> **Progress.** Steps 1–4 are done. `model.py` 39% → **100%**, `engine.py`
+> 38% → **100%**, `feeds.py` 30% → **82%**, `server.py` 0% → **92%**. The overall figure barely moves,
 > which is the point: these are the modules that mattered, not the biggest ones.
 > Writing them found a real bug (§1) and made a lookahead bug in the warm-up a
 > one-character change that now fails a test (§2).
@@ -21,8 +21,11 @@ estimated.
 > lattice bug, and neither implementation looked wrong alone. And *mutation-check*
 > anything important: deliberately break the code and confirm a test notices.
 > Coverage says a line ran, not that an assertion would have caught it being
-> wrong. Twenty-three mutations have been run across these three modules; all
-> twenty-three were caught.
+> wrong. Twenty-eight mutations across these four modules: twenty-seven caught,
+> and **the one that slipped is the argument for the practice**. A test asserted
+> `b"SONAR" in body` to prove `/docs` served the manual — but the app page
+> contains "SONAR" too, so wiring `/docs` to `index.html` passed happily.
+> Coverage was green either way. Assert on something only the right answer has.
 
 That number is respectable and it hides something worse than a low one would:
 the coverage is almost exactly inverted against importance.
@@ -139,12 +142,22 @@ Untested: `canonical_title`, `wiki_article`, `article_map`, `_load_cache`,
 Same split. The title-canonicalisation logic in particular is pure string
 handling with no excuse for being untested.
 
-### `sonar/server.py` (0%)
+### `sonar/server.py` — **done, 92%**
 
-The headless HTTP daemon, and now the documented answer for uptime — so it is
-about to matter more than it did. `http.server` is testable in-process against
-a real socket on port 0. Worth: every route returns 200 with the shape the app
-expects, an unknown route 404s, and it serves `docs.html`.
+25 tests against a real server on an ephemeral port. What is left is the
+`__main__` argparse block, which only runs when the module is invoked directly.
+
+This needed a socket, which the suite bans, so `conftest.py` grew a `loopback`
+fixture: it captures the real `connect`/`urlopen` before anything patches them
+and hands them back **by name**. The ban is about reaching the *internet* —
+someone else's uptime, someone else's rate limit, a hang with no timeout — and a
+server the test started on 127.0.0.1 is none of those. A test asserts the ban
+still holds for everyone who does not ask.
+
+`main()` is covered too, since that is what the launchd agent runs: the engine
+reaches the handler, the loop starts, Ctrl-C prints rather than dumping a
+traceback, and a second daemon reports READ-ONLY instead of silently
+double-counting the same hour into one state file.
 
 ### `ui/tray.py` (0%)
 
@@ -251,10 +264,11 @@ Re-measure with:
 1. ~~`model.py`~~ — **done**, 100%, and it found the lattice bug.
 2. ~~`engine.py`~~ — **done**, 100%, mutation-checked.
 3. ~~`feeds.py`~~ — **done**, 82%, and it made the lookahead bug testable.
-4. `server.py` — it is the answer for uptime now, and has never been run by a test.
+4. ~~`server.py`~~ — **done**, 92%.
 5. The Book tab's trade path end to end.
 6. `universe.py`, `charts.py`, `tray.py` formatting.
 7. `research/features.py` — before the next study leans on it.
 
-Steps 1–3 are done. **Step 4 is next** — `server.py`, still at 0%, and now the
-documented answer for uptime, so it is about to matter more than it did.
+Steps 1–4 are done, and they were the ones that mattered. **Step 5 is next** —
+the Book tab's trade path end to end, which is the last place a user action
+reaches the engine without a test between them.
