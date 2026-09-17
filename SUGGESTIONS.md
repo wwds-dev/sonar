@@ -25,9 +25,10 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 
 | # | Suggestion | Category | Effort | Status |
 |---|---|---|---|---|
-| 6 | Order-state poller so the book records fills rather than intents | bug | L | PLANNED |
-| 7 | `GuardedBroker.confirmation_text` rendered verbatim in the dialog, never re-composed by callers — the `*** REAL MONEY ***` prefix only works if nothing else writes it | security | S | PLANNED |
-| 8 | Automated reconciliation and kill-switch drills in CI | testing | M | CONSIDERING |
+| 6 | Order-state poller so the book records fills rather than intents | bug | L | **DONE** — `Portfolio.poll_fills()`, wired into `_mark_book` |
+| 7 | `GuardedBroker.confirmation_text` rendered verbatim in the dialog, never re-composed by callers — the `*** REAL MONEY ***` prefix only works if nothing else writes it | security | S | **DONE** — `execution.confirmation_text()` is the only composer, and no UI path re-writes it |
+| 8 | Automated reconciliation and kill-switch drills | testing | M | **DONE** — `tests/test_drills.py`, 8 tests. The "in CI" half is still open: there is no CI, so nothing runs them but a person |
+| 9 | **A CI runner.** Everything above is checked by someone remembering to. 868 tests in 3.5s would fit any free runner — the obstacle is the Qt window tests wedging ~1 in 3, which would make a red build meaningless | infra | M | IDEA |
 
 ## Interface
 

@@ -18,13 +18,23 @@
       untested.~~ `sonar/engine.py` went 38% → **100%**: 39 tests against a real
       engine and state file, mutation-checked (five deliberate bugs planted,
       all five caught). `TESTING.md` §1.
-- [ ] `P2` `testing` `@ai` **Split parse from fetch in `feeds.py` and
-      `universe.py`** (30% and 17%) so the parsers can be tested on saved
-      payloads, the way `playmaker/results.py` already is. A payload-shape
-      change currently zeroes a price silently rather than raising.
-      `TESTING.md` §2.
-- [ ] `P2` `testing` `@ai` **`server.py` has never been run by a test** (0%),
-      and it is now the documented answer for uptime. `TESTING.md` §2.
+- [x] `P2` `testing` `@ai` ~~Split parse from fetch in `feeds.py`.~~ 30% → 82%,
+      69 tests, none touching the network. Made a one-character lookahead bug in
+      the warm-up (`closes[:i]` → `closes[:i + 1]`) into something a test fails
+      on. `universe.py` (17%) still wants the same treatment.
+- [x] `P2` `testing` `@ai` ~~`server.py` had never been run by a test.~~ 0% →
+      92%, against a real server on an ephemeral port. `conftest.py` grew a
+      `loopback` fixture so this did not mean weakening the suite's ban on
+      sockets.
+- [ ] `P2` `testing` `@ai` **`universe.py` is 17%** — `canonical_title`,
+      `wiki_article`, `article_map` and the cache are pure string handling with
+      no excuse for being untested. `TESTING.md` §2.
+- [ ] `P3` `testing` `@ai` **`charts.py` (22%) and `tray.py` (0%)** — the
+      painters take a series and produce geometry, and `update_state` is
+      formatting over a snapshot dict. Both checkable without a screen.
+- [ ] `P2` `testing` `@ai` **`research/features.py` is 31%** and every study's
+      conclusion rests on it. A wrong feature invalidates findings rather than
+      crashing — the worst kind of bug to leave untested.
 - [ ] `P2` `feature` `@ai` **The Lab tab cannot test the Playmaker models.**
       It measures the markets algorithm only — the Elo/Dixon-Coles scoring runs
       from a script, not the UI, so there is no way to re-run it after a change
