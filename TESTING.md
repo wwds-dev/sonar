@@ -8,9 +8,9 @@ estimated.
 
 ## 0. Where we are
 
-**868 tests. 64% of statements** (6,598 total, 2,141 unexecuted).
+**1,073 tests. 66% of statements.**
 
-> **Progress.** Steps 1–5 are done. `model.py` 39% → **100%**, `engine.py`
+> **Progress.** Steps 1–5 are done, plus `research/features.py`. `model.py` 39% → **100%**, `engine.py`
 > 38% → **100%**, `feeds.py` 30% → **82%**, `server.py` 0% → **92%**. The overall figure barely moves,
 > which is the point: these are the modules that mattered, not the biggest ones.
 > Writing them found a real bug (§1) and made a lookahead bug in the warm-up a
@@ -175,13 +175,23 @@ the thing that shows a wrong bankroll if the snapshot shape drifts.
 
 ## 3. Tier 3 — the research apparatus
 
-`research/study.py` 0%, `research/panel.py` 27%, `research/features.py` 31%,
-`research/regimes.py` 49%.
+`research/study.py` 0%, `research/panel.py` 27%, **`research/features.py` 99%
+(was 31%)**, `research/regimes.py` 49%.
 
-Lower priority *only* because these produce findings a human reads and argues
-with, rather than numbers the app acts on automatically. But `features.py` is
-what every study's conclusion rests on, and a wrong feature would invalidate
-findings rather than crash — the worst kind of bug to leave untested.
+`features.py` is done, and it was worth doing first: the universal tests found a
+`log(0)` on their first run. `_rets` guarded the denominator and not the
+numerator, so a zero close — a halted or delisted feed — raised inside **six**
+features. `panel.build` wraps every call in a bare `except Exception`, so that
+would have surfaced as an all-None column and the study would have reported "no
+signal" rather than "this instrument had a bad bar".
+
+Most of that file is parametrised across `REGISTRY`, so every feature added
+later inherits the guarantees: a pre-registered direction, a rationale, no
+exception on a short or flat or zero-containing history, a finite float or
+`None` rather than a NaN, determinism, and no mutation of the shared `Ctx`.
+
+What is left in this tier produces findings a human reads and argues with,
+rather than numbers the app acts on automatically — which is why it is last.
 
 ---
 
@@ -237,24 +247,124 @@ suite cannot tell you the bundle is correct.
 
 ---
 
-## 6. Manual checklist
+## 6. v2 acceptance checklist
 
-Things a human has to look at, once per release. Each one is on this list
-because it has actually broken.
+Run this against the **installed** `/Applications/SONAR.app`, not the checkout —
+several of the failures it is looking for only exist in a bundle. Every item is
+something a person has to see; the automated suite covers none of them.
 
-- [ ] Launch from `/Applications`, not the checkout. Time it — under three
-      seconds to first paint.
-- [ ] Every tab renders with content, not "—" everywhere.
-- [ ] **Close the window: it disappears, the menu-bar icon stays, the app is
-      still running.** Broken twice, for two different reasons.
-- [ ] Quit from the menu bar: the process actually exits, no SIGABRT, no
-      "Python quit unexpectedly".
-- [ ] Leave full screen, then close. The window must not reopen itself.
-- [ ] Leave it running for fifteen minutes and click around. The Wire's news
-      TTL is eight minutes, and a UI-thread fetch would freeze it there.
-- [ ] Resize to 1280×800. Nothing clipped, no horizontal scroll.
-- [ ] Hover a number in each tab — a tooltip that explains it, in plain words.
-- [ ] Open the Docs button. §1 loads, every link resolves.
+Anything marked ⚠ has actually broken before.
+
+### Launch and shell
+
+- [ ] Launches from `/Applications` in **under three seconds** to first paint.
+      ⚠ It once took 11s of sequential fetches.
+- [ ] All **seven tabs** present: Terminal · Assets · Wire · Book · Macro · Lab ·
+      Playmaker.
+- [ ] No tab shows "—" in every field after 30 seconds.
+- [ ] ⚠ Window fits a **1280×800** display. Nothing clipped, no horizontal
+      scroll. It once opened 4,540pt wide.
+- [ ] ⚠ **Close the window**: it disappears, the menu-bar icon stays, the app
+      keeps running. Broken twice, for two different reasons.
+- [ ] ⚠ Leave full screen, *then* close. The window must not reopen itself.
+- [ ] Menu-bar icon shows bankroll, and **Quit SONAR** actually exits — no
+      SIGABRT, no "Python quit unexpectedly".
+- [ ] ⌘Q quits too.
+- [ ] Reopen from the Dock after ⌘H.
+- [ ] ⚠ **Leave it running 15 minutes and click around.** The Wire's news TTL is
+      eight minutes and a UI-thread fetch would freeze it there — a blank white
+      window ignoring the close button.
+
+### Terminal
+
+- [ ] Shows a live BTC price that moves, and the hour's open.
+- [ ] Model P(up), market P(up) and the edge are all populated.
+- [ ] ⚠ The lattice caption's **P(up) matches the signal above it**. They once
+      disagreed by ten points at the top of every hour.
+- [ ] The lattice redraws as price moves, and widens/narrows sensibly.
+- [ ] Equity curve renders; the gold LIVE marker separates warm-up from real.
+- [ ] **LLM read on this hour** — either returns a read, or says why not
+      (no key is the normal answer).
+
+### Assets
+
+- [ ] 26 rows, each with price, 1D, MOM, VOL, NEWS, R:R, P(PROF), CONF.
+- [ ] P(PROF) reads a flat **40%** in grey — the honest number until calibration
+      measures drift.
+- [ ] Sorting by each column works.
+- [ ] Risk profile and horizon selectors change the numbers and the board
+      redraws **immediately**, not on the next tick.
+- [ ] ⚠ **Buy** and **Short** open a position and it appears in Book *at once*.
+      A cached board signature once made this look like a dead button.
+- [ ] Hovering any number gives a tooltip that explains it in plain words.
+- [ ] Each row names where it could actually be traded, and says so honestly
+      for the nine of 26 that cannot be bought as shown.
+
+### Wire
+
+- [ ] Headlines from multiple blocs, with sources and ages.
+- [ ] The bloc spread renders.
+- [ ] Earnings/IPO calendar is populated.
+- [ ] Alerts panel lists something, or says nothing is firing.
+- [ ] ⚠ No alert anywhere contains "buy", "sell", "short" or "immediately".
+
+### Book
+
+- [ ] Open positions show entry, target, stop, unrealised P&L, progress.
+- [ ] **close** on a position settles it at the current price and it moves to
+      closed.
+- [ ] Stats: bankroll, total P&L, win rate, profit factor.
+- [ ] Calibration table either reports, or says how many more closed positions
+      it needs. It must not claim an edge below the threshold.
+- [ ] **run backtest** completes and reports.
+
+### Macro
+
+- [ ] All seven readings populated: 10y, curve, fed funds, VIX, real 10y, CPI,
+      unemployment.
+- [ ] Regime label and its rationale render.
+- [ ] Central-bank communication panel lists releases, with **no direction
+      claimed**.
+- [ ] Every reading's tooltip explains what it is *and how to read it* — not
+      just a restatement of the label.
+
+### Lab
+
+- [ ] **Run simulation** over the whole watchlist completes and reports.
+- [ ] Narrowing the universe to one class works.
+- [ ] Component attribution gives each component a KEEP / WEAK / DROP /
+      INVERTED verdict.
+- [ ] The catalyst component says it is **not measured** rather than pretending
+      otherwise.
+- [ ] Changing R:R moves the realised hit rate toward `1/(1+R:R)` — the identity
+      the whole app rests on.
+- [ ] **Start replay**: a setup appears without revealing the model's call.
+- [ ] Buy / Short / **Skip** all advance, and the scorecard shows your P&L
+      against the model's.
+
+### Playmaker
+
+- [ ] Seven sports in the picker; prop list and context hint change with each.
+- [ ] Pasting 4 books prices the market: fair probability, margin, book spread.
+- [ ] All three devig methods shown, with the default marked.
+- [ ] The cross-book screen flags an outlier and reports its z-score.
+- [ ] With fewer than three books it explains why there is no screen.
+- [ ] An unreadable price line names the line that failed.
+- [ ] Golf and Cycling say plainly that no model rates them; Cycling says it has
+      no results feed.
+- [ ] ⚠ The model read is labelled commentary and the **stake is not derived
+      from it**.
+
+### Docs
+
+- [ ] **Docs** opens; §1 is the plain-English primer.
+- [ ] Every table-of-contents link resolves.
+- [ ] The glossary defines the 24 terms.
+
+### After any packaging or threading change
+
+- [ ] `./build_app.sh --install`, then the **installed binary's** `--selftest`.
+      The suite cannot tell you a bundle is correct.
 
 ---
 
@@ -287,7 +397,7 @@ Re-measure with:
 4. ~~`server.py`~~ — **done**, 92%.
 5. ~~The Book tab's trade path end to end.~~ — **done**.
 6. `universe.py`, `charts.py`, `tray.py` formatting.
-7. `research/features.py` — before the next study leans on it.
+7. ~~`research/features.py`~~ — **done**, 99%, and it found a `log(0)` shared by six features.
 
 Steps 1–5 are done, and they were the ones that mattered — every path a number
 takes from a feed, through the model and the engine, to a row in the book, now
