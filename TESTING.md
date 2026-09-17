@@ -8,12 +8,21 @@ estimated.
 
 ## 0. Where we are
 
-**743 tests. 61% of statements** (6,580 total, 2,357 unexecuted).
+**812 tests. 62% of statements** (6,598 total, 2,276 unexecuted).
 
-> **Progress, 2026-09-16.** Steps 1 and 2 below are done. `model.py` went 39% →
-> **100%** and `engine.py` 38% → **100%**. The overall figure barely moved,
-> which is the point: these are 217 statements out of 6,580, and they were the
-> two that mattered most. Writing them found a real bug — see §1.
+> **Progress.** Steps 1–3 are done. `model.py` 39% → **100%**, `engine.py`
+> 38% → **100%**, `feeds.py` 30% → **82%**. The overall figure barely moves,
+> which is the point: these are the modules that mattered, not the biggest ones.
+> Writing them found a real bug (§1) and made a lookahead bug in the warm-up a
+> one-character change that now fails a test (§2).
+>
+> **Two practices are worth keeping for the rest of the list.** Where two pieces
+> of code compute the same quantity, compare them — that is what found the
+> lattice bug, and neither implementation looked wrong alone. And *mutation-check*
+> anything important: deliberately break the code and confirm a test notices.
+> Coverage says a line ran, not that an assertion would have caught it being
+> wrong. Twenty-three mutations have been run across these three modules; all
+> twenty-three were caught.
 
 That number is respectable and it hides something worse than a low one would:
 the coverage is almost exactly inverted against importance.
@@ -105,19 +114,22 @@ What to pin down:
 
 ## 2. Tier 2 — untestable-looking things that are actually testable
 
-### `sonar/feeds.py` (30%)
+### `sonar/feeds.py` — **done, 82%**
 
-Untested: `_binance_hour`, `_coinbase_hour`, `current_market`, `_midpoint`,
-`_fill_book`, `_iso_to_unix`, `historical_decision_points`.
+Parsers split from fetches; 69 tests, none touching the network. What remains
+uncovered is `_get` itself, the paging half of the historical fetch, and the
+`__main__` smoke block — pure I/O, and not worth mocking a socket for.
 
-These *look* like network code and mostly are not — they are parsers with a
-fetch at the top. The pattern is already established in
-`playmaker/results.py`: split the parse from the fetch, test the parse on a
-saved payload, and never let the suite touch the network. Every one of these
-should be a fixture test.
+The find here was **causality**. `historical_decision_points` computes each
+hour's volatility from `closes[i - vol_window : i]`, strictly earlier hours.
+Changing `:i` to `:i + 1` tells the backtest the volatility of the hour it is
+predicting, which inflates every result in a way that looks entirely plausible
+and raises nothing. One character. There is now a test that fails on it —
+feed a flat series with one violent hour at the end and assert that hour's own
+sigma is still the calm one.
 
-A payload-shape change is the realistic failure here, and it is the one that
-would silently zero out a price rather than raise.
+The other half of the pair matters too, and has its own test: causal must not
+mean blind, so the *following* hour's sigma does pick the move up.
 
 ### `sonar/universe.py` (17%)
 
@@ -238,12 +250,11 @@ Re-measure with:
 
 1. ~~`model.py`~~ — **done**, 100%, and it found the lattice bug.
 2. ~~`engine.py`~~ — **done**, 100%, mutation-checked.
-3. `feeds.py` — split parse from fetch, test the parsers on saved payloads.
+3. ~~`feeds.py`~~ — **done**, 82%, and it made the lookahead bug testable.
 4. `server.py` — it is the answer for uptime now, and has never been run by a test.
 5. The Book tab's trade path end to end.
 6. `universe.py`, `charts.py`, `tray.py` formatting.
 7. `research/features.py` — before the next study leans on it.
 
-Steps 1 and 2 are done. **Step 3 is next**, and the cross-check lesson applies
-there too: `feeds.py` has two independent hourly-candle sources (Binance and
-Coinbase) that should agree, and nothing compares them.
+Steps 1–3 are done. **Step 4 is next** — `server.py`, still at 0%, and now the
+documented answer for uptime, so it is about to matter more than it did.
