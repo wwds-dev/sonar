@@ -15,6 +15,13 @@ process. A green suite says nothing about any of them.
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
+**Run it from inside the app.** The **Test plan** button, next to *Docs*, opens
+this as a page that remembers which cases you have passed or failed — eighty of
+them is more than one sitting. The daemon serves it at `/testplan` too.
+
+That page is *generated* from this file by `scripts/build_testplan.py`, which
+`build_app.sh` runs before packaging. Edit the markdown, never the HTML.
+
 **⚠ marks a case that has caught a real regression.** Those are the ones worth
 running even when short of time — the list doubles as this project's bug history.
 

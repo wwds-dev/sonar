@@ -619,20 +619,36 @@ class MainWindow(QMainWindow):
                         "what SONAR deliberately will not do.")
         docs.clicked.connect(self._open_docs)
         bar.addWidget(docs)
+
+        plan = QPushButton("Test plan")
+        plan.setFont(theme.mono(9))
+        plan.setToolTip(
+            "The 80-case acceptance checklist for signing off a build.\n"
+            "Tick each case off as you go — the page remembers what you have\n"
+            "already passed or failed. Twenty of them are marked as regressions:\n"
+            "each one has caught a real bug before.")
+        plan.clicked.connect(self._open_testplan)
+        bar.addWidget(plan)
         return bar
 
-    def _open_docs(self) -> None:
-        """Open the bundled documentation in the default browser.
+    def _open_page(self, filename: str, what: str) -> None:
+        """Open a bundled page in the default browser.
 
         ``static/`` ships inside the app bundle, so this resolves both frozen
         and from source. If it is somehow missing, say so in the status line
         rather than opening nothing and looking broken.
         """
-        page = paths.resource_base() / "static" / "docs.html"
+        page = paths.resource_base() / "static" / filename
         if not page.exists():
-            self.status.setText(f"⚠  documentation not found at {page}")
+            self.status.setText(f"⚠  {what} not found at {page}")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(page)))
+
+    def _open_docs(self) -> None:
+        self._open_page("docs.html", "documentation")
+
+    def _open_testplan(self) -> None:
+        self._open_page("testplan.html", "test plan")
 
     def _terminal_tab(self) -> QWidget:
         w = QWidget()

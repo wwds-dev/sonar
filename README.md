@@ -489,6 +489,12 @@ signing off v2, run against the installed bundle rather than the checkout,
 because several of the failures only exist in a build. Twenty of them are marked
 as regressions, which makes the list double as this project's bug history.
 
+The app's **Test plan** button (next to *Docs*) opens it as a page that remembers
+which cases you have passed or failed; the daemon serves it at `/testplan`. That
+page is generated from the markdown by `scripts/build_testplan.py` — edit the
+markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
+drift apart.
+
 ```bash
 ./run-tests.sh tests/ -q          # 1,073 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest

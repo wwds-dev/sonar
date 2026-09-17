@@ -82,7 +82,9 @@ class Handler(BaseHTTPRequestHandler):
 
         page = {"/": "index.html", "/index.html": "index.html",
                 "/docs": "docs.html", "/docs/": "docs.html",
-                "/docs.html": "docs.html"}.get(self.path)
+                "/docs.html": "docs.html",
+                "/testplan": "testplan.html", "/testplan/": "testplan.html",
+                "/testplan.html": "testplan.html"}.get(self.path)
         if page:
             self._send(200, (STATIC / page).read_bytes(), "text/html; charset=utf-8")
             return

@@ -1,0 +1,101 @@
+"""The in-app test plan page, and the thing that keeps it honest.
+
+`static/testplan.html` is generated from `TESTPLAN.md`. A hand-maintained HTML
+copy beside the markdown is exactly how `lab_hub/tools/convert` and
+`toolbox/convert_epub` drifted apart — AGENTS.md says not to repeat it — so the
+page is generated, `build_app.sh` regenerates it before packaging, and the first
+test here fails if the two have fallen out of step.
+"""
+
+import pathlib
+import re
+import subprocess
+import sys
+
+import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "TESTPLAN.md"
+PAGE = ROOT / "static" / "testplan.html"
+
+
+def test_the_page_is_up_to_date_with_the_markdown():
+    """The whole point of generating it. Edit TESTPLAN.md, run
+    `scripts/build_testplan.py`, commit both."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build_testplan.py"), "--check"],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_every_case_in_the_markdown_reaches_the_page():
+    ids = set(re.findall(r'^\| (\d+\.\d+) ', SOURCE.read_text(), re.M))
+    rendered = set(re.findall(r'data-case="([\d.]+)"', PAGE.read_text()))
+    assert ids == rendered
+    assert len(ids) >= 70
+
+
+def test_the_regressions_are_still_marked():
+    """Twenty cases carry a warning because each caught a real bug. Losing the
+    marks would turn the plan into a flat list and lose its history."""
+    assert PAGE.read_text().count('class="flag"') >= 15
+
+
+def test_every_case_has_a_pass_and_a_fail_control():
+    page = PAGE.read_text()
+    cases = page.count('data-case="')
+    # Named distinctly on purpose: `class="n"` is already the section-number
+    # span, and the first version of this test counted 93 fail buttons against
+    # 80 cases because of it.
+    assert page.count('class="mark-pass"') == cases
+    assert page.count('class="mark-fail"') == cases
+
+
+def test_results_are_stored_per_browser_and_never_uploaded():
+    """No network call anywhere on the page — the results are the user's."""
+    page = PAGE.read_text()
+    assert "localStorage" in page
+    for forbidden in ("fetch(", "XMLHttpRequest", "navigator.sendBeacon", "http://", "https://"):
+        assert forbidden not in page, f"the page reaches out via {forbidden}"
+
+
+def test_the_page_says_so_when_it_cannot_save():
+    """The app opens this as a file:// URL and some browsers refuse storage
+    there. Failing silently would mean losing eighty cases of work without
+    warning, so the page probes and says."""
+    page = PAGE.read_text()
+    assert "storage-note" in page
+    assert "will not be saved" in page
+
+
+def test_the_generated_page_warns_against_editing_it():
+    assert "Do not edit" in PAGE.read_text()
+
+
+# --------------------------------------------------------------------------- #
+# Reachable from the app and from the daemon
+# --------------------------------------------------------------------------- #
+def test_the_app_has_a_button_for_it():
+    app = (ROOT / "ui" / "app.py").read_text()
+    assert 'QPushButton("Test plan")' in app
+    assert "_open_testplan" in app
+
+
+def test_the_button_reports_a_missing_page_rather_than_doing_nothing():
+    """A frozen bundle that lost `static/` must say so, not look like a dead
+    button — which is how the Assets read button once behaved."""
+    app = (ROOT / "ui" / "app.py").read_text()
+    body = app[app.index("def _open_page"):app.index("def _open_docs")]
+    assert "not exists()" in body.replace("not page.exists()", "not exists()")
+    assert "status.setText" in body
+
+
+@pytest.mark.parametrize("route", ["/testplan", "/testplan/", "/testplan.html"])
+def test_the_daemon_serves_it(route):
+    server = (ROOT / "sonar" / "server.py").read_text()
+    assert f'"{route}": "testplan.html"' in server
+
+
+def test_the_build_regenerates_it_before_packaging():
+    """Otherwise a bundle can ship a page that has drifted from the plan."""
+    assert "build_testplan.py" in (ROOT / "build_app.sh").read_text()

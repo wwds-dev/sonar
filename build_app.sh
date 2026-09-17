@@ -75,7 +75,11 @@ if [[ "${1:-}" == "--install" ]]; then
   echo "Installed: /Applications/$APP_NAME.app"
 
   # Nothing left behind to be indexed or backed up.
-  rm -rf build "$DIST"
+  # The test-plan page is generated from TESTPLAN.md. Regenerate before
+# packaging so a bundle can never ship one that has drifted.
+python3 scripts/build_testplan.py
+
+rm -rf build "$DIST"
   echo "Cleaned: build/ and $DIST/"
 else
   echo
