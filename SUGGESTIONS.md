@@ -18,8 +18,8 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 8 | Cross-sectional z-scoring within asset class, so a score means the same thing for a coin and a currency (`CONFIDENCE.md` §3) | research | S | PLANNED |
 | 9 | Daily GPR-style political index computed from the newswire SONAR already reads (`CONFIDENCE.md` §7.1) | feature | M | IDEA |
 | 10 | **Volatility component is inverted for ranking** — 10 of 12 configurations show a negative IC, quintile gradient 45.3%→34.5%, and the tie-break artefact is ruled out (zero ambiguous bars). But it fails the time-block test at 5/6, p=0.22, with the most recent period reversing — so the weights are unchanged. Also a design question, not only an empirical one: high volatility is correct for *notability* and backwards for *ranking winners* (`CONFIDENCE.md` §10a) | research | M | BLOCKED |
-| 11 | **Cross-sectional z-scoring within asset class** (`CONFIDENCE.md` §10b H3) — structurally right and it halves the blend's regime-to-regime swing (range 0.22 → 0.11), but three of five classes have ≤3 members and a MAD over two instruments is not a standardisation. Needs a bigger watchlist first | research | M | BLOCKED |
-| 12 | **Grow the watchlist so classes can carry a cross-sectional statistic** — the blocker on #11. Index, Forex and Commodity have 3, 3 and 2 members | data | M | IDEA |
+| 11 | Cross-sectional z-scoring within asset class | research | M | **DONE** — `sonar/crosssection.py`. Class median CONF spread 18 → 8.6 points; Forex's volatility component went from a 0.23 ceiling to a 0.60 one. Standardises the *raw* quantity, not the clipped component — doing the latter is a silent no-op for the saturated classes |
+| 12 | Grow the watchlist so classes can carry a cross-sectional statistic | data | M | **DONE** — 26 → 129, every class ≥18. Every symbol verified to return a year of closes before being added; the growth also forced a rolling refresh, because refetching all of them took the request rate from ~13/min to ~64 and the source throttles below that |
 
 ## Safety rails
 

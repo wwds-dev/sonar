@@ -131,6 +131,18 @@ not, and `research/stats.py` can measure whether it does.
 
 ---
 
+
+> **Built, 2026-09-17 — `sonar/crosssection.py`.** Measured on a live
+> 129-instrument screen, the volatility component had a median of 1.00 in Crypto
+> and 0.14 in Forex, never exceeding 0.23 for any currency pair: it was
+> measuring asset class, not volatility. After standardising within class the
+> spread between class median confidences fell from 18 points to 8.6, and the
+> top of the board spans four classes instead of being crypto by construction.
+>
+> One thing worth carrying forward: standardising the *component* is a silent
+> no-op. `min(1, x / scale)` pins most of Crypto to exactly 1.0, so the
+> within-class deviation is zero and the class that most needs rescaling is the
+> one it cannot touch. The raw unclipped quantity has to be the input.
 ## 4. Fix: benchmark momentum against its own class
 
 Replace raw `abs(mom)` with the residual after removing the class move:
