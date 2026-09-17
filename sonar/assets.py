@@ -36,7 +36,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 
 from . import events as events_mod
-from . import horizon, news, risk, scoring, volatility
+from . import crosssection, horizon, news, risk, scoring, volatility
 
 _UA = {"User-Agent": "Mozilla/5.0 (Macintosh) sonar/0.3"}
 _CHART = ("https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
@@ -427,7 +427,10 @@ class AssetScanner:
                             "date": earn.date, "days_away": earn.days_away,
                             "when": earn.when}
 
-            conf = round(100 * sum(_W[k] * comp.get(k, 0.0) for k in _W), 1)
+            # Confidence is computed in a second pass, once every instrument's
+            # raw components are known: a component is standardised against the
+            # rest of its own asset class, and that cannot be done one row at a
+            # time. See `_standardise_components`.
             level = news_level(matched)
 
             # Direction is the user's. R:R and P(profit) are identical for a
@@ -444,7 +447,7 @@ class AssetScanner:
                 volatility=round(vol, 4),
                 # a longer window deserves a longer sparkline
                 spark=[round(c, 4) for c in closes[-(60 if hz.long_horizon else 20):]],
-                comp=comp, confidence=conf, lean=level,
+                comp=comp, confidence=0.0, lean=level,
                 data_age_s=round(age, 1),
                 news_sentiment=round(sentiment, 3),
                 headlines=[{"title": h.title, "source": h.source, "link": h.link,
@@ -468,6 +471,7 @@ class AssetScanner:
             )
             out.append(s)
 
+        _standardise_components(out)
         out.sort(key=lambda x: x.confidence, reverse=True)
         self._payload = {
             "status": "live" if out else "error",
@@ -478,6 +482,46 @@ class AssetScanner:
             "risk": profile.as_dict(),
             "assets": [asdict(s) for s in out],
         }
+
+
+#: Components standardised within asset class, and the *raw* quantity each one
+#: is derived from. Standardising the component itself does not work: it is
+#: already clipped by `min(1, x / scale)`, which flattens most of Crypto to
+#: exactly 1.0, leaving a within-class deviation of zero and nothing to
+#: standardise against. The raw value has to be the input.
+#:
+#: News is left absolute — its raw form saturates around two fresh headlines and
+#: there is no unclipped quantity underneath to use. Catalyst is left alone
+#: deliberately: it already scores a scheduled event, and "earnings in three
+#: days" means the same for a currency as for a share.
+CROSS_SECTIONAL = {"momentum": lambda r: abs(r.momentum),
+                   "volatility": lambda r: r.volatility}
+
+
+def _standardise_components(rows: list) -> None:
+    """Rescale each component against its own asset class, then re-score.
+
+    Measured on a live screen before this existed: the volatility component had
+    a median of 1.00 in Crypto and 0.14 in Forex, never exceeding 0.23 for any
+    currency pair. It was not measuring volatility — it was measuring asset
+    class, and a genuinely extraordinary day in EUR/USD ranked below a dull one
+    in Dogecoin.
+
+    Mutates in place because the rows are already built; the only fields that
+    change are the standardised components and the confidence derived from them.
+    """
+    if not rows:
+        return
+    classes = {r.symbol: r.cls for r in rows}
+    for name, raw_of in CROSS_SECTIONAL.items():
+        raw = {r.symbol: float(raw_of(r)) for r in rows}
+        scaled = crosssection.standardise_raw(raw, classes,
+                                              {r.symbol: r.comp.get(name, 0.0)
+                                               for r in rows})
+        for r in rows:
+            r.comp[name] = round(scaled[r.symbol], 3)
+    for r in rows:
+        r.confidence = round(100 * sum(_W[k] * r.comp.get(k, 0.0) for k in _W), 1)
 
 
 def _daily_vol(closes: list[float]) -> float:
