@@ -247,124 +247,15 @@ suite cannot tell you the bundle is correct.
 
 ---
 
-## 6. v2 acceptance checklist
+## 6. Manual acceptance
 
-Run this against the **installed** `/Applications/SONAR.app`, not the checkout —
-several of the failures it is looking for only exist in a bundle. Every item is
-something a person has to see; the automated suite covers none of them.
+Moved to **[`TESTPLAN.md`](TESTPLAN.md)** — 80 cases across every tab, 20 of
+them marked as regressions that have caught a real bug before. Two documents
+that both claim to be the manual checklist is one too many, so this section is
+a pointer rather than a copy.
 
-Anything marked ⚠ has actually broken before.
-
-### Launch and shell
-
-- [ ] Launches from `/Applications` in **under three seconds** to first paint.
-      ⚠ It once took 11s of sequential fetches.
-- [ ] All **seven tabs** present: Terminal · Assets · Wire · Book · Macro · Lab ·
-      Playmaker.
-- [ ] No tab shows "—" in every field after 30 seconds.
-- [ ] ⚠ Window fits a **1280×800** display. Nothing clipped, no horizontal
-      scroll. It once opened 4,540pt wide.
-- [ ] ⚠ **Close the window**: it disappears, the menu-bar icon stays, the app
-      keeps running. Broken twice, for two different reasons.
-- [ ] ⚠ Leave full screen, *then* close. The window must not reopen itself.
-- [ ] Menu-bar icon shows bankroll, and **Quit SONAR** actually exits — no
-      SIGABRT, no "Python quit unexpectedly".
-- [ ] ⌘Q quits too.
-- [ ] Reopen from the Dock after ⌘H.
-- [ ] ⚠ **Leave it running 15 minutes and click around.** The Wire's news TTL is
-      eight minutes and a UI-thread fetch would freeze it there — a blank white
-      window ignoring the close button.
-
-### Terminal
-
-- [ ] Shows a live BTC price that moves, and the hour's open.
-- [ ] Model P(up), market P(up) and the edge are all populated.
-- [ ] ⚠ The lattice caption's **P(up) matches the signal above it**. They once
-      disagreed by ten points at the top of every hour.
-- [ ] The lattice redraws as price moves, and widens/narrows sensibly.
-- [ ] Equity curve renders; the gold LIVE marker separates warm-up from real.
-- [ ] **LLM read on this hour** — either returns a read, or says why not
-      (no key is the normal answer).
-
-### Assets
-
-- [ ] 26 rows, each with price, 1D, MOM, VOL, NEWS, R:R, P(PROF), CONF.
-- [ ] P(PROF) reads a flat **40%** in grey — the honest number until calibration
-      measures drift.
-- [ ] Sorting by each column works.
-- [ ] Risk profile and horizon selectors change the numbers and the board
-      redraws **immediately**, not on the next tick.
-- [ ] ⚠ **Buy** and **Short** open a position and it appears in Book *at once*.
-      A cached board signature once made this look like a dead button.
-- [ ] Hovering any number gives a tooltip that explains it in plain words.
-- [ ] Each row names where it could actually be traded, and says so honestly
-      for the nine of 26 that cannot be bought as shown.
-
-### Wire
-
-- [ ] Headlines from multiple blocs, with sources and ages.
-- [ ] The bloc spread renders.
-- [ ] Earnings/IPO calendar is populated.
-- [ ] Alerts panel lists something, or says nothing is firing.
-- [ ] ⚠ No alert anywhere contains "buy", "sell", "short" or "immediately".
-
-### Book
-
-- [ ] Open positions show entry, target, stop, unrealised P&L, progress.
-- [ ] **close** on a position settles it at the current price and it moves to
-      closed.
-- [ ] Stats: bankroll, total P&L, win rate, profit factor.
-- [ ] Calibration table either reports, or says how many more closed positions
-      it needs. It must not claim an edge below the threshold.
-- [ ] **run backtest** completes and reports.
-
-### Macro
-
-- [ ] All seven readings populated: 10y, curve, fed funds, VIX, real 10y, CPI,
-      unemployment.
-- [ ] Regime label and its rationale render.
-- [ ] Central-bank communication panel lists releases, with **no direction
-      claimed**.
-- [ ] Every reading's tooltip explains what it is *and how to read it* — not
-      just a restatement of the label.
-
-### Lab
-
-- [ ] **Run simulation** over the whole watchlist completes and reports.
-- [ ] Narrowing the universe to one class works.
-- [ ] Component attribution gives each component a KEEP / WEAK / DROP /
-      INVERTED verdict.
-- [ ] The catalyst component says it is **not measured** rather than pretending
-      otherwise.
-- [ ] Changing R:R moves the realised hit rate toward `1/(1+R:R)` — the identity
-      the whole app rests on.
-- [ ] **Start replay**: a setup appears without revealing the model's call.
-- [ ] Buy / Short / **Skip** all advance, and the scorecard shows your P&L
-      against the model's.
-
-### Playmaker
-
-- [ ] Seven sports in the picker; prop list and context hint change with each.
-- [ ] Pasting 4 books prices the market: fair probability, margin, book spread.
-- [ ] All three devig methods shown, with the default marked.
-- [ ] The cross-book screen flags an outlier and reports its z-score.
-- [ ] With fewer than three books it explains why there is no screen.
-- [ ] An unreadable price line names the line that failed.
-- [ ] Golf and Cycling say plainly that no model rates them; Cycling says it has
-      no results feed.
-- [ ] ⚠ The model read is labelled commentary and the **stake is not derived
-      from it**.
-
-### Docs
-
-- [ ] **Docs** opens; §1 is the plain-English primer.
-- [ ] Every table-of-contents link resolves.
-- [ ] The glossary defines the 24 terms.
-
-### After any packaging or threading change
-
-- [ ] `./build_app.sh --install`, then the **installed binary's** `--selftest`.
-      The suite cannot tell you a bundle is correct.
+The short version: run it against the **installed bundle**, not the checkout.
+Several of the failures it looks for only exist in a build.
 
 ---
 

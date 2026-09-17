@@ -481,6 +481,19 @@ and writing the engine's cross-check test found a real ten-point disagreement be
 two ways of computing P(up) (a lattice bin sitting exactly on the barrier), since fixed. Tier 2
 (`feeds.py`, `server.py`) is next.
 
+### Testing
+
+`TESTING.md` is the automated side — what is covered, what is not, and the order
+to fix it in. **`TESTPLAN.md` is the manual side**: 80 acceptance cases for
+signing off v2, run against the installed bundle rather than the checkout,
+because several of the failures only exist in a build. Twenty of them are marked
+as regressions, which makes the list double as this project's bug history.
+
+```bash
+./run-tests.sh tests/ -q          # 1,073 tests, bounded by an external watchdog
+./build_app.sh --install          # then the installed binary's --selftest
+```
+
 ### Uptime
 
 SONAR is a daemon wearing an app: the equity curve only means something if positions settle on
