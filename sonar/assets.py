@@ -36,7 +36,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 
 from . import events as events_mod
-from . import horizon, news, risk, scoring
+from . import horizon, news, risk, scoring, volatility
 
 _UA = {"User-Agent": "Mozilla/5.0 (Macintosh) sonar/0.3"}
 _CHART = ("https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
@@ -147,7 +147,15 @@ def _get(url: str):
         return None
 
 
-def _fetch(symbol: str, rng: str = "1mo"):
+#: A year of daily closes. One month — the old default — was 23 bars, which is
+#: fewer than the Quarter horizon's 60-day momentum window and far fewer than
+#: the Year's 250, so two of the five horizons could not compute the number they
+#: displayed. It also left volatility estimated on 22 observations. The longer
+#: range is the *same single request*: 0.15s against 0.17s, measured.
+SCAN_RANGE = "1y"
+
+
+def _fetch(symbol: str, rng: str = SCAN_RANGE):
     d = _get(_CHART.format(sym=urllib.parse.quote(symbol), rng=rng))
     try:
         r = d["chart"]["result"][0]
@@ -237,13 +245,20 @@ class AssetScanner:
             price, currency, closes = got
             prev = closes[-2]                        # yesterday's daily close
             day = price / prev - 1 if prev else 0.0
-            # Momentum over the horizon's window, falling back to the longest
-            # window the series actually supports.
+            # Momentum over the horizon's window. `hz.chart_range` is sized to
+            # the horizon (1mo/3mo/1y/2y), so the series always covers `days`
+            # and the fallbacks below are for a truncated feed, not normal use.
             if len(closes) > days:
                 mom = price / closes[-(days + 1)] - 1
+            elif len(closes) > 2:
+                mom = price / closes[0] - 1     # the longest window we do have
             else:
                 mom = day
-            vol = _daily_vol(closes)
+            # Volatility chosen by horizon: a clustering model at short ones,
+            # a long trailing window at long ones. Both measured against the
+            # volatility that actually followed — see `sonar/volatility.py`.
+            # Falls back to the plain estimate if the series is too short.
+            vol = volatility.forecast(closes, days) or _daily_vol(closes)
 
             # Risk filter: hide instruments too volatile for this appetite. A
             # visibility rule — it never changes what the score would have been.

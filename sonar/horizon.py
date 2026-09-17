@@ -87,7 +87,7 @@ INTRADAY = Horizon(
     min_hours=0.25,
     max_hours=24.0,
     momentum_days=1,
-    chart_range="1mo",
+    chart_range="1y",
 )
 
 WEEK = Horizon(
@@ -97,7 +97,7 @@ WEEK = Horizon(
     min_hours=12.0,
     max_hours=192.0,            # 8 days
     momentum_days=5,
-    chart_range="1mo",
+    chart_range="1y",
 )
 
 MONTH = Horizon(
