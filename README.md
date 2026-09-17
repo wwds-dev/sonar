@@ -481,6 +481,15 @@ and writing the engine's cross-check test found a real ten-point disagreement be
 two ways of computing P(up) (a lattice bin sitting exactly on the barrier), since fixed. Tier 2
 (`feeds.py`, `server.py`) is next.
 
+### Learning what the numbers mean
+
+The **Docs** button opens the manual. §1 is a plain-English primer with a
+24-term glossary — it assumes no finance background. **§8 is the one to read
+before trusting a Lab run**: how to read an error bar, what the four attribution
+verdicts mean, how many trials a number needs before it means anything (at 20
+trials the band is ±21.5 points), and five ways to fool yourself, each of which
+happened here and each naming what caught it.
+
 ### Testing
 
 `TESTING.md` is the automated side — what is covered, what is not, and the order

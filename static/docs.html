@@ -90,12 +90,13 @@
     <a href="#scores">5 · The three numbers</a>
     <a href="#book">6 · The paper book</a>
     <a href="#lab">7 · Testing it yourself</a>
-    <a href="#alerts">8 · Alerts &amp; where you could trade</a>
-    <a href="#grading">9 · How the score gets graded</a>
-    <a href="#findings">10 · What the research found</a>
-    <a href="#run">11 · Running it &amp; what it costs</a>
-    <a href="#honesty">12 · Honesty &amp; limits</a>
-    <a href="#playmaker">13 · Playmaker — sports bets</a>
+    <a href="#reading">8 · Reading a result</a>
+    <a href="#alerts">9 · Alerts &amp; where you could trade</a>
+    <a href="#grading">10 · How the score gets graded</a>
+    <a href="#findings">11 · What the research found</a>
+    <a href="#run">12 · Running it &amp; what it costs</a>
+    <a href="#honesty">13 · Honesty &amp; limits</a>
+    <a href="#playmaker">14 · Playmaker — sports bets</a>
   </div>
 
   <h2 id="learn"><span class="n">1</span>Start here — plain English</h2>
@@ -136,7 +137,7 @@
       nothing about which way.</td></tr>
     <tr><td>Momentum</td><td>How much something has already moved recently.
       A description of the past. Whether it predicts the future is exactly what
-      §10 tested, and the answer was no.</td></tr>
+      §11 tested, and the answer was no.</td></tr>
     <tr><td>Stop / target</td><td>Two prices you decide in advance: the
       <b>stop</b> is where you give up and take the loss, the <b>target</b> is
       where you take the profit. Setting both before you enter is the single
@@ -171,7 +172,7 @@
       opposite — scoring it on the data it learned from — makes anything look
       brilliant and is the most common way people fool themselves.</td></tr>
     <tr><td>Backtest</td><td>Running a strategy over history to see what it
-      would have done. Useful, and easy to abuse: see §10 for five that were
+      would have done. Useful, and easy to abuse: see §11 for five that were
       run properly and found nothing.</td></tr>
     <tr><td>Brier score</td><td>A mark out of one for a set of probability
       guesses, where lower is better. 0 is perfect foresight, 0.25 is a coin
@@ -194,7 +195,7 @@
     <tr><td>Devigging</td><td>Taking that cut back out to see what the
       bookmaker really thinks. Sounds like a detail; it is the difference
       between a real edge and an imaginary one, and <em>how</em> you do it
-      changes the answer — see §13.</td></tr>
+      changes the answer — see §14.</td></tr>
     <tr><td>Kelly</td><td>A formula for how much of your money to put on a bet
       so it grows fastest over many bets without going broke. Famously
       aggressive, so Playmaker uses a fraction of it and sizes on the
@@ -242,7 +243,7 @@
     <tr><td>Take a pretend position and track it</td><td><b>Book</b></td></tr>
     <tr><td>Understand the economic backdrop</td><td><b>Macro</b></td></tr>
     <tr><td>Check whether any of this actually works</td>
-      <td><b>Lab</b> — and §10, which says it mostly does not</td></tr>
+      <td><b>Lab</b> — and §11, which says it mostly does not</td></tr>
     <tr><td>Price a sports bet</td><td><b>Playmaker</b></td></tr>
     <tr><td>Watch the hourly Bitcoin model</td><td><b>Terminal</b></td></tr>
   </table>
@@ -451,7 +452,122 @@ APCA_API_SECRET_KEY=...</code></pre>
     and the barrier baseline. Below twenty resolved calls it refuses to draw a
     conclusion, which is the same rule the app applies to itself.</p>
 
-  <h2 id="alerts"><span class="n">8</span>Alerts &amp; where you could trade</h2>
+  <h2 id="reading"><span class="n">8</span>Reading a result</h2>
+  <p>§7 says what the Lab does. This is how to judge what it gives back, which
+    is a different skill and the one that decides whether you learn anything.
+    Every example below is a real result from this project, including the ones
+    that turned out to be wrong.</p>
+
+  <h3>The question it can answer</h3>
+  <p><b>Does ranking by this score sort winners from losers, by more than chance?</b>
+    That is it. It cannot tell you what will happen tomorrow, and a run that
+    looks good does not mean the next month will.</p>
+
+  <h3>Reading the headline</h3>
+  <p>A run reports four things, and three of them are traps on their own:</p>
+  <table>
+    <tr><th>Number</th><th>What to do with it</th></tr>
+    <tr><td>Trials</td><td>How many decision points were replayed. Under a few
+      hundred, stop reading — see the table below.</td></tr>
+    <tr><td>Realised hit rate</td><td>How often the target was reached before
+      the stop. <b>Meaningless alone.</b></td></tr>
+    <tr><td>Predicted rate</td><td>What the barrier maths says it should be:
+      <code>1/(1+R:R)</code>. At R:R 1.50 that is <b>40%</b>.</td></tr>
+    <tr><td>Error bar</td><td>Two standard errors on the difference. <b>This is
+      the number that decides.</b></td></tr>
+  </table>
+  <div class="callout"><b>The only question that matters on the first pass.</b>
+    Is the realised rate outside its error bar from the predicted rate? If it
+    sits inside, the answer is <em>"no drift was found"</em> — and that is a
+    result, not a failure. SONAR prints it that way deliberately.</div>
+
+  <h3>How much data before a number means anything</h3>
+  <p>At a 40% baseline, the two-standard-error band on the hit rate is:</p>
+  <table>
+    <tr><th>Trials</th><th>Band</th><th>What it can detect</th></tr>
+    <tr><td>20</td><td class="down">±21.5 points</td><td>Essentially nothing. 19% and 61% are both "no edge".</td></tr>
+    <tr><td>50</td><td class="down">±13.6 points</td><td>Only an enormous effect.</td></tr>
+    <tr><td>100</td><td class="gold">±9.6 points</td><td>A large effect.</td></tr>
+    <tr><td>400</td><td class="up">±4.8 points</td><td>A realistic one.</td></tr>
+    <tr><td>2,000</td><td class="up">±2.1 points</td><td>A small one.</td></tr>
+  </table>
+  <p>Run the whole watchlist over five years and you will be in the thousands.
+    Run one asset class over one year and you will not.</p>
+
+  <h3>Reading attribution</h3>
+  <p>A hit rate says whether the blend worked. Attribution says which part did,
+    which is the only version you can act on. Three readings per component:</p>
+  <table>
+    <tr><th>Reading</th><th>Good looks like</th><th>The trap</th></tr>
+    <tr><td>IC</td><td>Consistently non-zero, same sign</td>
+      <td>An IC of 0.02 is normal even for real factors. Tiny is not the same as absent.</td></tr>
+    <tr><td>Quintile spread</td><td>Top fifth beats bottom fifth, outside the error bar</td>
+      <td>A big spread with a huge error bar is one lucky quintile.</td></tr>
+    <tr><td>Leave-one-out</td><td>Dropping it makes the blend worse</td>
+      <td>If dropping it changes nothing, its weight is buying nothing — however good its own IC looks.</td></tr>
+  </table>
+  <p>Then a verdict: <b>KEEP</b>, <b>WEAK</b>, <b>DROP</b>, <b>INVERTED</b>.
+    <span class="down">INVERTED is the one to act on</span> — a component with a
+    significant <em>negative</em> IC, carried with a positive weight, is actively
+    pushing the wrong instruments up the board. It is worse than useless.</p>
+
+  <h3>Five ways to fool yourself, each of which happened here</h3>
+  <table>
+    <tr><th>Trap</th><th>What it looked like</th><th>What caught it</th></tr>
+    <tr><td><b>Testing many things, reporting the best</b></td>
+      <td>Four components, one significant. With four tests, one crossing p&lt;0.05 is expected.</td>
+      <td>Benjamini-Hochberg across all of them together, which the Lab applies automatically.</td></tr>
+    <tr><td><b>A result that only holds in one regime</b></td>
+      <td>An apparent Thursday effect — 64% in one instrument, <b>29%</b> in another, reversing in commodities.</td>
+      <td>Splitting the window into six time blocks. A finding that wins 5 of 6 at p=0.22 is not a finding.</td></tr>
+    <tr><td><b>Lookahead</b></td>
+      <td>Volatility computed from <code>closes[:i+1]</code> instead of <code>closes[:i]</code> — one character.</td>
+      <td>A test that feeds a flat series with one violent hour at the end and checks that hour's own volatility is still calm.</td></tr>
+    <tr><td><b>Sample size dressed as skill</b></td>
+      <td>A volatility model beat the incumbent by <b>+24.5%</b>, on 26 of 26 instruments and 6 of 6 blocks.</td>
+      <td>A synthetic control with <em>constant</em> volatility — nothing to find. It still "won" by 27%, because it simply saw more history.</td></tr>
+    <tr><td><b>Measuring a number that was already clipped</b></td>
+      <td>Standardising the volatility component changed nothing for crypto.</td>
+      <td>Looking at the input: <code>min(1, vol/0.03)</code> had already pinned it to 1.0, so its spread was zero.</td></tr>
+  </table>
+
+  <h3>A pass that would actually teach you something</h3>
+  <ol>
+    <li><b>Whole watchlist, 5y, your usual horizon.</b> Read the hit rate against
+      the predicted rate and the error bar. Expect them to overlap.</li>
+    <li><b>Change R:R and re-run.</b> The realised rate should move toward
+      <code>1/(1+R:R)</code>. If it does not, something is wrong with the replay,
+      not with the market — this identity is the claim everything rests on.</li>
+    <li><b>Read attribution.</b> Note which components are KEEP and which are
+      WEAK. Write them down before the next step.</li>
+    <li><b>Re-run on one asset class.</b> Do the same components survive? A
+      component that is KEEP for crypto and DROP for forex is describing crypto,
+      not markets.</li>
+    <li><b>Re-run on a different 5-year window.</b> Same answer? If a component
+      flips sign between windows, it was never there.</li>
+  </ol>
+  <p>Anything that survives all five is worth taking seriously. In five
+    pre-registered studies over 116,563 asset-days, nothing directional has.</p>
+
+  <h3>What "working well" would look like</h3>
+  <p>Concretely, so it can be checked rather than felt:</p>
+  <ul>
+    <li>Realised hit rate <b>above</b> the predicted rate by more than its error
+      bar, on thousands of trials.</li>
+    <li>The same sign in <b>at least 5 of 6</b> time blocks.</li>
+    <li>At least one component surviving Benjamini-Hochberg, with a quintile
+      spread whose error bar excludes zero.</li>
+    <li>The same component surviving in more than one asset class.</li>
+    <li>And then the only one that counts: <b>calibration</b> on real closed
+      positions agreeing, with the hit rate climbing across confidence buckets.</li>
+  </ul>
+  <div class="callout warn"><b>None of that has happened yet.</b> The Lab has
+    never reported a directional component as KEEP on a full run, and calibration
+    has zero closed positions of the twenty it needs. The honest state of this
+    app is that its own tools have not found an edge in it — which is worth
+    far more than a tool that never looked.</div>
+
+  <h2 id="alerts"><span class="n">9</span>Alerts &amp; where you could trade</h2>
 
   <h3>Alerts say what changed</h3>
   <p>An alert is a delivery mechanism for the confidence score, and that score is
@@ -495,7 +611,7 @@ APCA_API_SECRET_KEY=...</code></pre>
   <p>This is reference information, not advice, and it goes stale — the tooltip
     carries the date it was last verified.</p>
 
-  <h2 id="grading"><span class="n">9</span>How the score gets graded</h2>
+  <h2 id="grading"><span class="n">10</span>How the score gets graded</h2>
   <p>Every closed position carries the confidence it was opened on, so the Book
     tab can ask the only question that matters: <em>did high scores actually win
     more often?</em> Hit rate is bucketed by score and compared with what the
@@ -510,7 +626,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     daily data cannot order them, and costs are excluded. Reality is worse than
     what it reports, not better.</p>
 
-  <h2 id="findings"><span class="n">10</span>What the research found</h2>
+  <h2 id="findings"><span class="n">11</span>What the research found</h2>
   <p>Five studies, each more careful than the last. All of them negative.</p>
   <table>
     <tr><th>Question</th><th>Answer</th></tr>
@@ -543,7 +659,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     <b>sentiment</b> (Wikipedia pageviews measure attention volume, not tone), and
     anything requiring intraday or order-flow data.</p>
 
-  <h2 id="run"><span class="n">11</span>Running it &amp; what it costs</h2>
+  <h2 id="run"><span class="n">12</span>Running it &amp; what it costs</h2>
   <p>A native macOS app — PySide6 widgets, every chart drawn with QPainter, no
     web view.</p>
   <pre><code>uv venv .venv &amp;&amp; uv pip install -r requirements.txt
@@ -559,7 +675,7 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     Polymarket board was removed — down from about 60MB. Negligible on
     broadband, and worth knowing on a metered connection.</p>
 
-  <h2 id="honesty"><span class="n">12</span>Honesty &amp; limits</h2>
+  <h2 id="honesty"><span class="n">13</span>Honesty &amp; limits</h2>
   <div class="warn">
     <b>This is not financial advice and it places no real trades.</b> Paper P/L
     predicts nothing about real results. Live trading means real fees, real
@@ -584,7 +700,7 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
   <p>By design SONAR stops one step short of acting. It will take you up to a
     decision with its reasoning fully exposed, and leave the decision to you.</p>
 
-  <h2 id="playmaker"><span class="n">13</span>Playmaker — pricing a sports bet</h2>
+  <h2 id="playmaker"><span class="n">14</span>Playmaker — pricing a sports bet</h2>
   <p>The same discipline as the rest of the app, pointed at sport. It prices a
     wager rather than predicting one, and it will not let a language model size
     a bet for you.</p>

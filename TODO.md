@@ -82,6 +82,29 @@ and time rather than code, kept at the top.
 - [x] `P1` `bug` `@ai` ~~SIGABRT on quit.~~ `shutdown()` did not name every QThread the window owns. Qt aborts when a running thread is destroyed, so quitting during a backtest died with SIGABRT. Every thread is now listed, with a test asserting it.
 - [x] `P0` `bug` `@ai` ~~Closing SONAR could leave a blank white window that never went away.~~ `_refresh_wire()` fetched on the UI thread whenever the news (8 min TTL) or events cache aged out — a coin flip every eight minutes on whether the event loop blocked up to 30s, painting nothing and ignoring input. The Wire path now reads cache-only (`news.cached()`, `events.cached_payload()`); `tests/test_ui_thread.py` and `test_refresh.py` assert nothing reaches the network from a real window with both caches aged out.
 
+### The score itself — Sep 2026
+
+- [x] `P1` `research` `@ai` ~~Volatility forecast instead of trailing realised vol.~~
+      `sonar/volatility.py`. GARCH below ten days (+11.6% at 3d, +17.8% at 5d on
+      QLIKE), a 250-day trailing window above it (+5.6% at 20d). The first
+      answer — +24.5% on 26/26 instruments and 6/6 blocks — was an artefact of
+      sample size, and a synthetic control with constant volatility is what
+      caught it. Both are in `CONFIDENCE.md` §8.
+- [x] `P1` `data` `@ai` ~~Grow the watchlist.~~ 26 → 129, every class ≥18, every
+      symbol verified to return a year of closes first. Forced a rolling refresh:
+      refetching all of them took the request rate from ~13/min to ~64 and the
+      source throttles silently below that, returning fewer rows rather than an
+      error.
+- [x] `P1` `research` `@ai` ~~Cross-sectional z-scoring within asset class.~~
+      `sonar/crosssection.py`. The volatility component had a median of 1.00 in
+      Crypto and 0.14 in Forex — it was measuring asset class, not volatility.
+      Class median CONF spread 18 → 8.6 points. Standardises the *raw* quantity;
+      standardising the clipped component is a silent no-op.
+- [x] `P2` `docs` `@ai` ~~A learning centre.~~ `static/docs.html` §1 is a
+      plain-English primer with a 24-term glossary; §8 teaches how to read a Lab
+      result — error bars, attribution verdicts, how much data a number needs,
+      and five ways to fool yourself that each happened in this project.
+
 ### Data
 
 - [x] `P2` `feature` `@ai` ~~The newswire read one bloc.~~ Ten non-Western sources added, each verified live: Al Jazeera, Anadolu, Global Times, SCMP, TASS, Times of India, The Hindu, Japan Times, AllAfrica, Folha. 24 feeds, nine press blocs, each tagged with origin and whether it is state-directed. `news.bloc_spread()` distinguishes a story carried across five blocs from one outlet repeating itself, and flags state-only coverage — evidence about a government rather than corroboration of an event. Shown in the newswire header.

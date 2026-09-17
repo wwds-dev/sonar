@@ -114,3 +114,49 @@ def test_the_playmaker_section_carries_the_capacity_caveat():
     selling the reader something."""
     section = HTML[HTML.index('id="playmaker"'):]
     assert "limited the accounts" in section
+
+
+# --------------------------------------------------------------------------- #
+# The learning centre's second half: judging a result, not just reading one
+# --------------------------------------------------------------------------- #
+def test_there_is_a_section_on_reading_a_result():
+    """§7 says what the Lab does. Knowing whether an answer means anything is a
+    different skill, and it is the one that decides if you learn anything."""
+    assert 'id="reading"' in HTML
+
+
+@pytest.mark.parametrize("idea", [
+    "1/(1+R:R)",                      # the identity everything rests on
+    "error bar",                      # the number that actually decides
+    "Benjamini-Hochberg",             # multiple testing
+    "time blocks",                    # regime dependence
+    "synthetic control",              # sample size dressed as skill
+    "INVERTED",                       # the verdict worth acting on
+    "116,563",                        # what has actually been found so far
+])
+def test_the_reading_section_covers(idea):
+    section = HTML[HTML.index('id="reading"'):HTML.index('id="alerts"')]
+    assert idea in section, f"the reading section no longer covers {idea!r}"
+
+
+def test_it_states_how_much_data_a_number_needs():
+    """A hit rate on twenty trials carries a +/-21.5 point band. Without that,
+    every small run looks like a finding."""
+    section = HTML[HTML.index('id="reading"'):HTML.index('id="alerts"')]
+    assert "21.5" in section and "2,000" in section
+
+
+def test_it_defines_what_working_well_would_look_like():
+    """Checkable rather than felt — and it says plainly that none of it has
+    happened yet."""
+    section = HTML[HTML.index('id="reading"'):HTML.index('id="alerts"')]
+    assert "working well" in section
+    assert "has happened yet" in section or "None of that has happened" in section
+
+
+def test_the_five_traps_each_carry_a_real_example():
+    """Abstract warnings teach nothing. Every trap listed happened in this
+    project and names what caught it."""
+    section = HTML[HTML.index('id="reading"'):HTML.index('id="alerts"')]
+    for evidence in ("29%", "+24.5%", "closes[:i+1]", "min(1, vol/0.03)"):
+        assert evidence in section
