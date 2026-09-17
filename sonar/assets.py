@@ -44,42 +44,143 @@ _CHART = ("https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
 
 # symbol, display, class, matching keywords
 WATCHLIST: list[tuple[str, str, str, set[str]]] = [
+    # 130 instruments across five classes, every symbol verified to return a
+    # year of daily closes before being added. Grown from 26 in Sep 2026: at
+    # that size Index, Forex and Commodity held 3, 3 and 2 members, and a
+    # cross-sectional statistic over two instruments is not a standardisation —
+    # which is what blocked z-scoring within class (SUGGESTIONS #11/#12).
+    #
+    # MATIC-USD is deliberately absent: it was rebranded and the ticker now
+    # returns nothing, which is the failure mode this list is verified against.
     ("AAPL", "Apple", "Equity", {"apple", "iphone"}),
-    ("MSFT", "Microsoft", "Equity", {"microsoft", "copilot"}),
+    ("MSFT", "Microsoft", "Equity", {"azure", "copilot", "microsoft"}),
     ("NVDA", "Nvidia", "Equity", {"nvidia"}),
-    ("TSLA", "Tesla", "Equity", {"tesla", "musk"}),
+    ("TSLA", "Tesla", "Equity", {"musk", "tesla"}),
     ("AMZN", "Amazon", "Equity", {"amazon"}),
-    ("GOOGL", "Alphabet", "Equity", {"google", "alphabet"}),
-    ("META", "Meta", "Equity", {"meta", "facebook", "instagram", "zuckerberg"}),
-    ("^GSPC", "S&P 500", "Index", {"stocks", "equities", "wall"}),
+    ("GOOGL", "Alphabet", "Equity", {"alphabet", "google"}),
+    ("META", "Meta", "Equity", {"facebook", "instagram", "meta", "zuckerberg"}),
+    ("BRK-B", "Berkshire Hathaway", "Equity", {"berkshire", "buffett"}),
+    ("JPM", "JPMorgan", "Equity", {"dimon", "jpmorgan"}),
+    ("V", "Visa", "Equity", {"visa"}),
+    ("UNH", "UnitedHealth", "Equity", {"unitedhealth"}),
+    ("XOM", "Exxon Mobil", "Equity", {"exxon"}),
+    ("JNJ", "Johnson & Johnson", "Equity", {"johnson & johnson"}),
+    ("WMT", "Walmart", "Equity", {"walmart"}),
+    ("MA", "Mastercard", "Equity", {"mastercard"}),
+    ("PG", "Procter & Gamble", "Equity", {"procter"}),
+    ("HD", "Home Depot", "Equity", {"home depot"}),
+    ("CVX", "Chevron", "Equity", {"chevron"}),
+    ("ABBV", "AbbVie", "Equity", {"abbvie"}),
+    ("KO", "Coca-Cola", "Equity", {"coca-cola"}),
+    ("PEP", "PepsiCo", "Equity", {"pepsi"}),
+    ("BAC", "Bank of America", "Equity", {"bank of america"}),
+    ("AVGO", "Broadcom", "Equity", {"broadcom"}),
+    ("LLY", "Eli Lilly", "Equity", {"eli lilly", "zepbound"}),
+    ("MRK", "Merck", "Equity", {"merck"}),
+    ("COST", "Costco", "Equity", {"costco"}),
+    ("ADBE", "Adobe", "Equity", {"adobe"}),
+    ("CRM", "Salesforce", "Equity", {"salesforce"}),
+    ("AMD", "AMD", "Equity", {"amd"}),
+    ("NFLX", "Netflix", "Equity", {"netflix"}),
+    ("INTC", "Intel", "Equity", {"intel"}),
+    ("DIS", "Disney", "Equity", {"disney"}),
+    ("CSCO", "Cisco", "Equity", {"cisco"}),
+    ("ORCL", "Oracle", "Equity", {"oracle"}),
+    ("QCOM", "Qualcomm", "Equity", {"qualcomm"}),
+    ("T", "AT&T", "Equity", {"at&t"}),
+    ("PFE", "Pfizer", "Equity", {"pfizer"}),
+    ("NKE", "Nike", "Equity", {"nike"}),
+    ("BA", "Boeing", "Equity", {"boeing"}),
+    ("GS", "Goldman Sachs", "Equity", {"goldman"}),
+    ("CAT", "Caterpillar", "Equity", {"caterpillar"}),
+    ("MCD", "McDonald's", "Equity", {"mcdonald"}),
+    ("IBM", "IBM", "Equity", {"ibm"}),
+    ("SAP", "SAP", "Equity", {"sap"}),
+    ("ASML", "ASML", "Equity", {"asml"}),
+    ("TSM", "TSMC", "Equity", {"taiwan semi", "tsmc"}),
+    ("BABA", "Alibaba", "Equity", {"alibaba"}),
+    ("NVO", "Novo Nordisk", "Equity", {"novo nordisk", "ozempic", "wegovy"}),
+    ("SHEL", "Shell", "Equity", {"shell"}),
+    ("TM", "Toyota", "Equity", {"toyota"}),
+    ("^GSPC", "S&P 500", "Index", {"equities", "s&p", "stocks", "wall street"}),
     ("^IXIC", "Nasdaq", "Index", {"nasdaq"}),
-    ("^DJI", "Dow Jones", "Index", {"dow"}),
-    ("EURUSD=X", "EUR/USD", "Forex", {"euro", "eurozone"}),
-    ("GBPUSD=X", "GBP/USD", "Forex", {"pound", "sterling"}),
-    ("USDJPY=X", "USD/JPY", "Forex", {"yen", "japan"}),
-    # The ten largest non-stablecoin coins. Stablecoins are deliberately absent:
-    # a screener ranking things by momentum and volatility has nothing to say
-    # about an asset whose entire purpose is not to move.
-    # Only BTC and ETH keep the generic "crypto" token: a story about "crypto"
-    # is usually about them. Leaving it on every coin meant one broad article
-    # counted as fresh coverage for nine different assets at once and pushed
-    # them all into the suggestions list on nothing.
-    ("BTC-USD", "Bitcoin", "Crypto", {"bitcoin", "btc", "crypto"}),
-    ("ETH-USD", "Ethereum", "Crypto", {"ethereum", "eth"}),
-    ("BNB-USD", "BNB", "Crypto", {"binance", "bnb"}),
-    ("XRP-USD", "XRP", "Crypto", {"ripple", "xrp"}),
+    ("^DJI", "Dow Jones", "Index", {"dow jones"}),
+    ("^RUT", "Russell 2000", "Index", {"russell", "small cap"}),
+    ("^VIX", "VIX", "Index", {"vix", "volatility index"}),
+    ("^FTSE", "FTSE 100", "Index", {"ftse", "london stocks"}),
+    ("^GDAXI", "DAX", "Index", {"dax", "german stocks"}),
+    ("^FCHI", "CAC 40", "Index", {"cac"}),
+    ("^STOXX50E", "Euro Stoxx 50", "Index", {"european stocks", "stoxx"}),
+    ("^N225", "Nikkei 225", "Index", {"japanese stocks", "nikkei"}),
+    ("^HSI", "Hang Seng", "Index", {"hang seng", "hong kong stocks"}),
+    ("^AXJO", "ASX 200", "Index", {"asx", "australian stocks"}),
+    ("^GSPTSE", "TSX", "Index", {"canadian stocks", "tsx"}),
+    ("^IBEX", "IBEX 35", "Index", {"ibex", "spanish stocks"}),
+    ("^SSMI", "SMI", "Index", {"smi", "swiss stocks"}),
+    ("^KS11", "KOSPI", "Index", {"korean stocks", "kospi"}),
+    ("^BSESN", "Sensex", "Index", {"indian stocks", "sensex"}),
+    ("^AEX", "AEX", "Index", {"aex", "dutch stocks"}),
+    ("^BVSP", "Bovespa", "Index", {"bovespa", "brazilian stocks"}),
+    ("^MXX", "IPC Mexico", "Index", {"bolsa", "mexican stocks"}),
+    ("EURUSD=X", "EUR/USD", "Forex", {"ecb", "euro", "eurozone"}),
+    ("GBPUSD=X", "GBP/USD", "Forex", {"bank of england", "pound", "sterling"}),
+    ("USDJPY=X", "USD/JPY", "Forex", {"bank of japan", "yen"}),
+    ("USDCHF=X", "USD/CHF", "Forex", {"snb", "swiss franc"}),
+    ("AUDUSD=X", "AUD/USD", "Forex", {"aussie dollar", "rba"}),
+    ("USDCAD=X", "USD/CAD", "Forex", {"bank of canada", "loonie"}),
+    ("NZDUSD=X", "NZD/USD", "Forex", {"kiwi dollar", "rbnz"}),
+    ("EURGBP=X", "EUR/GBP", "Forex", {"euro", "pound"}),
+    ("EURJPY=X", "EUR/JPY", "Forex", {"euro", "yen"}),
+    ("GBPJPY=X", "GBP/JPY", "Forex", {"pound", "yen"}),
+    ("EURCHF=X", "EUR/CHF", "Forex", {"euro", "swiss franc"}),
+    ("AUDJPY=X", "AUD/JPY", "Forex", {"aussie dollar", "yen"}),
+    ("USDSEK=X", "USD/SEK", "Forex", {"krona", "riksbank"}),
+    ("USDNOK=X", "USD/NOK", "Forex", {"norges bank", "norwegian krone"}),
+    ("USDMXN=X", "USD/MXN", "Forex", {"banxico", "peso"}),
+    ("USDZAR=X", "USD/ZAR", "Forex", {"rand", "south africa"}),
+    ("USDTRY=X", "USD/TRY", "Forex", {"lira", "turkey"}),
+    ("USDCNY=X", "USD/CNY", "Forex", {"pboc", "renminbi", "yuan"}),
+    ("EURSEK=X", "EUR/SEK", "Forex", {"euro", "krona"}),
+    ("CHFJPY=X", "CHF/JPY", "Forex", {"swiss franc", "yen"}),
+    ("BTC-USD", "Bitcoin", "Crypto", {"bitcoin", "btc"}),
+    ("ETH-USD", "Ethereum", "Crypto", {"ether", "ethereum"}),
     ("SOL-USD", "Solana", "Crypto", {"solana"}),
-    ("TRX-USD", "TRON", "Crypto", {"tron", "trx"}),
-    ("DOGE-USD", "Dogecoin", "Crypto", {"dogecoin", "doge"}),
-    ("ADA-USD", "Cardano", "Crypto", {"cardano", "ada"}),
-    ("AVAX-USD", "Avalanche", "Crypto", {"avalanche", "avax"}),
+    ("XRP-USD", "XRP", "Crypto", {"ripple", "xrp"}),
+    ("ADA-USD", "Cardano", "Crypto", {"cardano"}),
+    ("DOGE-USD", "Dogecoin", "Crypto", {"dogecoin"}),
+    ("AVAX-USD", "Avalanche", "Crypto", {"avalanche"}),
     ("LINK-USD", "Chainlink", "Crypto", {"chainlink"}),
-    # Monero trades fine and Yahoo/CoinGecko agree on its price, but Binance
-    # delisted it in Feb 2024 — so it is deliberately absent from
-    # CRYPTO_BINANCE below and gets no hourly up/down model.
-    ("XMR-USD", "Monero", "Crypto", {"monero", "xmr"}),
-    ("GC=F", "Gold", "Commodity", {"gold", "bullion"}),
-    ("CL=F", "WTI Crude", "Commodity", {"oil", "crude"}),
+    ("DOT-USD", "Polkadot", "Crypto", {"polkadot"}),
+    ("XMR-USD", "Monero", "Crypto", {"monero"}),
+    ("LTC-USD", "Litecoin", "Crypto", {"litecoin"}),
+    ("BCH-USD", "Bitcoin Cash", "Crypto", {"bitcoin cash"}),
+    ("ATOM-USD", "Cosmos", "Crypto", {"cosmos"}),
+    ("UNI7083-USD", "Uniswap", "Crypto", {"uniswap"}),
+    ("ETC-USD", "Ethereum Classic", "Crypto", {"ethereum classic"}),
+    ("XLM-USD", "Stellar", "Crypto", {"stellar"}),
+    ("NEAR-USD", "NEAR", "Crypto", {"near protocol"}),
+    ("ALGO-USD", "Algorand", "Crypto", {"algorand"}),
+    ("FIL-USD", "Filecoin", "Crypto", {"filecoin"}),
+    ("AAVE-USD", "Aave", "Crypto", {"aave"}),
+    ("TRX-USD", "TRON", "Crypto", {"tron"}),
+    ("GC=F", "Gold", "Commodity", {"gold"}),
+    ("SI=F", "Silver", "Commodity", {"silver"}),
+    ("CL=F", "WTI Crude", "Commodity", {"crude", "oil", "opec", "wti"}),
+    ("BZ=F", "Brent Crude", "Commodity", {"brent", "oil", "opec"}),
+    ("NG=F", "Natural Gas", "Commodity", {"natural gas"}),
+    ("HG=F", "Copper", "Commodity", {"copper"}),
+    ("PL=F", "Platinum", "Commodity", {"platinum"}),
+    ("PA=F", "Palladium", "Commodity", {"palladium"}),
+    ("ZW=F", "Wheat", "Commodity", {"grain", "wheat"}),
+    ("ZC=F", "Corn", "Commodity", {"corn", "grain"}),
+    ("ZS=F", "Soybeans", "Commodity", {"grain", "soybean"}),
+    ("KC=F", "Coffee", "Commodity", {"coffee"}),
+    ("SB=F", "Sugar", "Commodity", {"sugar"}),
+    ("CT=F", "Cotton", "Commodity", {"cotton"}),
+    ("ZL=F", "Soybean Oil", "Commodity", {"soybean oil"}),
+    ("LE=F", "Live Cattle", "Commodity", {"beef", "cattle"}),
+    ("HE=F", "Lean Hogs", "Commodity", {"hogs", "pork"}),
+    ("OJ=F", "Orange Juice", "Commodity", {"orange juice"}),
 ]
 
 # Coins whose hourly candle Binance serves directly, for the barrier model.
@@ -132,11 +233,19 @@ class AssetSuggestion:
     # 1/(1+rr) and expected value is zero by construction.
     plan: dict = field(default_factory=dict)
     catalyst: dict = field(default_factory=dict)
+    #: Seconds since this row's bars were fetched. Rows refresh in rotation, so
+    #: ages differ across the screen — reporting it is what keeps that visible
+    #: instead of letting a stale row look exactly like a fresh one.
+    data_age_s: float = 0.0
 
 
 # Yahoo tolerates this comfortably. Kept modest anyway: the point is to stop
 # paying 26 round trips end to end, not to hammer a free undocumented endpoint.
 FETCH_WORKERS = 8
+#: How many rows a single cycle refetches once the cache is warm. Sized to hold
+#: the request rate near where it was at 26 instruments (~13/minute) rather than
+#: the ~64/minute that refetching all 129 would imply.
+ROLL_BATCH = 26
 
 
 def _get(url: str):
@@ -202,6 +311,9 @@ def _match_news(headlines, kw: set[str], limit: int = 4):
 class AssetScanner:
     def __init__(self, ttl: float = 120.0, events=None) -> None:
         self.ttl = ttl
+        # Per-symbol bar cache, so a scan does not refetch everything. See
+        # `_due_for_refresh` for why that matters at this watchlist size.
+        self._bars: dict[tuple[str, str], tuple[float, object]] = {}
         # Shared with core.Live so the calendar is fetched once, not per scan.
         self.events = events
         # Drift, in horizon-sigmas, measured by sonar.calibration from closed
@@ -227,21 +339,52 @@ class AssetScanner:
             self._key = key
         return self._payload
 
+    def _due_for_refresh(self, hz) -> list[tuple]:
+        """Which rows to actually fetch this cycle.
+
+        The watchlist went from 26 instruments to 129, and refetching all of
+        them every TTL takes the request rate from ~13 a minute to ~64. That is
+        not a theoretical limit: fetching the list a few times in quick
+        succession got this machine throttled by the source, and a throttled
+        scan does not error — it returns fewer rows and the screen quietly
+        shrinks.
+
+        So the size of the watchlist is decoupled from the request rate. A cold
+        cache is filled in one pass, because a half-empty screen at launch is
+        worse than one burst; after that only the `ROLL_BATCH` stalest rows are
+        refetched each cycle and everything else is scored from cache. Every row
+        carries its own age, so staleness is visible rather than hidden.
+        """
+        cold = [w for w in WATCHLIST if (w[0], hz.chart_range) not in self._bars]
+        if cold:
+            return list(WATCHLIST)
+        now = time.time()
+        by_age = sorted(WATCHLIST,
+                        key=lambda w: self._bars[(w[0], hz.chart_range)][0])
+        return by_age[:ROLL_BATCH]
+
     def _refresh(self, headlines, hz, profile) -> None:
         out: list[AssetSuggestion] = []
         days = hz.momentum_days
         scale = _MOM_SCALE.get(days, 0.10)
-        # Twenty-six independent chart fetches, and the slowest part of start-up
-        # by a distance: ~6s sequentially against ~1s concurrently. Only the
-        # fetch is parallel — the scoring below is unchanged and still runs in
-        # WATCHLIST order, because map() yields in input order. The screen is
-        # therefore identical to the sequential version, just sooner.
-        with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
-            fetched = list(pool.map(lambda w: _fetch(w[0], hz.chart_range),
-                                    WATCHLIST))
-        for (symbol, name, cls, kw), got in zip(WATCHLIST, fetched):
-            if got is None:
+        # Only the fetch is parallel — the scoring below still runs in WATCHLIST
+        # order, because map() yields in input order, so the screen is identical
+        # to the sequential version and just sooner.
+        due = self._due_for_refresh(hz)
+        if due:
+            with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as pool:
+                for (symbol, *_), got in zip(due, pool.map(
+                        lambda w: _fetch(w[0], hz.chart_range), due)):
+                    if got is not None:
+                        self._bars[(symbol, hz.chart_range)] = (time.time(), got)
+
+        now = time.time()
+        for symbol, name, cls, kw in WATCHLIST:
+            entry = self._bars.get((symbol, hz.chart_range))
+            if entry is None:
                 continue
+            fetched_at, got = entry
+            age = now - fetched_at
             price, currency, closes = got
             prev = closes[-2]                        # yesterday's daily close
             day = price / prev - 1 if prev else 0.0
@@ -302,6 +445,7 @@ class AssetScanner:
                 # a longer window deserves a longer sparkline
                 spark=[round(c, 4) for c in closes[-(60 if hz.long_horizon else 20):]],
                 comp=comp, confidence=conf, lean=level,
+                data_age_s=round(age, 1),
                 news_sentiment=round(sentiment, 3),
                 headlines=[{"title": h.title, "source": h.source, "link": h.link,
                             "age_h": round(h.age_hours, 1) if h.dated else None,
