@@ -91,13 +91,30 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, b"not found", "text/plain")
 
 
+class PaperServer(ThreadingHTTPServer):
+    """The daemon's HTTP server, with a backlog worth having.
+
+    ``socketserver`` listens with a backlog of 5. That is the number of
+    connections the *kernel* will hold before the accept loop reaches them, so
+    past it a connection is refused with an RST before any of this code runs —
+    threading the handlers does not help, because the request never arrives.
+
+    It is reachable in normal use: the daemon serves a browser and the poll
+    thread at the same time, and a page that fetches several endpoints at once
+    opens several connections at once. Measured at twelve simultaneous
+    requests, one was reset every run.
+    """
+
+    request_queue_size = 64
+
+
 def main(host: str = "127.0.0.1", port: int = 8787,
          risk_name: str | None = None, horizon_name: str | None = None,
          role: str = "daemon") -> None:
     live = Live(risk_name=risk_name, horizon_name=horizon_name)
     threading.Thread(target=live.run, args=(role,), daemon=True).start()
     Handler.live = live
-    srv = ThreadingHTTPServer((host, port), Handler)
+    srv = PaperServer((host, port), Handler)
     ok, why = llm.available()
     print(f"SONAR paper terminal  ->  http://{host}:{port}", flush=True)
     print(f"risk={live.risk.name}  horizon={live.horizon.name}", flush=True)

@@ -142,3 +142,27 @@ def test_the_paper_investment_loop_is_covered():
     for needed in ("closes **itself**", "calibration table", "cash at risk",
                    "excludes costs", "1.05"):
         assert needed in md, f"the paper loop no longer covers: {needed}"
+
+
+def test_every_case_row_has_an_id_the_generator_recognises():
+    """A malformed id is dropped in silence, which is worse than a crash.
+
+    `build_testplan.py` matches case ids with `^\\d+\\.\\d+$`. A row numbered
+    anything else — `1.10a`, say, which is the obvious way to insert a case
+    between two others — still renders, but without a `data-case` attribute and
+    without pass/fail buttons, and it is left out of the total. So the plan
+    quietly loses a case, and the count at the top still looks right.
+
+    That happened the moment a case was inserted. This fails instead.
+    """
+    import re
+
+    rows = re.findall(r'^\| ([^|]+?) \|', SOURCE.read_text(), re.M)
+    # Anything starting with a digit is meant to be a case id; the other tables
+    # in this file (the header block) have words in that column.
+    attempts = [r.strip() for r in rows if r.strip()[:1].isdigit()]
+    bad = [i for i in attempts if not re.fullmatch(r'\d+\.\d+', i)]
+    assert not bad, (
+        f"case id(s) {bad} will be dropped from the generated page: the "
+        r"generator only accepts ^\d+\.\d+$. Renumber the section instead of "
+        "suffixing a letter.")

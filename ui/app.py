@@ -22,6 +22,8 @@ is load-bearing.
 
 from __future__ import annotations
 
+import os
+import sys
 import time
 
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
@@ -2084,10 +2086,17 @@ class MainWindow(QMainWindow):
             "not forecasting them. Source: FRED. "
             f'As of {", ".join(f"{k} {v}" for k, v in (mc.get("as_of") or {}).items() if v)}.')
 
-    # Grace for a background thread to notice it should finish. The poll loop
-    # returns almost at once once stopped; the ceiling is a network call already
-    # in flight, and those sockets time out around 8-10s.
-    SHUTDOWN_WAIT_MS = 4000
+    # Total grace for the background threads to notice they should finish --
+    # a budget shared across all of them, not each. Per-thread it was 4s each,
+    # and shutdown() runs on the UI thread, so six threads could hold the event
+    # loop for 24 seconds with the window on screen painting nothing. That is
+    # the same white rectangle the deadlock below produced, just self-healing.
+    #
+    # The poll loop returns almost at once once stopped. Anything slower is a
+    # socket already in flight, and those run to timeouts of 8-30s, which no
+    # wait worth making can outlast -- so the budget is for the common case and
+    # _exit_now handles the rest.
+    SHUTDOWN_GRACE_MS = 1500
 
     def shutdown(self) -> None:
         """Stop the background threads before the process exits.
@@ -2106,26 +2115,79 @@ class MainWindow(QMainWindow):
         if timer is not None:
             timer.stop()
         self.live.stop()                    # ends the poll loop's wait()
-        # Every QThread this window owns, not just the long-lived ones. A
-        # thread parented here is destroyed when the window is, and Qt aborts
-        # the process if it is still running at that moment — so a thread left
-        # off this list is a crash on quit that only shows up when that feature
-        # happens to be mid-flight. The Playmaker read and the backtest were both
-        # missing, which is how the SIGABRT came back.
-        for thread in (getattr(self, "poll", None),
-                       self._read_thread, self._cfg_thread,
-                       self._bt_thread, self._lab_thread,
-                       getattr(self, "playmaker_thread", None)):
+        deadline = time.monotonic() + self.SHUTDOWN_GRACE_MS / 1000.0
+        stragglers = []
+        for name, thread in self._owned_threads():
             if thread is None or not thread.isRunning():
                 continue
             thread.quit()                   # no-op for run()-override threads
-            if thread.wait(self.SHUTDOWN_WAIT_MS):
-                continue
-            # Last resort: a thread wedged in a slow network read. Terminating
-            # at exit is ugly, but it beats aborting the process, and there is
-            # nothing to corrupt — the engine persists on every write.
-            thread.terminate()
-            thread.wait(500)
+            left = max(0, int((deadline - time.monotonic()) * 1000))
+            if not thread.wait(left):
+                stragglers.append(name)
+        if stragglers:
+            self._exit_now(stragglers)
+
+    def _owned_threads(self):
+        """Every QThread this window owns, not just the long-lived ones.
+
+        A thread parented here is destroyed when the window is, and Qt aborts
+        the process if it is still running at that moment — so a thread left off
+        this list is a crash on quit that only shows up when that feature
+        happens to be mid-flight. The Playmaker read and the backtest were both
+        missing, which is how the SIGABRT came back.
+        """
+        return (("poll", getattr(self, "poll", None)),
+                ("read", self._read_thread),
+                ("config", self._cfg_thread),
+                ("backtest", self._bt_thread),
+                ("lab", self._lab_thread),
+                ("playmaker", getattr(self, "playmaker_thread", None)))
+
+    def _exit_now(self, stragglers) -> None:
+        """Leave without running interpreter teardown.
+
+        This is the fix for the blank white window, reported four times and
+        misdiagnosed three: **the close button was never the bug.** The window
+        went white because the process deadlocked, and it deadlocked here.
+
+        The old last resort was ``QThread.terminate()``. On a thread running
+        Python that is not a last resort, it is a hang: terminate kills the
+        thread wherever it happens to be, and if it holds the **GIL** — which a
+        thread running Python always does — the GIL is never released. Every
+        Python thread then blocks in ``take_gil`` forever, including the one
+        running the Qt event loop. Nothing repaints, so macOS shows the window's
+        empty backing store: a white rectangle, in an app themed near-black,
+        that ignores every click. ``AGENTS.md`` already records this trap
+        costing hours in the *test suite*; the same call was live in shutdown.
+
+        It fired reliably rather than rarely. ``live.stop()`` is cooperative and
+        only lands between fetches, so a quit during any in-flight request had
+        to outlast a socket timeout of 8-30s within the grace above — and then
+        terminated a thread that was, by construction, mid-``read()`` in Python.
+
+        So: do not stop the thread at all. End the process instead. ``os._exit``
+        skips interpreter teardown entirely, so the QThread destructors that
+        would call ``qFatal()`` never run — which was the only reason terminate
+        was ever wanted. Nothing is lost by leaving this way: the engine writes
+        through on every change rather than saving at exit, and the lock below
+        is a PID file that the next launch reclaims when its holder is gone.
+        """
+        live = getattr(self, "live", None)
+        lock = getattr(live, "engine_lock", None)
+        if lock is not None:
+            try:
+                lock.release()  # else the next launch starts read-only
+            except OSError:
+                pass
+        sys.stderr.write(
+            "SONAR: exiting with %s still in flight; "
+            "not waiting for the network\n" % ", ".join(stragglers))
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.flush()
+            except (OSError, ValueError):
+                pass
+        os._exit(0)
 
     def eventFilter(self, obj, e) -> bool:
         """Let a genuine quit through the hide-on-close guard.

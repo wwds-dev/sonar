@@ -41,20 +41,6 @@
       from inside the app. Everything it needs exists in
       `playmaker/scoring.py`.
 
-
-- [ ] `P2` `bug` `@ai` **The window tests wedge about one run in three.**
-      Sampling a hung process shows the main thread in `PyThread_release_lock`
-      waiting on a pthread mutex that a torn-down Qt thread never released —
-      a deadlock below Python, so `faulthandler_timeout` cannot fire (the dump
-      needs the lock that is held). `./run-tests.sh` bounds it from outside the
-      process and samples the stack before killing, which is the mitigation, not
-      the fix. Ruled out already, so nobody repeats the search: the network
-      (blocked, still hangs), shared state (`tmp_path`, still hangs), the poll
-      thread (no-op'd, still hangs), undrained `deleteLater` (drained, got
-      *worse* — 3/5), and cross-file window accumulation (each file in its own
-      process, 1/5). Next thing to try is a session-scoped window fixture, or
-      `pytest-forked`. The app itself is unaffected.
-
 ---
 
 ## v2 — shipped
@@ -80,6 +66,7 @@ and time rather than code, kept at the top.
 - [x] `P1` `bug` `@ai` ~~Close button appeared dead.~~ Leaving macOS full screen re-activates the app when the Space transition finishes, *after* the deferred hide — so the Dock-click handler reopened the window it had just hidden. `reopen_allowed()` ignores an activation within a second of a self-hide.
 - [x] `P1` `performance` `@ai` ~~Start-up took ~11s.~~ News and asset fetches now run concurrently, and `warmup()` publishes a snapshot before the heavy screen refresh instead of after. **11s → 1.8s**, first data at 1.7s.
 - [x] `P1` `bug` `@ai` ~~SIGABRT on quit.~~ `shutdown()` did not name every QThread the window owns. Qt aborts when a running thread is destroyed, so quitting during a backtest died with SIGABRT. Every thread is now listed, with a test asserting it.
+- [x] `P0` `bug` `@ai` ~~"SONAR doesn't quit" — the blank white window, fourth report and the actual cause.~~ `shutdown()`'s last resort for a thread that would not stop was `QThread.terminate()`. It kills the thread wherever it stands, and a thread running Python holds the **GIL**, which is then never returned — so every Python thread blocks in `take_gil` forever, the Qt event loop included. Nothing repaints, and macOS shows the window's empty backing store: a white rectangle in an app themed `#080b11`, ignoring every click. Not a rare race — `live.stop()` only lands between fetches, so any quit during an in-flight request had to outlast an 8–30s socket timeout inside the grace, then terminated a thread that was by construction mid-`read()`. The fix is to stop trying to stop it and leave by `os._exit` instead, which skips the QThread destructors whose `qFatal()` was the only reason terminate was wanted; the engine writes through on every change and the engine lock is a PID file the next launch reclaims, so nothing is lost. The per-thread 4s wait also became a 1.5s budget **shared across all six threads** — six waits on the UI thread was up to 24s of the same unpainted window, self-healing but identical to look at. `tests/test_shutdown.py` fails the build on any `.terminate()` call by AST, and quits a real subprocess mid-fetch — against the old code that test does not fail, it hangs.
 - [x] `P0` `bug` `@ai` ~~Closing SONAR could leave a blank white window that never went away.~~ `_refresh_wire()` fetched on the UI thread whenever the news (8 min TTL) or events cache aged out — a coin flip every eight minutes on whether the event loop blocked up to 30s, painting nothing and ignoring input. The Wire path now reads cache-only (`news.cached()`, `events.cached_payload()`); `tests/test_ui_thread.py` and `test_refresh.py` assert nothing reaches the network from a real window with both caches aged out.
 
 ### The score itself — Sep 2026
@@ -116,6 +103,7 @@ and time rather than code, kept at the top.
 - [x] `P1` `feature` `@ai` ~~Lab tab.~~ Replays the plan over real bars with universe, range, horizon and step exposed, reporting the realised hit rate beside what the barrier maths predicted with its 2 s.e. band.
 - [x] `P1` `feature` `@ai` ~~Component attribution.~~ Asks of each component the question its weight is a claim about — does ranking on it sort winners from losers? — three ways: IC, quintile spread, and leave-one-out. Verdicts are KEEP / WEAK / DROP / **INVERTED**, p-values through Benjamini-Hochberg together. Catalyst reports *not measured* rather than passing.
 - [x] `P1` `feature` `@ai` ~~Replay mode.~~ `sonar/replay.py` grades **you**: one setup at a time on real history with everything after the cursor withheld, no rewind, the model scored on the same setups whether you skip or not, and risk-sized P&L so a coin and a currency pair cost the same to be wrong about.
+- [x] `P2` `bug` `@ai` ~~The window tests wedged about one run in three.~~ Same root cause as the blank window, and the reason it resisted a long search: the conftest guards were `autouse=True` at **function** scope, but pytest builds fixtures highest-scope-first, so for the three tests that take a **module**-scoped `window` fixture none of them was in force when the window was built. "The poll thread (no-op'd, still hangs)" had been ruled out against a patch that was not yet applied. Those tests were starting the real `Live.run()`, taking the engine lock in the user's real application directory and going to the network; the thread never finished, so the fixture's teardown reached `terminate()`. The guards are session-scoped now, with the function-scoped ones kept for per-test `tmp_path` and for naming the test in the network error. Three consecutive full runs: 1,182 passed in 9.3s, deterministic.
 - [x] `P2` `feature` `@ai` ~~Alerts.~~ Fire on a transition rather than a level, with a cooldown and a silent first scan. They say what changed and never what to do about it — a test asserts no alert can contain buy, short or "immediately".
 
 ### Documentation

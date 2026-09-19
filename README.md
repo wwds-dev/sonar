@@ -523,6 +523,13 @@ Space and clicking the close button both trigger the macOS activation event a re
 uses, so for about a second after either one the window ignores that event rather than
 reopening itself the moment it just hid.
 
+**Quitting never waits for the network.** A quit that lands while the app is fetching gives
+the background threads about a second and then ends the process, printing what it gave up on.
+That is deliberate: the alternative is a window that stops repainting while it waits, which is
+indistinguishable from a hang — and the earlier attempt to stop a stuck thread outright froze
+the app completely. Nothing is lost by leaving this way, because the engine writes each change
+as it happens rather than saving on exit.
+
 **A launchd agent** keeps it running when you are not logged into the app at all:
 
 ```bash

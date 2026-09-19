@@ -5,7 +5,7 @@ more load-bearing than it was: closing the window now quits, so the daemon is
 the documented answer for uptime. A route that 500s or hands back the wrong
 shape would take the headless path down with nothing watching.
 
-These run a real `ThreadingHTTPServer` on 127.0.0.1 with an ephemeral port and
+These run a real `server.PaperServer` on 127.0.0.1 with an ephemeral port and
 query it over a real socket. The alternative — faking `rfile`/`wfile` and
 driving the handler by hand — tests the fake at least as much as the server.
 The `loopback` fixture is the narrow, by-name opt-out of the suite's ban on
@@ -19,7 +19,6 @@ import json
 import threading
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 
 import pytest
 
@@ -65,7 +64,8 @@ def daemon(loopback, monkeypatch):
     """A real server on an ephemeral port, torn down after the test."""
     live = FakeLive()
     monkeypatch.setattr(server.Handler, "live", live)
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    # The production class, so its listen backlog is what is under test.
+    srv = server.PaperServer(("127.0.0.1", 0), server.Handler)
     # serve_forever polls a shutdown flag every `poll_interval`, and the
     # default is half a second — paid once per teardown, which turned 21 tests
     # into eleven seconds of almost entirely waiting.
@@ -284,7 +284,7 @@ def test_main_wires_the_engine_to_the_handler_and_serves(monkeypatch, tmp_path):
             started.append(role)
 
     monkeypatch.setattr(server, "Live", StubLive)
-    monkeypatch.setattr(server, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(server, "PaperServer", FakeServer)
     monkeypatch.setattr(server.time, "sleep", lambda s: None)
     monkeypatch.setattr(server.Handler, "live", None)
 
@@ -317,7 +317,7 @@ def test_main_survives_a_keyboard_interrupt(monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr(server, "Live", StubLive)
-    monkeypatch.setattr(server, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(server, "PaperServer", FakeServer)
     monkeypatch.setattr(server.time, "sleep", lambda s: None)
     server.main(port=0)          # must not raise
 
@@ -347,7 +347,7 @@ def test_a_second_daemon_reports_read_only_rather_than_double_counting(
             pass
 
     monkeypatch.setattr(server, "Live", StubLive)
-    monkeypatch.setattr(server, "ThreadingHTTPServer", FakeServer)
+    monkeypatch.setattr(server, "PaperServer", FakeServer)
     monkeypatch.setattr(server.time, "sleep", lambda s: None)
     server.main(port=0)
     assert "READ-ONLY" in capsys.readouterr().out

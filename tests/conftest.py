@@ -46,6 +46,52 @@ def loopback(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", _REAL_URLOPEN)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def session_guards(tmp_path_factory):
+    """Install the guards before *any* fixture a test can ask for.
+
+    The rest of this file patched the network, the data directory and the poll
+    body from `autouse=True` function-scoped fixtures, and that is too late.
+    pytest instantiates fixtures highest-scope-first, so a **module**-scoped
+    `window` fixture — which is what `test_lab_tab`, `test_layout` and
+    `test_refresh` all use — is built *before* any function-scoped autouse
+    fixture runs.
+
+    So for the three tests this file was written to protect, none of it was in
+    force at the moment it mattered. `MainWindow.__init__` started the poll
+    thread into the real `Live.run()`, which took the engine lock in the user's
+    own `~/Library/Application Support/SONAR` and went to the network — while
+    the user's app might be running against the same state file. The loop then
+    never finished, so the window fixture's `shutdown()` found it still running
+    at teardown: the straggler that used to reach `QThread.terminate()`, which
+    is the wedge described above. It was masked because terminate either hung
+    (blamed on the network) or, later, left by `os._exit` with **exit code 0**.
+
+    This fixture is the same set of patches at session scope, so they are up
+    before the first module fixture is built. The function-scoped versions below
+    stay: they give each test its own `tmp_path` and name the test in the
+    network error, which a session-wide patch cannot do.
+    """
+    mp = pytest.MonkeyPatch()
+    mp.setattr("sonar.paths.user_data_base",
+               lambda: tmp_path_factory.mktemp("sonar-session"))
+    mp.setattr("ui.worker.PollThread.run", lambda self: None, raising=False)
+    mp.setattr("sonar.core.Live.warmup", lambda self: None)
+    mp.setattr("sonar.core.Live._poll", lambda self: None)
+
+    def blocked(*args, **kwargs):
+        raise NetworkUsedInTest(
+            "a fixture opened a network connection before any test ran "
+            "(likely a module- or session-scoped fixture). Patch the provider "
+            "it uses, or build it inside a test that is marked `network`.")
+
+    mp.setattr(urllib.request, "urlopen", blocked)
+    mp.setattr(socket.socket, "connect", blocked)
+    mp.setattr(socket.socket, "connect_ex", blocked)
+    yield
+    mp.undo()
+
+
 class NetworkUsedInTest(OSError):
     """Raised instead of opening a socket. Names the test that tried.
 
@@ -66,6 +112,11 @@ def no_network(monkeypatch, request):
             "`@pytest.mark.network` if it genuinely needs one.")
 
     if "network" in request.keywords:
+        # session_guards blocked these before this test was reached, so opting
+        # in means putting the real ones back, not merely declining to patch.
+        monkeypatch.setattr(socket.socket, "connect", _REAL_CONNECT)
+        monkeypatch.setattr(socket.socket, "connect_ex", _REAL_CONNECT_EX)
+        monkeypatch.setattr(urllib.request, "urlopen", _REAL_URLOPEN)
         return
     monkeypatch.setattr(urllib.request, "urlopen", blocked)
     monkeypatch.setattr(socket.socket, "connect", blocked)
@@ -93,13 +144,14 @@ def idle_engine(monkeypatch):
     `win.poll.live.stop()` — by which point the thread is already inside
     `acquire()` or `warmup()`.
 
-    If it has not finished by teardown, `MainWindow.shutdown()` waits four
-    seconds and then calls `QThread.terminate()`. Terminating a thread running
-    Python leaves whatever it held — the GIL, or a plain pthread mutex — locked
-    forever, and the main thread then blocks in `take_gil` or in
-    `PyThread_release_lock`. Both stacks have been sampled out of hung runs
-    here. Whether a given run hangs depends only on timing, which is why the
-    suite could pass and then wedge on the next invocation.
+    If it has not finished by teardown, `MainWindow.shutdown()` gives up on it
+    and ends the process. That used to be `QThread.terminate()`, which on a
+    thread running Python leaves whatever it held — the GIL, or a plain pthread
+    mutex — locked forever, with the main thread blocked in `take_gil` or
+    `PyThread_release_lock`; both stacks were sampled out of hung runs here, and
+    the same call shipped in the app, where it showed as a window that stopped
+    repainting. It is now an `os._exit`, which is right for the app and fatal
+    for a test run, so `no_hard_exit` below intercepts it.
 
     So the poll body never runs in tests. `Live.run()` and `stop()` are left
     real — `test_shutdown` pins down that the loop honours stop, patching its
@@ -111,14 +163,49 @@ def idle_engine(monkeypatch):
     monkeypatch.setattr("sonar.core.Live._poll", lambda self: None)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def no_hard_exit():
+    """Keep `shutdown()`'s last resort from taking the test runner with it.
+
+    Leaving by `os._exit` is the correct end for the app and a silent disaster
+    for pytest: the run stops with no summary and **exit code 0**, which every
+    CI in the world reads as a pass. That is what happened on the first run
+    after the fix landed — thirteen tests ran, one failed, and the process
+    vanished before it could say so.
+
+    Session-scoped because the thing that reaches it is a *teardown*. The window
+    fixtures are module-scoped and call `shutdown()` when they expire, which is
+    after any function-scoped patch has been undone — so a function-scoped guard
+    is unpatched at exactly the moment it is needed. The earlier
+    `QThread.terminate()` had the same hole, and that is the missing half of the
+    teardown hang this file already describes: neutralising the poll body kept
+    the *tests* off the network, but the fixture's own teardown still fell
+    through to terminate with a thread running, which is a wedge on a good day
+    and a silent exit 0 on this one.
+    """
+    import pytest as _pytest
+    mp = _pytest.MonkeyPatch()
+
+    def refuse(self, stragglers):
+        raise AssertionError(
+            f"shutdown() gave up on {', '.join(stragglers)} and would have "
+            "ended the process. Stop the thread cooperatively in the test "
+            "instead — the app cannot afford to wait for a socket, so this "
+            "path is real, and it must stay unreachable from tests.")
+
+    mp.setattr("ui.app.MainWindow._exit_now", refuse, raising=False)
+    yield
+    mp.undo()
+
+
 @pytest.fixture(autouse=True)
 def no_thread_termination(monkeypatch):
-    """Turn a deadlock into a test failure.
+    """Keep `QThread.terminate()` from coming back.
 
-    `QThread.terminate()` is `shutdown()`'s last resort and is unsafe for a
-    thread running Python. Reaching it in a test used to mean an eternal hang;
-    now it means a named failure, so the next thread left running at teardown
-    is found in seconds rather than hours.
+    It was `shutdown()`'s last resort until it was found to be the cause of the
+    blank-window reports, and it is unsafe for any thread running Python. This
+    fixture is now a regression guard rather than a hang-catcher: nothing in the
+    app calls it, and anything that starts to, fails here by name.
     """
     try:
         from PySide6.QtCore import QThread

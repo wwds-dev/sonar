@@ -89,7 +89,7 @@ def test_the_lab_thread_is_in_the_shutdown_list(window):
     """A thread this window owns and shutdown() does not name is a SIGABRT on
     quit — the exact bug that shipped twice before."""
     import inspect
-    src = inspect.getsource(MainWindow.shutdown)
+    src = inspect.getsource(MainWindow._owned_threads)
     assert "_lab_thread" in src, \
         "the Lab tab's thread is not stopped at quit; Qt will abort the process"
 
