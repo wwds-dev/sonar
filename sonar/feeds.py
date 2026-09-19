@@ -155,6 +155,27 @@ def recent_hourly_returns(symbol: str = "BTCUSDT", limit: int = 72) -> list[floa
         _get(f"{BINANCE}/klines?symbol={symbol}&interval=1h&limit={limit + 1}"))
 
 
+def hour_close(open_time: int, symbol: str = "BTCUSDT") -> float | None:
+    """The real close of the 1h candle that opened at ``open_time`` (seconds).
+
+    Exists for one caller: settling a position across a feed gap. After a
+    sleep or restart the next live candle's open is a price from hours after
+    the position's market resolved, so the engine asks for the hour's own
+    close instead. Returns ``None`` unless the exchange answers with exactly
+    the requested, already-closed hour — a wrong close is worse than a void.
+    """
+    if time.time() < open_time + 3600:
+        return None                      # the hour has not closed yet
+    rows = _get(f"{BINANCE}/klines?symbol={symbol}&interval=1h"
+                f"&startTime={open_time * 1000}&limit=1")
+    try:
+        if rows and int(rows[0][0]) // 1000 == open_time:
+            return float(rows[0][4])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return None
+
+
 def log_returns_from_klines(rows) -> list[float]:
     """Hour-on-hour log returns from Binance klines, skipping bad rows.
 

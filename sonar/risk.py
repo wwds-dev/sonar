@@ -34,7 +34,9 @@ class RiskProfile:
     """A named set of staking and filtering parameters.
 
     Sizing (used by the paper engine)
-        ``edge_threshold``      only bet when ``|model - market|`` exceeds this
+        ``edge_threshold``      only bet when the model's probability for the
+                                side exceeds its *executable* price — the ask
+                                plus slippage, not the midpoint — by this much
         ``kelly_fraction``      fraction of full Kelly to bet
         ``max_stake_fraction``  hard cap on one hour's stake, as a share of bankroll
         ``enter_tau_min/max``   window of remaining-hour in which entry is allowed

@@ -694,12 +694,25 @@ class MainWindow(QMainWindow):
         pg.setContentsMargins(14, 10, 14, 10)
         for i, (k, tip) in enumerate([
                 ("bankroll", "Paper bankroll"), ("pnl", "Total paper P&L"),
-                ("trades", "Settled trades"), ("win rate", "Share of trades won"),
+                ("trades", "Settled live trades — the fair-odds warm-up rows "
+                           "on the chart are not counted here"),
+                ("win rate", "Share of live trades won"),
                 ("profile", "Risk profile this bankroll was built under")]):
             s = Stat(k, tip)
             self.stats[k] = s
             pg.addWidget(s, 0, i)
         lay.addWidget(pstrip)
+
+        # Model vs market, scored on every hour watched — traded or not.
+        # The direct test of the realised-vs-implied thesis, and it converges
+        # at 24 observations a day instead of a few trades a week.
+        self.mvm = label("", "muted", theme.mono(10), wrap=True)
+        self.mvm.setToolTip(
+            "Brier score (lower is better) of the model's P(up) against the\n"
+            "market's, snapshotted mid-hour for every hour and settled on the\n"
+            "real candle. Unlike the P&L this scores the hours the engine did\n"
+            "NOT trade too, so it cannot be flattered by selection.")
+        lay.addWidget(self.mvm)
 
         self.read_panel = ReadPanel()
         lay.addWidget(self.read_panel)
@@ -2012,6 +2025,15 @@ class MainWindow(QMainWindow):
             self.stats["trades"].set(str(st["n_trades"]))
             self.stats["win rate"].set(f'{st["win_rate"]:.0f}%')
             self.stats["profile"].set(st.get("risk_profile", "—"))
+        mvm = pf.get("model_vs_market") or {}
+        if mvm.get("n"):
+            self.mvm.setText(
+                f'model vs market · {mvm["n"]} hrs scored · Brier '
+                f'{mvm.get("model_brier", 0):.4f} vs {mvm.get("market_brier", 0):.4f}'
+                f' — {mvm.get("verdict", "")}')
+        else:
+            self.mvm.setText("model vs market: no settled hours scored yet — "
+                             "fills in as hours resolve, traded or not")
 
     def _refresh_cards(self, assets: dict) -> None:
         asig = (assets.get("generated"), assets.get("n"))

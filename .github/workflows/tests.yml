@@ -1,0 +1,38 @@
+# The suite, on every push — the drills stop depending on someone remembering.
+#
+# This existed as SUGGESTIONS #9 ("A CI runner") and was blocked on the window
+# tests wedging ~1 in 3, which made a red build meaningless. That was fixed on
+# 2026-09-19 (session-scoped conftest guards; see TODO.md) and three
+# consecutive local runs were deterministic, so the stated obstacle is gone.
+#
+# Qt needs a display and GL even offscreen: QT_QPA_PLATFORM=offscreen plus the
+# libegl/libgl runtime libraries are the whole trick on a headless runner.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libdbus-1-3
+      - name: Install
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt pytest
+      - name: Run the suite
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./run-tests.sh -q

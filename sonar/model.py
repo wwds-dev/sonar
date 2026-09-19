@@ -49,6 +49,11 @@ def hourly_sigma(log_returns: list[float], default: float = 0.0045) -> float:
 
     ``default`` (~0.45%/hour) is a typical BTC value, used when we don't yet
     have enough samples.
+
+    This is the *fallback* estimator. The one the app prices with is the
+    EWMA × hour-of-day forecast in ``sonar/research/hourlyvol.py``, which
+    beat this window by 7.5% on QLIKE over 16,078 held-out hours; this stays
+    as the answer when that history cannot be fetched.
     """
     if len(log_returns) < 5:
         return default

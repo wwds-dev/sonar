@@ -341,7 +341,22 @@
   </ul>
   <p>The only disagreement with the market comes from the volatility estimate:
     SONAR uses <b>realised</b> vol while the market prices its own <b>implied</b>
-    vol. That is a real but thin edge, and frequently negative after the spread.</p>
+    vol. That is a real but thin edge, and frequently negative after the spread.
+    The estimate itself is an EWMA scaled by an hour-of-day profile — some hours
+    of the day are routinely louder than others, and a flat window smears that
+    pattern across the clock. Measured before it shipped: +7.5% on QLIKE over
+    the old 72-hour window, across 16,078 held-out hours and six of six time
+    blocks.</p>
+  <p>Whether that edge exists at all is <b>measured, not assumed</b>. The engine
+    snapshots the model's P(up) and the market's mid-hour for <em>every</em>
+    hour — traded or not — settles both against the real candle, and compares
+    them by Brier score on the Terminal tab. The paper P&amp;L only grades the
+    hours the model traded, which are its boldest claims; this grades all 24 a
+    day, so it cannot be flattered by selection and says in weeks what the
+    bankroll would take months to say. Entries themselves are gated on the
+    <b>executable</b> edge — the model's probability against the ask plus
+    slippage, not the midpoint — because a 4¢ disagreement across a 10¢ spread
+    buys nothing.</p>
 
   <h2 id="scores"><span class="n">5</span>The three numbers</h2>
   <p>Every Assets row carries three, and they answer different questions.</p>

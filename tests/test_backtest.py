@@ -115,3 +115,32 @@ def test_decisions_never_see_the_future():
 
 def test_summary_of_nothing_claims_nothing():
     assert backtest.summarise([])["n"] == 0
+
+
+def _trial(outcome, held=6):
+    return {"outcome": outcome, "predicted": 0.4, "bars_held": held,
+            "momentum": 0.03, "rr": 1.5}
+
+
+def test_overlapping_trials_widen_the_error_bar():
+    """At a step smaller than the holding time, neighbouring trials share the
+    bars that decide them — runs of identical outcomes are one reading wearing
+    several hats. The binomial bar assumes they are independent; the corrected
+    bar must come out wider."""
+    trials = []
+    for block in range(100):                     # runs of six, alternating
+        trials += [_trial("TARGET" if block % 2 == 0 else "STOP")] * 6
+    s = backtest.summarise(trials, step=3)
+    naive = (0.5 * 0.5 / len(trials)) ** 0.5
+    assert s["hit_rate"] == pytest.approx(0.5)
+    assert s["std_error"] > naive * 1.2
+
+
+def test_the_correction_never_narrows_the_bar():
+    """Overlap can only reduce the information in a sample. A series whose
+    autocorrelation happens to be negative would hand Newey-West a *smaller*
+    variance; the wider of the two estimates is the honest one."""
+    trials = [_trial("TARGET" if i % 2 == 0 else "STOP") for i in range(600)]
+    s = backtest.summarise(trials, step=3)
+    naive = (0.5 * 0.5 / len(trials)) ** 0.5
+    assert s["std_error"] == pytest.approx(naive, abs=5e-5)  # report rounds to 4dp

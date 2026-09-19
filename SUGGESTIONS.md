@@ -20,6 +20,9 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 10 | **Volatility component is inverted for ranking** — 10 of 12 configurations show a negative IC, quintile gradient 45.3%→34.5%, and the tie-break artefact is ruled out (zero ambiguous bars). But it fails the time-block test at 5/6, p=0.22, with the most recent period reversing — so the weights are unchanged. Also a design question, not only an empirical one: high volatility is correct for *notability* and backwards for *ranking winners* (`CONFIDENCE.md` §10a) | research | M | BLOCKED |
 | 11 | Cross-sectional z-scoring within asset class | research | M | **DONE** — `sonar/crosssection.py`. Class median CONF spread 18 → 8.6 points; Forex's volatility component went from a 0.23 ceiling to a 0.60 one. Standardises the *raw* quantity, not the clipped component — doing the latter is a silent no-op for the saturated classes |
 | 12 | Grow the watchlist so classes can carry a cross-sectional statistic | data | M | **DONE** — 26 → 129, every class ≥18. Every symbol verified to return a year of closes before being added; the growth also forced a rolling refresh, because refetching all of them took the request rate from ~13/min to ~64 and the source throttles below that |
+| 13 | **Backfill a historical earnings calendar** so the catalyst weight can face attribution — it is 0.20 of the confidence score and the only component never measured (the replay honestly reports "not measured"). EDGAR filing dates are free; even a partial backfill grades the weight | research | M | IDEA |
+| 14 | **Hit rate vs τ-at-entry**, once the hourly score log has a few weeks of data — the entry window (0.12–0.80 of the hour) is currently a guess, and the log records the τ of every snapshot | research | S | BLOCKED — needs the score log to fill |
+| 15 | Playmaker verdict polish: a block-bootstrap interval on the Brier difference instead of the `1/√games` margin, and one outer refit iteration in Dixon-Coles so `rho` and the home advantage feed back into the strengths (both named as simplifications in `poisson.py`) | research | S | IDEA |
 
 ## Safety rails
 
@@ -27,8 +30,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 |---|---|---|---|---|
 | 6 | Order-state poller so the book records fills rather than intents | bug | L | **DONE** — `Portfolio.poll_fills()`, wired into `_mark_book` |
 | 7 | `GuardedBroker.confirmation_text` rendered verbatim in the dialog, never re-composed by callers — the `*** REAL MONEY ***` prefix only works if nothing else writes it | security | S | **DONE** — `execution.confirmation_text()` is the only composer, and no UI path re-writes it |
-| 8 | Automated reconciliation and kill-switch drills | testing | M | **DONE** — `tests/test_drills.py`, 8 tests. The "in CI" half is still open: there is no CI, so nothing runs them but a person |
-| 9 | **A CI runner.** Everything above is checked by someone remembering to. 868 tests in 3.5s would fit any free runner — the obstacle is the Qt window tests wedging ~1 in 3, which would make a red build meaningless | infra | M | IDEA |
+| 8 | Automated reconciliation and kill-switch drills | testing | M | **DONE** — `tests/test_drills.py`, 8 tests. Now also run by CI on every push (see Done) |
 
 ## Interface
 
@@ -41,6 +43,8 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 
 | Suggestion | When |
 |---|---|
+| A CI runner — `.github/workflows/tests.yml`, the suite on every push under `QT_QPA_PLATFORM=offscreen`. The recorded blocker (window tests wedging ~1 in 3) was fixed 2026-09-19 by the session-scoped conftest guards, so the row's premise was stale | Sep 2026 |
+| The 2026-09-19 review fixes — gap settlement, seeded rows out of live stats, executable-edge gate, the hourly model-vs-market Brier log, EWMA × hour-of-day σ (measured +7.5% QLIKE first), overlap-corrected backtest error bars, rank-IC calibration verdict, measured draw rate, draws out of Playmaker accuracy, the run-tests.sh watchdog leak. Detail in `TODO.md` | Sep 2026 |
 | Providers, Alpaca paper trading, the paper book, the research apparatus and the calibration loop | Aug 2026 |
 | `GuardedBroker` shipped — rejections raise rather than return an error dict | Aug 2026 |
 | Execution guard for the simulator | Aug 2026 |

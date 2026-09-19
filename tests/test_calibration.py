@@ -70,6 +70,28 @@ def test_inverted_hit_rate_is_called_out():
     assert "worse than useless" in r["verdict"]
 
 
+def test_one_wobbling_bucket_does_not_hide_a_real_gradient():
+    """The old verdict demanded a strictly rising hit rate across every
+    bucket, which one noisy bucket always breaks — so a real gradient read as
+    'no clean relationship'. The rank IC over the positions themselves sees
+    through the wobble."""
+    trades = []
+    trades += [pos(10, i < 5) for i in range(25)]     # 20%
+    trades += [pos(30, i < 11) for i in range(25)]    # 44%
+    trades += [pos(50, i < 9) for i in range(25)]     # 36% — the wobble
+    trades += [pos(70, i < 21) for i in range(25)]    # 84%
+    r = calibration.report(trades)
+    assert r["score_ic"] is not None and r["score_ic"] > 0
+    assert "carrying information" in r["verdict"]
+
+
+def test_a_book_traded_at_one_score_reports_no_ranking_claim():
+    """Every position on the same confidence: there is no ranking to grade,
+    and the IC must come back None rather than a number."""
+    r = calibration.report([pos(50, i % 2 == 0) for i in range(40)])
+    assert r["score_ic"] is None
+
+
 def test_small_buckets_are_flagged_not_reported():
     bs = calibration.buckets([pos(50, True) for _ in range(3)])
     b = next(b for b in bs if b.lo == 40)

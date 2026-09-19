@@ -69,6 +69,73 @@ and time rather than code, kept at the top.
 - [x] `P0` `bug` `@ai` ~~"SONAR doesn't quit" — the blank white window, fourth report and the actual cause.~~ `shutdown()`'s last resort for a thread that would not stop was `QThread.terminate()`. It kills the thread wherever it stands, and a thread running Python holds the **GIL**, which is then never returned — so every Python thread blocks in `take_gil` forever, the Qt event loop included. Nothing repaints, and macOS shows the window's empty backing store: a white rectangle in an app themed `#080b11`, ignoring every click. Not a rare race — `live.stop()` only lands between fetches, so any quit during an in-flight request had to outlast an 8–30s socket timeout inside the grace, then terminated a thread that was by construction mid-`read()`. The fix is to stop trying to stop it and leave by `os._exit` instead, which skips the QThread destructors whose `qFatal()` was the only reason terminate was wanted; the engine writes through on every change and the engine lock is a PID file the next launch reclaims, so nothing is lost. The per-thread 4s wait also became a 1.5s budget **shared across all six threads** — six waits on the UI thread was up to 24s of the same unpainted window, self-healing but identical to look at. `tests/test_shutdown.py` fails the build on any `.terminate()` call by AST, and quits a real subprocess mid-fetch — against the old code that test does not fail, it hangs.
 - [x] `P0` `bug` `@ai` ~~Closing SONAR could leave a blank white window that never went away.~~ `_refresh_wire()` fetched on the UI thread whenever the news (8 min TTL) or events cache aged out — a coin flip every eight minutes on whether the event loop blocked up to 30s, painting nothing and ignoring input. The Wire path now reads cache-only (`news.cached()`, `events.cached_payload()`); `tests/test_ui_thread.py` and `test_refresh.py` assert nothing reaches the network from a real window with both caches aged out.
 
+### The 2026-09-19 review — every finding fixed the same day
+
+- [x] `P0` `bug` `@ai` ~~Settlement after a feed gap used the wrong close.~~
+      `tick()` settled a rollover against the new candle's open, which is only
+      the previous hour's close on a *contiguous* feed — after a sleep or
+      restart it is a price from hours after the position's market resolved,
+      so a losing hour could book as a win, corrupting the record the app
+      exists to collect. The engine now fetches the hour's own close
+      (`feeds.hour_close`, outside the poll lock) and **voids** the position
+      when it cannot be recovered. Tests cover contiguous (lookup must not be
+      consulted), gap-with-lookup and gap-void.
+- [x] `P1` `bug` `@ai` ~~The fair-odds warm-up rows counted in the live stats.~~
+      `stats()` mixed the ~36 seeded synthetic trades into the win rate and
+      P&L, so a fresh install showed a record built from trades nobody took.
+      `Trade.kind` separates them (old state files migrate on the seeded
+      title); the header shows live trades only.
+- [x] `P1` `bug` `@ai` ~~The edge gate read the midpoint but paid the ask.~~
+      A 4¢ midpoint edge across a 10¢ spread passed the threshold and entered
+      with a negative executable edge, sized small, every time the book was
+      wide late in the hour. The gate is now on `model_side_prob − price`.
+- [x] `P1` `research` `@ai` ~~The model was only ever scored on hours it
+      traded.~~ Selection-biased and slow: a few bankroll-noisy observations a
+      day, all from the model's boldest claims. The engine now snapshots
+      model-vs-market mid-hour for **every** hour, settles both against the
+      real candle, and compares Brier scores (`Engine.model_vs_market`,
+      Terminal tab) — the direct test of the realised-vs-implied thesis, at 24
+      observations a day.
+- [x] `P1` `research` `@ai` ~~The Terminal's σ contradicted the project's own
+      volatility research.~~ The screener got GARCH in Sep 2026; the hourly
+      model — the only place a probability is asserted — kept a flat 72-hour
+      std. `sonar/research/hourlyvol.py` ran the pre-registered study: over
+      16,078 held-out hours, EWMA × hour-of-day profile beat trailing-72 by
+      **+7.5% QLIKE, 6/6 blocks** (clustering +3.9% and seasonality +3.5% are
+      additive). GARCH also won but was passed over — its 720-hour anchor is
+      partly a sample-size win, the artefact the daily study's control caught;
+      the synthetic controls (constant vol, planted seasonality, planted
+      regimes) run in the suite on every build. Wired as `core.Live._sigma`
+      with the measured fallback ladder.
+- [x] `P2` `bug` `@ai` ~~Backtest error bars assumed independent trials.~~ At
+      a step shorter than the holding time neighbouring setups share deciding
+      bars; `summarise()` now takes the wider of the binomial and Newey-West
+      bars. README's "independent setups" claim corrected — the null survives,
+      since overlap only widens bars.
+- [x] `P2` `bug` `@ai` ~~The calibration verdict demanded strict bucket
+      monotonicity~~, which one noisy bucket always breaks even under a real
+      gradient. Replaced with a per-position rank IC (`score_ic`) with a
+      2-sigma bar.
+- [x] `P2` `bug` `@ai` ~~`observed_draw_rate` claimed "measured" and always
+      returned the default~~ — nothing ever set the attribute it read. The Elo
+      table now counts draws as it fits; the default stands in below 50 games.
+- [x] `P3` `bug` `@ai` ~~Playmaker accuracy counted every draw as a hit~~,
+      flattering draw-heavy leagues for free. Draws now stay out of the
+      accuracy denominator (Brier/log-loss, which drive verdicts, already
+      scored them properly).
+- [x] `P2` `bug` `@ai` ~~`run-tests.sh` blocked piped invocations for the full
+      300s budget~~ — killing the watchdog subshell orphaned its `sleep`,
+      which held stdout open after a 10-second suite had finished. The trap
+      now reaps the sleep; wall time 300s → 10s.
+- [x] `P2` `infra` `@ai` ~~No CI.~~ `.github/workflows/tests.yml` runs the
+      suite on every push (`QT_QPA_PLATFORM=offscreen` + Qt runtime libs). The
+      recorded blocker — window tests wedging ~1 in 3 — was fixed 2026-09-19,
+      so the drills stop depending on someone remembering. Unverified until
+      the next push reaches GitHub.
+- [x] `P3` `bug` `@ai` ~~Dead code in `volatility.study()`~~ — an unused
+      `by_symbol` block whose zip misaligned whenever an instrument was
+      skipped. Deleted.
+
 ### The score itself — Sep 2026
 
 - [x] `P1` `research` `@ai` ~~Volatility forecast instead of trailing realised vol.~~

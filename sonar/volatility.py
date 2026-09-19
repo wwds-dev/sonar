@@ -252,19 +252,13 @@ def study(histories: dict[str, Series], horizon: int = 20, blocks: int = 6,
             if s is not None:
                 per_model.setdefault(name, []).append(s)
 
-    base = {s.model: s for s in per_model.get("trailing", [])}
     pooled = {name: (sum(s.qlike * s.n for s in rows) / sum(s.n for s in rows)
                      if rows else None)
               for name, rows in per_model.items()}
 
-    # Per-instrument, so "better on average" cannot hide a model that wins
-    # enormously on one name and loses on every other.
-    by_symbol: dict[str, dict[str, float]] = {}
-    for name, rows in per_model.items():
-        for symbol, closes in zip(histories, rows):
-            by_symbol.setdefault(name, {})[symbol] = rows[list(histories).index(symbol)].qlike \
-                if symbol in list(histories) else None
-
+    # Per-instrument wins are counted in _beat_count, so "better on average"
+    # cannot hide a model that wins enormously on one name and loses on every
+    # other.
     verdicts = []
     trailing_pooled = pooled.get("trailing")
     for name in MODELS:

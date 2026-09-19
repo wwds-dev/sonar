@@ -80,16 +80,43 @@ P(up) = Φ( ln(c / o) / (σ · √τ) )
 - As the hour runs out (`τ→0`) → collapses to 1 or 0 on the current sign.
 
 Our only disagreement with the market is the volatility estimate: we use **realised** vol
-(std of recent hourly returns) while the market prices its own **implied** vol. When they
-differ we get a thin, statistical edge — the realised-vs-implied trade quants actually run.
-It is small and frequently negative after crossing the spread.
+while the market prices its own **implied** vol. When they differ we get a thin, statistical
+edge — the realised-vs-implied trade quants actually run. It is small and frequently negative
+after crossing the spread.
+
+Since Sep 2026 that estimate is an **EWMA scaled by an hour-of-day profile** rather than a
+flat 72-hour standard deviation. Measured first, wired second, per this project's standing
+rule: over 16,078 held-out hours (two years of BTCUSDT) the combination beat the old
+trailing window by **7.5% on QLIKE**, winning all six time blocks — clustering (+3.9%) and
+diurnal seasonality (+3.5%) are separate, additive facts about the same hour. GARCH also
+beat the incumbent but was passed over: its 720-hour anchor means part of its win is
+effective sample size, the artefact the daily study's synthetic control caught — the same
+control shows EWMA and the profile find nothing on constant-volatility data, so their win
+can only be the two hypothesised effects. `sonar/research/hourlyvol.py` records the study
+and its pre-registered expectations.
 
 The engine takes at most **one** capped half-Kelly paper position per hour (max 8% of bankroll),
-only when `|model − market|` clears 4¢ with enough time left, and settles it on the real candle.
+only when the model's probability for the side beats its **executable** price — the ask plus
+slippage, not the midpoint — by 4¢ with enough time left, and settles it on the real candle.
+(The gate used to read the midpoint, which let a fat disagreement across a fat spread count as
+an edge; a 4¢ mid edge across a 10¢ spread buys nothing.)
+
+It also **scores itself every hour, traded or not**: a mid-hour snapshot of the model's P(up)
+and the market's is settled against the real candle and the two are compared by Brier score.
+The paper P&L only ever grades the hours the model traded — its boldest claims, a few a day —
+while this grades both forecasters on all 24, which is the direct test of the
+realised-vs-implied thesis and converges in weeks instead of months.
 
 The equity curve is seeded with a **fair-odds backtest** over the last 36 real hours
 (expected value ≈ 0 by construction — it illustrates variance, not profit), then extends
-with live paper trades marked by a gold "LIVE" divider.
+with live paper trades marked by a gold "LIVE" divider. The seeded rows stay out of the
+displayed win rate and trade count, which grade live trades only — a fresh install shows
+an honest zero, not a record built from trades nobody took.
+
+Settlement survives gaps honestly too: if the app slept or restarted past the end of an
+open position's hour, the next candle's open is a price from hours after that market
+resolved, so the engine fetches the hour's own close and settles against that — or **voids**
+the position when the close cannot be recovered, because a shorter record beats a corrupt one.
 
 ## Confidence scores
 
@@ -168,7 +195,11 @@ argument for keeping this on paper, and it is arithmetic rather than caution.
 bars only, then walk forward through actual highs and lows. A bar spanning both barriers scores as a
 **loss** (daily data cannot order them) and costs are excluded, so reality is worse than this.
 
-Over **25,504 independent setups** — non-overlapping windows, 5 years, 113 instruments:
+Over **25,504 setups** — 5 years, 113 instruments. (An earlier version of this section
+called them *independent*; at a replay step shorter than the holding time, neighbouring
+setups share the bars that decide them, so they are not. The Lab's error bars now carry a
+Newey-West correction for that overlap. Overlap only ever *widens* an error bar, so the
+null below survives the correction — it was, if anything, understated before.)
 
 | momentum bucket | hit rate | | attention | hit rate | vs baseline | ±2 s.e. |
 |---|---|---|---|---|---|---|

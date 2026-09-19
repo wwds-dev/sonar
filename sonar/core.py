@@ -22,6 +22,7 @@ from dataclasses import asdict
 from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
                institutions, llm, macro, model, news, paths, risk)
 from .engine import Engine
+from .research import hourlyvol
 from . import calibration, events, portfolio, scoring
 
 
@@ -30,7 +31,11 @@ def trade_dict(t) -> dict | None:
 
 PRICE_EVERY = 4.0            # seconds between price polls
 MARKET_EVERY = 15.0         # seconds between Polymarket polls
-VOL_EVERY = 600.0           # seconds between volatility refreshes
+# Hourly, because the estimate only changes when a candle closes: every input
+# to it is a *closed* hour, so the old 600s cadence refetched the same answer
+# six times. (It was sized for a trailing std; the estimator is now the
+# EWMA x hour-of-day forecast measured in sonar/research/hourlyvol.py.)
+VOL_EVERY = 3600.0          # seconds between volatility refreshes
 SCAN_EVERY = 90.0           # seconds between asset-screen refreshes
 SPARK_MAX = 220             # price points kept for the sparkline
 
@@ -103,7 +108,7 @@ class Live:
                 self.engine.seed_backtest(rows)
         except Exception:
             pass
-        self.sigma = model.hourly_sigma(feeds.recent_hourly_returns())
+        self.sigma = self._sigma()
         self._vol_at = time.time()
         # Publish a snapshot *before* the asset screen refreshes. The Terminal
         # tab needs only the candle and the hourly market — two fast calls —
@@ -422,12 +427,30 @@ class Live:
         safe to call when the loop was never started."""
         self._stop.set()
 
+    def _sigma(self) -> float:
+        """The per-hour volatility the model prices with.
+
+        The EWMA × hour-of-day forecast, measured at +7.5% QLIKE over the old
+        trailing-72 std across 16,078 held-out hours and 6/6 time blocks
+        (`sonar/research/hourlyvol.py`, which records the study). Falls back
+        down the measured ladder when history is short or the fetch fails:
+        plain EWMA inside `forecast()`, then the old trailing estimate here.
+        """
+        try:
+            times, closes = hourlyvol.fetch_hourly(days=62)
+            s = hourlyvol.forecast(closes, times)
+            if s is not None:
+                return s
+        except Exception:
+            pass
+        return model.hourly_sigma(feeds.recent_hourly_returns())
+
     def _poll(self) -> None:
         now = time.time()
         candle = feeds.hourly_candle()
 
         if now - self._vol_at > VOL_EVERY:
-            self.sigma = model.hourly_sigma(feeds.recent_hourly_returns())
+            self.sigma = self._sigma()
             self._vol_at = now
 
         if now - self._scan_at > SCAN_EVERY:
@@ -444,8 +467,25 @@ class Live:
             self.spark.append({"t": int(now), "p": candle.price})
             self.spark = self.spark[-SPARK_MAX:]
 
+        # After a feed gap the engine needs the missed hour's real close to
+        # settle honestly (see Engine._settle_rollover). Fetch it *before*
+        # taking the lock: the UI thread blocks on this lock to read the
+        # snapshot, and a network call held under it is the same frozen-window
+        # failure _refresh_wire() had. On a contiguous feed this fetches
+        # nothing. Reading current_hour without the lock is safe — only this
+        # thread's tick() ever writes it.
+        gap_close: dict[int, float] = {}
+        last_hour = self.engine.current_hour
+        if (candle is not None and last_hour is not None
+                and candle.open_time != last_hour
+                and candle.open_time - last_hour != 3600):
+            close = feeds.hour_close(last_hour)
+            if close is not None:
+                gap_close[last_hour] = close
+
         with self.lock:
-            sig = self.engine.tick(candle, market, self.sigma)
+            sig = self.engine.tick(candle, market, self.sigma,
+                                   close_lookup=gap_close.get)
             self.snapshot = self._build(candle, market, sig, now)
 
     # -- snapshot builder -------------------------------------------------- #
@@ -496,6 +536,9 @@ class Live:
             # Whether the narrative track's stated convictions have tracked
             # reality. Empty until enough reads have been attached and settled.
             "llm_calibration": eng.llm_calibration(),
+            # Brier: model vs market over every hour watched, traded or not —
+            # the direct test of the realised-vs-implied thesis.
+            "model_vs_market": eng.model_vs_market(),
         }
         # The macro regime is noise on an hourly view and the dominant term
         # on a yearly one, so it rides along only at horizons where it matters.

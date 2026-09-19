@@ -26,6 +26,7 @@ calibration table is the honest state for a young install, and it says so.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from . import scoring
@@ -110,7 +111,6 @@ def buckets(closed: list) -> list[Bucket]:
 def report(closed: list) -> dict:
     """The whole picture: buckets, whether the score ranks, and the edge earned."""
     bs = buckets(closed)
-    usable = [b for b in bs if b.enough]
     settled = [p for p in closed if p.pnl is not None]
 
     overall_hits = sum(1 for p in settled if (p.pnl or 0) > 0)
@@ -123,6 +123,17 @@ def report(closed: list) -> dict:
         edge = implied_edge(overall_rate)
         calibrated = True
 
+    # The ranking question, asked of every position rather than of bucket
+    # averages: the rank correlation between the confidence a position was
+    # opened on and whether it won. None when every position carried the same
+    # score — a real state on a book traded off one setup, not an error.
+    ic = None
+    if calibrated:
+        from .research import stats as _stats
+        ic = _stats.spearman(
+            [float(p.confidence or 0.0) for p in settled],
+            [1.0 if (p.pnl or 0) > 0 else 0.0 for p in settled])
+
     return {
         "n_settled": len(settled),
         "min_sample": MIN_SAMPLE,
@@ -131,30 +142,36 @@ def report(closed: list) -> dict:
         "advertised_rate": advertised,
         "implied_edge_sigma": round(edge, 4),
         "calibrated": calibrated,
-        "verdict": _verdict(usable, calibrated, overall_rate, advertised),
+        "score_ic": None if ic is None else round(ic, 4),
+        "verdict": _verdict(calibrated, overall_rate, advertised, ic,
+                            len(settled)),
     }
 
 
-def _verdict(usable: list[Bucket], calibrated: bool,
-             overall: float | None, advertised: float | None) -> str:
+def _verdict(calibrated: bool, overall: float | None,
+             advertised: float | None, ic: float | None, n: int) -> str:
     if not calibrated:
         return ("Not enough resolved positions yet — no claim either way. "
                 f"The score stays unproven until {MIN_SAMPLE} have closed.")
-    if len(usable) >= 2:
-        rates = [b.hit_rate for b in usable]
-        if all(b > a for a, b in zip(rates, rates[1:])):
-            return ("Hit rate rises with the score across every bucket with "
-                    "enough data — the score is carrying information.")
-        if all(b < a for a, b in zip(rates, rates[1:])):
-            return ("Hit rate *falls* as the score rises. The score is worse "
-                    "than useless at ranking these setups.")
-        return ("No clean relationship between score and hit rate yet — the "
-                "score ranks, but not by anything that has shown up in results.")
+    # The verdict used to demand a strictly rising hit rate across every
+    # bucket, which noise almost always breaks even when a real gradient
+    # exists — five buckets of twenty each must never wobble once. A rank
+    # correlation over the positions themselves asks the same question with
+    # all the data and an error bar.
+    if ic is not None:
+        t = ic * math.sqrt(max(n - 1, 1))
+        if t > 2.0:
+            return (f"Higher scores have won more often (rank IC {ic:+.2f}, "
+                    f"{t:.1f} sigma) — the score is carrying information.")
+        if t < -2.0:
+            return (f"Hit rate *falls* as the score rises (rank IC {ic:+.2f}, "
+                    f"{t:.1f} sigma). The score is worse than useless at "
+                    "ranking these setups.")
     if overall is not None and advertised is not None:
         delta = overall - advertised
         if abs(delta) < 0.05:
             return ("Results match the advertised odds almost exactly, which is "
                     "what no edge looks like.")
         return (f'Realised hit rate is {delta*100:+.1f} points against its own '
-                "odds, but only one bucket has enough data to say so.")
+                "odds, without the score itself showing ranking power yet.")
     return "Insufficient data."

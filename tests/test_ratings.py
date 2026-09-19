@@ -184,6 +184,33 @@ def test_a_draw_still_moves_the_ratings():
     assert table.value("B") > 1500
 
 
+def test_the_draw_rate_is_actually_measured():
+    """`observed_draw_rate` once *claimed* to measure while always returning
+    its default, because nothing ever set the attribute it read. Now the table
+    counts draws as it fits, and a league that has seen enough games answers
+    with its own rate."""
+    table = r.Table(r.EloConfig(draws=True))
+    for d in range(60):
+        score = (1, 1) if d % 3 == 0 else (2, 1)   # one game in three drawn
+        r.update(table, game(f"H{d % 6}", f"A{d % 6}", *score, day=d))
+    assert table.games == 60
+    assert r.observed_draw_rate(table) == pytest.approx(20 / 60)
+
+
+def test_the_draw_rate_default_stands_in_below_the_sample_floor():
+    table = r.Table(r.EloConfig(draws=True))
+    for d in range(10):
+        r.update(table, game("A", "B", 1, 1, day=d))
+    assert r.observed_draw_rate(table) == pytest.approx(0.25)
+
+
+def test_a_sport_without_draws_never_reports_a_measured_rate():
+    table = r.Table(r.EloConfig(draws=False))
+    for d in range(60):
+        r.update(table, game("A", "B", 2, 1, day=d))
+    assert r.observed_draw_rate(table) == pytest.approx(0.25)
+
+
 def test_ratings_regress_between_seasons():
     table = r.Table(r.EloConfig(season_regression=1 / 3))
     table.ratings["A"] = r.Rating(1800.0)
@@ -321,6 +348,22 @@ def test_calibration_buckets_report_the_gap():
     assert bucket.predicted == pytest.approx(0.85)
     assert bucket.realised == pytest.approx(0.3)
     assert bucket.gap < 0, "over-confident, and the sign should say so"
+
+
+def test_draws_do_not_inflate_accuracy():
+    """Accuracy used to score every draw as a hit, so a draw-heavy league
+    flattered any model for free. Draws are a two-way question's non-answer:
+    they now stay out of the accuracy denominator entirely."""
+    decided = [(0.7, 1.0), (0.7, 0.0)] * 100          # 50% right
+    drawn = [(0.7, 0.5)] * 200
+    with_draws = sc.score_predictions(decided + drawn)
+    without = sc.score_predictions(decided)
+    assert with_draws.accuracy == pytest.approx(without.accuracy)
+    assert with_draws.accuracy == pytest.approx(0.5)
+
+
+def test_an_all_drawn_sample_reports_zero_accuracy_not_a_crash():
+    assert sc.score_predictions([(0.5, 0.5)] * 10).accuracy == 0.0
 
 
 # --------------------------------------------------------------------------- #

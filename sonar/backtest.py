@@ -277,7 +277,8 @@ def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
     return out
 
 
-def summarise(trials: list[dict], rr: float = scoring.K_TARGET / scoring.K_STOP) -> dict:
+def summarise(trials: list[dict], rr: float = scoring.K_TARGET / scoring.K_STOP,
+              step: int = 1) -> dict:
     """Realised hit rate against what the barrier maths predicted."""
     if not trials:
         return {"n": 0, "verdict": "no resolved trials"}
@@ -287,6 +288,21 @@ def summarise(trials: list[dict], rr: float = scoring.K_TARGET / scoring.K_STOP)
     predicted = sum(t["predicted"] for t in trials) / n
     # Standard error on a proportion — the honest error bar on the claim.
     se = math.sqrt(max(hit * (1 - hit), 1e-9) / n)
+    # At a step smaller than the holding time, consecutive trials share future
+    # bars: a position opened Monday and one opened Thursday can be decided by
+    # the same Friday move, so n trials are fewer than n independent readings
+    # and the binomial bar above is too tight. The trials list is time-ordered
+    # within each symbol, which is what a Newey-West correction needs; the lag
+    # covers how many neighbouring trials one holding period spans. Overlap
+    # only ever *widens* the bar, so the wider of the two estimates is used.
+    avg_held = sum(t["bars_held"] for t in trials) / n
+    if n >= 10 and step >= 1:
+        from .research import stats as _stats
+        lags = max(1, round(avg_held / step))
+        _t, se_hac = _stats.newey_west_t(
+            [1.0 if t["outcome"] == "TARGET" else 0.0 for t in trials],
+            lags=lags)
+        se = max(se, se_hac)
     delta = hit - predicted
     from . import calibration
     edge = calibration.implied_edge(hit, scoring.K_TARGET, scoring.K_STOP)
@@ -348,7 +364,7 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
         if progress:
             progress(sym, len(trials))
 
-    summary = summarise(trials)
+    summary = summarise(trials, step=step)
     summary["symbols"] = fetched
     summary["horizon_days"] = horizon_days
     summary["range"] = rng

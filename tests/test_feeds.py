@@ -322,6 +322,46 @@ def test_a_dead_feed_yields_no_volatility_samples(api):
     assert feeds.recent_hourly_returns() == []
 
 
+# --------------------------------------------------------------------------- #
+# hour_close — the gap-settlement lookup
+# --------------------------------------------------------------------------- #
+def past_hour() -> int:
+    return int(time.time()) // 3600 * 3600 - 7200
+
+
+def test_hour_close_returns_the_requested_hours_close(api):
+    t = past_hour()
+    api["binance"] = [[t * 1000, "100", "105", "95", "101.5"]]
+    assert feeds.hour_close(t) == pytest.approx(101.5)
+
+
+def test_hour_close_refuses_an_hour_still_in_progress(api):
+    """An in-progress candle's close is a live price wearing a close's name.
+    Settling a position against it is the exact bug this function exists to
+    prevent, one layer down."""
+    api["binance"] = [[int(time.time()) // 3600 * 3600 * 1000,
+                       "100", "105", "95", "102"]]
+    assert feeds.hour_close(int(time.time()) // 3600 * 3600) is None
+
+
+def test_hour_close_refuses_a_candle_for_a_different_hour(api):
+    """Binance answers a startTime it has no candle for with the next candle it
+    does have — a delisted or gappy pair must yield None, not a neighbour's
+    price."""
+    t = past_hour()
+    api["binance"] = [[(t + 3600) * 1000, "100", "105", "95", "102"]]
+    assert feeds.hour_close(t) is None
+
+
+def test_hour_close_survives_a_dead_feed(api):
+    assert feeds.hour_close(past_hour()) is None
+
+
+def test_hour_close_survives_a_malformed_payload(api):
+    api["binance"] = [["not-a-time", "x"]]
+    assert feeds.hour_close(past_hour()) is None
+
+
 def test_the_market_is_read_from_the_hour_slug(api):
     api["events?slug="] = [{
         "slug": "bitcoin-up-or-down-january-5-2026-7pm-et",

@@ -18,7 +18,11 @@ import pytest
 from sonar import engine as eng
 from sonar import risk as risk_mod
 
-HOUR = 3_600_000          # candle open_time is in milliseconds
+# Candle open_time is in unix *seconds* (feeds.py converts Binance's
+# milliseconds on parse), and since the gap-settlement fix the engine is
+# unit-aware: consecutive hours differ by exactly 3600. This used to be an
+# opaque key and was 3_600_000, which would now read as a thousand-hour gap.
+HOUR = 3_600
 
 
 @dataclass
@@ -129,6 +133,54 @@ def test_a_new_hour_settles_the_one_before_it(engine, clock):
     assert engine.trades[0].won is True
 
 
+def test_a_contiguous_rollover_never_consults_the_lookup(engine, clock):
+    """The next candle's open *is* the previous close on a contiguous feed —
+    settling from it must stay free, or every quiet rollover costs a fetch."""
+    engine.risk = eager()
+    engine.tick(Candle(HOUR, 100.0, 100.5),
+                market_at(clock, 0.5, implied_up=0.30), 0.0045)
+
+    def boom(_hour):
+        raise AssertionError("close_lookup consulted on a contiguous feed")
+
+    engine.tick(Candle(HOUR * 2, 101.0, 101.0),
+                market_at(clock, 0.9), 0.0045, close_lookup=boom)
+    assert engine.trades[0].result == "UP"
+
+
+def test_a_gap_settles_against_the_hours_own_close(engine, clock):
+    """The bug this guards: after a sleep or restart the next live candle's
+    open is a price from hours after the position's market resolved. Here BTC
+    stands at 105 when the app wakes — but the position's hour actually closed
+    at 99, so UP lost. Settling against the wake-up price would book it a win."""
+    engine.risk = eager()
+    engine.tick(Candle(HOUR, 100.0, 100.5),
+                market_at(clock, 0.5, implied_up=0.30), 0.0045)
+    assert engine.open_position.side == "UP"
+
+    engine.tick(Candle(HOUR * 4, 105.0, 105.0), market_at(clock, 0.9), 0.0045,
+                close_lookup={HOUR: 99.0}.get)
+    assert len(engine.trades) == 1
+    assert engine.trades[0].close_price == 99.0
+    assert engine.trades[0].result == "DOWN"
+    assert engine.trades[0].won is False
+
+
+def test_a_gap_with_no_recoverable_close_voids_rather_than_guesses(engine, clock):
+    """No lookup, or a lookup that fails, must not settle against a wrong
+    price. Nothing is deducted at entry, so a void leaves the bankroll exactly
+    as if the bet had never been taken — a shorter record beats a corrupt one."""
+    engine.risk = eager()
+    engine.tick(Candle(HOUR, 100.0, 100.5),
+                market_at(clock, 0.5, implied_up=0.30), 0.0045)
+    before = engine.bankroll
+
+    engine.tick(Candle(HOUR * 4, 105.0, 105.0), market_at(clock, 0.9), 0.0045)
+    assert engine.open_position is None
+    assert engine.trades == []
+    assert engine.bankroll == before
+
+
 # --------------------------------------------------------------------------- #
 # Entry
 # --------------------------------------------------------------------------- #
@@ -147,6 +199,25 @@ def test_no_entry_without_enough_edge(engine, clock):
     engine.tick(Candle(HOUR, 100.0, 100.0),
                 market_at(clock, 0.5, implied_up=0.50), 0.0045)
     assert engine.open_position is None
+
+
+def test_the_edge_gate_is_on_the_executable_price_not_the_midpoint(engine, clock):
+    """A fat midpoint edge across a fat spread is not an edge. The model reads
+    ~0.96 against a 0.90 midpoint — six cents, clearing the moderate profile's
+    four — but the ask is 0.94, so a share costs 0.945 with slippage and the
+    edge that can actually be bought is ~1.5 cents. The old midpoint gate let
+    exactly this entry through, sized small but under-compensated, every time
+    the book was wide late in the hour."""
+    engine.tick(Candle(HOUR, 100.0, 100.56),
+                market_at(clock, 0.5, implied_up=0.90, best_ask=0.94), 0.0045)
+    assert engine.open_position is None
+
+
+def test_an_executable_edge_past_the_threshold_still_enters(engine, clock):
+    """The control for the gate above: same model reading, tighter book."""
+    engine.tick(Candle(HOUR, 100.0, 100.56),
+                market_at(clock, 0.5, implied_up=0.90, best_ask=0.90), 0.0045)
+    assert engine.open_position is not None
 
 
 def test_no_entry_outside_the_risk_profile_s_time_window(engine, clock):
@@ -419,3 +490,136 @@ def test_a_stake_too_small_to_matter_is_not_taken(engine, clock):
     engine.tick(Candle(HOUR, 100.0, 100.5),
                 market_at(clock, 0.5, implied_up=0.30), 0.0045)
     assert engine.open_position is None
+
+
+# --------------------------------------------------------------------------- #
+# Live stats stay live
+# --------------------------------------------------------------------------- #
+def test_seeded_warm_up_rows_stay_out_of_the_live_stats(engine):
+    """The warm-up seeds the *chart* with real variance; letting its synthetic
+    fair-odds rows into the win rate meant a fresh install opened claiming a
+    record built from trades nobody took."""
+    engine.seed_backtest(_rows(20))
+    s = engine.stats()
+    assert s["n_trades"] == 0
+    assert s["win_rate"] == 0.0
+    assert s["n_seeded"] == 20
+
+
+def test_live_trades_count_alongside_seeded_ones(engine, clock):
+    engine.seed_backtest(_rows(10))
+    engine.risk = eager()
+    engine.tick(Candle(HOUR * 99, 100.0, 100.5),
+                market_at(clock, 0.5, implied_up=0.30), 0.0045)
+    engine.finalize(HOUR * 99, close_price=101.0)
+    s = engine.stats()
+    assert s["n_trades"] == 1 and s["n_wins"] == 1
+    assert s["n_seeded"] == 10
+
+
+def test_a_pre_kind_state_file_still_knows_its_seeded_rows(tmp_path):
+    """State written before the `kind` field existed carries seeded rows
+    identifiable only by the title seed_backtest stamped on them."""
+    row = {"hour_key": HOUR, "side": "UP", "entry_price": 0.4, "shares": 10.0,
+           "stake": 4.0, "model_up": 0.6, "market_up": 0.4, "edge": 0.2,
+           "entered_at": 1.0, "won": True, "pnl": 6.0}
+    (tmp_path / "state.json").write_text(json.dumps({
+        "bankroll": 10_006.0, "equity": [], "open_position": None,
+        "trades": [dict(row, title="backtest"),
+                   dict(row, title="Bitcoin Up or Down")]}))
+    s = eng.Engine(tmp_path / "state.json").stats()
+    assert s["n_trades"] == 1
+    assert s["n_seeded"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Scoring every hour, traded or not
+# --------------------------------------------------------------------------- #
+def test_the_hour_is_scored_even_when_no_trade_is_taken(engine, clock):
+    """The paper P&L only grades hours the engine traded — the model's boldest
+    claims. The score log records every hour, which is the sample the
+    model-vs-market comparison actually needs."""
+    engine.tick(Candle(HOUR, 100.0, 100.0),
+                market_at(clock, 0.5, implied_up=0.50), 0.0045)
+    assert engine.open_position is None, "no edge, no trade"
+    assert engine.pending_score["hour_key"] == HOUR
+
+    engine.tick(Candle(HOUR * 2, 101.0, 101.0), market_at(clock, 0.9), 0.0045)
+    assert len(engine.scorelog) == 1
+    row = engine.scorelog[0]
+    assert row["outcome"] == 1.0
+    assert row["market_up"] == 0.5
+
+
+def test_no_snapshot_before_the_scoring_point(engine, clock):
+    """At the top of the hour the model is pinned near 0.5 by construction —
+    scoring there would compare nothing to nothing."""
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.9), 0.0045)
+    assert engine.pending_score is None
+
+
+def test_the_first_reading_past_the_point_is_the_one_kept(engine, clock):
+    """One snapshot per hour, taken mid-hour. Re-snapshotting later would let
+    the log drift toward the end of the hour, where model and market both
+    collapse to the sign of the move and the comparison degenerates."""
+    engine.tick(Candle(HOUR, 100.0, 100.4),
+                market_at(clock, 0.45, implied_up=0.50), 0.0045)
+    first = engine.pending_score["model_up"]
+    engine.tick(Candle(HOUR, 100.0, 100.9),
+                market_at(clock, 0.20, implied_up=0.50), 0.0045)
+    assert engine.pending_score["model_up"] == first
+
+
+def test_a_scored_hour_survives_a_restart(engine, tmp_path, clock):
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.5), 0.0045)
+    engine.tick(Candle(HOUR * 2, 101.0, 101.0), market_at(clock, 0.9), 0.0045)
+    reopened = eng.Engine(tmp_path / "state.json")
+    assert len(reopened.scorelog) == 1
+
+
+def test_a_voided_hour_is_not_scored(engine, clock):
+    """An hour whose real close could not be recovered has no outcome to score
+    against — inventing one would poison the very comparison the log exists for."""
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.5), 0.0045)
+    engine.tick(Candle(HOUR * 4, 105.0, 105.0), market_at(clock, 0.9), 0.0045)
+    assert engine.scorelog == []
+    assert engine.pending_score is None
+
+
+def test_the_score_log_is_capped(engine, clock):
+    engine.scorelog = [{"hour_key": i, "open": 1.0, "model_up": 0.5,
+                        "market_up": 0.5, "tau": 0.5, "outcome": 1.0,
+                        "close": 1.0} for i in range(eng.SCORELOG_MAX)]
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.5), 0.0045)
+    engine.tick(Candle(HOUR * 2, 101.0, 101.0), market_at(clock, 0.9), 0.0045)
+    assert len(engine.scorelog) == eng.SCORELOG_MAX
+    assert engine.scorelog[-1]["hour_key"] == HOUR
+
+
+def test_model_vs_market_refuses_a_small_sample(engine):
+    engine.scorelog = [{"model_up": 0.7, "market_up": 0.5, "outcome": 1.0}
+                       for _ in range(10)]
+    r = engine.model_vs_market()
+    assert r["model_brier"] < r["market_brier"]
+    assert "too few" in r["verdict"]
+
+
+def test_model_vs_market_calls_a_clear_win(engine):
+    win = {"model_up": 0.9, "market_up": 0.5, "outcome": 1.0}
+    lose = {"model_up": 0.1, "market_up": 0.5, "outcome": 0.0}
+    engine.scorelog = [win, lose] * 60
+    r = engine.model_vs_market()
+    assert r["brier_diff"] < 0
+    assert "beats the market" in r["verdict"]
+
+
+def test_model_vs_market_reads_a_tie_as_noise(engine):
+    engine.scorelog = [{"model_up": 0.5, "market_up": 0.5,
+                        "outcome": float(i % 2)} for i in range(200)]
+    r = engine.model_vs_market()
+    assert "noise" in r["verdict"]
+
+
+def test_model_vs_market_on_an_empty_log_is_not_an_error(engine):
+    r = engine.model_vs_market()
+    assert r["n"] == 0

@@ -22,7 +22,14 @@ PYTHON="${PYTHON:-.venv/bin/python}"
 "$PYTHON" -m pytest "$@" &
 pid=$!
 
-( sleep "$BUDGET"
+# The sleep runs in the watchdog's background and the trap reaps it. Killing
+# only the subshell orphans the sleep, which keeps stdout open — so a piped
+# invocation (`./run-tests.sh | tail`) used to block for the whole budget
+# after a 10-second suite had already finished, and the late kill printed
+# job-control noise into the results.
+( trap 'kill "$napper" 2>/dev/null; exit 0' TERM
+  sleep "$BUDGET" & napper=$!
+  wait "$napper" 2>/dev/null || exit 0
   if kill -0 "$pid" 2>/dev/null; then
       echo ""
       echo "run-tests.sh: no result after ${BUDGET}s — sampling and killing $pid." >&2
