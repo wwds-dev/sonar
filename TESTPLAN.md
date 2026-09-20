@@ -11,13 +11,13 @@ process. A green suite says nothing about any of them.
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **1,073 passed** |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **1,253 passed** |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
 **Run it from inside the app.** The **Test plan** button, next to *Docs*, opens
-this as a page that remembers which cases you have passed or failed — eighty of
-them is more than one sitting. The daemon serves it at `/testplan` too.
+this as a page that remembers which cases you have passed or failed — a hundred
+and one of them is more than one sitting. The daemon serves it at `/testplan` too.
 
 That page is *generated* from this file by `scripts/build_testplan.py`, which
 `build_app.sh` runs before packaging. Edit the markdown, never the HTML.
@@ -31,7 +31,7 @@ running even when short of time — the list doubles as this project's bug histo
 
 | # | Step | Expected |
 |---|---|---|
-| 0.1 | `./run-tests.sh tests/ -q` | 1,073 passed. A wedge on the Qt window tests is a known issue (§9) — re-run once. |
+| 0.1 | `./run-tests.sh tests/ -q` | 1,253 passed, in about ten seconds. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue. |
 | 0.2 | `./build_app.sh --install` | Ends with `All checks passed.` then `Installed:` |
 | 0.3 | `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` | `All checks passed.` Reports 7 sports, 5 rated, cycling with no feed. |
 | 0.4 | Note the bankroll before you start | You will compare against it in 5.x |
@@ -68,6 +68,8 @@ running even when short of time — the list doubles as this project's bug histo
 | 2.5 | | Read the equity curve | Renders; a gold **LIVE** marker separates the warm-up from real trades |
 | 2.6 | | Press **LLM read on this hour** | Either a read appears, or it says why not. With no API key, "off — no key" is the correct answer, not an error. |
 | 2.7 | | Hover every number in the stat row | Each has a tooltip explaining it in plain words |
+| 2.8 | | Read the **model vs market** line under the portfolio strip | States how many hours are scored and refuses a verdict below **100** — below the threshold it must not favour either side. |
+| 2.9 | | Read the same line's health tail after a few hours of running | `coverage`, `voided` and `last settle` are present; coverage sits near 100% on an uninterrupted run; no ⚠ STALLED while hours are settling. |
 
 ---
 
@@ -75,7 +77,7 @@ running even when short of time — the list doubles as this project's bug histo
 
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
-| 3.1 | | Count the rows | **26** instruments (7 Equity · 3 Index · 3 Forex · 11 Crypto · 2 Commodity) |
+| 3.1 | | Count the rows | **129** instruments (50 Equity · 20 Index · 20 Forex · 21 Crypto · 18 Commodity) |
 | 3.2 | | Read the columns | `TREND · PRICE · 1D · MOM · VOL · NEWS · R:R · P(PROF) · SCORE MIX · CONF` |
 | 3.3 | | Read **P(PROF)** down the column | A flat **40%**, drawn grey. Anything else means calibration has moved it — check §5.5 agrees. |
 | 3.4 | | Check the NEWS column | Quiet / Normal / Elevated / Spike. **No bullish/bearish lean anywhere.** |
@@ -86,7 +88,7 @@ running even when short of time — the list doubles as this project's bug histo
 | 3.9 | | Press **Short** on a different row | Same, direction SHORT |
 | 3.10 | | Press **Buy** on the same row again | Refused: "already holding" |
 | 3.11 | | Hover each column header | Tooltip explains the number, and CONF's says it is **not** the odds of profit |
-| 3.12 | | Hover a row's name | Names where it could actually be traded. 8 of 26 are proxied and 1 is not tradeable — it must say so rather than implying you can buy it. |
+| 3.12 | | Hover a row's name | Names where it could actually be traded. 58 of 129 are proxied (indices via UCITS ETFs, futures via ETCs) and one — Monero — is not tradeable at all; it must say so rather than implying you can buy it. |
 
 ---
 
@@ -144,6 +146,16 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 |---|---|---|---|
 | 5.17 | | Read the Book's P&L, then `README.md` §"The cost floor" | The book's P&L **excludes costs**. The measured floor is **€1.05 per round trip** (50 bps per side), so a real version of the same trade is €1.05 worse. |
 | 5.18 | ⚠ | Ask whether the app told you that anywhere you would have seen it | Today it does not — the caveat is in the Lab and backtest captions and in the README, not on the Book tab. **A paper P&L that reads better than reality is the single most misleading thing this app could show.** Log it if it still is not surfaced. |
+
+### Protocol mode — filling the table without discretion
+
+| # | ⚠ | Steps | Expected |
+|---|---|---|---|
+| 5.19 | | Tick **protocol mode** in the Book header, quit, relaunch | Still ticked — the switch survives a restart. |
+| 5.20 | | Within a scan or two of ticking it, read the open positions | Up to **10** new small positions: the five highest- and five lowest-confidence rows. Directions are **mixed** — several days of all-LONG or all-SHORT means the coin is broken. |
+| 5.21 | | Check one protocol position's size | Cash at risk ≈ **0.25%** of the book (~€25 on €10,000) regardless of risk profile — measurement stakes, not appetite stakes. |
+| 5.22 | | Leave it on over days | At most ten new entries per day, never a second position in a symbol already held, and the protocol open count never exceeds **40**. |
+| 5.23 | | Untick protocol mode | Existing protocol positions stay open and resolve on their own. Closing them early would censor exactly the outcomes being measured. |
 
 ---
 
@@ -214,6 +226,9 @@ The cases most likely to be skipped, and the ones that produced the worst bugs.
 | 10.3 | | Turn Wi-Fi back on | Recovers within one poll cycle without a restart |
 | 10.4 | | Launch a **second** SONAR while the first runs | Second says **READ-ONLY** and names the conflict. Two engines settling the same hour would double-count the book. |
 | 10.5 | | Quit both. Relaunch. | Starts normally — the stale lock is reclaimed |
+| 10.6 | | Leave Wi-Fi **off for over two hours** with the app running | The menu-bar tooltip gains **⚠ STALLED** and a notification is posted once — a dead run must not look identical to a healthy one. |
+| 10.7 | | Turn Wi-Fi back on and let an hour settle | The STALLED flag clears on its own; coverage resumes counting. |
+| 10.8 | | After a day of running, look in `~/Library/Application Support/SONAR/` | `state.json.bak.<date>` exists (and `portfolio.json.bak.<date>` once the book has saved that day); at most **seven** days of each are kept. |
 
 ---
 
@@ -222,7 +237,7 @@ The cases most likely to be skipped, and the ones that produced the worst bugs.
 v2 signs off when:
 
 - [ ] Every ⚠ case passes. These are regressions; a failure is a re-opened bug.
-- [ ] §0 passes — build, self-test, and 1,073 automated tests.
+- [ ] §0 passes — build, self-test, and 1,253 automated tests.
 - [ ] No case in §1 (launch, window, quit) fails. The app being hard to close or
       quit has been reported twice and is the most visible class of defect here.
 - [ ] §10 passes. An app that misbehaves offline is worse than one that says it
@@ -231,9 +246,11 @@ v2 signs off when:
 
 ## 12. Known, and not blocking
 
-- **The Qt window tests wedge about one run in three.** A PySide6 teardown race
-  leaves a pthread mutex orphaned below Python, so no in-process timeout can
-  fire. `./run-tests.sh` bounds it externally. The app is unaffected.
+- ~~The Qt window tests wedge about one run in three.~~ **Fixed 2026-09-19**:
+  the conftest guards were function-scoped below a module-scoped window fixture,
+  so the three window tests ran unguarded. Session-scoped now; three consecutive
+  full runs deterministic. `./run-tests.sh` still bounds the suite externally as
+  a backstop, and a wedge today is a regression to report.
 - **The calibration table will be empty** until ~20 paper positions have closed.
   That is the honest state, not a defect.
 - **No Finnhub key** means equities ride on one undocumented Yahoo endpoint, with

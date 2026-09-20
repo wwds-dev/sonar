@@ -105,7 +105,7 @@
     jargon you will meet in it. Everything after this assumes you have read it.</p>
 
   <h3>What SONAR actually does</h3>
-  <p>It watches the price and the news flow of 26 things you could invest in —
+  <p>It watches the price and the news flow of 129 things you could invest in —
     shares, indices, currencies, commodities, crypto — and flags the ones where
     something unusual is happening. You can then take a position with
     <b>pretend money</b> and watch, over weeks, whether those flags were worth
@@ -149,6 +149,12 @@
       if you closed it this second, as opposed to what you paid.</td></tr>
     <tr><td>Drawdown</td><td>How far your money has fallen from its best point.
       The number that actually makes people quit.</td></tr>
+    <tr><td>Bid / ask</td><td>The two prices a market shows at any moment: the
+      <b>bid</b> is the best anyone will pay you, the <b>ask</b> is the best
+      anyone will sell to you. The gap between them — the <b>spread</b> — is
+      what a round trip costs before anything else happens, and it is why a
+      model can be right and still unprofitable: an edge smaller than the
+      spread cannot be bought.</td></tr>
     <tr><td>Horizon</td><td>How far ahead you are looking — a day, a week, a
       month. It changes which numbers SONAR shows you, because a signal that
       matters over a month is noise over a day.</td></tr>
@@ -237,7 +243,7 @@
   <h3>Which tab do I want?</h3>
   <table>
     <tr><th>If you want to…</th><th>Go to</th></tr>
-    <tr><td>See what is unusual across all 26 markets right now</td>
+    <tr><td>See what is unusual across all 129 markets right now</td>
       <td><b>Assets</b> — sort by CONF and read the NEWS column</td></tr>
     <tr><td>Read the news driving it</td><td><b>Wire</b></td></tr>
     <tr><td>Take a pretend position and track it</td><td><b>Book</b></td></tr>
@@ -247,6 +253,27 @@
     <tr><td>Price a sports bet</td><td><b>Playmaker</b></td></tr>
     <tr><td>Watch the hourly Bitcoin model</td><td><b>Terminal</b></td></tr>
   </table>
+
+  <h3>How you will know whether any of it works</h3>
+  <p>You do not have to take the app's word for anything — it grades itself,
+    in three places, and each one is designed so it cannot flatter you:</p>
+  <ul>
+    <li><b>The hourly model grades itself against the market.</b> Every hour,
+      the Terminal notes down what the model said and what Polymarket said,
+      then checks both against what actually happened — including all the
+      hours it chose <em>not</em> to bet, so it cannot show you only its best
+      moments. After about a hundred hours (four days or so of running) it
+      states a verdict in plain words. §4 and §8 explain how to read it.</li>
+    <li><b>The confidence score is graded by the calibration table.</b> Every
+      pretend position remembers the score it was opened on, and the Book tab
+      counts whether high scores actually won more often. <b>Protocol mode</b>
+      (§6) fills that table for you with small, coin-flip-direction positions,
+      so the answer measures the score and not your moods.</li>
+    <li><b>The run watches itself.</b> A health line on the Terminal shows how
+      many hours have been collected versus how many have passed, and the
+      menu-bar item raises an alarm if collection stalls — because a dead
+      experiment looks exactly like a healthy one otherwise (§12).</li>
+  </ul>
 
   <div class="callout warn"><b>What this app will not do.</b> It will not tell
     you what to buy, it cannot place a real trade, and it is not financial
@@ -258,12 +285,14 @@
     <tr><th>Tab</th><th>What it does</th><th>Asserts a direction?</th></tr>
     <tr><td>Terminal</td>
       <td>The hourly BTC up/down paper trade. A probability model prices each
-        hour, compares itself to Polymarket, and takes at most one simulated bet.</td>
+        hour, compares itself to Polymarket, and takes at most one simulated
+        bet — then grades itself against the market on <em>every</em> hour,
+        traded or not (§4).</td>
       <td><b class="up">Yes</b> — the only place with an independent model</td></tr>
     <tr><td>Assets</td>
-      <td>26 instruments — equities, indices, FX, 11 crypto, commodities — with
-        price, momentum, volatility, news level, reward:risk, P(profit), and
-        buy / short / read on every row.</td>
+      <td>129 instruments — 50 equities, 20 indices, 20 currency pairs,
+        21 crypto, 18 commodities — with price, momentum, volatility, news
+        level, reward:risk, P(profit), and buy / short / read on every row.</td>
       <td><b class="down">No</b> — direction is yours</td></tr>
     <tr><td>Wire</td>
       <td>The live newswire — 24 feeds across nine press blocs — beside the
@@ -271,7 +300,8 @@
         alerts on what changed since the last scan.</td>
       <td>No</td></tr>
     <tr><td>Book</td>
-      <td>Open paper positions, the calibration table, and the backtest button.</td>
+      <td>Open paper positions, the calibration table, the protocol-mode
+        switch that fills it (§6), and the backtest button.</td>
       <td>—</td></tr>
     <tr><td>Macro</td>
       <td>The regime — curve, VIX, real rates, unemployment — plus central-bank
@@ -520,8 +550,37 @@ APCA_API_SECRET_KEY=...</code></pre>
   </table>
   <p>Run the whole watchlist over five years and you will be in the thousands.
     Run one asset class over one year and you will not.</p>
+  <p>One refinement the bar now carries: at a small replay step, neighbouring
+    trials <em>overlap</em> — a position opened Monday and one opened Thursday
+    can be decided by the same Friday move, so a thousand trials are fewer than
+    a thousand independent readings. The Lab corrects its error bar for that
+    (a Newey-West adjustment), and the correction only ever <b>widens</b> it.
+    An earlier version of these docs called the replay's setups independent;
+    they were not, and the bars were too tight — the null results survive,
+    because a wider bar makes a null <em>stronger</em>.</p>
 
-  <h3>Reading attribution</h3>
+  <h3>Reading the model-vs-market line</h3>
+  <p>The Terminal's self-grading line (§4) is the number to watch during a
+    collection run, and it reads differently from a hit rate:</p>
+  <table>
+    <tr><th>Part</th><th>What to do with it</th></tr>
+    <tr><td>Hours scored</td><td>Below <b>100</b> the line refuses a verdict,
+      and rightly — a week of hours says more about that week than about the
+      model.</td></tr>
+    <tr><td>Brier, model vs market</td><td>Lower is better (see the glossary:
+      0 is perfect foresight, 0.25 is a coin flip on everything). The verdict
+      compares the two <em>paired, hour by hour</em>, with an error bar — a
+      small gap on a few hundred hours is usually noise, and the line says so
+      itself rather than leaving it to enthusiasm.</td></tr>
+    <tr><td>Coverage and voids</td><td>Context, not scoring: how complete the
+      record is. Low coverage means hours went missing — see §12 — and a
+      conclusion drawn from a gappy record inherits the gaps.</td></tr>
+  </table>
+  <div class="callout"><b>Calibrated is not the same as buyable.</b> Even if
+    the model beats the market's Brier score, every one of its disagreements
+    could still sit inside the bid-ask spread — right, but too small to buy.
+    Each hourly snapshot records the spread at that moment precisely so this
+    harder question can be answered later, from data rather than hope.</div>
   <p>A hit rate says whether the blend worked. Attribution says which part did,
     which is the only version you can act on. Three readings per component:</p>
   <table>
@@ -585,12 +644,17 @@ APCA_API_SECRET_KEY=...</code></pre>
     <li>At least one component surviving Benjamini-Hochberg, with a quintile
       spread whose error bar excludes zero.</li>
     <li>The same component surviving in more than one asset class.</li>
+    <li>The Terminal's model-vs-market verdict favouring the model beyond its
+      error bar over hundreds of hours — <em>and</em> the recorded spreads
+      showing the disagreements were wide enough to buy.</li>
     <li>And then the only one that counts: <b>calibration</b> on real closed
-      positions agreeing, with the hit rate climbing across confidence buckets.</li>
+      positions agreeing — higher scores winning more often, measured as a
+      rank correlation with an error bar rather than eyeballed buckets.</li>
   </ul>
   <div class="callout warn"><b>None of that has happened yet.</b> The Lab has
-    never reported a directional component as KEEP on a full run, and calibration
-    has zero closed positions of the twenty it needs. The honest state of this
+    never reported a directional component as KEEP on a full run, calibration
+    has zero closed positions of the twenty it needs, and the model-vs-market
+    log has zero scored hours of its hundred. The honest state of this
     app is that its own tools have not found an edge in it — which is worth
     far more than a tool that never looked.</div>
 
@@ -617,10 +681,14 @@ APCA_API_SECRET_KEY=...</code></pre>
     claiming an immediacy it does not have.</p>
 
   <h3>Where you could actually trade it</h3>
-  <p>The board scores an index, two futures contracts and a delisted coin next to
-    ordinary shares. <b>Nine of twenty-six rows cannot be bought as shown</b>, so
-    every row carries a marker and a tooltip saying what you would actually buy
-    and where — or that you could not.</p>
+  <p>The board scores indices, futures contracts and a delisted coin next to
+    ordinary shares — things that cannot be bought in the form shown. On the
+    current 129-row watchlist, <b>58 rows are tradeable only through a proxy</b>
+    (an index through a UCITS ETF, a futures contract through an ETC) and one —
+    Monero, delisted by Binance globally and by Kraken across the EEA — is not
+    available on any mainstream regulated venue at all. Every row carries a
+    marker and a tooltip saying what you would actually buy and where — or that
+    you could not.</p>
   <table>
     <tr><th>Marker</th><th>Meaning</th></tr>
     <tr><td><b class="gold">↗</b></td><td>Tradeable through something else — an
@@ -641,11 +709,23 @@ APCA_API_SECRET_KEY=...</code></pre>
   <h2 id="grading"><span class="n">10</span>How the score gets graded</h2>
   <p>Every closed position carries the confidence it was opened on, so the Book
     tab can ask the only question that matters: <em>did high scores actually win
-    more often?</em> Hit rate is bucketed by score and compared with what the
-    barrier maths advertised.</p>
+    more often?</em> The table buckets hit rate by score for reading; the
+    <b>verdict</b> is computed differently — a rank correlation between each
+    position's score and whether it won, across all of them, with an error bar.
+    (It used to demand a strictly rising hit rate across every bucket, which
+    one noisy bucket always breaks even when a real gradient exists; the
+    correlation sees through the wobble and refuses claims inside two standard
+    errors.)</p>
   <p>Below <b>20</b> closed positions it reports nothing at all. A five-win
     streak is not an edge, and a young install showing an empty table is the
     honest state rather than a bug.</p>
+  <p>Two things keep the record clean. The warm-up rows that seed the equity
+    chart with real BTC variance are <b>excluded from the stats</b> — they are
+    synthetic bets at the model's own fair price, and counting them would give
+    a fresh install a win rate built from trades nobody took. And the
+    positions the table grades are best supplied by <b>protocol mode</b> (§6):
+    a table filled by hand-picked trades grades the picker's moods, while
+    coin-flip entries on the top and bottom of the ranking grade the score.</p>
   <p>The <b>run backtest</b> button answers the same question in seconds instead
     of months, by replaying the identical plan over years of real bars — momentum
     and volatility from prior bars only, then walking forward through actual highs
@@ -731,6 +811,11 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     <li><b>Fills are optimistic.</b> The internal book ignores spread, slippage
       and fees; the backtest excludes costs and resolves ambiguous bars against
       you.</li>
+    <li><b>A missed hour is voided, never guessed.</b> If the app was asleep
+      when a position's hour ended and the real close cannot be recovered, the
+      position is dropped as if never taken — a shorter record beats a
+      corrupted one. Voids are counted on the Terminal's health line, so the
+      loss of data is visible rather than silent.</li>
   </ul>
   <p>By design SONAR stops one step short of acting. It will take you up to a
     decision with its reasoning fully exposed, and leave the decision to you.</p>

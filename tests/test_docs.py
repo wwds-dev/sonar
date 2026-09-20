@@ -84,7 +84,7 @@ def test_the_learning_centre_comes_first():
 @pytest.mark.parametrize("term", [
     # markets
     "Position", "Long / short", "Volatility", "Momentum", "Stop / target",
-    "Drawdown", "Paper trading", "Basis point",
+    "Drawdown", "Paper trading", "Basis point", "Bid / ask",
     # probability
     "Base rate", "Expected value", "Calibration", "Out-of-sample", "Brier score",
     # betting

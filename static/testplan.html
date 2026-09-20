@@ -92,7 +92,7 @@
   <h1>v2 acceptance test plan</h1>
 
   <div class="bar">
-    <span class="count"><b id="done">0</b> / <b id="total">91</b> checked
+    <span class="count"><b id="done">0</b> / <b id="total">101</b> checked
       &middot; <span class="ok"><b id="passed">0</b> passed</span>
       &middot; <span class="bad"><b id="failed">0</b> failed</span></span>
     <span class="track"><i class="p" id="pbar"></i><i class="f" id="fbar"></i></span>
@@ -105,16 +105,16 @@
 <p class="callout"><b>Run it against <code>/Applications/SONAR.app</code>, not the checkout.</b> Several of the failures below only exist in a packaged build — a module PyInstaller could not see, a resource path that moves when frozen, a Qt plugin inherited from a parent process. A green suite says nothing about any of them.</p>
 <table><tr><th></th><th></th></tr>
 <tr><td>Build under test</td><td><code>./build_app.sh --install</code>, then <code>/Applications/SONAR.app/Contents/MacOS/SONAR --selftest</code></td></tr>
-<tr><td>Automated suite</td><td><code>./run-tests.sh tests/ -q</code> — expect <b>1,073 passed</b></td></tr>
+<tr><td>Automated suite</td><td><code>./run-tests.sh tests/ -q</code> — expect <b>1,253 passed</b></td></tr>
 <tr><td>Time to run this plan</td><td>~30 minutes</td></tr>
 <tr><td>Prerequisite</td><td>A working internet connection. Two cases deliberately need it off.</td></tr>
 </table>
-<p><b>Run it from inside the app.</b> The <b>Test plan</b> button, next to <em>Docs</em>, opens this as a page that remembers which cases you have passed or failed — eighty of them is more than one sitting. The daemon serves it at <code>/testplan</code> too.</p>
+<p><b>Run it from inside the app.</b> The <b>Test plan</b> button, next to <em>Docs</em>, opens this as a page that remembers which cases you have passed or failed — a hundred and one of them is more than one sitting. The daemon serves it at <code>/testplan</code> too.</p>
 <p>That page is <em>generated</em> from this file by <code>scripts/build_testplan.py</code>, which <code>build_app.sh</code> runs before packaging. Edit the markdown, never the HTML.</p>
 <p><b>⚠ marks a case that has caught a real regression.</b> Those are the ones worth running even when short of time — the list doubles as this project's bug history.</p>
 <h2><span class="n">0</span>Before starting</h2>
 <table><tr><th>Result</th><th>#</th><th>Step</th><th>Expected</th></tr>
-<tr data-case="0.1"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.1</td><td><code>./run-tests.sh tests/ -q</code></td><td>1,073 passed. A wedge on the Qt window tests is a known issue (§9) — re-run once.</td></tr>
+<tr data-case="0.1"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.1</td><td><code>./run-tests.sh tests/ -q</code></td><td>1,253 passed, in about ten seconds. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue.</td></tr>
 <tr data-case="0.2"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.2</td><td><code>./build_app.sh --install</code></td><td>Ends with <code>All checks passed.</code> then <code>Installed:</code></td></tr>
 <tr data-case="0.3"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.3</td><td><code>/Applications/SONAR.app/Contents/MacOS/SONAR --selftest</code></td><td><code>All checks passed.</code> Reports 7 sports, 5 rated, cycling with no feed.</td></tr>
 <tr data-case="0.4"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.4</td><td>Note the bankroll before you start</td><td>You will compare against it in 5.x</td></tr>
@@ -143,10 +143,12 @@
 <tr data-case="2.5"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">2.5</td><td class="flag"></td><td>Read the equity curve</td><td>Renders; a gold <b>LIVE</b> marker separates the warm-up from real trades</td></tr>
 <tr data-case="2.6"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">2.6</td><td class="flag"></td><td>Press <b>LLM read on this hour</b></td><td>Either a read appears, or it says why not. With no API key, "off — no key" is the correct answer, not an error.</td></tr>
 <tr data-case="2.7"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">2.7</td><td class="flag"></td><td>Hover every number in the stat row</td><td>Each has a tooltip explaining it in plain words</td></tr>
+<tr data-case="2.8"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">2.8</td><td class="flag"></td><td>Read the <b>model vs market</b> line under the portfolio strip</td><td>States how many hours are scored and refuses a verdict below <b>100</b> — below the threshold it must not favour either side.</td></tr>
+<tr data-case="2.9"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">2.9</td><td class="flag"></td><td>Read the same line's health tail after a few hours of running</td><td><code>coverage</code>, <code>voided</code> and <code>last settle</code> are present; coverage sits near 100% on an uninterrupted run; no ⚠ STALLED while hours are settling.</td></tr>
 </table>
 <h2><span class="n">3</span>Assets</h2>
 <table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
-<tr data-case="3.1"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.1</td><td class="flag"></td><td>Count the rows</td><td><b>26</b> instruments (7 Equity · 3 Index · 3 Forex · 11 Crypto · 2 Commodity)</td></tr>
+<tr data-case="3.1"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.1</td><td class="flag"></td><td>Count the rows</td><td><b>129</b> instruments (50 Equity · 20 Index · 20 Forex · 21 Crypto · 18 Commodity)</td></tr>
 <tr data-case="3.2"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.2</td><td class="flag"></td><td>Read the columns</td><td><code>TREND · PRICE · 1D · MOM · VOL · NEWS · R:R · P(PROF) · SCORE MIX · CONF</code></td></tr>
 <tr data-case="3.3"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.3</td><td class="flag"></td><td>Read <b>P(PROF)</b> down the column</td><td>A flat <b>40%</b>, drawn grey. Anything else means calibration has moved it — check §5.5 agrees.</td></tr>
 <tr data-case="3.4"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.4</td><td class="flag"></td><td>Check the NEWS column</td><td>Quiet / Normal / Elevated / Spike. <b>No bullish/bearish lean anywhere.</b></td></tr>
@@ -157,7 +159,7 @@
 <tr data-case="3.9"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.9</td><td class="flag"></td><td>Press <b>Short</b> on a different row</td><td>Same, direction SHORT</td></tr>
 <tr data-case="3.10"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.10</td><td class="flag"></td><td>Press <b>Buy</b> on the same row again</td><td>Refused: "already holding"</td></tr>
 <tr data-case="3.11"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.11</td><td class="flag"></td><td>Hover each column header</td><td>Tooltip explains the number, and CONF's says it is <b>not</b> the odds of profit</td></tr>
-<tr data-case="3.12"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.12</td><td class="flag"></td><td>Hover a row's name</td><td>Names where it could actually be traded. 8 of 26 are proxied and 1 is not tradeable — it must say so rather than implying you can buy it.</td></tr>
+<tr data-case="3.12"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">3.12</td><td class="flag"></td><td>Hover a row's name</td><td>Names where it could actually be traded. 58 of 129 are proxied (indices via UCITS ETFs, futures via ETCs) and one — Monero — is not tradeable at all; it must say so rather than implying you can buy it.</td></tr>
 </table>
 <h2><span class="n">4</span>Wire</h2>
 <table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
@@ -197,6 +199,14 @@
 <table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
 <tr data-case="5.17"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.17</td><td class="flag"></td><td>Read the Book's P&amp;L, then <code>README.md</code> §"The cost floor"</td><td>The book's P&amp;L <b>excludes costs</b>. The measured floor is <b>€1.05 per round trip</b> (50 bps per side), so a real version of the same trade is €1.05 worse.</td></tr>
 <tr data-case="5.18"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.18</td><td class="flag">⚠</td><td>Ask whether the app told you that anywhere you would have seen it</td><td>Today it does not — the caveat is in the Lab and backtest captions and in the README, not on the Book tab. <b>A paper P&amp;L that reads better than reality is the single most misleading thing this app could show.</b> Log it if it still is not surfaced.</td></tr>
+</table>
+<h3>Protocol mode — filling the table without discretion</h3>
+<table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
+<tr data-case="5.19"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.19</td><td class="flag"></td><td>Tick <b>protocol mode</b> in the Book header, quit, relaunch</td><td>Still ticked — the switch survives a restart.</td></tr>
+<tr data-case="5.20"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.20</td><td class="flag"></td><td>Within a scan or two of ticking it, read the open positions</td><td>Up to <b>10</b> new small positions: the five highest- and five lowest-confidence rows. Directions are <b>mixed</b> — several days of all-LONG or all-SHORT means the coin is broken.</td></tr>
+<tr data-case="5.21"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.21</td><td class="flag"></td><td>Check one protocol position's size</td><td>Cash at risk ≈ <b>0.25%</b> of the book (~€25 on €10,000) regardless of risk profile — measurement stakes, not appetite stakes.</td></tr>
+<tr data-case="5.22"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.22</td><td class="flag"></td><td>Leave it on over days</td><td>At most ten new entries per day, never a second position in a symbol already held, and the protocol open count never exceeds <b>40</b>.</td></tr>
+<tr data-case="5.23"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">5.23</td><td class="flag"></td><td>Untick protocol mode</td><td>Existing protocol positions stay open and resolve on their own. Closing them early would censor exactly the outcomes being measured.</td></tr>
 </table>
 <h2><span class="n">6</span>Macro</h2>
 <table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>
@@ -246,17 +256,20 @@
 <tr data-case="10.3"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">10.3</td><td class="flag"></td><td>Turn Wi-Fi back on</td><td>Recovers within one poll cycle without a restart</td></tr>
 <tr data-case="10.4"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">10.4</td><td class="flag"></td><td>Launch a <b>second</b> SONAR while the first runs</td><td>Second says <b>READ-ONLY</b> and names the conflict. Two engines settling the same hour would double-count the book.</td></tr>
 <tr data-case="10.5"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">10.5</td><td class="flag"></td><td>Quit both. Relaunch.</td><td>Starts normally — the stale lock is reclaimed</td></tr>
+<tr data-case="10.6"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">10.6</td><td class="flag"></td><td>Leave Wi-Fi <b>off for over two hours</b> with the app running</td><td>The menu-bar tooltip gains <b>⚠ STALLED</b> and a notification is posted once — a dead run must not look identical to a healthy one.</td></tr>
+<tr data-case="10.7"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">10.7</td><td class="flag"></td><td>Turn Wi-Fi back on and let an hour settle</td><td>The STALLED flag clears on its own; coverage resumes counting.</td></tr>
+<tr data-case="10.8"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">10.8</td><td class="flag"></td><td>After a day of running, look in <code>~/Library/Application Support/SONAR/</code></td><td><code>state.json.bak.&lt;date&gt;</code> exists (and <code>portfolio.json.bak.&lt;date&gt;</code> once the book has saved that day); at most <b>seven</b> days of each are kept.</td></tr>
 </table>
 <h2><span class="n">11</span>Exit criteria</h2>
 <p>v2 signs off when:</p>
-<ul><li>Every ⚠ case passes. These are regressions; a failure is a re-opened bug.</li><li>§0 passes — build, self-test, and 1,073 automated tests.</li><li>No case in §1 (launch, window, quit) fails. The app being hard to close or</li></ul>
+<ul><li>Every ⚠ case passes. These are regressions; a failure is a re-opened bug.</li><li>§0 passes — build, self-test, and 1,253 automated tests.</li><li>No case in §1 (launch, window, quit) fails. The app being hard to close or</li></ul>
 <p>quit has been reported twice and is the most visible class of defect here.</p>
 <ul><li>§10 passes. An app that misbehaves offline is worse than one that says it</li></ul>
 <p>is offline.</p>
 <ul><li>Any failure is either fixed, or written into <code>TODO.md</code> with its evidence.</li></ul>
 <h2><span class="n">12</span>Known, and not blocking</h2>
-<ul><li><b>The Qt window tests wedge about one run in three.</b> A PySide6 teardown race</li></ul>
-<p>leaves a pthread mutex orphaned below Python, so no in-process timeout can fire. <code>./run-tests.sh</code> bounds it externally. The app is unaffected.</p>
+<ul><li>~~The Qt window tests wedge about one run in three.~~ <b>Fixed 2026-09-19</b>:</li></ul>
+<p>the conftest guards were function-scoped below a module-scoped window fixture, so the three window tests ran unguarded. Session-scoped now; three consecutive full runs deterministic. <code>./run-tests.sh</code> still bounds the suite externally as a backstop, and a wedge today is a regression to report.</p>
 <ul><li><b>The calibration table will be empty</b> until ~20 paper positions have closed.</li></ul>
 <p>That is the honest state, not a defect.</p>
 <ul><li><b>No Finnhub key</b> means equities ride on one undocumented Yahoo endpoint, with</li></ul>

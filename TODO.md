@@ -71,6 +71,21 @@ and time rather than code, kept at the top.
 
 ### Pre-run instrumentation — 2026-09-20, before the collection run starts
 
+- [x] `P2` `docs` `@ai` **Docs and learning centre brought up to the app that
+      exists.** §1 gained "How you will know whether any of it works" (the
+      three self-grading loops, in plain English) and a 25th glossary term
+      (Bid / ask — the spread, and why right-but-unbuyable exists); §8 gained
+      "Reading the model-vs-market line" and the overlap-corrected error-bar
+      lesson; §10 describes the rank-IC verdict, the live-only stats and
+      protocol mode; §13 gained the void-never-guess bullet. Stale facts
+      corrected everywhere they lived: the watchlist is 129, not 26 (docs ×3,
+      README, TESTPLAN §3); the venue census is 58-proxied/1-untradeable of
+      129, not nine of twenty-six (docs §9, AGENTS.md); the suite is 1,253,
+      not 1,073 (TESTPLAN ×3, TESTING, README); the window-test wedge is fixed,
+      not "known" (TESTPLAN §12, TESTING §7, README). TESTPLAN grew cases
+      2.8–2.9 (model-vs-market + health line), 5.19–5.23 (protocol mode) and
+      10.6–10.8 (STALLED, recovery, backups) — 101 cases, 17 ⚠ regressions.
+
 - [x] `P1` `feature` `@ai` **The hourly snapshot records the touch.** Brier
       says who was better *calibrated*; only the bid/ask at the moment of the
       snapshot can later say whether the difference was ever **buyable** — and

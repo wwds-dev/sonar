@@ -16,8 +16,8 @@ A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no we
 
 | Tab | What it does | Asserts a direction? |
 |---|---|---|
-| **Terminal** | Hourly BTC up/down paper trade — the model prices each hour, compares to Polymarket, takes at most one simulated bet | **Yes** — the only independent model |
-| **Assets** | 26 instruments (equities, indices, FX, 11 crypto, commodities) with R:R, P(profit), news level, and buy/short per row | **No** — direction is yours |
+| **Terminal** | Hourly BTC up/down paper trade — the model prices each hour, compares to Polymarket, takes at most one simulated bet, and grades itself against the market on every hour, traded or not | **Yes** — the only independent model |
+| **Assets** | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, and buy/short per row | **No** — direction is yours |
 | **Wire** | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
 | **Book** | Open paper positions, the calibration table, and the backtest button | — |
 | **Macro** | Regime: curve, VIX, real rates, unemployment | No |
@@ -502,24 +502,24 @@ under; delete the state file to reset to a clean $10,000.
 TEST_BUDGET_S=60 ./run-tests.sh
 ```
 
-Three tests build a real `MainWindow`, and PySide6 occasionally leaves a pthread
-mutex orphaned when those windows are torn down — the main thread then blocks
-unkillable from inside itself, a hang pytest's own `faulthandler_timeout`
-(`pyproject.toml`) cannot catch because the dump would need the very lock that is
-held. `run-tests.sh` bounds the suite from outside the process instead, sampling
-the stack before killing it — see the open TODO item for what's already been
-ruled out.
+Three tests build a real `MainWindow`. The suite is **deterministic since
+2026-09-19** — the wedge that used to hit one run in three was the conftest
+guards being function-scoped below a module-scoped window fixture, so the
+window tests ran unguarded; the guards are session-scoped now. `run-tests.sh`
+keeps its external watchdog as a backstop, so a hang today is a regression to
+report, not weather.
 
 `TESTING.md` is the coverage roadmap: what's tested, what isn't, and the order to fix it
 in. Tier 1 is done — `model.py` and `engine.py` both went from ~39% to **100%**, mutation-checked,
 and writing the engine's cross-check test found a real ten-point disagreement between the app's
 two ways of computing P(up) (a lattice bin sitting exactly on the barrier), since fixed. Tier 2
-(`feeds.py`, `server.py`) is next.
+landed too (`feeds.py` 30% → 82%, `server.py` 0% → 92%); `universe.py` and
+`research/features.py` are the next gaps.
 
 ### Learning what the numbers mean
 
 The **Docs** button opens the manual. §1 is a plain-English primer with a
-24-term glossary — it assumes no finance background. **§8 is the one to read
+25-term glossary — it assumes no finance background. **§8 is the one to read
 before trusting a Lab run**: how to read an error bar, what the four attribution
 verdicts mean, how many trials a number needs before it means anything (at 20
 trials the band is ±21.5 points), and five ways to fool yourself, each of which
@@ -528,9 +528,9 @@ happened here and each naming what caught it.
 ### Testing
 
 `TESTING.md` is the automated side — what is covered, what is not, and the order
-to fix it in. **`TESTPLAN.md` is the manual side**: 80 acceptance cases for
+to fix it in. **`TESTPLAN.md` is the manual side**: 101 acceptance cases for
 signing off v2, run against the installed bundle rather than the checkout,
-because several of the failures only exist in a build. Twenty of them are marked
+because several of the failures only exist in a build. Seventeen of them are marked
 as regressions, which makes the list double as this project's bug history.
 
 The app's **Test plan** button (next to *Docs*) opens it as a page that remembers
@@ -540,7 +540,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,073 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,253 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 
@@ -665,8 +665,8 @@ sonar/
   risk.py      risk profiles — staking and filtering, never scoring
   horizon.py   return horizons, intraday → year — timing curve + momentum window
   macro.py     FRED regime (curve, VIX, real rates, labour) for long horizons
-  paths.py     dev vs frozen path resolution — the packaging landmine
-  engine.py    paper portfolio: sizing, settlement, persistence, stats, LLM calibration
+  paths.py     dev vs frozen path resolution — the packaging landmine — plus daily state backups
+  engine.py    paper portfolio: sizing, settlement, the hourly model-vs-market score log, run health, LLM calibration
   llm.py       the optional narrative read (the only module with a dependency)
   news.py      reputable RSS/Atom (financial, political, tech, wires), matching + sentiment
   assets.py    real-asset screener (equities/indices/FX/crypto/commodities)
@@ -690,7 +690,8 @@ sonar/
     devig.py   three devig methods (multiplicative, Clarke power, Shin), cross-book consensus, outlier screen
     staking.py Estimate (probability + interval + source); Kelly at the interval's low end
     MODELS.md  what the successful sports models do, and the staged plan
-  research/    the study apparatus — features, panel, stats, validate, regimes
+  research/    the study apparatus — features, panel, stats, validate, regimes,
+               and hourlyvol (the measured EWMA × hour-of-day σ the Terminal prices with)
 ui/
   app.py       the window — Terminal / Assets / Wire / Book / Macro / Lab / Playmaker
   charts.py    QPainter charts: equity curve, sparkline, depth, lattice, bars
@@ -707,10 +708,10 @@ static/
 
 | | |
 |---|---|
-| `GET /api/state` | live snapshot: candle, market, signal, portfolio, calibration |
+| `GET /api/state` | live snapshot: candle, market, signal, portfolio, model-vs-market, run health, calibration |
 | `GET /api/assets` | the real-asset screen |
-| `GET /api/config` | current risk/horizon, available options, LLM availability |
-| `POST /api/config` | `{"risk": "...", "horizon": "..."}` — switches and rescans |
+| `GET /api/config` | current risk/horizon/protocol, available options, LLM availability |
+| `POST /api/config` | `{"risk": "...", "horizon": "...", "protocol": true}` — switches and rescans |
 | `POST /api/read` | `{"kind": "btc\|asset", "id": "..."}` — one LLM read |
 
 ## What is left

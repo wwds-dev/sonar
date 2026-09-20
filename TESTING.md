@@ -8,7 +8,8 @@ estimated.
 
 ## 0. Where we are
 
-**1,073 tests. 66% of statements.**
+**1,253 tests** (66% of statements when last measured, 2026-09-16 — the
+2026-09-19/20 additions have not been re-measured).
 
 > **Progress.** Steps 1–5 are done, plus `research/features.py`. `model.py` 39% → **100%**, `engine.py`
 > 38% → **100%**, `feeds.py` 30% → **82%**, `server.py` 0% → **92%**. The overall figure barely moves,
@@ -261,12 +262,14 @@ Several of the failures it looks for only exist in a build.
 
 ## 7. Known infrastructure problems
 
-- **The Qt window tests wedge about one run in three.** A PySide6 teardown race
-  leaves a pthread mutex orphaned; the main thread then blocks below Python, so
-  no in-process timeout can fire. `./run-tests.sh` bounds it from outside and
-  samples the stack before killing. Ruled out already: the network, shared
-  state, the poll thread, undrained `deleteLater`, and cross-file window
-  accumulation. See `TODO.md`.
+- ~~The Qt window tests wedge about one run in three.~~ **Fixed 2026-09-19.**
+  Every candidate "ruled out" during the long search had been ruled out against
+  a patch that was not in force: the conftest guards were function-scoped below
+  a module-scoped `window` fixture, so the three window tests ran unguarded —
+  real network, real engine lock, and a `terminate()` on a thread holding the
+  GIL at teardown. Session-scoped guards fixed it; `./run-tests.sh` keeps its
+  external watchdog as a backstop (and since 2026-09-20 reaps the watchdog's
+  own sleep, so piped runs no longer block for the full budget).
 - **`coverage` is a dev dependency**, installed with
   `uv pip install --python .venv/bin/python coverage`. It is deliberately not in
   `pyproject.toml`'s runtime dependencies, which stay empty.
