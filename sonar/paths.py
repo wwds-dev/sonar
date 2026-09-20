@@ -14,10 +14,48 @@ never does.
 
 from __future__ import annotations
 
+import datetime as _dt
+import shutil
 import sys
 from pathlib import Path
 
 APP_NAME = "SONAR"
+
+#: Days of daily state-file backups kept beside the file.
+BACKUP_KEEP = 7
+
+
+def daily_backup(path: Path, keep: int = BACKUP_KEEP,
+                 today: str | None = None) -> Path | None:
+    """Copy ``path`` aside once per day, before its first overwrite.
+
+    The state files *are* the experiment's output, they live outside git, and
+    the writer overwrites them on every change — so one corrupt write or
+    stray delete loses weeks of record with no way back. This keeps the last
+    :data:`BACKUP_KEEP` days as ``<name>.bak.<date>`` next to the file: the
+    first save of a day snapshots yesterday's last known-good copy, and every
+    later save that day sees the stamp already there and costs one
+    ``exists()`` check. A backup that cannot be written must never block the
+    save it protects, so failures are swallowed.
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
+    stamp = today or _dt.date.today().isoformat()
+    bak = p.with_name(f"{p.name}.bak.{stamp}")
+    if bak.exists():
+        return None
+    try:
+        shutil.copy2(p, bak)
+    except OSError:
+        return None
+    # ISO dates sort lexically, so the oldest backups are simply the first.
+    for old in sorted(p.parent.glob(f"{p.name}.bak.*"))[:-keep]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return bak
 
 
 def is_frozen() -> bool:

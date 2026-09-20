@@ -954,6 +954,21 @@ class MainWindow(QMainWindow):
             self.book_stats[k] = s
             hl.addWidget(s)
         hl.addStretch(1)
+        # The calibration protocol: systematic, coin-flip-direction paper
+        # entries so the table below fills with measurement instead of
+        # discretion — or staying empty forever on an unclicked install.
+        self.protocol_box = QCheckBox("protocol mode")
+        self.protocol_box.setFont(theme.mono(9))
+        self.protocol_box.setChecked(self.live.protocol_on)
+        self.protocol_box.setToolTip(
+            "Once a day, open small fixed-risk paper positions on the five\n"
+            "highest- and five lowest-confidence rows, direction chosen by\n"
+            "coin flip. Random on purpose: the score claims notability, not\n"
+            "direction, and a coin flip isolates exactly the claim the\n"
+            "calibration table tests. Measurement, not a strategy — and\n"
+            "paper money only, as ever.")
+        self.protocol_box.toggled.connect(self.live.set_protocol)
+        hl.addWidget(self.protocol_box)
         lay.addWidget(head)
 
         cal = panel()
@@ -2026,14 +2041,24 @@ class MainWindow(QMainWindow):
             self.stats["win rate"].set(f'{st["win_rate"]:.0f}%')
             self.stats["profile"].set(st.get("risk_profile", "—"))
         mvm = pf.get("model_vs_market") or {}
+        rh = pf.get("run_health") or {}
+        health = ""
+        if rh.get("started"):
+            health = (f' · coverage {rh.get("coverage_pct", 0):.0f}%'
+                      f' · {rh.get("voided", 0)} voided')
+            age = rh.get("last_settled_age_s")
+            if age is not None:
+                health += f' · last settle {age // 60}m ago'
+            if rh.get("stale"):
+                health += "  ⚠ STALLED"
         if mvm.get("n"):
             self.mvm.setText(
                 f'model vs market · {mvm["n"]} hrs scored · Brier '
                 f'{mvm.get("model_brier", 0):.4f} vs {mvm.get("market_brier", 0):.4f}'
-                f' — {mvm.get("verdict", "")}')
+                f' — {mvm.get("verdict", "")}{health}')
         else:
             self.mvm.setText("model vs market: no settled hours scored yet — "
-                             "fills in as hours resolve, traded or not")
+                             f"fills in as hours resolve, traded or not{health}")
 
     def _refresh_cards(self, assets: dict) -> None:
         asig = (assets.get("generated"), assets.get("n"))

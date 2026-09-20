@@ -32,7 +32,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from . import scoring
+from . import paths, scoring
 
 STARTING_CASH = 10_000.0
 # Fraction of the book risked per position if the stop is hit. Overridden by the
@@ -71,6 +71,9 @@ class Position:
     # recording an intention and calling it a holding.
     status: str = OPEN
     client_order_id: str = ""
+    # Opened by the calibration protocol rather than a person: fixed small
+    # stake, direction chosen by coin flip. Measurement, never a view.
+    protocol: bool = False
     # filled on close
     closed_at: float | None = None
     exit: float | None = None
@@ -184,6 +187,9 @@ class Portfolio:
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Daily known-good copy before the first overwrite of the day — this
+        # file is weeks of resolved positions with no other home.
+        paths.daily_backup(self.path)
         payload = {"starting_cash": self.starting_cash, "cash": self.cash,
                    "open": [asdict(p) for p in self.open],
                    "closed": [asdict(p) for p in self.closed]}
@@ -197,7 +203,7 @@ class Portfolio:
 
     def enter(self, asset: dict, direction: str, horizon_days: int,
               horizon_name: str, risk_fraction: float = DEFAULT_RISK_FRACTION,
-              ) -> tuple[Position | None, str]:
+              protocol: bool = False) -> tuple[Position | None, str]:
         """Open a position from a screener row. Returns ``(position, message)``.
 
         One position per symbol: doubling up would quietly turn a fixed risk
@@ -239,7 +245,8 @@ class Portfolio:
             rr=plan.rr, p_profit=plan.p_profit, horizon=horizon_name,
             asset_class=asset.get("cls", ""),
             status=OPEN if sync else PENDING,
-            client_order_id=str(reply.get("client_order_id") or ""))
+            client_order_id=str(reply.get("client_order_id") or ""),
+            protocol=protocol)
         # A short borrows rather than spends; only a long consumes cash. A
         # pending long reserves it too: the money is committed the moment the
         # order is accepted, and settle_fills() refunds it if the order dies.

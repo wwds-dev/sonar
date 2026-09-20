@@ -50,9 +50,10 @@ class FakeLive:
     def config(self):
         return {"risk": "moderate", "horizon": "week"}
 
-    def configure(self, risk, hz):
-        self.configured.append((risk, hz))
-        return {"risk": risk or "moderate", "horizon": hz or "week"}
+    def configure(self, risk, hz, protocol=None):
+        self.configured.append((risk, hz, protocol))
+        return {"risk": risk or "moderate", "horizon": hz or "week",
+                "protocol": {"on": bool(protocol)}}
 
     def read(self, kind, ident):
         self.reads.append((kind, ident))
@@ -121,7 +122,7 @@ def test_config_round_trips(daemon):
     status, got = post(base, "/api/config",
                        {"risk": "aggressive", "horizon": "month"})
     assert status == 200 and got["risk"] == "aggressive"
-    assert live.configured == [("aggressive", "month")]
+    assert live.configured == [("aggressive", "month", None)]
 
 
 def test_api_responses_are_never_cached(daemon):
@@ -168,7 +169,7 @@ def test_a_malformed_body_does_not_take_the_route_down(daemon):
                                  method="POST")
     with urllib.request.urlopen(req, timeout=5) as r:
         assert r.status == 200
-    assert live.configured == [(None, None)], "an unreadable body reads as empty"
+    assert live.configured == [(None, None, None)], "an unreadable body reads as empty"
 
 
 def test_a_body_with_no_content_length_is_treated_as_empty(daemon):
@@ -176,7 +177,7 @@ def test_a_body_with_no_content_length_is_treated_as_empty(daemon):
     req = urllib.request.Request(f"{base}/api/config", data=b"", method="POST")
     with urllib.request.urlopen(req, timeout=5) as r:
         assert r.status == 200
-    assert live.configured == [(None, None)]
+    assert live.configured == [(None, None, None)]
 
 
 # --------------------------------------------------------------------------- #

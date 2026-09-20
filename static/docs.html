@@ -353,7 +353,10 @@
     them by Brier score on the Terminal tab. The paper P&amp;L only grades the
     hours the model traded, which are its boldest claims; this grades all 24 a
     day, so it cannot be flattered by selection and says in weeks what the
-    bankroll would take months to say. Entries themselves are gated on the
+    bankroll would take months to say. Each snapshot also records the book's
+    bid and ask at that moment, so the comparison can later answer the harder
+    question — whether any calibration edge was ever <em>buyable</em> after
+    the spread. Entries themselves are gated on the
     <b>executable</b> edge — the model's probability against the ask plus
     slippage, not the midpoint — because a 4¢ disagreement across a 10¢ spread
     buys nothing.</p>
@@ -396,6 +399,15 @@
   <p>Exits are prices, not dates: the target and the stop. History says those
     resolve in a median of <b>6 trading days</b>, a quarter inside 3 and three
     quarters inside 10.</p>
+  <p><b>Protocol mode</b> (the checkbox in the Book header, off by default) is
+    for filling the calibration table without discretion. Once a day it opens
+    small fixed-risk paper positions on the five highest- and five lowest-
+    confidence rows, with the direction chosen by <b>coin flip</b> — random on
+    purpose, because the score claims notability and never direction, and a
+    coin flip isolates exactly the claim the calibration table exists to test.
+    A table filled by hand-picked trades grades the picker, not the score.
+    Turning it off leaves open positions to resolve on their own; closing them
+    early would censor the outcomes being measured.</p>
   <h3>Optionally through Alpaca</h3>
   <p>The built-in book fills instantly at the quoted price with no fees and no
     queue, which makes it an optimistic bound. Alpaca's <b>paper</b> environment
@@ -689,6 +701,14 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
   <p>The only resource is bandwidth, roughly <b>8MB an hour</b> since the
     Polymarket board was removed — down from about 60MB. Negligible on
     broadband, and worth knowing on a metered connection.</p>
+  <p><b>The run watches itself.</b> The Terminal tab's health line shows hours
+    scored against hours elapsed, settlements voided, and how long ago anything
+    last settled. Because the BTC market resolves around the clock, two silent
+    hours always means the run has stalled — the menu-bar item then posts a
+    notification and shows STALLED, rather than letting a dead run look exactly
+    like a healthy one. The state files keep a daily rotating backup
+    (<code>.bak.&lt;date&gt;</code>, last seven days) beside themselves: they
+    are the run's output, and they live nowhere else.</p>
 
   <h2 id="honesty"><span class="n">13</span>Honesty &amp; limits</h2>
   <div class="warn">

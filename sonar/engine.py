@@ -26,6 +26,7 @@ from dataclasses import fields as dataclass_fields
 from pathlib import Path
 
 from . import model as _model
+from . import paths as _paths
 from . import risk as _risk
 
 # --- strategy parameters -------------------------------------------------- #
@@ -43,6 +44,10 @@ SCORE_TAU = 0.5
 # Hours kept in the model-vs-market score log (~4 months of round-the-clock
 # uptime). Enough to answer the question; not an unbounded state file.
 SCORELOG_MAX = 3000
+# The BTC market settles around the clock, so a run that has settled nothing
+# for this long has stalled — feed dead, machine asleep, agent gone — and a
+# stalled run looks exactly like a healthy one from the menu bar.
+STALE_AFTER_S = 2 * 3600
 
 
 @dataclass
@@ -97,6 +102,13 @@ class Engine:
         # of every hour the engine watched — traded or not. See model_vs_market.
         self.pending_score: dict | None = None
         self.scorelog: list[dict] = []
+        # Run-health bookkeeping: the experiment's own vital signs. The score
+        # log is capped, so totals are counted separately — coverage over the
+        # whole run must not silently improve when old hours age out.
+        self.n_scored_total = 0
+        self.n_voided = 0
+        self.score_started: float | None = None
+        self.last_settled_at: float | None = None
         self._load()
 
     def set_risk(self, profile: _risk.RiskProfile) -> None:
@@ -136,11 +148,19 @@ class Engine:
         self.open_position = _trade_from(op) if op else None
         self.pending_score = d.get("pending_score")
         self.scorelog = d.get("scorelog") or []
+        self.n_scored_total = d.get("n_scored_total") or len(self.scorelog)
+        self.n_voided = d.get("n_voided") or 0
+        self.score_started = d.get("score_started")
+        self.last_settled_at = d.get("last_settled_at")
         if d.get("risk_profile"):
             self.risk = _risk.get(d["risk_profile"])
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Once a day, yesterday's last good file is kept aside before the
+        # first overwrite — the record is the product, and it lives nowhere
+        # else. See paths.daily_backup.
+        _paths.daily_backup(self.path)
         d = {
             "starting_bankroll": self.starting_bankroll,
             "bankroll": self.bankroll,
@@ -151,6 +171,10 @@ class Engine:
             "equity": self.equity,
             "pending_score": self.pending_score,
             "scorelog": self.scorelog,
+            "n_scored_total": self.n_scored_total,
+            "n_voided": self.n_voided,
+            "score_started": self.score_started,
+            "last_settled_at": self.last_settled_at,
         }
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(d))
@@ -180,7 +204,7 @@ class Engine:
         sig = _model.evaluate(candle.price, candle.open, sigma, tau,
                               market.implied_up)
         self.last_signal = sig
-        self._maybe_score(candle, sig)
+        self._maybe_score(candle, market, sig)
         self._maybe_enter(candle, market, sig)
         return sig
 
@@ -208,12 +232,13 @@ class Engine:
             self._score_hour(hour, close)
             return
         self.open_position = None
+        self.n_voided += 1
         if self.pending_score and self.pending_score.get("hour_key") == hour:
             self.pending_score = None
         self.save()
 
     # ---- scoring every hour, not just the traded ones -------------------- #
-    def _maybe_score(self, candle, sig: _model.Signal) -> None:
+    def _maybe_score(self, candle, market, sig: _model.Signal) -> None:
         """Snapshot the model and the market once per hour, mid-hour.
 
         The paper P&L only ever scores hours where the two disagreed enough to
@@ -221,21 +246,32 @@ class Engine:
         few observations a day. This records *every* hour at the first reading
         past ``SCORE_TAU``, so :meth:`model_vs_market` can compare the two on
         the whole distribution instead of the tail.
+
+        The book's touch rides along because it cannot be backfilled: the
+        Brier comparison says who was better *calibrated*, and only the spread
+        at the moment of the snapshot can later say whether that difference
+        was ever **buyable** — a model can beat the mid on every hour and
+        still have every disagreement sit inside the bid-ask.
         """
         if sig.tau > SCORE_TAU:
             return
         if (self.pending_score
                 and self.pending_score.get("hour_key") == candle.open_time):
             return
+        if self.score_started is None:
+            self.score_started = time.time()
         self.pending_score = {
             "hour_key": candle.open_time,
             "open": candle.open,
             "model_up": round(sig.model_up, 4),
             "market_up": round(sig.market_up, 4),
+            "bid": round(market.best_bid, 4) if market.best_bid else None,
+            "ask": round(market.best_ask, 4) if market.best_ask else None,
             "tau": round(sig.tau, 4),
         }
 
     def _score_hour(self, hour_key: int, close: float) -> None:
+        self.last_settled_at = time.time()
         p, self.pending_score = self.pending_score, None
         if not p or p.get("hour_key") != hour_key:
             return
@@ -243,6 +279,7 @@ class Engine:
         p["close"] = close
         self.scorelog.append(p)
         self.scorelog = self.scorelog[-SCORELOG_MAX:]
+        self.n_scored_total += 1
         self.save()
 
     def _tau(self, end_time: int) -> float:
@@ -436,6 +473,40 @@ class Engine:
         else:
             out["verdict"] = ("Model and market are within noise of each "
                               "other, which is what no edge looks like.")
+        return out
+
+    def run_health(self, now: float | None = None) -> dict:
+        """The experiment's own vital signs.
+
+        Over a weeks-long run, hours can go missing silently — the feed down,
+        the machine asleep, the agent dead — and at review time the damage
+        shows up only as a mysteriously small n. This makes it visible while
+        it is happening instead: how many hours were scored against how many
+        elapsed, how many settlements were voided, and how long ago anything
+        last settled. ``stale`` trips after :data:`STALE_AFTER_S` without a
+        settlement, because the BTC market resolves around the clock — two
+        silent hours always means the run has stalled, never that the market
+        paused.
+        """
+        now = now if now is not None else time.time()
+        out: dict = {
+            "scored": self.n_scored_total,
+            "voided": self.n_voided,
+            "started": self.score_started,
+            "last_settled": self.last_settled_at,
+            "stale_after_s": STALE_AFTER_S,
+        }
+        if self.score_started:
+            elapsed_h = max(1.0, (now - self.score_started) / 3600.0)
+            out["hours_elapsed"] = round(elapsed_h, 1)
+            out["coverage_pct"] = round(
+                min(100.0, 100.0 * self.n_scored_total / elapsed_h), 1)
+        if self.last_settled_at:
+            out["last_settled_age_s"] = int(now - self.last_settled_at)
+        # Not started yet is its own visible state, not a stall: the UI says
+        # "no settled hours scored yet" until the first snapshot lands.
+        reference = self.last_settled_at or self.score_started
+        out["stale"] = bool(reference and now - reference > STALE_AFTER_S)
         return out
 
     def llm_calibration(self) -> dict:

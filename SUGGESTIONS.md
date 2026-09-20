@@ -22,6 +22,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 12 | Grow the watchlist so classes can carry a cross-sectional statistic | data | M | **DONE** — 26 → 129, every class ≥18. Every symbol verified to return a year of closes before being added; the growth also forced a rolling refresh, because refetching all of them took the request rate from ~13/min to ~64 and the source throttles below that |
 | 13 | **Backfill a historical earnings calendar** so the catalyst weight can face attribution — it is 0.20 of the confidence score and the only component never measured (the replay honestly reports "not measured"). EDGAR filing dates are free; even a partial backfill grades the weight | research | M | IDEA |
 | 14 | **Hit rate vs τ-at-entry**, once the hourly score log has a few weeks of data — the entry window (0.12–0.80 of the hour) is currently a guess, and the log records the τ of every snapshot | research | S | BLOCKED — needs the score log to fill |
+| 16 | **Executable model-vs-market**, once the score log has data — the log now carries the bid/ask per snapshot, so beyond Brier ("who was better calibrated") it can answer whether the model's disagreements were ever buyable after the spread | research | S | BLOCKED — needs the score log to fill |
 | 15 | Playmaker verdict polish: a block-bootstrap interval on the Brier difference instead of the `1/√games` margin, and one outer refit iteration in Dixon-Coles so `rho` and the home advantage feed back into the strengths (both named as simplifications in `poisson.py`) | research | S | IDEA |
 
 ## Safety rails
@@ -44,6 +45,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | Suggestion | When |
 |---|---|
 | A CI runner — `.github/workflows/tests.yml`, the suite on every push under `QT_QPA_PLATFORM=offscreen`. The recorded blocker (window tests wedging ~1 in 3) was fixed 2026-09-19 by the session-scoped conftest guards, so the row's premise was stale | Sep 2026 |
+| Pre-run instrumentation — bid/ask on every hourly snapshot (unbackfillable), run-health line + STALLED menu-bar notification, daily rotating state-file backups, and protocol mode for the calibration table. Detail in `TODO.md` | Sep 2026 |
 | The 2026-09-19 review fixes — gap settlement, seeded rows out of live stats, executable-edge gate, the hourly model-vs-market Brier log, EWMA × hour-of-day σ (measured +7.5% QLIKE first), overlap-corrected backtest error bars, rank-IC calibration verdict, measured draw rate, draws out of Playmaker accuracy, the run-tests.sh watchdog leak. Detail in `TODO.md` | Sep 2026 |
 | Providers, Alpaca paper trading, the paper book, the research apparatus and the calibration loop | Aug 2026 |
 | `GuardedBroker` shipped — rejections raise rather than return an error dict | Aug 2026 |

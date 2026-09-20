@@ -52,7 +52,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path.startswith("/api/config"):
             body = self._read_json_body()
-            self._json(self.live.configure(body.get("risk"), body.get("horizon")))
+            self._json(self.live.configure(body.get("risk"), body.get("horizon"),
+                                           protocol=body.get("protocol")))
             return
         if self.path.startswith("/api/read"):
             body = self._read_json_body()

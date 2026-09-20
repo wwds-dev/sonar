@@ -14,6 +14,7 @@ window never has to mean losing an hour.
 from __future__ import annotations
 
 import json
+import random
 import threading
 import time
 
@@ -45,6 +46,21 @@ SPARK_MAX = 220             # price points kept for the sparkline
 HOLD_MEDIAN_DAYS = 6
 HOLD_P25_DAYS = 3
 HOLD_P75_DAYS = 10
+
+# --- the calibration protocol (off by default) ----------------------------- #
+# The calibration table grades positions, and positions only exist when a
+# person clicks buy or short — so on an untraded install the table stays empty
+# forever, and on a traded one it grades discretion rather than the score.
+# Protocol mode replaces discretion with a rule: once a day, open fixed-small
+# paper positions on the top and bottom of the confidence ranking, direction
+# chosen by COIN FLIP. Random on purpose: the score claims notability, never
+# direction — five studies found none — and a coin flip isolates exactly the
+# claim the calibration table exists to test. Measurement, not a strategy.
+PROTOCOL_RISK = 0.0025          # of book equity per position; ~40 open ≈ 10%
+PROTOCOL_TOP = 5                # highest-confidence rows entered per day...
+PROTOCOL_BOTTOM = 5             # ...and lowest, as the control group
+PROTOCOL_MAX_OPEN = 40          # hard cap on concurrently open protocol rows
+PROTOCOL_MIN_ROWS = 40          # a half-fetched screen is not a ranking
 
 
 class Live:
@@ -99,6 +115,13 @@ class Live:
         self.alerts: list[dict] = []
         self.reader = llm.LLMReader()
         self.last_read: dict | None = None
+        # The calibration protocol (see the constants above). Off until a
+        # person turns it on; the switch and its daily stamp persist so a
+        # restart neither forgets the choice nor doubles a day's entries.
+        self.protocol_on = False
+        self._protocol_last_day = ""
+        self._protocol_rng = random.Random()
+        self._load_protocol()
 
     # -- background loop --------------------------------------------------- #
     def warmup(self) -> None:
@@ -152,6 +175,11 @@ class Live:
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
             self._mark_book(ap)
+            if self.protocol_on:
+                try:
+                    self._protocol_scan(ap)
+                except Exception:
+                    pass          # a failed entry must not cost the rescan
             fired = self.alert_engine.scan(ap, (self.inst or {}).get("pressure"))
             with self.lock:
                 self.assets = ap
@@ -160,6 +188,57 @@ class Live:
         except Exception:
             pass
         self._scan_at = time.time()
+
+    # -- the calibration protocol ------------------------------------------ #
+    def _protocol_file(self):
+        return paths.user_data_base() / "protocol.json"
+
+    def _load_protocol(self) -> None:
+        try:
+            d = json.loads(self._protocol_file().read_text())
+        except (OSError, ValueError):
+            return
+        self.protocol_on = bool(d.get("on"))
+        self._protocol_last_day = str(d.get("last_day") or "")
+
+    def _save_protocol(self) -> None:
+        try:
+            self._protocol_file().write_text(json.dumps(
+                {"on": self.protocol_on, "last_day": self._protocol_last_day}))
+        except OSError:
+            pass
+
+    def set_protocol(self, on: bool) -> None:
+        """Flip the protocol switch. Takes effect on the next rescan; turning
+        it off leaves existing protocol positions to resolve on their own —
+        closing them early would censor exactly the outcomes being measured."""
+        self.protocol_on = bool(on)
+        self._save_protocol()
+
+    def _protocol_scan(self, asset_payload: dict) -> None:
+        """One day's systematic entries: top and bottom of the ranking, coin-
+        flip direction, fixed small risk. Runs at most once per calendar day,
+        skips anything already held, and stops at the open-position cap."""
+        today = time.strftime("%Y-%m-%d")
+        if self._protocol_last_day == today:
+            return
+        rows = [a for a in asset_payload.get("assets", [])
+                if a.get("price") and a.get("volatility")]
+        if len(rows) < PROTOCOL_MIN_ROWS:
+            return                # thin screen — try again next rescan
+        n_open = sum(1 for p in self.book.open if p.protocol)
+        ranked = sorted(rows, key=lambda a: -a.get("confidence", 0.0))
+        for a in ranked[:PROTOCOL_TOP] + ranked[-PROTOCOL_BOTTOM:]:
+            if n_open >= PROTOCOL_MAX_OPEN:
+                break
+            direction = self._protocol_rng.choice(("LONG", "SHORT"))
+            pos, _msg = self.book.enter(
+                a, direction, self.horizon.momentum_days, self.horizon.name,
+                risk_fraction=PROTOCOL_RISK, protocol=True)
+            if pos is not None:
+                n_open += 1
+        self._protocol_last_day = today
+        self._save_protocol()
 
     # -- the paper book ---------------------------------------------------- #
     def _mark_book(self, asset_payload: dict) -> None:
@@ -264,9 +343,11 @@ class Live:
                 "position": asdict(closed)}
 
     # -- configuration ----------------------------------------------------- #
-    def configure(self, risk_name: str | None, horizon_name: str | None) -> dict:
-        """Apply a risk profile and/or horizon, then rescan so the boards
-        reflect the change immediately rather than after the next 90s tick."""
+    def configure(self, risk_name: str | None, horizon_name: str | None,
+                  protocol: bool | None = None) -> dict:
+        """Apply a risk profile, horizon and/or protocol switch, then rescan
+        so the boards reflect the change immediately rather than after the
+        next 90s tick."""
         changed = False
         if risk_name and risk.get(risk_name).name != self.risk.name:
             self.risk = risk.get(risk_name)
@@ -274,6 +355,9 @@ class Live:
             changed = True
         if horizon_name and horizon.get(horizon_name).name != self.horizon.name:
             self.horizon = horizon.get(horizon_name)
+            changed = True
+        if protocol is not None and bool(protocol) != self.protocol_on:
+            self.set_protocol(bool(protocol))
             changed = True
         if changed:
             self._rescan()
@@ -287,6 +371,14 @@ class Live:
             "risk_options": [p.as_dict() for p in risk.PROFILES.values()],
             "horizon_options": [h.as_dict() for h in horizon.HORIZONS.values()],
             "llm": {"available": ok, "detail": why, "model": llm.MODEL},
+            "protocol": {
+                "on": self.protocol_on,
+                "last_day": self._protocol_last_day,
+                "open": sum(1 for p in self.book.open if p.protocol),
+                "risk_fraction": PROTOCOL_RISK,
+                "per_day": PROTOCOL_TOP + PROTOCOL_BOTTOM,
+                "max_open": PROTOCOL_MAX_OPEN,
+            },
         }
 
     # -- the narrative track ----------------------------------------------- #
@@ -539,6 +631,9 @@ class Live:
             # Brier: model vs market over every hour watched, traded or not —
             # the direct test of the realised-vs-implied thesis.
             "model_vs_market": eng.model_vs_market(),
+            # Coverage, voids and staleness — whether the experiment is
+            # actually collecting, which a quiet menu bar cannot show.
+            "run_health": eng.run_health(now),
         }
         # The macro regime is noise on an hourly view and the dominant term
         # on a yearly one, so it rides along only at horizons where it matters.

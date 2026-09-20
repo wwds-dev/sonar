@@ -49,7 +49,7 @@ Everything below landed. What remains in v2 is two items that need an account
 and time rather than code, kept at the top.
 
 - [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. No code needed — `providers.py` already registers Finnhub at preference 5, ahead of Yahoo, and picks the key up from `FINNHUB_API_KEY` in a git-ignored `.env`. Also removes the ~15-minute quote delay during market hours.
-- [ ] `P1` `research` `@me` **Let the paper book run.** The calibration table stays empty until ~20 positions have closed. No amount of backtesting substitutes for a track record.
+- [ ] `P1` `research` `@me` **Let the paper book run.** The calibration table stays empty until ~20 positions have closed. No amount of backtesting substitutes for a track record. **Protocol mode** (Book tab, off by default) now fills it systematically — coin-flip direction, fixed small stakes — so the remaining decision is only to switch it on and leave the app running.
 
 ### Execution and the paper book
 
@@ -68,6 +68,31 @@ and time rather than code, kept at the top.
 - [x] `P1` `bug` `@ai` ~~SIGABRT on quit.~~ `shutdown()` did not name every QThread the window owns. Qt aborts when a running thread is destroyed, so quitting during a backtest died with SIGABRT. Every thread is now listed, with a test asserting it.
 - [x] `P0` `bug` `@ai` ~~"SONAR doesn't quit" — the blank white window, fourth report and the actual cause.~~ `shutdown()`'s last resort for a thread that would not stop was `QThread.terminate()`. It kills the thread wherever it stands, and a thread running Python holds the **GIL**, which is then never returned — so every Python thread blocks in `take_gil` forever, the Qt event loop included. Nothing repaints, and macOS shows the window's empty backing store: a white rectangle in an app themed `#080b11`, ignoring every click. Not a rare race — `live.stop()` only lands between fetches, so any quit during an in-flight request had to outlast an 8–30s socket timeout inside the grace, then terminated a thread that was by construction mid-`read()`. The fix is to stop trying to stop it and leave by `os._exit` instead, which skips the QThread destructors whose `qFatal()` was the only reason terminate was wanted; the engine writes through on every change and the engine lock is a PID file the next launch reclaims, so nothing is lost. The per-thread 4s wait also became a 1.5s budget **shared across all six threads** — six waits on the UI thread was up to 24s of the same unpainted window, self-healing but identical to look at. `tests/test_shutdown.py` fails the build on any `.terminate()` call by AST, and quits a real subprocess mid-fetch — against the old code that test does not fail, it hangs.
 - [x] `P0` `bug` `@ai` ~~Closing SONAR could leave a blank white window that never went away.~~ `_refresh_wire()` fetched on the UI thread whenever the news (8 min TTL) or events cache aged out — a coin flip every eight minutes on whether the event loop blocked up to 30s, painting nothing and ignoring input. The Wire path now reads cache-only (`news.cached()`, `events.cached_payload()`); `tests/test_ui_thread.py` and `test_refresh.py` assert nothing reaches the network from a real window with both caches aged out.
+
+### Pre-run instrumentation — 2026-09-20, before the collection run starts
+
+- [x] `P1` `feature` `@ai` **The hourly snapshot records the touch.** Brier
+      says who was better *calibrated*; only the bid/ask at the moment of the
+      snapshot can later say whether the difference was ever **buyable** — and
+      it cannot be backfilled, so it rides on every score-log row from day
+      one.
+- [x] `P1` `feature` `@ai` **Run health.** Hours scored vs elapsed, voided
+      settlements (previously traceless by design), and time since anything
+      last settled — on the Terminal tab and in `/api/state`
+      (`Engine.run_health`). BTC settles around the clock, so **two silent
+      hours always means a stall**: the menu-bar item posts a notification and
+      shows STALLED instead of letting a dead run look healthy.
+- [x] `P1` `infra` `@ai` **Daily state-file backups.** `state.json` and
+      `portfolio.json` are the experiment's only output and live outside git;
+      `paths.daily_backup` keeps the last seven days beside each file, one
+      known-good copy per day, taken before the day's first overwrite.
+- [x] `P2` `feature` `@ai` **Protocol mode** (Book tab checkbox, off by
+      default, persisted): once a day, fixed-small paper entries on the five
+      highest- and five lowest-confidence rows, direction by **coin flip** —
+      random on purpose, since the score claims notability and never
+      direction. Fills the calibration table with measurement instead of
+      discretion; capped at 40 open; toggling off leaves positions to resolve.
+      Also settable via `POST /api/config {"protocol": true}`.
 
 ### The 2026-09-19 review — every finding fixed the same day
 

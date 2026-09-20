@@ -54,6 +54,7 @@ class Tray(QSystemTrayIcon):
         self.window = window
         self.app = app
         self._warned = False
+        self._stalled = False
 
         menu = QMenu()
         self.state_action = QAction("starting…", menu)
@@ -125,4 +126,26 @@ class Tray(QSystemTrayIcon):
 
         sig = snap.get("signal") or {}
         edge = f"  edge {sig['edge']*100:+.1f}¢" if sig else ""
-        self.setToolTip(f"SONAR  ${bank:,.0f}{edge}  ·  paper money only")
+        stalled = self._check_stalled(snap)
+        warn = "  ⚠ STALLED" if stalled else ""
+        self.setToolTip(f"SONAR  ${bank:,.0f}{edge}{warn}  ·  paper money only")
+
+    def _check_stalled(self, snap: dict) -> bool:
+        """Notify once when the run stops collecting, and re-arm on recovery.
+
+        The app is designed to be invisible, which is exactly why a dead run
+        looks identical to a healthy one: the window is hidden, the menu bar
+        glyph never changes, and the equity curve simply stops growing where
+        nobody is watching it. BTC settles around the clock, so two hours
+        without a settlement always means the experiment has stalled.
+        """
+        rh = (snap.get("portfolio") or {}).get("run_health") or {}
+        stalled = bool(rh.get("stale"))
+        if stalled and not self._stalled and self.supportsMessages():
+            self.showMessage(
+                "SONAR has stopped collecting",
+                "No hour has settled in over two hours. The feed, the "
+                "network, or the engine has stalled — open SONAR to check.",
+                self.icon(), 10_000)
+        self._stalled = stalled
+        return stalled

@@ -105,7 +105,11 @@ It also **scores itself every hour, traded or not**: a mid-hour snapshot of the 
 and the market's is settled against the real candle and the two are compared by Brier score.
 The paper P&L only ever grades the hours the model traded — its boldest claims, a few a day —
 while this grades both forecasters on all 24, which is the direct test of the
-realised-vs-implied thesis and converges in weeks instead of months.
+realised-vs-implied thesis and converges in weeks instead of months. Each snapshot also
+records the book's **bid and ask** at that moment, because it cannot be backfilled: Brier says
+who was better *calibrated*, and only the spread can later say whether the difference was ever
+**buyable** — a model can beat the mid on every hour and still have every disagreement sit
+inside the bid-ask.
 
 The equity curve is seeded with a **fair-odds backtest** over the last 36 real hours
 (expected value ≈ 0 by construction — it illustrates variance, not profit), then extends
@@ -574,6 +578,22 @@ starts first drives, and the other opens read-only rather than settling the same
 which would double-count the portfolio silently. A lock left behind by a killed process is
 reclaimed rather than blocking forever.
 
+**The run watches itself.** Over a weeks-long collection run, hours can go missing silently —
+feed down, machine asleep, agent dead — and the damage would only show at review time as a
+mysteriously small n. So the Terminal tab carries the run's vital signs (hours scored vs
+elapsed, settlements voided, time since anything last settled), and because the BTC market
+resolves around the clock, **two silent hours always means a stall**: the menu-bar item posts
+a notification and flags STALLED rather than sitting there looking healthy. The state files
+also keep a **daily rotating backup** (`.bak.<date>`, last seven days) beside themselves —
+they are the experiment's output and live nowhere else.
+
+**Protocol mode** (a checkbox on the Book tab, off by default) is how the calibration table
+fills without discretion: once a day it opens fixed-small paper positions on the five highest-
+and five lowest-confidence rows, direction chosen by **coin flip**. Random on purpose — the
+score claims notability, never direction, and a coin flip isolates exactly the claim the
+calibration table exists to test. Turning it off leaves open positions to resolve; closing
+them early would censor the outcomes being measured. Paper money, as everything here.
+
 **Headless is still dependency-free.** `python main.py --headless` runs the same
 `sonar.core.Live` behind the stdlib HTTP server with the original browser dashboards.
 
@@ -702,6 +722,8 @@ apparatus and the calibration loop all shipped. What remains is not more code:
   watchlist rides on one undocumented Yahoo endpoint. This is the single highest-value change.
 - **Let the paper book run.** A real track record is the one thing no amount of backtesting
   substitutes for, and the calibration table stays empty until ~20 positions have closed.
+  **Protocol mode** (Book tab) fills it systematically — coin-flip direction, fixed small
+  stakes — so the table measures the score rather than the operator's moods.
 - **Better data, if the research is ever resumed.** Five studies found nothing in daily bars,
   free news and macro regimes. Anything further needs intraday bars, order flow, or a news
   archive with tone — all of which cost money. More features on this data is not the answer.

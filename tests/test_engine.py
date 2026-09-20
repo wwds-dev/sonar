@@ -623,3 +623,75 @@ def test_model_vs_market_reads_a_tie_as_noise(engine):
 def test_model_vs_market_on_an_empty_log_is_not_an_error(engine):
     r = engine.model_vs_market()
     assert r["n"] == 0
+
+
+def test_the_snapshot_records_the_touch(engine, clock):
+    """Brier says who was better calibrated; only the spread at the moment of
+    the snapshot can later say whether the difference was ever *buyable*. It
+    cannot be backfilled, so it rides on every row from day one."""
+    engine.tick(Candle(HOUR, 100.0, 100.0),
+                market_at(clock, 0.5, implied_up=0.50,
+                          best_bid=0.48, best_ask=0.52), 0.0045)
+    assert engine.pending_score["bid"] == 0.48
+    assert engine.pending_score["ask"] == 0.52
+
+
+def test_an_empty_book_records_no_touch_rather_than_a_zero(engine, clock):
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.5), 0.0045)
+    assert engine.pending_score["bid"] is None
+    assert engine.pending_score["ask"] is None
+
+
+# --------------------------------------------------------------------------- #
+# Run health — is the experiment actually collecting?
+# --------------------------------------------------------------------------- #
+def test_a_fresh_engine_is_not_started_and_not_stale(engine):
+    rh = engine.run_health()
+    assert rh["started"] is None
+    assert rh["stale"] is False
+
+
+def test_a_settled_hour_counts_toward_coverage(engine, clock):
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.5), 0.0045)
+    engine.tick(Candle(HOUR * 2, 101.0, 101.0), market_at(clock, 0.9), 0.0045)
+    rh = engine.run_health()
+    assert rh["scored"] == 1
+    assert rh["started"] is not None
+    assert rh["coverage_pct"] > 0
+    assert rh["stale"] is False
+
+
+def test_the_run_goes_stale_after_two_silent_hours(engine, clock):
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.5), 0.0045)
+    engine.tick(Candle(HOUR * 2, 101.0, 101.0), market_at(clock, 0.9), 0.0045)
+    settled_at = engine.last_settled_at
+    assert engine.run_health(now=settled_at + eng.STALE_AFTER_S - 1)["stale"] is False
+    assert engine.run_health(now=settled_at + eng.STALE_AFTER_S + 1)["stale"] is True
+
+
+def test_a_run_that_started_but_never_settled_goes_stale_too(engine, clock):
+    """A snapshot taken and then nothing for two hours is the same stall —
+    the reference is whichever heartbeat existed last."""
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.5), 0.0045)
+    started = engine.score_started
+    assert engine.run_health(now=started + eng.STALE_AFTER_S + 1)["stale"] is True
+
+
+def test_voided_settlements_are_counted(engine, clock):
+    """Voids leave no trade behind by design, which is exactly why they need
+    their own counter — silent data loss is the failure this exists to show."""
+    engine.risk = eager()
+    engine.tick(Candle(HOUR, 100.0, 100.5),
+                market_at(clock, 0.5, implied_up=0.30), 0.0045)
+    engine.tick(Candle(HOUR * 4, 105.0, 105.0), market_at(clock, 0.9), 0.0045)
+    assert engine.run_health()["voided"] == 1
+
+
+def test_run_health_survives_a_restart(engine, tmp_path, clock):
+    engine.tick(Candle(HOUR, 100.0, 100.0), market_at(clock, 0.5), 0.0045)
+    engine.tick(Candle(HOUR * 2, 101.0, 101.0), market_at(clock, 0.9), 0.0045)
+    reopened = eng.Engine(tmp_path / "state.json")
+    rh = reopened.run_health()
+    assert rh["scored"] == 1
+    assert rh["started"] == engine.score_started
+    assert rh["last_settled"] == engine.last_settled_at
