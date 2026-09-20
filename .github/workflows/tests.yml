@@ -19,6 +19,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # sonar/macro and sonar/playmaker are their own git repos, gitignored in
+      # this one (repo-per-module; see the lab's AGENTS.md) — so a fresh clone
+      # has no such packages and half the suite cannot even import. Check each
+      # module repo out into the place the working tree keeps it.
+      - uses: actions/checkout@v4
+        with:
+          repository: Netrunner3000/sonar_macro
+          path: sonar/macro
+      - uses: actions/checkout@v4
+        with:
+          repository: Netrunner3000/sonar_playmaker
+          path: sonar/playmaker
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
