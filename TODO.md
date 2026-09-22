@@ -69,6 +69,23 @@ and time rather than code, kept at the top.
 - [x] `P0` `bug` `@ai` ~~"SONAR doesn't quit" — the blank white window, fourth report and the actual cause.~~ `shutdown()`'s last resort for a thread that would not stop was `QThread.terminate()`. It kills the thread wherever it stands, and a thread running Python holds the **GIL**, which is then never returned — so every Python thread blocks in `take_gil` forever, the Qt event loop included. Nothing repaints, and macOS shows the window's empty backing store: a white rectangle in an app themed `#080b11`, ignoring every click. Not a rare race — `live.stop()` only lands between fetches, so any quit during an in-flight request had to outlast an 8–30s socket timeout inside the grace, then terminated a thread that was by construction mid-`read()`. The fix is to stop trying to stop it and leave by `os._exit` instead, which skips the QThread destructors whose `qFatal()` was the only reason terminate was wanted; the engine writes through on every change and the engine lock is a PID file the next launch reclaims, so nothing is lost. The per-thread 4s wait also became a 1.5s budget **shared across all six threads** — six waits on the UI thread was up to 24s of the same unpainted window, self-healing but identical to look at. `tests/test_shutdown.py` fails the build on any `.terminate()` call by AST, and quits a real subprocess mid-fetch — against the old code that test does not fail, it hangs.
 - [x] `P0` `bug` `@ai` ~~Closing SONAR could leave a blank white window that never went away.~~ `_refresh_wire()` fetched on the UI thread whenever the news (8 min TTL) or events cache aged out — a coin flip every eight minutes on whether the event loop blocked up to 30s, painting nothing and ignoring input. The Wire path now reads cache-only (`news.cached()`, `events.cached_payload()`); `tests/test_ui_thread.py` and `test_refresh.py` assert nothing reaches the network from a real window with both caches aged out.
 
+### Caught by the instrumentation on night one — 2026-09-22
+
+- [x] `P1` `bug` `@ai` **The score log booked comparisons against expired
+      markets.** When the hour's slug lookup fails, `feeds.current_market()`'s
+      series fallback can return the *previous* market — still open pending
+      resolution, priced ~0 or ~1, end time in the past — which clamps τ to
+      exactly 0.0 and, at the top of an hour, pairs a model reading of exactly
+      0.5 with a market reading of ~certainty. Three such rows landed in the
+      first night of the first live run and were identifiable by τ=0.0.
+      Fixed twice over: `current_market()` returns None for a market whose end
+      has passed (the same rule as a stale candle), and `_maybe_score()`
+      requires τ strictly inside (0, 0.5] — a bound that *is* the alignment
+      check, since an hourly market ending within the next half hour can only
+      be the candle's own. The three rows were scrubbed from the live log with
+      the agent stopped, and `n_scored_total` decremented to match. Trading
+      was never exposed: `enter_tau_min` already blocked τ=0 entries.
+
 ### Pre-run instrumentation — 2026-09-20, before the collection run starts
 
 - [x] `P2` `docs` `@ai` **Docs and learning centre brought up to the app that

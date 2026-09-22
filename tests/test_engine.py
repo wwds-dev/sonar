@@ -558,6 +558,18 @@ def test_no_snapshot_before_the_scoring_point(engine, clock):
     assert engine.pending_score is None
 
 
+def test_no_snapshot_against_an_already_ended_market(engine, clock):
+    """The wild bug from the first live night: a market whose end time has
+    passed — the previous hour, awaiting resolution at ~0 or ~1 — clamps tau
+    to exactly 0.0, and at the top of an hour the model reads exactly 0.5.
+    Three (model 0.5, market ~certain) rows landed in the log before this
+    guard existed. tau must be strictly positive to snapshot."""
+    engine.tick(Candle(HOUR, 100.0, 100.0),
+                market_at(clock, -0.2, implied_up=0.9995), 0.0045)
+    assert engine.last_signal.tau == 0.0
+    assert engine.pending_score is None
+
+
 def test_the_first_reading_past_the_point_is_the_one_kept(engine, clock):
     """One snapshot per hour, taken mid-hour. Re-snapshotting later would let
     the log drift toward the end of the hour, where model and market both

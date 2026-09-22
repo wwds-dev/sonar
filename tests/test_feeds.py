@@ -364,9 +364,9 @@ def test_hour_close_survives_a_malformed_payload(api):
 
 def test_the_market_is_read_from_the_hour_slug(api):
     api["events?slug="] = [{
-        "slug": "bitcoin-up-or-down-january-5-2026-7pm-et",
+        "slug": "bitcoin-up-or-down-january-5-2030-7pm-et",
         "title": "Bitcoin Up or Down",
-        "endDate": "2026-01-05T20:00:00Z",
+        "endDate": "2030-01-05T20:00:00Z",
         "markets": [{"clobTokenIds": '["tok-up", "tok-down"]',
                      "bestBid": "0.48", "bestAsk": "0.52",
                      "outcomePrices": '["0.50", "0.50"]', "volumeNum": "1234"}],
@@ -379,6 +379,19 @@ def test_the_market_is_read_from_the_hour_slug(api):
     assert book.best_bid == pytest.approx(0.48)
     assert book.up_token == "tok-up", "the Up token is the first of the pair"
     assert book.bids and book.asks
+
+
+def test_an_already_ended_market_is_none_not_a_price(api):
+    """The wild bug from the first live night: when the hour's slug is not
+    found, the series fallback can return the *previous* market — still open
+    pending resolution, priced at ~0 or ~1, end time in the past. Treating it
+    as live wrote (model 0.5, market ~certain) rows into the score log for a
+    comparison that never happened. A market whose end has passed prices
+    nothing."""
+    api["series_slug="] = [{"slug": "stale", "title": "t",
+                            "endDate": "2020-01-01T00:00:00Z",
+                            "markets": [{"outcomePrices": '["0.999","0.001"]'}]}]
+    assert feeds.current_market() is None
 
 
 def test_a_market_with_no_midpoint_falls_back_to_the_outcome_price(api):

@@ -252,8 +252,20 @@ class Engine:
         at the moment of the snapshot can later say whether that difference
         was ever **buyable** — a model can beat the mid on every hour and
         still have every disagreement sit inside the bid-ask.
+
+        ``tau`` must be strictly positive as well as at most ``SCORE_TAU``,
+        and the lower bound is load-bearing: when the hour's market cannot be
+        found, the feed's fallback can hand back the *previous, already-ended*
+        market — priced at ~0 or ~1 awaiting resolution — whose past end time
+        clamps tau to exactly 0.0. At the top of an hour price equals the
+        open, so the log then books a (model 0.5, market ~certain) pair for a
+        comparison that never happened. Three such rows landed in the first
+        night of the first live run. Within (0, SCORE_TAU] the market's end
+        falls strictly inside the next half hour, and an hourly market ending
+        there can only be the candle's own — the bound *is* the alignment
+        check.
         """
-        if sig.tau > SCORE_TAU:
+        if sig.tau <= 0.0 or sig.tau > SCORE_TAU:
             return
         if (self.pending_score
                 and self.pending_score.get("hour_key") == candle.open_time):

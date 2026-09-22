@@ -240,6 +240,13 @@ def current_market() -> MarketBook | None:
 
     implied = _midpoint(up_token, m)
     end_time = _iso_to_unix(m.get("endDate") or event.get("endDate"))
+    # A market whose end has passed prices nothing — it is the previous hour
+    # sitting at ~0 or ~1 awaiting resolution. The fallback query above can
+    # hand back exactly that when the current hour's slug is not found, and
+    # treating it as live poisoned the score log on the first night it ran:
+    # None is the honest answer, same as a stale candle.
+    if end_time <= time.time():
+        return None
     book = MarketBook(
         slug=event.get("slug", ""),
         title=event.get("title", "Bitcoin Up or Down"),
