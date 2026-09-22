@@ -93,12 +93,13 @@ explaining a number in place is worth more than any amount of new prose.
       Everywhere the app refuses to claim something, say what would change it
       and how far along it is: "unproven — needs ~20 closed positions, you have
       3". The Book tab has the count already.
-- [ ] `P2` `design` `@me` **Decide the vocabulary question.** Renaming `P(PROF)`
-      to "Hit chance" on the board makes it readable and makes it harder to
-      match against the documentation, which is written in the standard terms
-      for a reason. A plain/expert switch is the obvious answer and is the kind
-      of setting that gets built and then never used — worth a decision before
-      it is worth code.
+- [x] `P2` `design` `@me` ~~Decide the vocabulary question.~~ **Both.** The
+      `Wording` button switches plain ↔ expert; `ui/words.py` remembers it.
+      The worry that it would be built and never used was answered by what it
+      costs: the headings and the tab bar already carried both names, so the
+      switch is a re-caption rather than a second interface. It changes the
+      vocabulary and the row density, never the layout — `tests/test_wording.py`
+      asserts the columns are identical in both.
 
 ---
 

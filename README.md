@@ -406,6 +406,16 @@ own screener. Three changes, each a rule rather than a taste:
   already on the row, and `tests/test_plain_language.py` asserts that sentence
   can never acquire a direction.
 
+**Both vocabularies are available.** The `Wording` button switches between
+**plain** (the default, described above) and **expert**, where the columns are
+`MOM`, `VOL`, `R:R · P(PROF)` and `CONF`, the ticker is back under each name,
+the second lines are gone and the tab bar shows only the original names — about
+a third shorter per row. `ui/words.py` holds the mode and remembers it between
+launches. It changes the **vocabulary and the density, never the layout**: same
+columns, same widths, same order, which is why the header can be re-captioned in
+place and why there is only ever one board to keep correct. A test asserts that
+invariant directly.
+
 Headings that name something non-obvious are links: clicking one opens the Learn
 tab at the section explaining it, and a test checks every one of those anchors
 resolves to a section that exists. The two toolbar knobs are captioned with the

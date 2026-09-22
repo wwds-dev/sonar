@@ -46,7 +46,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 15 | **Guided mode for the Lab** — controls phrased as questions, a verdict in words above the table, and the three tests that decide whether a result means anything stated inline rather than assumed | feature | L | PLANNED |
 | 16 | **First-run cards**: paper money, notability is not direction, start on Assets, check claims in the Lab, the manual is a tab | feature | M | PLANNED |
 | 17 | Say what would change an "unproven" — "needs ~20 closed positions, you have 3" — wherever the app refuses to claim something | design | S | PLANNED |
-| 18 | **Plain / expert vocabulary switch.** Renaming P(PROF) to "Hit chance" makes the board readable and makes it harder to match against docs written in the standard terms. Needs a decision, not code | design | M | CONSIDERING |
+| 18 | **Plain / expert vocabulary switch** | design | M | **DONE** — `ui/words.py` plus a toolbar button. Plain is the default; expert restores MOM/VOL/R:R/CONF, the ticker and single-line tabs, and drops the second lines (~⅓ shorter rows). Vocabulary and density only — a test asserts the columns are identical in both, so there is never a second layout to keep true |
 | 19 | **GUI direction** — three mockups (refined dark, light high-contrast, plain-language restructure) | design | L | **DONE** — Plain Language chosen. `ui/theme.py` rewritten, `ui/tabs.py` added, the Screener rebuilt around it. README §"The Plain Language direction" records the rules |
 
 ## Done

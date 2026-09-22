@@ -37,15 +37,16 @@ def window():
 # --------------------------------------------------------------------------- #
 # headings
 # --------------------------------------------------------------------------- #
-def test_no_column_is_named_in_jargon():
-    """The specific five, by name. Each one was a heading here."""
-    headings = {h for _k, h, _w, _a, _t in ui_app.ASSET_COLS}
+def test_no_column_is_named_in_jargon_in_plain_wording():
+    """The specific five, by name. Each one was the heading here."""
+    headings = {names[0] for _k, names, _w, _a, _t in ui_app.ASSET_COLS}
     for jargon in ("MOM", "VOL", "R:R", "P(PROF)", "CONF", "1D"):
         assert jargon not in headings
 
 
-def test_headings_are_words_not_abbreviations():
-    for _key, heading, _w, _a, _tip in ui_app.ASSET_COLS:
+def test_plain_headings_are_words_not_abbreviations():
+    for _key, names, _w, _a, _tip in ui_app.ASSET_COLS:
+        heading = names[0]
         if not heading:
             continue
         assert heading[0].isupper() and not heading.isupper(), \
@@ -58,14 +59,14 @@ def test_every_help_link_lands_somewhere_real():
     nothing: it looks like it worked."""
     _html, sections = learn.document()
     anchors = {a for a, _n, _t in sections}
-    for _key, heading, _w, anchor, _tip in ui_app.ASSET_COLS:
+    for _key, names, _w, anchor, _tip in ui_app.ASSET_COLS:
         if anchor:
-            assert anchor in anchors, f"{heading!r} links to a missing §{anchor}"
+            assert anchor in anchors, f"{names[0]!r} links to a missing §{anchor}"
 
 
 def test_the_hard_columns_all_carry_a_link():
     """Not every column needs one — "Price" explains itself. These do."""
-    linked = {k for k, _h, _w, a, _t in ui_app.ASSET_COLS if a}
+    linked = {k for k, _n, _w, a, _t in ui_app.ASSET_COLS if a}
     assert {"momentum", "volatility", "lean", "plan", "conf"} <= linked
 
 

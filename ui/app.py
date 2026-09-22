@@ -48,6 +48,7 @@ from sonar.assets import _W as ASSET_W
 
 from . import learn as learn_mod
 from . import theme
+from . import words
 from .charts import ComponentBar, DepthChart, EquityCurve, Lattice, Sparkline
 from .tabs import PlainTabs
 from .worker import BacktestThread, ConfigThread, PollThread, PropThread, ReadThread
@@ -73,7 +74,9 @@ FULLSCREEN_EXIT_MS = 350
 # A real Dock click a second later still works.
 REOPEN_GRACE_MS = 1000
 
-# The Assets board's columns: key, heading, width, docs anchor, tooltip. The
+# The Assets board's columns: key, (plain heading, expert heading), width, docs
+# anchor, tooltip. Widths and order are the same in both wordings — see
+# `ui/words.py` for why the switch changes only the vocabulary. The
 # header row and every row are built from this one list, so a column can never
 # drift away from the heading that names it.
 #
@@ -85,37 +88,37 @@ REOPEN_GRACE_MS = 1000
 # meaning is not self-evident carries the anchor of the section that explains
 # it, and clicking the heading opens the Learn tab there.
 ASSET_COLS = [
-    ("name", "What it is", 216, "", ""),
-    ("trend", "Trend", 58, "",
+    ("name", ("What it is", ""), 208, "", ""),
+    ("trend", ("Trend", "TREND"), 58, "",
      "The price path over the window in the next column."),
-    ("price", "Price", 76, "", "The latest price fetched for this market."),
-    ("1d", "Today", 68, "", "How far it has moved since yesterday's close."),
-    ("momentum", "Recent move", 84, "scores",
+    ("price", ("Price", "PRICE"), 76, "", "The latest price fetched for this market."),
+    ("1d", ("Today", "1D"), 68, "", "How far it has moved since yesterday's close."),
+    ("momentum", ("Recent move", "MOM"), 92, "scores",
      "How far it has moved over the window the horizon picks — five days on\n"
      "'This week'. A description of the past. Whether it says anything about\n"
      "the future is exactly what §11 tested, and the answer was no."),
-    ("volatility", "Swing size", 74, "learn",
+    ("volatility", ("Swing size", "VOL"), 74, "learn",
      "How much this market typically moves in a day.\n"
      "Big swings mean bigger moves in BOTH directions — it says nothing\n"
      "about which way. It is why a target 5% away means something different\n"
      "on gold than on a meme coin."),
-    ("lean", "In the news", 78, "learn",
+    ("lean", ("In the news", "NEWS"), 78, "learn",
      "How unusual today's coverage is: Quiet / Normal / Elevated / Spike.\n"
      "A flag for 'something is happening', not odds and not a direction.\n"
      "Over 25,504 historical setups neither a big move nor a news spike beat\n"
      "the 40% baseline (spike came in at +0.8 points, give or take 3.1)."),
-    ("plan", "If you traded it", 106, "scores",
+    ("plan", ("If you traded it", "R:R · P(PROF)"), 106, "scores",
      "The plan behind the buy and short buttons: a target and a stop, both\n"
      "scaled to how much this market actually moves.\n"
      "The two numbers are the same number twice — the chance of hitting the\n"
      "target before the stop is 1/(1+reward:risk), so a fatter reward buys a\n"
      "lower hit rate and the two cancel exactly. Nothing here makes money;\n"
      "only a measured edge does, and none has been measured yet."),
-    ("conf", "Worth a look", 80, "scores",
+    ("conf", ("Worth a look", "CONF"), 80, "scores",
      "0–100: how notable this looks right now.\n"
      "NOT the chance you will make money — that is the column to the left.\n"
      "The bar underneath splits the score into what produced it."),
-    ("age", "Updated", 66, "",
+    ("age", ("Updated", "AGE"), 66, "",
      "How long ago this row's price was actually fetched.\n"
      "The board recomputes about every 3 minutes, but only the 26 stalest of\n"
      "129 markets are refetched each time — so a few minutes old is normal,\n"
@@ -123,7 +126,7 @@ ASSET_COLS = [
      "is falling behind, usually because the source is throttling us.\n"
      "Shown because a price that is quietly out of date is the one failure\n"
      "this app treats as unacceptable."),
-    ("actions", "", 138, "", ""),
+    ("actions", ("", ""), 138, "", ""),
 ]
 
 # Age thresholds, in seconds, derived from the rotation rather than picked:
@@ -134,16 +137,18 @@ AGE_WARN_S = 20 * 60
 AGE_BAD_S = 60 * 60
 
 
-def _age_text(seconds: float) -> str:
+def _age_text(seconds: float, plain: bool | None = None) -> str:
     """A compact age. Never rounds down to "0m" — a row is never brand new
     enough for that to be true, and "0m" reads as "live" when it is not."""
+    plain = words.plain() if plain is None else plain
+    ago = " ago" if plain else ""
     if seconds < 60:
-        return "under 1m"
+        return "under 1m" if plain else "<1m"
     minutes = int(seconds // 60)
     if minutes < 60:
-        return f"{minutes}m ago"
+        return f"{minutes}m{ago}"
     hours, minutes = divmod(minutes, 60)
-    return f"{hours}h{minutes:02d}m ago" if hours < 10 else f"{hours}h ago"
+    return f"{hours}h{minutes:02d}m{ago}" if hours < 10 else f"{hours}h{ago}"
 
 
 def _age_color(seconds: float):
@@ -191,7 +196,7 @@ def _plain_read(a: dict) -> str:
 
 
 def _asset_widths() -> list[tuple[str, int]]:
-    return [(key, width) for key, _heading, width, _anchor, _tip in ASSET_COLS]
+    return [(key, width) for key, _names, width, _anchor, _tip in ASSET_COLS]
 
 
 class HelpHeading(QLabel):
@@ -204,9 +209,10 @@ class HelpHeading(QLabel):
     tooltip they already had.
     """
 
-    def __init__(self, heading: str, anchor: str, tip: str, on_help,
+    def __init__(self, names: tuple[str, str], anchor: str, tip: str, on_help,
                  parent=None) -> None:
-        super().__init__(heading, parent)
+        super().__init__(words.pick(names), parent)
+        self._names = names
         self._anchor = anchor
         self._on_help = on_help
         self.setFont(theme.text(9, bool(anchor)))
@@ -218,6 +224,12 @@ class HelpHeading(QLabel):
                 "Click to open the explanation."
         if tip:
             self.setToolTip(tip)
+
+    def retitle(self) -> None:
+        """Re-read the wording. Cheaper and less fragile than rebuilding the
+        header, which would have to be re-inserted into a layout that also
+        holds the scroll area."""
+        self.setText(words.pick(self._names))
 
     def mousePressEvent(self, event) -> None:
         if self._anchor:
@@ -241,11 +253,15 @@ class AssetHeader(QFrame):
         # 1px border, so a heading sits directly over its column
         lay.setContentsMargins(15, 8, 12, 4)
         lay.setSpacing(12)
-        for _key, heading, width, anchor, tip in ASSET_COLS:
-            lb = HelpHeading(heading, anchor if on_help else "", tip,
+        for _key, names, width, anchor, tip in ASSET_COLS:
+            lb = HelpHeading(names, anchor if on_help else "", tip,
                              on_help or (lambda _a: None))
             lb.setFixedWidth(width)
             lay.addWidget(lb)
+
+    def retitle(self) -> None:
+        for head in self.findChildren(HelpHeading):
+            head.retitle()
 
 
 def _scrolled(inner: QWidget) -> QScrollArea:
@@ -340,8 +356,9 @@ class Stat(QWidget):
     """A labelled figure — the basic readout unit, on five different strips."""
 
     def __init__(self, caption: str, tip: str = "", parent=None) -> None:
-        caption = STAT_WORDS.get(caption, caption)
         super().__init__(parent)
+        self._key = caption
+        caption = self._caption()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(1)
@@ -351,6 +368,13 @@ class Stat(QWidget):
         lay.addWidget(self.val)
         if tip:
             self.setToolTip(tip)
+
+    def _caption(self) -> str:
+        return STAT_WORDS.get(self._key, self._key) if words.plain() \
+            else self._key
+
+    def retitle(self) -> None:
+        self.cap.setText(self._caption().upper())
 
     def set(self, text: str, color=None) -> None:
         self.val.setText(text)
@@ -379,13 +403,16 @@ class AssetRow(QFrame):
         self._fetched_at = (generated or time.time()) - float(
             a.get("data_age_s") or 0.0)
 
+        plain = words.plain()
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(12, 7, 12, 7)
+        lay.setContentsMargins(12, 7 if plain else 4, 12, 7 if plain else 4)
         lay.setSpacing(12)
         widths = dict(_asset_widths())
 
         def cell(key, text, colour, sub="", font=None, sub_font=None):
-            """A fixed-width column: the figure, and what it means under it."""
+            """A fixed-width column: the figure, and — in plain wording — what
+            it means under it. Expert drops the second line, which is most of
+            where the extra third of row height goes."""
             holder = QWidget()
             holder.setObjectName("cell")
             holder.setFixedWidth(widths[key])
@@ -395,7 +422,7 @@ class AssetRow(QFrame):
             top = label(text, font=font or theme.figure(12))
             top.setStyleSheet(f"color: {colour.name()};")
             box.addWidget(top)
-            if sub:
+            if sub and plain:
                 box.addWidget(label(sub, "faint", sub_font or theme.text(9)))
             return holder
 
@@ -415,8 +442,9 @@ class AssetRow(QFrame):
         v = venues.where(a["symbol"], a.get("cls", ""))
         mark = "" if (v.tradeable and not v.proxy) else ("  ⊘" if not v.tradeable
                                                          else "  ↗")
-        sub = label(f'{a["cls"]} · {_plain_read(a)}{mark}', "faint",
-                    theme.text(9))
+        sub = label(f'{a["cls"]} · {_plain_read(a)}{mark}' if plain
+                    else f'{a["symbol"]}  ·  {a["cls"]}{mark}',
+                    "faint", theme.text(9))
         if mark:
             sub.setStyleSheet(
                 f"color: {(theme.DOWN if not v.tradeable else theme.GOLD).name()};")
@@ -427,7 +455,10 @@ class AssetRow(QFrame):
                           "Reference only — not advice, and availability changes.")
         lay.addWidget(holder)
 
-        spark = Sparkline(34)
+        # The sparkline sets the row's height floor once the second lines are
+        # gone, so expert gets a shorter one — otherwise the denser wording
+        # buys six pixels and looks like it did nothing.
+        spark = Sparkline(34 if plain else 22)
         spark.frame = False
         spark.setFixedWidth(widths["trend"])
         # colour by the horizon's momentum so the line agrees with the number
@@ -438,9 +469,12 @@ class AssetRow(QFrame):
         lay.addWidget(cell("price", f'{a["price"]:,.2f}', theme.INK))
         lay.addWidget(cell("1d", f'{a["day_change"]*100:+.2f}%',
                            theme.pnl_color(a["day_change"])))
-        lay.addWidget(cell("momentum", f'{a["momentum"]*100:+.1f}%',
-                           theme.pnl_color(a["momentum"]),
-                           f'over {a["momentum_days"]} days'))
+        lay.addWidget(cell(
+            "momentum",
+            f'{a["momentum"]*100:+.1f}%' if plain
+            else f'{a["momentum"]*100:+.1f}% / {a["momentum_days"]}d',
+            theme.pnl_color(a["momentum"]), f'over {a["momentum_days"]} days',
+            font=None if plain else theme.figure(11)))
         lay.addWidget(cell("volatility", f'{a["volatility"]*100:.1f}%',
                            theme.MUTED, _swing_words(a["volatility"])))
 
@@ -450,12 +484,14 @@ class AssetRow(QFrame):
         holder.setFixedWidth(widths["lean"])
         box = QHBoxLayout(holder)
         box.setContentsMargins(0, 0, 0, 0)
-        lean = label(f'  {a["lean"]}  ', font=theme.text(10, True))
         colour = {"Spike": theme.GOLD, "Elevated": theme.UP}.get(a["lean"],
                                                                  theme.MUTED)
+        lean = label(f'  {a["lean"]}  ' if plain else a["lean"],
+                     font=theme.text(10, True))
         lean.setStyleSheet(
             f"color: {colour.name()}; border: 1px solid {colour.name()};"
-            "border-radius: 7px; padding: 3px 2px;")
+            "border-radius: 7px; padding: 3px 2px;" if plain
+            else f"color: {colour.name()};")
         lean.setToolTip(
             "How unusual today's coverage is — a flag for 'something is\n"
             "happening', not a direction. The old Bullish/Bearish lean was\n"
@@ -469,8 +505,11 @@ class AssetRow(QFrame):
         rr = plan.get("rr", 0)
         pp = plan.get("p_profit", 0) * 100
         proven = plan.get("calibrated")
-        traded = cell("plan", f"win {rr:.2g}× the risk", theme.MUTED,
-                      f"{pp:.0f}% of the time", font=theme.text(10),
+        traded = cell("plan",
+                      f"win {rr:.2g}× the risk" if plain
+                      else f"{rr:.2f}  ·  {pp:.0f}%",
+                      theme.MUTED, f"{pp:.0f}% of the time",
+                      font=theme.text(10) if plain else theme.figure(11),
                       sub_font=theme.text(9))
         traded.setToolTip(
             f"Target {rr:.2g} times as far away as the stop, both scaled to how\n"
@@ -495,7 +534,8 @@ class AssetRow(QFrame):
         line.setSpacing(3)
         score = label(f'{a["confidence"]:.0f}', font=theme.figure(15, True))
         line.addWidget(score)
-        line.addWidget(label("/ 100", "faint", theme.text(9)))
+        if plain:
+            line.addWidget(label("/ 100", "faint", theme.text(9)))
         line.addStretch(1)
         box.addLayout(line)
         bar = ComponentBar()
@@ -521,15 +561,18 @@ class AssetRow(QFrame):
         al.setContentsMargins(0, 0, 0, 0)
         al.setSpacing(5)
         for text_, tip, slot in [
-            ("Buy", "Open a practice position betting this goes up, with the\n"
+            ("Buy" if plain else "buy",
+             "Open a practice position betting this goes up, with the\n"
                     "target and stop from the column to the left.\n"
                     "Practice money — no order is placed anywhere.",
              lambda: on_trade(a["symbol"], "LONG")),
-            ("Short", "Open a practice position betting this goes down.\n"
-                      "Practice money — no order is placed anywhere.",
+            ("Short" if plain else "short",
+             "Open a practice position betting this goes down.\n"
+             "Practice money — no order is placed anywhere.",
              lambda: on_trade(a["symbol"], "SHORT")),
-            ("Read", "A written read from a language model (optional, off by\n"
-                     "default). Commentary — it cannot size a position.",
+            ("Read" if plain else "read",
+             "A written read from a language model (optional, off by\n"
+             "default). Commentary — it cannot size a position.",
              lambda: on_read("asset", a["symbol"], a["name"])),
         ]:
             b = QPushButton(text_)
@@ -820,6 +863,7 @@ class MainWindow(QMainWindow):
         if icon.exists():
             self.setWindowIcon(QIcon(str(icon)))
 
+        words.load()          # before anything that reads the wording is built
         root = QWidget()
         self.setCentralWidget(root)
         outer = QVBoxLayout(root)
@@ -856,6 +900,8 @@ class MainWindow(QMainWindow):
                       "The manual and the glossary. It assumes no finance "
                       "background — start at §1.")
         outer.addWidget(self.tabs, 1)
+
+        self._apply_wording()
 
         self.status = label("starting…", "faint", theme.figure(9))
         outer.addWidget(self.status)
@@ -956,6 +1002,17 @@ class MainWindow(QMainWindow):
         buttons.addWidget(label("", "faint", theme.text(9)))   # align with the boxes
         row = QHBoxLayout()
         row.setSpacing(8)
+        self.wording_btn = QPushButton("")
+        self.wording_btn.setFont(theme.text(11))
+        self.wording_btn.setToolTip(
+            "Which words the app uses for the same numbers.\n\n"
+            "Plain — 'Worth a look', 'Swing size', a sentence on every row.\n"
+            "Expert — CONF, VOL, R:R, the ticker back on the row, and no\n"
+            "second lines, which makes the board about a third shorter.\n\n"
+            "Same columns, same order, same arithmetic either way.")
+        self.wording_btn.clicked.connect(self._toggle_wording)
+        row.addWidget(self.wording_btn)
+
         learn = QPushButton("Learn")
         learn.setObjectName("primary")
         learn.setFont(theme.text(11))
@@ -1016,8 +1073,11 @@ class MainWindow(QMainWindow):
             chip.setToolTip("Opens the manual at the section that answers this.")
             chip.clicked.connect(lambda _c=False, a=anchor: self._show_learn(a))
             bl.addWidget(chip)
+        self.assets_banner = banner        # hidden in expert wording
         lay.addWidget(banner)
-        lay.addWidget(self._scroll_tab("assets", AssetHeader(self._show_learn)), 1)
+        self.asset_header = AssetHeader(self._show_learn)
+        lay.addWidget(self._scroll_tab("assets", self.asset_header), 1)
+        banner.setVisible(words.plain())
         return wrap
 
     def _learn_tab(self) -> QWidget:
@@ -2401,6 +2461,29 @@ class MainWindow(QMainWindow):
         return w
 
     # -- actions ----------------------------------------------------------- #
+    def _toggle_wording(self) -> None:
+        words.toggle()
+        self._apply_wording()
+
+    def _apply_wording(self) -> None:
+        """Push the current wording through everything that shows it.
+
+        Re-captioning in place rather than rebuilding the window: the tab bar
+        keeps both names already, the headings keep both already, and every
+        stat strip is built from a key it can re-read. The rows are the one
+        thing that genuinely has to be rebuilt — they change shape, not just
+        text — and clearing the signature hands that to the next refresh tick
+        rather than doing it on the click.
+        """
+        plain = words.plain()
+        self.wording_btn.setText(f"Wording: {words.mode()}")
+        self.tabs.set_wording(plain)
+        self.asset_header.retitle()
+        self.assets_banner.setVisible(plain)
+        for stat in self.findChildren(Stat):
+            stat.retitle()
+        self._assets_sig = None
+
     def _apply_config(self) -> None:
         if self._cfg_thread and self._cfg_thread.isRunning():
             return

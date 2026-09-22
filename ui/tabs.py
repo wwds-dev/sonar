@@ -76,14 +76,20 @@ class PlainTabBar(QTabBar):
             rect = self.tabRect(i)
             selected = i == self.currentIndex()
 
+            subtitle = self._subtitles.get(i)
+
             p.setFont(theme.text(12, selected))
             p.setPen(theme.INK if selected
                      else (theme.MUTED if i == self._hover else theme.FAINT))
-            title = QRect(rect.x() + PAD_X, rect.y() + 7,
-                          rect.width() - 2 * PAD_X, 18)
+            # Centred when it is the only line — expert wording drops the
+            # second one, and a title still sitting at the top of a 48px tab
+            # reads as a rendering bug rather than as a setting.
+            title = (QRect(rect.x() + PAD_X, rect.y() + 7,
+                           rect.width() - 2 * PAD_X, 18) if subtitle
+                     else QRect(rect.x() + PAD_X, rect.y(),
+                                rect.width() - 2 * PAD_X, rect.height() - UNDERLINE))
             p.drawText(title, Qt.AlignLeft | Qt.AlignVCenter, self.tabText(i))
 
-            subtitle = self._subtitles.get(i)
             if subtitle:
                 p.setFont(theme.text(8))
                 p.setPen(theme.FAINT)
@@ -104,11 +110,23 @@ class PlainTabs(QTabWidget):
         super().__init__(parent)
         self._bar = PlainTabBar(self)
         self.setTabBar(self._bar)
+        self._names: dict[int, tuple[str, str]] = {}
 
     def add(self, widget, name: str, was: str = "", tip: str = "") -> int:
         index = self.addTab(widget, name)
+        self._names[index] = (name, was)
         if was:
             self._bar.set_subtitle(index, was)
         if tip:
             self.setTabToolTip(index, tip)
         return index
+
+    def set_wording(self, plain: bool) -> None:
+        """Plain shows both names stacked; expert shows only the one the docs
+        use, on one line, which is what someone asking for the standard terms
+        wanted in the first place."""
+        for index, (name, was) in self._names.items():
+            self.setTabText(index, name if plain or not was else was)
+            self._bar.set_subtitle(index, was if plain else "")
+        self._bar.updateGeometry()
+        self._bar.update()
