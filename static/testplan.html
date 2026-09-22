@@ -92,7 +92,7 @@
   <h1>v2 acceptance test plan</h1>
 
   <div class="bar">
-    <span class="count"><b id="done">0</b> / <b id="total">101</b> checked
+    <span class="count"><b id="done">0</b> / <b id="total">103</b> checked
       &middot; <span class="ok"><b id="passed">0</b> passed</span>
       &middot; <span class="bad"><b id="failed">0</b> failed</span></span>
     <span class="track"><i class="p" id="pbar"></i><i class="f" id="fbar"></i></span>
@@ -133,6 +133,8 @@
 <tr data-case="1.10"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">1.10</td><td class="flag">⚠</td><td>Relaunch, then ⌘Q</td><td>Also quits cleanly. <em>macOS implements a quit by sending a close event to every window, so the hide-on-close guard once cancelled it and ⌘Q did nothing.</em></td></tr>
 <tr data-case="1.11"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">1.11</td><td class="flag">⚠</td><td>Launch, and quit <b>within 5 seconds</b> — while the tabs are still filling — by ⌘Q. Repeat three times.</td><td>Gone each time, in about a second. <em>This is the one that produced the blank white window: a quit landing on an in-flight fetch terminated the poll thread, which never gave the GIL back, and the whole process froze with the window unpainted. Watch for a window that turns white and stops responding rather than closing.</em></td></tr>
 <tr data-case="1.12"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">1.12</td><td class="flag">⚠</td><td>Relaunch. Leave it running <b>15 minutes</b>, clicking between tabs throughout</td><td>Stays responsive the whole time. <em>The Wire's news TTL is 8 minutes; a UI-thread fetch froze the window white and it ignored the close button.</em></td></tr>
+<tr data-case="1.13"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">1.13</td><td class="flag"></td><td>Read the version beside the wordmark, and the window title</td><td>Both show the same <code>v2.NNN</code>. It matches <code>./build_app.sh</code> output and <code>python main.py --selftest</code></td></tr>
+<tr data-case="1.14"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">1.14</td><td class="flag">⚠</td><td>Hover the version</td><td>Reports commit, date, packaged-vs-checkout, and whether a newer build exists. <em>It must never say "up to date" when it cannot know — a guessed answer here gets believed.</em></td></tr>
 </table>
 <h2><span class="n">2</span>Terminal</h2>
 <table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>

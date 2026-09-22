@@ -18,13 +18,19 @@ import sys
 
 
 def selftest() -> int:
-    from sonar import horizon, llm, macro, paths, risk
+    from sonar import horizon, llm, macro, paths, risk, version
 
     frozen = paths.is_frozen()
     icon = paths.asset_path("icon.icns")
     state = paths.state_file()
 
+    build = version.info()
+    stale = version.staleness()
+
     print("SONAR self-test")
+    print(f"  version:         {build['version']}  "
+          f"({build['source']}{', ' + build['commit'] if build['commit'] else ''})")
+    print(f"  up to date:      {stale['detail']}")
     print(f"  frozen bundle:   {frozen}")
     print(f"  resource base:   {paths.resource_base()}")
     print(f"  icon asset:      {icon} ({'found' if icon.exists() else 'MISSING'})")
@@ -34,6 +40,13 @@ def selftest() -> int:
     problems: list[str] = []
     if not icon.exists():
         problems.append("icon asset missing from the bundle")
+
+    # Only a real build can carry a stamp, so only a real build is held to it.
+    # A bundle that cannot name its own build is the state that made "I opened
+    # the app and nothing is new" impossible to answer.
+    if frozen and build["source"] != "baked":
+        problems.append("frozen bundle has no build stamp — scripts/stamp_version.py "
+                        "did not run, so its contents cannot be identified")
 
     # The packaging landmine: writable state inside a signed bundle breaks the
     # signature, and a reinstall silently wipes the portfolio.

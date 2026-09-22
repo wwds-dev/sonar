@@ -20,6 +20,8 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QAction, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
+from sonar import version
+
 from . import theme
 
 
@@ -70,6 +72,14 @@ class Tray(QSystemTrayIcon):
         show.triggered.connect(self.reveal)
         menu.addAction(show)
         menu.addSeparator()
+
+        # The menu bar is the one part of the app you can reach while the window
+        # is hidden, which is most of the time -- so the version is reachable
+        # there too, with the full build stamp as its tooltip.
+        self.version_action = QAction(version.version_string(), menu)
+        self.version_action.setEnabled(False)
+        self.version_action.setToolTip(version.tooltip())
+        menu.addAction(self.version_action)
 
         quit_action = QAction("Quit SONAR", menu)
         # The engine stops here and only here.

@@ -54,6 +54,8 @@ running even when short of time — the list doubles as this project's bug histo
 | 1.10 | ⚠ | Relaunch, then ⌘Q | Also quits cleanly. *macOS implements a quit by sending a close event to every window, so the hide-on-close guard once cancelled it and ⌘Q did nothing.* |
 | 1.11 | ⚠ | Launch, and quit **within 5 seconds** — while the tabs are still filling — by ⌘Q. Repeat three times. | Gone each time, in about a second. *This is the one that produced the blank white window: a quit landing on an in-flight fetch terminated the poll thread, which never gave the GIL back, and the whole process froze with the window unpainted. Watch for a window that turns white and stops responding rather than closing.* |
 | 1.12 | ⚠ | Relaunch. Leave it running **15 minutes**, clicking between tabs throughout | Stays responsive the whole time. *The Wire's news TTL is 8 minutes; a UI-thread fetch froze the window white and it ignored the close button.* |
+| 1.13 | | Read the version beside the wordmark, and the window title | Both show the same `v2.NNN`. It matches `./build_app.sh` output and `python main.py --selftest` |
+| 1.14 | ⚠ | Hover the version | Reports commit, date, packaged-vs-checkout, and whether a newer build exists. *It must never say "up to date" when it cannot know — a guessed answer here gets believed.* |
 
 ---
 

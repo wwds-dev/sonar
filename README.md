@@ -654,6 +654,46 @@ and could say nothing of its own.
 The LLM read is the one paid path: it bills normal Anthropic API rates per invocation, and only
 when you ask for one. It is not wired into any polling loop.
 
+## Which version am I running?
+
+The header says, next to the name: **`v2.101`** — a number that moves with
+every commit. The window title carries it
+too, because bug reports arrive as screenshots and the title is in every one.
+
+```
+v<MAJOR>.<BUILD>
+   │        └── git rev-list --count HEAD, zero-padded to three digits
+   └─────────── the product arc, from the VERSION file
+```
+
+MAJOR is hand-edited and changes only on a deliberate milestone. BUILD is the
+commit count — derived, so it cannot be forgotten, and a version that is never
+bumped by hand is never silently wrong. The Lab Project Monitor computes the
+same string from the same two inputs, so the dashboard and the app cannot
+disagree.
+
+**Hover the version** and it reports the commit, the date, whether this is a
+packaged build or a checkout, and whether a newer build exists:
+
+```
+SONAR v2.101
+commit c3fcd81
+2026-09-22
+packaged build
+7 commits behind the checkout (v2.107). Re-run ./build_app.sh --install to catch up.
+```
+
+When that cannot be known — a packaged app on a machine with no source — it says
+so rather than claiming to be current. A version display that guesses is worse
+than none, because it gets believed.
+
+This exists because of a specific, repeated failure: a rebuild would land, the
+app would be opened, and the new work was not there — the bundle in
+`/Applications` was older than the conversation about it, and nothing on screen
+could say so. `main.py --selftest` prints the same information and **fails** if a
+frozen bundle has no build stamp. Full scheme in `VERSIONING.md`; what each
+installed build contained is in `CHANGELOG.md`.
+
 ## Layout
 
 ```

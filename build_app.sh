@@ -20,6 +20,20 @@ uv pip install -q pyinstaller
 # Regenerate the icon so the bundle never ships a stale one.
 python assets/make_icon.py
 
+# The test-plan page is generated from TESTPLAN.md, and it has to happen *here*
+# -- before PyInstaller copies static/ into the bundle. It used to run at the
+# very end of --install, after the copy to /Applications, so an edited
+# TESTPLAN.md shipped as the previous build's page and was only corrected in the
+# source tree in time for the next build. The comment already claimed "before
+# packaging"; now it is.
+python3 scripts/build_testplan.py
+
+# Freeze the build number. A bundle has no .git to ask at runtime, so this is
+# the only moment it is knowable -- and it is what lets the app say whether it
+# is still current. See sonar/version.py.
+python3 scripts/stamp_version.py
+VERSION="$(python -c 'from sonar.version import version_string; print(version_string().lstrip("v"))')"
+
 rm -rf build dist "$DIST"
 
 # QtWebEngine is excluded on purpose: every chart is QPainter (see ui/charts.py),
@@ -41,6 +55,8 @@ pyinstaller --noconfirm --clean --windowed \
   --distpath "$DIST" \
   --add-data "assets/icon.icns:assets" \
   --add-data "static:static" \
+  --add-data "_build_info.json:." \
+  --add-data "VERSION:." \
   --hidden-import anthropic \
   --hidden-import sonar.execution \
   --hidden-import sonar.costs \
@@ -58,8 +74,12 @@ pyinstaller --noconfirm --clean --windowed \
   --exclude-module tkinter \
   main.py
 
+PLIST="$DIST/$APP_NAME.app/Contents/Info.plist"
+plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
+plutil -replace CFBundleVersion -string "$VERSION" "$PLIST"
+
 echo
-echo "Built: $DIST/$APP_NAME.app ($(du -sh "$DIST/$APP_NAME.app" | cut -f1))"
+echo "Built: $DIST/$APP_NAME.app v$VERSION ($(du -sh "$DIST/$APP_NAME.app" | cut -f1))"
 
 # The self-test runs against the *built binary*, not the source tree — that is
 # the whole point. It checks the two things a frozen bundle gets wrong: writable
@@ -75,11 +95,7 @@ if [[ "${1:-}" == "--install" ]]; then
   echo "Installed: /Applications/$APP_NAME.app"
 
   # Nothing left behind to be indexed or backed up.
-  # The test-plan page is generated from TESTPLAN.md. Regenerate before
-# packaging so a bundle can never ship one that has drifted.
-python3 scripts/build_testplan.py
-
-rm -rf build "$DIST"
+  rm -rf build "$DIST"
   echo "Cleaned: build/ and $DIST/"
 else
   echo

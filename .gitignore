@@ -27,3 +27,7 @@ assets/icon.iconset/
 # (gitignored here until each has a GitHub remote and becomes a proper submodule)
 /sonar/macro/
 /sonar/playmaker/
+
+# Written by scripts/stamp_version.py at package time: identifies a build,
+# not the source. See VERSIONING.md.
+_build_info.json

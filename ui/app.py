@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
 
 from sonar import horizon as hz_mod
 from sonar import llm, paths, playmaker, risk as risk_mod
+from sonar import version as version_mod
 from sonar.playmaker import devig as pm_devig, staking as pm_staking
 from sonar.core import Live
 from sonar import assets as asset_mod
@@ -150,6 +151,31 @@ def label(text: str = "", obj: str = "", font=None, align=None,
     if align:
         lb.setAlignment(align)
     return lb
+
+
+class VersionBadge(QLabel):
+    """``v2.100``, with the build stamp and staleness on hover.
+
+    The text is fixed for the life of the window — a running app cannot change
+    which build it is — but *staleness* is not: the checkout moves underneath it
+    while the app stays open, which is exactly the situation that makes someone
+    ask whether what they are looking at is current. So the tooltip is rebuilt
+    on hover rather than frozen at construction.
+
+    Hover is also the right place to pay for it. `version.tooltip()` shells out
+    to git, which is ~30ms; that is nothing during a deliberate pause over a
+    label and would be an odd thing to spend on every repaint.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(version_mod.version_string(), parent)
+        self.setObjectName("muted")
+        self.setFont(theme.mono(9))
+        self.setToolTip(version_mod.tooltip())
+
+    def enterEvent(self, e) -> None:       # noqa: D102
+        self.setToolTip(version_mod.tooltip())
+        super().enterEvent(e)
 
 
 class Stat(QWidget):
@@ -551,7 +577,9 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.installEventFilter(self)
         self._hidden_at = 0.0       # when this window last hid itself
-        self.setWindowTitle("SONAR")
+        # The version belongs in the title too: a screenshot of a window is
+        # how bugs get reported here, and the title is in every screenshot.
+        self.setWindowTitle(f"SONAR {version_mod.version_string()}")
         self._fit_to_screen()
         icon = paths.asset_path("icon.icns")
         if icon.exists():
@@ -588,6 +616,12 @@ class MainWindow(QMainWindow):
         bar = QHBoxLayout()
         bar.setSpacing(10)
         bar.addWidget(label("SONAR", "h1"))
+        # Next to the name, not tucked in an About box. "I opened the app and
+        # nothing is new" was reported repeatedly against a bundle that was
+        # simply older than the work being described, and nothing on screen
+        # could have told anyone that.
+        self.version_label = VersionBadge()
+        bar.addWidget(self.version_label)
         bar.addWidget(label("paper money only", "faint", theme.mono(9)))
         bar.addStretch(1)
 
