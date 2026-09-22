@@ -95,9 +95,10 @@ class Tray(QSystemTrayIcon):
             self.reveal()
 
     def reveal(self) -> None:
-        self.window.showNormal()
-        self.window.raise_()
-        self.window.activateWindow()
+        # MainWindow.reveal, not showNormal: a close pressed in full screen
+        # leaves a hide pending for a third of a second, and reopening the
+        # window has to call that off rather than race it.
+        self.window.reveal()
 
     def _quit(self) -> None:
         self.window.allow_close = True

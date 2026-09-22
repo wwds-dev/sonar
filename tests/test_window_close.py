@@ -191,3 +191,31 @@ def test_an_ordinary_close_is_still_refused_after_a_quit_was_handled(window):
     event = QCloseEvent()
     window.closeEvent(event)
     assert not event.isAccepted()
+
+
+# --------------------------------------------------------------------------- #
+# The hide a full-screen close leaves pending
+# --------------------------------------------------------------------------- #
+def test_the_deferred_hide_gives_way_to_a_reveal(window):
+    """A close from full screen hides most of a second later. If the window has
+    been reopened by then, that hide must not land — it would look like the app
+    swallowing a window the user just asked for."""
+    window._hide_on_leaving_fullscreen = True
+    window._hide_after_fullscreen()
+    assert not window.isVisible()
+
+    window.reveal()
+    window._hide_after_fullscreen()   # the timer, arriving late
+    assert window.isVisible()
+
+
+def test_every_route_back_in_goes_through_reveal():
+    """The tray's menu item and main.py's Dock-click handler both have to cancel
+    a pending hide, which only `MainWindow.reveal` does. Calling `showNormal()`
+    directly from either would reopen a window the deferred hide then closes."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for path in (root / "ui" / "tray.py", root / "main.py"):
+        assert "showNormal()" not in path.read_text(), \
+            f"{path.name} reopens the window without going through reveal()"

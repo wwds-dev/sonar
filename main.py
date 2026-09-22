@@ -181,8 +181,7 @@ def run_app() -> int:
                 # Space transition finishes, which arrives just after the
                 # window hid itself and would otherwise reopen it immediately.
                 if not self.window.isVisible() and self.window.reopen_allowed():
-                    self.window.showNormal()
-                    self.window.raise_()
+                    self.window.reveal()
             return super().event(e)
 
     from PySide6.QtWidgets import QSystemTrayIcon

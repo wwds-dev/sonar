@@ -167,11 +167,23 @@ class Live:
         # crowd's own prices with no independent model behind them. Dropping it
         # also drops ~52MB/hour — it was the single largest thing SONAR
         # downloaded, for a screen that could not say anything of its own.
+
+        # Fetch first, then take the lock. `institutions.payload()` goes to
+        # the network when its fifteen-minute cache expires — four RSS feeds
+        # at a 12s timeout each — and this used to hold `self.lock` for all of
+        # it. The UI thread takes that same lock every second in
+        # `MainWindow.refresh()`, so the window froze for the length of the
+        # fetch: blank, ignoring the close button, then alive again a few
+        # seconds later. "Nothing on the UI thread may fetch" was satisfied to
+        # the letter — waiting on a lock held across a fetch is the same
+        # freeze. The lock covers the assignment, nothing more.
         try:
-            with self.lock:
-                self.inst = self.institutions.payload()
+            inst = self.institutions.payload()
         except Exception:
-            pass
+            inst = None
+        if inst is not None:
+            with self.lock:
+                self.inst = inst
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
             self._mark_book(ap)

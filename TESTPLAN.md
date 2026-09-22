@@ -46,14 +46,14 @@ running even when short of time — the list doubles as this project's bug histo
 | 1.2 | | Count the tabs | Seven: Terminal · Assets · Wire · Book · Macro · Lab · Playmaker |
 | 1.3 | | Wait 30s, visit each tab | No tab shows "—" in every field |
 | 1.4 | ⚠ | Resize the display to 1280×800 (or check on a laptop screen) | Nothing clipped, no horizontal scroll. *Once opened 4,540pt wide on a 1,280pt display.* |
-| 1.5 | ⚠ | Click the **red close button** | Window disappears; menu-bar icon stays; app still running. *Reported broken four times, four different causes.* |
+| 1.5 | ⚠ | Click the **red close button** | Window disappears; menu-bar icon stays; app still running. *Reported broken five times, five different causes.* |
 | 1.6 | | Click the menu-bar icon | Window returns |
 | 1.7 | ⚠ | Enter full screen, leave full screen, then close | Window hides and **does not reopen itself** a second later |
 | 1.8 | | ⌘H, then click the Dock icon | Window returns |
 | 1.9 | | Menu bar → **Quit SONAR** | Process exits. No crash dialog, no "Python quit unexpectedly". |
 | 1.10 | ⚠ | Relaunch, then ⌘Q | Also quits cleanly. *macOS implements a quit by sending a close event to every window, so the hide-on-close guard once cancelled it and ⌘Q did nothing.* |
 | 1.11 | ⚠ | Launch, and quit **within 5 seconds** — while the tabs are still filling — by ⌘Q. Repeat three times. | Gone each time, in about a second. *This is the one that produced the blank white window: a quit landing on an in-flight fetch terminated the poll thread, which never gave the GIL back, and the whole process froze with the window unpainted. Watch for a window that turns white and stops responding rather than closing.* |
-| 1.12 | ⚠ | Relaunch. Leave it running **15 minutes**, clicking between tabs throughout | Stays responsive the whole time. *The Wire's news TTL is 8 minutes; a UI-thread fetch froze the window white and it ignored the close button.* |
+| 1.12 | ⚠ | Relaunch. Leave it running **20 minutes**, clicking between tabs throughout, and close the window at the end | Stays responsive the whole time, and closes on the first click. *Two freezes hid here. The Wire's news TTL is 8 minutes and a UI-thread fetch froze the window white. The central-bank feed's is 15, and it was fetched while holding the lock the UI thread takes every second — no UI-thread fetch at all, and the same dead event loop: blank window, close button ignored, alive again a few seconds later.* |
 | 1.13 | | Read the version beside the wordmark, and the window title | Both show the same `v2.NNN`. It matches `./build_app.sh` output and `python main.py --selftest` |
 | 1.14 | ⚠ | Hover the version | Reports commit, date, packaged-vs-checkout, and whether a newer build exists. *It must never say "up to date" when it cannot know — a guessed answer here gets believed.* |
 

@@ -121,3 +121,80 @@ def test_the_network_ban_still_holds_for_tests_that_did_not_ask(monkeypatch):
     import urllib.request
     with pytest.raises(OSError):
         urllib.request.urlopen("http://example.invalid/", timeout=1)
+
+
+# --------------------------------------------------------------------------- #
+# The same freeze, reached through a lock instead of a socket
+# --------------------------------------------------------------------------- #
+def test_the_institutions_refresh_does_not_hold_the_ui_lock(monkeypatch):
+    """Reported 2026-09-22 as a close button that stopped reacting.
+
+    `MainWindow.refresh()` takes `live.lock` every second, and `_rescan()` held
+    that same lock across `institutions.payload()` — which goes to the network
+    for four RSS feeds at a 12s timeout each whenever its fifteen-minute cache
+    expires. Nothing on the UI thread fetched, exactly as the rule says; the UI
+    thread blocked on a mutex held by a thread that was fetching, which is the
+    same dead event loop. It showed up as a window that went blank, ignored the
+    close button, and came back a few seconds later.
+    """
+    from types import SimpleNamespace
+
+    from sonar.core import Live
+
+    live = Live()
+    held = []
+
+    def payload():
+        held.append(live.lock.locked())
+        return {"pressure": None}
+
+    monkeypatch.setattr(live, "institutions", SimpleNamespace(payload=payload))
+    monkeypatch.setattr(live, "news", SimpleNamespace(headlines=lambda: []))
+    monkeypatch.setattr(live, "events", SimpleNamespace(payload=lambda: {}))
+    monkeypatch.setattr(live, "asset_scanner",
+                        SimpleNamespace(payload=lambda *a, **k: {"assets": []}))
+
+    live._rescan()
+
+    assert held == [False], "the UI's lock was held across the institutions fetch"
+    assert live.inst == {"pressure": None}, "the payload still has to land"
+
+
+def test_nothing_that_fetches_is_called_inside_a_lock():
+    """By AST, because the next one will look as innocent as this one did.
+
+    A fetch inside a lock the UI thread waits on is indistinguishable, from the
+    user's side, from a fetch on the UI thread. Compute first, then take the
+    lock for the assignment.
+    """
+    import ast
+    import pathlib
+
+    fetchers = {
+        "institutions": {"payload"},
+        "events": {"payload", "refresh"},
+        "news": {"headlines", "refresh"},
+        "asset_scanner": {"payload"},
+        "reader": {"read"},
+    }
+    root = pathlib.Path(__file__).resolve().parents[1]
+    offenders = []
+    for path in (root / "sonar" / "core.py", root / "ui" / "app.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.With):
+                continue
+            if not any(isinstance(item.context_expr, ast.Attribute)
+                       and item.context_expr.attr == "lock"
+                       for item in node.items):
+                continue
+            for inner in ast.walk(node):
+                if not (isinstance(inner, ast.Call)
+                        and isinstance(inner.func, ast.Attribute)
+                        and isinstance(inner.func.value, ast.Attribute)):
+                    continue
+                owner = inner.func.value.attr
+                if inner.func.attr in fetchers.get(owner, ()):
+                    offenders.append(
+                        f"{path.name}:{inner.lineno} .{owner}.{inner.func.attr}()")
+    assert not offenders, "a fetch is held inside a lock: " + ", ".join(offenders)
