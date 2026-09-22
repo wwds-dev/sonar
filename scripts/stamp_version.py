@@ -36,6 +36,10 @@ def main() -> int:
         "commit": found["commit"],
         "date": found["date"],
         "source": "baked",
+        # Where to look for the checkout later. A bundle has no .git, so this is
+        # the only way staleness() can compare against anything. Git-ignored
+        # generated metadata, checked for existence before it is trusted.
+        "root": str(PROJECT_ROOT),
     }
     target = PROJECT_ROOT / BUILD_INFO_NAME
     target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

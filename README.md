@@ -656,7 +656,7 @@ when you ask for one. It is not wired into any polling loop.
 
 ## Which version am I running?
 
-The header says, next to the name: **`v2.101`** — a number that moves with
+The header says, next to the name: **`v2.102`** — a number that moves with
 every commit. The window title carries it
 too, because bug reports arrive as screenshots and the title is in every one.
 
@@ -676,7 +676,7 @@ disagree.
 packaged build or a checkout, and whether a newer build exists:
 
 ```
-SONAR v2.101
+SONAR v2.102
 commit c3fcd81
 2026-09-22
 packaged build

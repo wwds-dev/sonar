@@ -94,6 +94,14 @@ checkout:
 | No checkout reachable, or no git | *No checkout to compare against, so whether a newer build exists cannot be known from here.* |
 | Build carries no stamp at all | *This build carries no version stamp.* |
 
+A packaged bundle has no `.git` anywhere inside it, so it would always land on
+the third row — correct, and useless on the machine the app is developed on,
+where the source is sitting right there. The stamp therefore records **where the
+checkout was** (`root`), and staleness looks there when the bundle itself has no
+git. That is generated build metadata, not a path written into the source: it is
+produced per build, git-ignored, and checked for existence before it is trusted.
+A bundle copied to another machine finds nothing and goes back to row three.
+
 The third and fourth rows matter as much as the first two. `known` is `False`
 there, and the caller must say so rather than claim "up to date" — a version
 display that guesses is worse than none, because it is believed.

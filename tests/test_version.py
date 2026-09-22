@@ -126,6 +126,37 @@ class TestStalenessIsHonest:
         assert "7 commits behind" in verdict["detail"]
         assert "v2.097" in verdict["detail"], "say which build would be current"
 
+    def test_a_bundle_finds_the_checkout_its_stamp_points_at(self, monkeypatch):
+        """Without this a PyInstaller bundle can only ever say "cannot be
+        known": there is no .git anywhere inside it. Correct, and useless on the
+        machine the app is developed on, where the source is right there."""
+        monkeypatch.setattr(app_version, "_baked",
+                            lambda: {"build": 90, "commit": "old", "date": "",
+                                     "source": "baked", "root": str(ROOT)})
+        monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
+        # PROJECT_ROOT stands in for the bundle: no git to be had there.
+        real = app_version._git_build
+        monkeypatch.setattr(app_version, "_git_build",
+                            lambda cwd=None, **k: None if cwd is None else real(cwd))
+        app_version.info.cache_clear()
+        verdict = app_version.staleness()
+        assert verdict["known"] is True, verdict["detail"]
+        assert verdict["behind"] > 0, "the checkout is well past build 90"
+
+    def test_a_stamped_root_that_is_gone_is_not_invented(self, monkeypatch, tmp_path):
+        """A bundle copied to another machine. The recorded path will not exist
+        there, and the answer has to go back to "cannot be known"."""
+        monkeypatch.setattr(app_version, "_baked",
+                            lambda: {"build": 90, "commit": "old", "date": "",
+                                     "source": "baked",
+                                     "root": str(tmp_path / "gone")})
+        monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
+        monkeypatch.setattr(app_version, "_git_build", lambda cwd=None, **k: None)
+        app_version.info.cache_clear()
+        verdict = app_version.staleness()
+        assert verdict["known"] is False
+        assert "cannot be known" in verdict["detail"]
+
     def test_a_current_bundle_says_so(self, monkeypatch):
         monkeypatch.setattr(app_version, "_baked",
                             lambda: {"build": 100, "commit": "c",

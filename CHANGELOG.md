@@ -5,12 +5,12 @@ count. Every commit is therefore a version, so this file records the **builds
 that were installed** and what changed in them — not every number that existed.
 Newest first.
 
-Builds before v2.101 predate the version number. Nothing has been
+Builds before v2.102 predate the version number. Nothing has been
 back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## v2.101 — 2026-09-22
+## v2.102 — 2026-09-22
 
 The first build that can say what it is, and whether it is current.
 
@@ -22,8 +22,11 @@ the menu-bar menu, `--selftest` and the bundle's `Info.plist` all read it from
 bundle without one. Hovering the badge reports the commit, the date, whether
 this is a checkout or a package, and — by comparing against the checkout —
 whether a newer build exists. When that cannot be known it says so instead of
-claiming "up to date". Same scheme and same two inputs as the Lab Project
-Monitor, so the dashboard and the app cannot disagree. See `VERSIONING.md`.
+claiming "up to date". A packaged bundle has no `.git` inside it, so the stamp
+also records where the checkout was and the staleness check looks there — a
+bundle copied to another machine finds nothing and goes back to saying it cannot
+know. Same scheme and same two inputs as the Lab Project Monitor, so the
+dashboard and the app cannot disagree. See `VERSIONING.md`.
 
 **Quitting no longer freezes the app.** `shutdown()`'s last resort for a thread
 that would not stop was `QThread.terminate()`, which kills a thread wherever it

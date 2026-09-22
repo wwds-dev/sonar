@@ -113,7 +113,11 @@ def _git(*args: str, cwd: Path | None = None) -> str | None:
     return result.stdout.strip() or None
 
 
-def _git_build(cwd: Path | None = None) -> dict | None:
+def _git_build(cwd: Path | None = None, *, required: bool = False) -> dict | None:
+    """``cwd=None`` means PROJECT_ROOT. Callers that pass a *computed* root use
+    ``_git_build(root) if root else None`` rather than relying on the default —
+    see :func:`staleness`, where a missing checkout must not silently re-ask the
+    bundle it already failed on."""
     root = cwd or PROJECT_ROOT
     if not (root / ".git").exists():
         return None
@@ -126,6 +130,26 @@ def _git_build(cwd: Path | None = None) -> dict | None:
         "date": _git("log", "-1", "--format=%cI", cwd=root) or "",
         "source": "git",
     }
+
+
+def _checkout_root() -> Path | None:
+    """The checkout this build was made from, if it is still there.
+
+    A PyInstaller bundle has no `.git` anywhere inside it, so without this
+    `staleness()` can only ever answer "cannot be known" — correct, and useless
+    on the machine the app is actually developed and run on, where the source is
+    sitting right there. So the stamp records where it was.
+
+    This is generated build metadata, not a path written into the source: it is
+    produced per build by `scripts/stamp_version.py`, git-ignored, and checked
+    for existence before use. A bundle copied to another machine finds nothing
+    here and falls back to saying so, which is the honest answer there.
+    """
+    root = (_baked() or {}).get("root")
+    if not root:
+        return None
+    candidate = Path(root)
+    return candidate if (candidate / ".git").exists() else None
 
 
 def _baked() -> dict | None:
@@ -187,7 +211,10 @@ def staleness() -> dict:
         return {"known": False, "behind": 0, "current": False,
                 "detail": "This build carries no version stamp."}
 
-    latest = _git_build()
+    # Frozen, PROJECT_ROOT is inside the bundle and has no .git; the stamp says
+    # where the checkout was. From a checkout the first call already answers.
+    checkout = _checkout_root()
+    latest = _git_build() or (_git_build(checkout) if checkout else None)
     if latest is None:
         return {"known": False, "behind": 0, "current": False,
                 "detail": "No checkout to compare against, so whether a newer "
