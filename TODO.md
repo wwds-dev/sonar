@@ -113,6 +113,16 @@ explaining a number in place is worth more than any amount of new prose.
 
 ## v2 — current
 
+- [ ] `P0` `bug` `@ai` **Port Lab Hub's `clickCount` guard — SONAR aborts when its menu
+  bar menu opens.** macOS 27 made `-[NSEvent clickCount]` raise for an event that has no
+  click count, and Qt's cocoa plugin asks for it whenever a menu begins tracking; the
+  Objective-C exception unwinds through C++ frames that catch nothing, into `terminate()`.
+  `SONAR-2026-09-22-180253.ips` is byte-identical to Lab Hub's crash stack. PySide6 6.11.2
+  is the newest release, so there is nothing to upgrade to. The fix is
+  `lab_hub/ui/appkit_guard.py`: swizzle that one selector to answer 0 for the event types
+  with no click count and call through for the ten that have one, installed before
+  `QApplication` is built. Delete it once Qt ships a fixed plugin.
+
 The arc. Its precise build number is derived, not written here — `v2.100` today
 — so this heading names the phase and `sonar/version.py` names the build; see
 `VERSIONING.md` for the scheme and `CHANGELOG.md` for what each installed build
