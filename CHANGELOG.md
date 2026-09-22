@@ -10,6 +10,20 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.112 — 2026-09-22
+
+**SONAR no longer aborts when its menu bar menu opens.** macOS 27 made
+`-[NSEvent clickCount]` raise for an event that has no click count, and Qt's
+cocoa plugin asks for it whenever a menu begins tracking — the Objective-C
+exception unwinds through C++ frames that catch nothing, into `terminate()`.
+PySide6 6.11.2 is the newest release, so there was nothing to upgrade to.
+`ui/appkit_guard.py` is Lab Hub's guard, ported: it replaces that one selector
+with an implementation answering 0 for the event types that have no click count
+and calling through for the ten that do, installed before `QApplication` is
+built. `--selftest` fails without it. This matters more here than in most apps —
+the close button hides to the menu bar, so that menu is the way back in. Both
+copies of the guard should be deleted once Qt ships a fixed cocoa plugin.
+
 ## v2.108 — 2026-09-22
 
 The build a person without a finance background can read.

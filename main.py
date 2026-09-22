@@ -37,7 +37,18 @@ def selftest() -> int:
     print(f"  state file:      {state}")
     print(f"  cache dir:       {paths.cache_dir()}")
 
+    from ui import appkit_guard
+
+    guarded = appkit_guard.install()
+
     problems: list[str] = []
+    print(f"  clickCount guard: {'installed' if guarded else 'NOT INSTALLED'}")
+    if not guarded:
+        # SONAR closes to the menu bar, so its menu is not a corner of the app —
+        # it is how you get back to the window. Unguarded on macOS 27 that is an
+        # abort, and the app looks like it crashed on its own.
+        problems.append("the AppKit clickCount guard did not install — opening "
+                        "the menu bar menu will abort the app on macOS 27")
     if not icon.exists():
         problems.append("icon asset missing from the bundle")
 
@@ -186,7 +197,14 @@ def run_app() -> int:
 
     from PySide6.QtWidgets import QSystemTrayIcon
 
+    from ui import appkit_guard
     from ui.tray import Tray
+
+    # macOS 27 aborts the app the moment its menu bar menu opens — Qt's cocoa
+    # plugin reads clickCount off an event that has none, and AppKit raises
+    # instead of answering zero. Install before any menu can be built, because
+    # the abort happens inside AppKit with nothing of ours on the stack.
+    appkit_guard.install()
 
     paths.ensure_dirs()
     app = SonarApp(sys.argv)
