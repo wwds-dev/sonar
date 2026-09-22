@@ -50,22 +50,32 @@ explaining a number in place is worth more than any amount of new prose.
 - [x] `P2` `design` `@ai` ~~A stale price looked identical to a live one.~~
       **AGE** column on every Assets row, counting between scans rather than
       freezing at what the scan measured.
-- [ ] `P1` `design` `@ai` **Every heading needs a "?" that lands on the right
-      paragraph.** `_show_learn()` already selects the tab and the contents
-      already scroll to an anchor; what is missing is a `HelpLink` widget and a
-      topic → anchor map, plus a test that every topic resolves to a section
-      that exists (the same guard `tests/test_docs.py` puts on cross-references).
-      Hover text does not count: it cannot be found by someone who does not
-      already know there is something to hover.
-- [ ] `P1` `design` `@ai` **Plain-English second line under every jargon
-      heading**, permanently visible. `MOM` → "5-day move", `VOL` → "typical
-      daily swing", `R:R` → "reward vs risk", `P(PROF)` → "chance of hitting the
-      target first", `CONF` → "worth a look". `ASSET_COLS` already carries the
-      wording in its tooltips; this is moving it out of hover.
-- [ ] `P1` `design` `@ai` **One plain sentence per row.** `rationale` is already
-      computed per instrument and never shown on the board — "up 11.8% this
-      week, several fresh stories" reads without training and the eight numbers
-      beside it do not.
+- [x] `P1` `design` `@ai` ~~The GUI itself — font, contrast, dropdowns.~~
+      **The Plain Language direction**, picked from three mockups. `ui/theme.py`
+      is rewritten: proportional type for words, the same face with tabular
+      numerals for figures, real monospace only where a pasted table's columns
+      are made of spaces; `MUTED` and `FAINT` both clear 4.5:1 (`FAINT` was
+      1.9:1); the toolbar's two knobs are 38px and captioned with the question
+      they answer. `ui/tabs.py` paints both names on every tab — the plain one
+      over the one the manual uses — because Qt draws a `\n` in a tab label on
+      one line and clips it.
+- [x] `P1` `design` `@ai` ~~Every heading needs a link to the paragraph that
+      explains it.~~ Headings that name something non-obvious carry a docs
+      anchor, open the Learn tab there, and `tests/test_plain_language.py`
+      asserts every anchor resolves to a section that exists.
+- [x] `P1` `design` `@ai` ~~Plain-English headings instead of abbreviations.~~
+      `MOM` → "Recent move" over *over 5 days*, `VOL` → "Swing size" over *big
+      swings*, `R:R` and `P(PROF)` merged into "If you traded it" reading "win
+      1.5× the risk / 40% of the time", `CONF` → "Worth a look" with the score
+      as a meter whose segments are still the component breakdown.
+- [x] `P1` `design` `@ai` ~~One plain sentence per row.~~ "up hard, heavy news",
+      generated from numbers already on the row. A test asserts it can never
+      acquire a direction — that sentence is the easiest place in the app to
+      break the rule the whole project rests on.
+- [ ] `P2` `design` `@ai` **The other six tabs are still written in jargon.**
+      The Screener is done and the shared stat strips got English captions via
+      `STAT_WORDS`, but the Practice tab still asks for `STEP (BARS)`, and the
+      Sports tab is a wall of devigging vocabulary. Same treatment, tab by tab.
 - [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
       it is the one that decides whether anything here is true. Three parts:
       a guided mode whose controls are questions rather than `STEP (BARS)`;

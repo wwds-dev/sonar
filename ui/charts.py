@@ -38,7 +38,7 @@ class _Chart(QWidget):
 
     def _empty(self, p: QPainter, msg: str) -> None:
         p.setPen(QPen(theme.FAINT))
-        p.setFont(theme.mono(10))
+        p.setFont(theme.figure(10))
         p.drawText(self.rect(), Qt.AlignCenter, msg)
 
 
@@ -83,7 +83,7 @@ class EquityCurve(_Chart):
             return QPointF(x, y)
 
         # horizontal grid + axis labels
-        p.setFont(theme.mono(9))
+        p.setFont(theme.figure(9))
         for k in range(5):
             v = lo + (hi - lo) * k / 4
             y = pad_t + gh * (1 - k / 4)
@@ -125,7 +125,7 @@ class EquityCurve(_Chart):
             p.setPen(QPen(theme.GOLD, 1, Qt.DashLine))
             p.drawLine(QPointF(x, pad_t), QPointF(x, pad_t + gh))
             p.setPen(QPen(theme.GOLD))
-            p.setFont(theme.mono(8, True))
+            p.setFont(theme.figure(8, True))
             p.drawText(QPointF(x + 4, pad_t + 9), "LIVE")
 
 
@@ -199,7 +199,7 @@ class DepthChart(_Chart):
         pad, rowh = 10, (self.height() - 26) / rows
         mid = self.width() / 2
 
-        p.setFont(theme.mono(9))
+        p.setFont(theme.figure(9))
         p.setPen(QPen(theme.FAINT))
         p.drawText(QRectF(pad, 4, mid - pad, 14), Qt.AlignLeft, "BIDS")
         p.drawText(QRectF(mid, 4, mid - pad, 14), Qt.AlignRight, "ASKS")
@@ -261,7 +261,7 @@ class Lattice(_Chart):
             p.fillRect(QRectF(x + 1, y, bw - 2, bh), QBrush(c))
 
         p.setPen(QPen(theme.FAINT))
-        p.setFont(theme.mono(9))
+        p.setFont(theme.figure(9))
         p_up = self.data.get("p_up")
         if p_up is not None:
             p.drawText(QRectF(pad_l, self.height() - pad_b + 2, w, 16),
@@ -280,8 +280,17 @@ class ComponentBar(QWidget):
         super().__init__(parent)
         self.setFixedHeight(7)
         self.parts: list[tuple[str, float]] = []
+        self.fill = 1.0
 
-    def set_parts(self, comp: dict, weights: dict) -> None:
+    def set_parts(self, comp: dict, weights: dict, fill: float = 1.0) -> None:
+        """``fill`` is how much of the width the bar occupies, 0–1.
+
+        At 1.0 the bar is a pure breakdown: the segments say what the score is
+        made of and the length says nothing. Passing the score itself makes it
+        a meter as well — length reads as "how notable", segments still read as
+        "why" — which is the only way to show both in one 80px cell.
+        """
+        self.fill = max(0.0, min(1.0, fill))
         self.parts = [(k, weights[k] * comp.get(k, 0.0))
                       for k in weights if comp.get(k)]
         self.setToolTip("  ".join(
@@ -293,12 +302,13 @@ class ComponentBar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         total = sum(v for _, v in self.parts)
+        p.fillRect(self.rect(), QBrush(theme.GRID))       # the track
         if total <= 0:
-            p.fillRect(self.rect(), QBrush(theme.GRID))
             return
+        span = self.width() * self.fill
         x = 0.0
         for name, v in self.parts:
-            seg = self.width() * (v / total)
+            seg = span * (v / total)
             p.fillRect(QRectF(x, 0, seg, self.height()),
                        QBrush(theme.COMP.get(name, theme.MUTED)))
             x += seg

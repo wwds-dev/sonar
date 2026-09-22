@@ -47,15 +47,15 @@ def row(qapp, data_age_s: float, generated: float | None = None):
 # --------------------------------------------------------------------------- #
 def test_a_fresh_row_never_reads_as_zero():
     """"0m" is indistinguishable from "live", and no row is ever live."""
-    assert ui_app._age_text(0) == "<1m"
-    assert ui_app._age_text(59) == "<1m"
+    assert ui_app._age_text(0) == "under 1m"
+    assert ui_app._age_text(59) == "under 1m"
 
 
 def test_minutes_then_hours():
-    assert ui_app._age_text(60) == "1m"
-    assert ui_app._age_text(59 * 60) == "59m"
-    assert ui_app._age_text(60 * 60) == "1h00m"
-    assert ui_app._age_text(2 * 3600 + 180) == "2h03m"
+    assert ui_app._age_text(60) == "1m ago"
+    assert ui_app._age_text(59 * 60) == "59m ago"
+    assert ui_app._age_text(60 * 60) == "1h00m ago"
+    assert ui_app._age_text(2 * 3600 + 180) == "2h03m ago"
 
 
 def test_the_text_fits_its_column():
@@ -63,7 +63,7 @@ def test_the_text_fits_its_column():
     number into an unreadable glyph — the failure this column exists to avoid."""
     QApplication.instance() or QApplication([])
     width = dict(ui_app._asset_widths())["age"]
-    fm = QFontMetrics(theme.mono(10))
+    fm = QFontMetrics(theme.text(9))
     for seconds in (0, 90, 59 * 60, 3600, 11 * 3600, 99 * 3600):
         assert fm.horizontalAdvance(ui_app._age_text(seconds)) <= width
 
@@ -87,7 +87,7 @@ def test_past_a_rotation_it_warns_and_past_an_hour_it_alarms():
 # the row
 # --------------------------------------------------------------------------- #
 def test_the_row_shows_the_age_the_scan_measured(qapp):
-    assert row(qapp, 312.0).age.text() == "5m"
+    assert row(qapp, 312.0).age.text() == "5m ago"
 
 
 def test_the_age_keeps_counting_between_scans(qapp):
@@ -95,16 +95,16 @@ def test_the_age_keeps_counting_between_scans(qapp):
     about every three minutes — so an age frozen at build time would under-
     report by up to a full scan interval, every time."""
     r = row(qapp, 60.0)
-    assert r.age.text() == "1m"
+    assert r.age.text() == "1m ago"
     r.update_age(time.time() + 9 * 60)
-    assert r.age.text() == "10m"
+    assert r.age.text() == "10m ago"
 
 
 def test_the_age_is_anchored_to_the_scan_not_to_the_render(qapp):
     """A row built from a five-minute-old snapshot must say eight minutes, not
     three: `data_age_s` is measured when the scan runs, not when it is drawn."""
     r = row(qapp, 180.0, generated=time.time() - 5 * 60)
-    assert r.age.text() == "8m"
+    assert r.age.text() == "8m ago"
 
 
 def test_the_board_still_fits_the_default_window(qapp):

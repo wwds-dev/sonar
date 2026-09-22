@@ -31,7 +31,12 @@ def window():
 
 
 def test_the_tab_exists(window):
-    assert "Lab" in [window.tabs.tabText(i) for i in range(window.tabs.count())]
+    """Under its plain name, with the name the docs use beneath it — see
+    `ui/tabs.py` for why both are on the bar."""
+    bar = window.tabs.tabBar()
+    names = [(window.tabs.tabText(i), bar._subtitles.get(i, ""))
+             for i in range(window.tabs.count())]
+    assert ("Practice", "LAB") in names
 
 
 def test_the_whole_watchlist_is_the_default_universe(window):

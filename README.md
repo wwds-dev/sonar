@@ -14,15 +14,22 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 
 A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no web view.
 
+Each tab carries **two names**: the plain one it is called by, and — under it in
+small caps — the one this README and `static/docs.html` use. The plain names came
+in with the Plain Language direction (below); the originals stayed because forty
+sentences in the manual refer to them. `ui/tabs.py` paints both, because Qt will
+not: a `\n` in `setTabText` round-trips through the API and is then drawn on one
+line and clipped.
+
 | Tab | What it does | Asserts a direction? |
 |---|---|---|
-| **Terminal** | Hourly BTC up/down paper trade — the model prices each hour, compares to Polymarket, takes at most one simulated bet, and grades itself against the market on every hour, traded or not | **Yes** — the only independent model |
-| **Assets** | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, **how old each row's price is**, and buy/short per row | **No** — direction is yours |
-| **Wire** | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
-| **Book** | Open paper positions, the calibration table, and the backtest button | — |
-| **Macro** | Regime: curve, VIX, real rates, unemployment | No |
-| **Lab** | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
-| **Playmaker** | Sports prop pricing across **nine sports** (NFL, NBA, MLB, NHL, EPL, UCL, NCAAB, UFC, ATP) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
+| **Live model**  \n<sub>TERMINAL</sub> | Hourly BTC up/down paper trade — the model prices each hour, compares to Polymarket, takes at most one simulated bet, and grades itself against the market on every hour, traded or not | **Yes** — the only independent model |
+| **Screener**  \n<sub>ASSETS</sub> | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, **how old each row's price is**, and buy/short per row | **No** — direction is yours |
+| **News**  \n<sub>WIRE</sub> | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
+| **My trades**  \n<sub>BOOK</sub> | Open paper positions, the calibration table, and the backtest button | — |
+| **Big picture**  \n<sub>MACRO</sub> | Regime: curve, VIX, real rates, unemployment | No |
+| **Practice**  \n<sub>LAB</sub> | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
+| **Sports**  \n<sub>PLAYMAKER</sub> | Sports prop pricing across **nine sports** (NFL, NBA, MLB, NHL, EPL, UCL, NCAAB, UFC, ATP) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
 | **Learn** | The manual and the glossary **inside the app** — `static/docs.html` rendered by Qt, with a contents list and a search box that takes one unfamiliar word. Same file the browser serves, so the prose cannot drift; `ui/learn.py` does the translation | — |
 
 Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
@@ -375,9 +382,39 @@ can change shape or start refusing requests without notice, and it already has:
 the `quoteSummary` endpoint used for earnings dates now answers 401. One
 undocumented endpoint carrying the whole app is its largest fragility.
 
-### How old is a price on the Assets board?
+## The Plain Language direction
 
-Visible on the row, in the **AGE** column, because a price that is quietly out
+Chosen 2026-09-22, after the person this app is for said he could not read his
+own screener. Three changes, each a rule rather than a taste:
+
+- **Proportional type carries words; monospace carries only code.** Menlo was
+  drawing English prose, which it is bad at. `theme.text` is the interface font,
+  `theme.figure` is the same face with tabular numerals so a column of prices
+  still lines up, and `theme.code` is the real monospace — used in exactly two
+  places, both of which take a pasted table whose columns are made of spaces.
+- **Contrast is a floor.** `MUTED` and `FAINT` now clear 4.5:1 against the panel
+  they sit on; `FAINT` used to measure 1.9:1, which is decoration, not text.
+  Raising it exposed a latent bug worth knowing about: every `QLabel` inherited
+  the window background from the blanket `QWidget` rule and painted it over the
+  panel beneath, which was invisible while the two colours were three points
+  apart and became a dark box behind every cell once they were not.
+- **The board is written in English.** `MOM` is "Recent move", `VOL` is "Swing
+  size" over the words *big swings*, `R:R` and `P(PROF)` are one column reading
+  "win 1.5× the risk / 40% of the time", and `CONF` is "Worth a look" with the
+  score as a meter whose segments are still the component breakdown. Every row
+  carries one plain sentence — "up hard, heavy news" — generated from numbers
+  already on the row, and `tests/test_plain_language.py` asserts that sentence
+  can never acquire a direction.
+
+Headings that name something non-obvious are links: clicking one opens the Learn
+tab at the section explaining it, and a test checks every one of those anchors
+resolves to a section that exists. The two toolbar knobs are captioned with the
+question they answer ("How much risk are you willing to take?") rather than with
+the word `risk` in 9pt grey.
+
+### How old is a price on the Screener board?
+
+Visible on the row, in the **Updated** column, because a price that is quietly out
 of date is the failure mode this project treats as unacceptable.
 
 The board does not refetch all 129 instruments at once. Doing that took the

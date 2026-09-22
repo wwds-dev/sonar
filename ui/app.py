@@ -49,11 +49,12 @@ from sonar.assets import _W as ASSET_W
 from . import learn as learn_mod
 from . import theme
 from .charts import ComponentBar, DepthChart, EquityCurve, Lattice, Sparkline
+from .tabs import PlainTabs
 from .worker import BacktestThread, ConfigThread, PollThread, PropThread, ReadThread
 
 REFRESH_MS = 1000
 # Opening size, before the screen gets a say. See MainWindow._fit_to_screen.
-PREFERRED_SIZE = (1180, 820)
+PREFERRED_SIZE = (1240, 820)
 SCREEN_MARGIN = 40           # leave the dock and the menu bar somewhere to live
 
 # Long enough for macOS to finish collapsing the full-screen Space before the
@@ -72,45 +73,57 @@ FULLSCREEN_EXIT_MS = 350
 # A real Dock click a second later still works.
 REOPEN_GRACE_MS = 1000
 
-# The Assets table's columns: key, heading, width, tooltip. The header row and
-# every asset row are both built from this one list, so a column can never drift
-# away from the heading that names it.
+# The Assets board's columns: key, heading, width, docs anchor, tooltip. The
+# header row and every row are built from this one list, so a column can never
+# drift away from the heading that names it.
+#
+# The headings are English rather than abbreviations, which is the whole point
+# of the Plain Language direction: MOM, VOL, R:R, P(PROF) and CONF are five
+# pieces of jargon in a row, and a reader who does not already know them has no
+# way in — the explanations existed only in hover text, which cannot be found by
+# someone who does not know there is something to hover. Each heading whose
+# meaning is not self-evident carries the anchor of the section that explains
+# it, and clicking the heading opens the Learn tab there.
 ASSET_COLS = [
-    ("name", "", 140, ""),
-    ("trend", "TREND", 78, "Recent price path over the horizon's window."),
-    ("price", "PRICE", 74, "Latest price."),
-    ("1d", "1D", 58, "Change since yesterday's close."),
-    ("momentum", "MOM", 86,
-     "Change over the horizon's momentum window (1d / 5d / 20d)."),
-    ("volatility", "VOL", 52, "Daily volatility of returns."),
-    ("lean", "NEWS", 58,
+    ("name", "What it is", 216, "", ""),
+    ("trend", "Trend", 58, "",
+     "The price path over the window in the next column."),
+    ("price", "Price", 76, "", "The latest price fetched for this market."),
+    ("1d", "Today", 68, "", "How far it has moved since yesterday's close."),
+    ("momentum", "Recent move", 84, "scores",
+     "How far it has moved over the window the horizon picks — five days on\n"
+     "'This week'. A description of the past. Whether it says anything about\n"
+     "the future is exactly what §11 tested, and the answer was no."),
+    ("volatility", "Swing size", 74, "learn",
+     "How much this market typically moves in a day.\n"
+     "Big swings mean bigger moves in BOTH directions — it says nothing\n"
+     "about which way. It is why a target 5% away means something different\n"
+     "on gold than on a meme coin."),
+    ("lean", "In the news", 78, "learn",
      "How unusual today's coverage is: Quiet / Normal / Elevated / Spike.\n"
-     "A notability flag, not odds. Over 25,504 independent historical\n"
-     "setups neither momentum nor a news spike beat the 40% baseline\n"
-     "(spike came in at +0.8 pts, ±3.1). It marks what is worth a look.\n"
-     "Direction is yours — use buy or short."),
-    ("rr", "R:R", 42,
-     "Reward divided by risk, from a volatility-scaled target and stop.\n"
-     "1.5 means the target is 1.5x as far away as the stop."),
-    ("pprof", "P(PROF)", 52,
-     "Probability of touching the target before the stop.\n"
-     "With no proven edge this is exactly 1/(1+R:R) — so a fatter reward\n"
-     "buys a lower hit rate and expected value stays zero. Only a measured\n"
-     "edge (see the Book tab) moves it."),
-    ("mix", "SCORE MIX", 66,
-     "What drives the confidence score: momentum, volatility, news, catalyst."),
-    ("conf", "CONF", 36,
-     "Confidence 0–100: how notable this looks.\n"
-     "NOT the probability you will make money — that is P(PROF)."),
-    ("age", "AGE", 42,
+     "A flag for 'something is happening', not odds and not a direction.\n"
+     "Over 25,504 historical setups neither a big move nor a news spike beat\n"
+     "the 40% baseline (spike came in at +0.8 points, give or take 3.1)."),
+    ("plan", "If you traded it", 106, "scores",
+     "The plan behind the buy and short buttons: a target and a stop, both\n"
+     "scaled to how much this market actually moves.\n"
+     "The two numbers are the same number twice — the chance of hitting the\n"
+     "target before the stop is 1/(1+reward:risk), so a fatter reward buys a\n"
+     "lower hit rate and the two cancel exactly. Nothing here makes money;\n"
+     "only a measured edge does, and none has been measured yet."),
+    ("conf", "Worth a look", 80, "scores",
+     "0–100: how notable this looks right now.\n"
+     "NOT the chance you will make money — that is the column to the left.\n"
+     "The bar underneath splits the score into what produced it."),
+    ("age", "Updated", 66, "",
      "How long ago this row's price was actually fetched.\n"
-     "The screen recomputes about every 3 minutes, but only the 26 stalest\n"
-     "of 129 instruments are refetched each time — so a few minutes old is\n"
-     "normal, and a full rotation takes roughly 15. Gold past that means the\n"
-     "rotation is falling behind, usually because the source is throttling.\n"
+     "The board recomputes about every 3 minutes, but only the 26 stalest of\n"
+     "129 markets are refetched each time — so a few minutes old is normal,\n"
+     "and a full rotation takes roughly 15. Gold past that means the rotation\n"
+     "is falling behind, usually because the source is throttling us.\n"
      "Shown because a price that is quietly out of date is the one failure\n"
      "this app treats as unacceptable."),
-    ("actions", "", 182, ""),
+    ("actions", "", 138, "", ""),
 ]
 
 # Age thresholds, in seconds, derived from the rotation rather than picked:
@@ -125,12 +138,12 @@ def _age_text(seconds: float) -> str:
     """A compact age. Never rounds down to "0m" — a row is never brand new
     enough for that to be true, and "0m" reads as "live" when it is not."""
     if seconds < 60:
-        return "<1m"
+        return "under 1m"
     minutes = int(seconds // 60)
     if minutes < 60:
-        return f"{minutes}m"
+        return f"{minutes}m ago"
     hours, minutes = divmod(minutes, 60)
-    return f"{hours}h{minutes:02d}m" if hours < 10 else f"{hours}h"
+    return f"{hours}h{minutes:02d}m ago" if hours < 10 else f"{hours}h ago"
 
 
 def _age_color(seconds: float):
@@ -141,30 +154,118 @@ def _age_color(seconds: float):
     return theme.MUTED
 
 
+def _swing_words(daily_vol: float) -> str:
+    """The same number in words. 4.3% a day means nothing to most people; "big
+    swings" does, and the number is right there for anyone it does mean
+    something to."""
+    if daily_vol >= 0.030:
+        return "big swings"
+    if daily_vol >= 0.015:
+        return "medium"
+    return "small swings"
+
+
+def _plain_read(a: dict) -> str:
+    """One short phrase saying what this row is doing, in words.
+
+    Everything in it is already on the row as a number. That is the point: the
+    numbers are the evidence, this is the reading, and a reader who cannot yet
+    do the second from the first is exactly who this app kept losing.
+
+    Deliberately free of direction. "Down hard" is the past tense and says
+    nothing about tomorrow — five studies over 116,563 asset-days found no way
+    to tell — and a sentence that implied otherwise would be the app breaking
+    its own rule in the friendliest possible voice.
+    """
+    move = a.get("momentum", 0.0)
+    size = abs(move)
+    if size >= 0.10:
+        pace = "up hard" if move > 0 else "down hard"
+    elif size >= 0.03:
+        pace = "drifting up" if move > 0 else "slipping"
+    else:
+        pace = "barely moving"
+    cover = {"Spike": "heavy news", "Elevated": "some news",
+             "Normal": "quiet news", "Quiet": "no news"}.get(a.get("lean", ""), "")
+    return f"{pace}, {cover}" if cover else pace
+
+
 def _asset_widths() -> list[tuple[str, int]]:
-    return [(key, width) for key, _heading, width, _tip in ASSET_COLS]
+    return [(key, width) for key, _heading, width, _anchor, _tip in ASSET_COLS]
+
+
+class HelpHeading(QLabel):
+    """A column heading that opens the paragraph explaining its column.
+
+    Hover text was the only explanation this board had, and hover text cannot
+    be found by someone who does not already know there is something to find.
+    A heading you can click can be — so the ones that carry an explanation are
+    drawn in the link colour, take the pointing-hand cursor, and say so in the
+    tooltip they already had.
+    """
+
+    def __init__(self, heading: str, anchor: str, tip: str, on_help,
+                 parent=None) -> None:
+        super().__init__(heading, parent)
+        self._anchor = anchor
+        self._on_help = on_help
+        self.setFont(theme.text(9, bool(anchor)))
+        self.setStyleSheet(
+            f"color: {(theme.UP if anchor else theme.MUTED).name()};")
+        if anchor:
+            self.setCursor(Qt.PointingHandCursor)
+            tip = f"Click to open the explanation.\n\n{tip}" if tip else \
+                "Click to open the explanation."
+        if tip:
+            self.setToolTip(tip)
+
+    def mousePressEvent(self, event) -> None:
+        if self._anchor:
+            self._on_help(self._anchor)
+        super().mousePressEvent(event)
 
 
 class AssetHeader(QFrame):
-    """Column headings for the Assets table.
+    """Column headings for the Assets board.
 
     Without these the screen was ten unlabelled numbers per row and you had to
-    already know the layout to read it.
+    already know the layout to read it. With the Plain Language direction they
+    are also the way in: each one that names something non-obvious is a link
+    into the manual.
     """
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, on_help=None, parent=None) -> None:
         super().__init__(parent)
         lay = QHBoxLayout(self)
-        # left margin = the scroll area's own 2px + the row panel's 12px, so a
-        # heading sits directly over its column
+        # left margin = the scroll area's own 2px + the row panel's 12px + its
+        # 1px border, so a heading sits directly over its column
         lay.setContentsMargins(15, 8, 12, 4)
-        lay.setSpacing(14)
-        for _key, heading, width, tip in ASSET_COLS:
-            lb = label(heading, "faint", theme.mono(8))
+        lay.setSpacing(12)
+        for _key, heading, width, anchor, tip in ASSET_COLS:
+            lb = HelpHeading(heading, anchor if on_help else "", tip,
+                             on_help or (lambda _a: None))
             lb.setFixedWidth(width)
-            if tip:
-                lb.setToolTip(tip)
             lay.addWidget(lb)
+
+
+def _scrolled(inner: QWidget) -> QScrollArea:
+    """Put a tall tab inside a scroller so it stops being a floor.
+
+    A QTabWidget's minimum height is its tallest page's, and the window's is the
+    tab widget's — so the Lab's form-plus-output and Playmaker's four rows of
+    controls between them decided how short SONAR could be made. That was
+    survivable while everything was drawn in 9pt monospace; the interface font
+    is taller, and `tests/test_layout.py` holds the window to a 13" laptop for a
+    reason (it once opened 4,540pt wide on a 1,280pt screen).
+
+    A scroller reports a small minimum and lets the content be whatever height
+    it is, which is the right answer rather than a workaround: these two tabs
+    are genuinely longer than a short screen.
+    """
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setWidget(inner)
+    return area
 
 
 def panel() -> QFrame:
@@ -211,7 +312,7 @@ class VersionBadge(QLabel):
     def __init__(self, parent=None) -> None:
         super().__init__(version_mod.version_string(), parent)
         self.setObjectName("muted")
-        self.setFont(theme.mono(9))
+        self.setFont(theme.figure(9))
         self.setToolTip(version_mod.tooltip())
 
     def enterEvent(self, e) -> None:       # noqa: D102
@@ -219,16 +320,33 @@ class VersionBadge(QLabel):
         super().enterEvent(e)
 
 
+#: Stat strips are built from the key the value is stored under, which is how
+#: five of them stayed in sync for free and also how "TAU" ended up on screen.
+#: A key that is jargon gets an English caption here, once, for every strip.
+STAT_WORDS = {
+    "model": "our odds it rises",
+    "market": "crowd's odds",
+    "edge": "we disagree by",
+    "tau": "hour remaining",
+    "bankroll": "practice cash",
+    "pnl": "profit / loss",
+    "total p/l": "profit / loss",
+    "equity": "account value",
+    "unrealised": "open profit / loss",
+}
+
+
 class Stat(QWidget):
-    """A labelled figure — the terminal's basic readout unit."""
+    """A labelled figure — the basic readout unit, on five different strips."""
 
     def __init__(self, caption: str, tip: str = "", parent=None) -> None:
+        caption = STAT_WORDS.get(caption, caption)
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(1)
-        self.cap = label(caption.upper(), "faint", theme.mono(8))
-        self.val = label("—", font=theme.mono(15, True))
+        self.cap = label(caption.upper(), "faint", theme.figure(8))
+        self.val = label("—", font=theme.figure(15, True))
         lay.addWidget(self.cap)
         lay.addWidget(self.val)
         if tip:
@@ -241,7 +359,13 @@ class Stat(QWidget):
 
 
 class AssetRow(QFrame):
-    """One instrument on the screener."""
+    """One market on the board.
+
+    Two lines per cell wherever the number alone is not the point: the figure on
+    top for anyone who reads figures, and what it means underneath for everyone
+    else. "4.3%" and "big swings" are the same fact, and printing only the first
+    was the app choosing an audience.
+    """
 
     def __init__(self, a: dict, on_read, on_trade, generated: float = 0.0,
                  parent=None) -> None:
@@ -254,127 +378,170 @@ class AssetRow(QFrame):
         # own `generated` stamp lets `update_age` keep counting between scans.
         self._fetched_at = (generated or time.time()) - float(
             a.get("data_age_s") or 0.0)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(12, 8, 12, 8)
-        lay.setSpacing(14)
 
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(12, 7, 12, 7)
+        lay.setSpacing(12)
         widths = dict(_asset_widths())
 
+        def cell(key, text, colour, sub="", font=None, sub_font=None):
+            """A fixed-width column: the figure, and what it means under it."""
+            holder = QWidget()
+            holder.setObjectName("cell")
+            holder.setFixedWidth(widths[key])
+            box = QVBoxLayout(holder)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(1)
+            top = label(text, font=font or theme.figure(12))
+            top.setStyleSheet(f"color: {colour.name()};")
+            box.addWidget(top)
+            if sub:
+                box.addWidget(label(sub, "faint", sub_font or theme.text(9)))
+            return holder
+
+        # -- what it is ----------------------------------------------------- #
         holder = QWidget()
+        holder.setObjectName("cell")
         holder.setFixedWidth(widths["name"])
         name = QVBoxLayout(holder)
         name.setContentsMargins(0, 0, 0, 0)
-        name.setSpacing(0)
-        name.addWidget(label(a["name"], font=theme.ui_font(12, True)))
+        name.setSpacing(1)
+        name.addWidget(label(a["name"], font=theme.text(12, True)))
         # Where this could actually be bought, and the marker for when it could
         # not. A board that ranks an index, a futures contract and a delisted
         # coin alongside buyable shares — without saying which is which — is
-        # inviting an order that cannot be placed. Nine of twenty-six rows are
-        # not tradeable as shown, so the marker is not an edge case.
+        # inviting an order that cannot be placed. 58 of 129 rows are only
+        # reachable through a proxy, so the marker is not an edge case.
         v = venues.where(a["symbol"], a.get("cls", ""))
         mark = "" if (v.tradeable and not v.proxy) else ("  ⊘" if not v.tradeable
                                                          else "  ↗")
-        sub = label(f'{a["symbol"]}  ·  {a["cls"]}{mark}', "faint", theme.mono(9))
+        sub = label(f'{a["cls"]} · {_plain_read(a)}{mark}', "faint",
+                    theme.text(9))
         if mark:
             sub.setStyleSheet(
                 f"color: {(theme.DOWN if not v.tradeable else theme.GOLD).name()};")
         name.addWidget(sub)
-        holder.setToolTip(f"{a['name']} ({a['symbol']})\n\n{v.summary()}"
+        holder.setToolTip(f"{a['name']} ({a['symbol']}) · {a['cls']}\n\n"
+                          f"{a.get('rationale', '')}\n\n{v.summary()}"
                           f"\n\nVenue list checked {venues.CHECKED}. "
                           "Reference only — not advice, and availability changes.")
         lay.addWidget(holder)
 
-        spark = Sparkline(38)
+        spark = Sparkline(34)
         spark.frame = False
         spark.setFixedWidth(widths["trend"])
         # colour by the horizon's momentum so the line agrees with the number
-        # printed next to it and with the lean
+        # printed next to it
         spark.set_values(a.get("spark", []), up=a["momentum"] >= 0)
         lay.addWidget(spark)
 
-        for key, text, tip, col in [
-            ("price", f'{a["price"]:,.2f}', "Latest price", theme.INK),
-            ("1d", f'{a["day_change"]*100:+.2f}%', "1-day change",
-             theme.pnl_color(a["day_change"])),
-            ("momentum", f'{a["momentum"]*100:+.1f}% / {a["momentum_days"]}d',
-             "Change over the horizon's momentum window",
-             theme.pnl_color(a["momentum"])),
-            ("volatility", f'{a["volatility"]*100:.1f}%',
-             "Daily volatility of returns", theme.MUTED),
-        ]:
-            lb = label(text, font=theme.mono(11))
-            lb.setStyleSheet(f"color: {col.name()};")
-            lb.setToolTip(tip)
-            lb.setFixedWidth(widths[key])
-            lay.addWidget(lb)
+        lay.addWidget(cell("price", f'{a["price"]:,.2f}', theme.INK))
+        lay.addWidget(cell("1d", f'{a["day_change"]*100:+.2f}%',
+                           theme.pnl_color(a["day_change"])))
+        lay.addWidget(cell("momentum", f'{a["momentum"]*100:+.1f}%',
+                           theme.pnl_color(a["momentum"]),
+                           f'over {a["momentum_days"]} days'))
+        lay.addWidget(cell("volatility", f'{a["volatility"]*100:.1f}%',
+                           theme.MUTED, _swing_words(a["volatility"])))
 
-        lean = label(a["lean"], font=theme.mono(10, True))
-        _news_col = {"Spike": theme.GOLD, "Elevated": theme.UP}
+        # -- in the news ---------------------------------------------------- #
+        holder = QWidget()
+        holder.setObjectName("cell")
+        holder.setFixedWidth(widths["lean"])
+        box = QHBoxLayout(holder)
+        box.setContentsMargins(0, 0, 0, 0)
+        lean = label(f'  {a["lean"]}  ', font=theme.text(10, True))
+        colour = {"Spike": theme.GOLD, "Elevated": theme.UP}.get(a["lean"],
+                                                                 theme.MUTED)
         lean.setStyleSheet(
-            f"color: {_news_col.get(a['lean'], theme.MUTED).name()};")
+            f"color: {colour.name()}; border: 1px solid {colour.name()};"
+            "border-radius: 7px; padding: 3px 2px;")
         lean.setToolTip(
-            "How unusual today's coverage is — a notability signal, not a\n"
-            "direction. The old Bullish/Bearish lean was removed because the\n"
-            "backtest found momentum carried no edge at all.")
-        lean.setFixedWidth(widths["lean"])
-        lay.addWidget(lean)
+            "How unusual today's coverage is — a flag for 'something is\n"
+            "happening', not a direction. The old Bullish/Bearish lean was\n"
+            "removed because the backtest found the move carried no edge.")
+        box.addWidget(lean)
+        box.addStretch(1)
+        lay.addWidget(holder)
 
+        # -- if you traded it ----------------------------------------------- #
         plan = a.get("plan") or {}
-        rr = label(f'{plan.get("rr", 0):.2f}', font=theme.mono(11))
-        rr.setFixedWidth(widths["rr"])
-        rr.setToolTip("Reward : risk from a volatility-scaled target and stop.")
-        lay.addWidget(rr)
+        rr = plan.get("rr", 0)
+        pp = plan.get("p_profit", 0) * 100
+        proven = plan.get("calibrated")
+        traded = cell("plan", f"win {rr:.2g}× the risk", theme.MUTED,
+                      f"{pp:.0f}% of the time", font=theme.text(10),
+                      sub_font=theme.text(9))
+        traded.setToolTip(
+            f"Target {rr:.2g} times as far away as the stop, both scaled to how\n"
+            f"much this market moves. The chance of reaching the target first\n"
+            f"is {pp:.0f}%.\n\n"
+            + ("Shifted by an edge measured from positions that actually closed."
+               if proven else
+               "That is 1/(1+reward:risk) exactly — the no-edge baseline, where\n"
+               "expected value is zero. It moves only when the Book tab has\n"
+               "measured a real edge, and it has not yet."))
+        lay.addWidget(traded)
 
-        pp = label(f'{plan.get("p_profit", 0)*100:.0f}%', font=theme.mono(11, True))
-        pp.setFixedWidth(widths["pprof"])
-        pp.setStyleSheet(
-            f"color: {(theme.INK if plan.get('calibrated') else theme.MUTED).name()};")
-        pp.setToolTip(
-            "Probability of hitting the target before the stop.\n"
-            + ("Shifted by a measured edge from closed positions."
-               if plan.get("calibrated") else
-               "Grey because no edge has been proven yet — this is the\n"
-               "driftless baseline 1/(1+R:R), where expected value is zero."))
-        lay.addWidget(pp)
-
+        # -- worth a look --------------------------------------------------- #
+        holder = QWidget()
+        holder.setObjectName("cell")
+        holder.setFixedWidth(widths["conf"])
+        box = QVBoxLayout(holder)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(3)
+        line = QHBoxLayout()
+        line.setContentsMargins(0, 0, 0, 0)
+        line.setSpacing(3)
+        score = label(f'{a["confidence"]:.0f}', font=theme.figure(15, True))
+        line.addWidget(score)
+        line.addWidget(label("/ 100", "faint", theme.text(9)))
+        line.addStretch(1)
+        box.addLayout(line)
         bar = ComponentBar()
-        bar.setFixedWidth(widths["mix"])
-        bar.set_parts(a.get("comp", {}), ASSET_W)
-        lay.addWidget(bar)
+        # Length reads as "how notable", segments as "why". One 80px cell
+        # cannot hold both any other way.
+        bar.set_parts(a.get("comp", {}), ASSET_W, fill=a["confidence"] / 100.0)
+        box.addWidget(bar)
+        lay.addWidget(holder)
 
-        conf = label(f'{a["confidence"]:.0f}', font=theme.mono(14, True))
-        conf.setFixedWidth(widths["conf"])
-        lay.addWidget(conf)
-
-        self.age = label("", font=theme.mono(10))
+        # -- updated -------------------------------------------------------- #
+        self.age = label("", font=theme.text(9))
         self.age.setFixedWidth(widths["age"])
-        self.age.setToolTip(dict((k, t) for k, _h, _w, t in ASSET_COLS)["age"])
+        self.age.setToolTip(
+            {k: t for k, _h, _w, _a, t in ASSET_COLS}["age"])
         self.update_age()
         lay.addWidget(self.age)
 
+        # -- what you can do about it --------------------------------------- #
         acts = QWidget()
+        acts.setObjectName("cell")
         acts.setFixedWidth(widths["actions"])
         al = QHBoxLayout(acts)
         al.setContentsMargins(0, 0, 0, 0)
-        al.setSpacing(4)
-        for text, tip, slot in [
-            ("buy", "Open a paper LONG with this plan's target and stop.\n"
-                    "Paper money — no order is placed anywhere.",
+        al.setSpacing(5)
+        for text_, tip, slot in [
+            ("Buy", "Open a practice position betting this goes up, with the\n"
+                    "target and stop from the column to the left.\n"
+                    "Practice money — no order is placed anywhere.",
              lambda: on_trade(a["symbol"], "LONG")),
-            ("short", "Open a paper SHORT — the way to act on a bearish read.\n"
-                      "Paper money — no order is placed anywhere.",
+            ("Short", "Open a practice position betting this goes down.\n"
+                      "Practice money — no order is placed anywhere.",
              lambda: on_trade(a["symbol"], "SHORT")),
-            ("read", "Narrative LLM read (optional feature).",
+            ("Read", "A written read from a language model (optional, off by\n"
+                     "default). Commentary — it cannot size a position.",
              lambda: on_read("asset", a["symbol"], a["name"])),
         ]:
-            b = QPushButton(text)
-            b.setFont(theme.mono(9))
+            b = QPushButton(text_)
+            b.setObjectName("row")
+            b.setFont(theme.text(9))
             b.setToolTip(tip)
             # Explicit width: squeezed below their text Qt elides these into
             # unreadable glyphs rather than shrinking the font.
-            b.setFixedWidth(58)
+            b.setFixedWidth(44)
             b.clicked.connect(slot)
             al.addWidget(b)
+        al.addStretch(1)
         lay.addWidget(acts)
 
     def update_age(self, now: float | None = None) -> None:
@@ -401,22 +568,22 @@ class SuggestionCard(QFrame):
 
         top = QHBoxLayout()
         top.setSpacing(9)
-        nm = label(f'{s["name"]}', font=theme.ui_font(12, True))
+        nm = label(f'{s["name"]}', font=theme.text(12, True))
         top.addWidget(nm)
-        top.addWidget(label(s["symbol"], "faint", theme.mono(9)))
-        lvl = label(s["news_level"], font=theme.mono(9, True))
+        top.addWidget(label(s["symbol"], "faint", theme.figure(9)))
+        lvl = label(s["news_level"], font=theme.figure(9, True))
         lvl.setStyleSheet(
             f"color: {(theme.GOLD if s['news_level']=='Spike' else theme.UP).name()};")
         top.addWidget(lvl)
         top.addStretch(1)
-        conf = label(f'{s["confidence"]:.0f}', font=theme.mono(15, True))
+        conf = label(f'{s["confidence"]:.0f}', font=theme.figure(15, True))
         conf.setToolTip("Confidence: how notable this is — not the odds of profit.")
         top.addWidget(conf)
         lay.addLayout(top)
 
         if s.get("headlines"):
             h = s["headlines"][0]
-            hl = label(f'{h["source"]} · {h["title"]}', "muted", theme.mono(9))
+            hl = label(f'{h["source"]} · {h["title"]}', "muted", theme.figure(9))
             hl.setWordWrap(True)
             lay.addWidget(hl)
 
@@ -433,13 +600,13 @@ class SuggestionCard(QFrame):
              "How long this usually takes to reach one barrier or the other,\n"
              "measured over 6,771 historical setups. A distribution, not a date."),
         ]:
-            lb = label(text, "muted", theme.mono(10))
+            lb = label(text, "muted", theme.figure(10))
             lb.setToolTip(tip)
             plan.addWidget(lb)
         plan.addStretch(1)
         for txt, direction in (("buy", "LONG"), ("short", "SHORT")):
             b = QPushButton(txt)
-            b.setFont(theme.mono(9))
+            b.setFont(theme.figure(9))
             b.setFixedWidth(56)
             b.setToolTip("Direction is yours: coverage says something is "
                          "happening, not which way it goes.")
@@ -450,7 +617,7 @@ class SuggestionCard(QFrame):
 
         if s.get("catalyst"):
             c = label(f'◆ scheduled: {s["catalyst"]} ({s["catalyst_date"]})',
-                      font=theme.mono(9))
+                      font=theme.figure(9))
             c.setStyleSheet(f"color: {theme.GOLD.name()};")
             c.setToolTip("A date that is a fact, not a forecast — the one kind of "
                          "precise timing available.")
@@ -466,14 +633,14 @@ class TickerRow(QFrame):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
         age = label(f'{h.age_hours:.0f}h' if h.age_hours >= 1 else "now",
-                    "faint", theme.mono(9))
+                    "faint", theme.figure(9))
         age.setFixedWidth(34)
         lay.addWidget(age)
-        src = label(h.source, font=theme.mono(9))
+        src = label(h.source, font=theme.figure(9))
         src.setStyleSheet(f"color: {theme.GOLD.name()};")
         src.setFixedWidth(104)
         lay.addWidget(src)
-        title = label(h.title, font=theme.ui_font(11))
+        title = label(h.title, font=theme.text(11))
         title.setWordWrap(True)
         lay.addWidget(title, 1)
 
@@ -486,14 +653,14 @@ class EventRow(QFrame):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
-        s = label(sym, font=theme.mono(10, True))
+        s = label(sym, font=theme.figure(10, True))
         s.setStyleSheet(f"color: {colour.name()};")
         s.setFixedWidth(66)
         lay.addWidget(s)
-        w = label(what, "muted", theme.mono(9))
+        w = label(what, "muted", theme.figure(9))
         w.setWordWrap(True)
         lay.addWidget(w, 1)
-        lay.addWidget(label(when, "faint", theme.mono(9)))
+        lay.addWidget(label(when, "faint", theme.figure(9)))
 
 
 class PositionRow(QFrame):
@@ -506,7 +673,7 @@ class PositionRow(QFrame):
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(14)
 
-        side = label(p["direction"], font=theme.mono(10, True))
+        side = label(p["direction"], font=theme.figure(10, True))
         side.setStyleSheet(
             f"color: {(theme.UP if p['direction']=='LONG' else theme.DOWN).name()};")
         side.setFixedWidth(52)
@@ -514,9 +681,9 @@ class PositionRow(QFrame):
 
         nm = QVBoxLayout()
         nm.setSpacing(0)
-        nm.addWidget(label(p["name"], font=theme.ui_font(12, True)))
+        nm.addWidget(label(p["name"], font=theme.text(12, True)))
         nm.addWidget(label(f'{p["symbol"]}  ·  {p["units"]:.4g} units',
-                           "faint", theme.mono(9)))
+                           "faint", theme.figure(9)))
         holder = QWidget()
         holder.setFixedWidth(170)
         holder.setLayout(nm)
@@ -528,7 +695,7 @@ class PositionRow(QFrame):
             (f'stop {p["stop"]:,.2f}', "Closes here for a loss", 112),
             (f'target {p["target"]:,.2f}', "Closes here for a profit", 118),
         ]:
-            lb = label(text, "muted", theme.mono(10))
+            lb = label(text, "muted", theme.figure(10))
             lb.setToolTip(tip)
             lb.setFixedWidth(width)
             lay.addWidget(lb)
@@ -541,14 +708,14 @@ class PositionRow(QFrame):
                         "toward the target (right).")
         lay.addWidget(prog)
 
-        unreal = label(f'{p["unrealised"]:+,.2f}', font=theme.mono(12, True))
+        unreal = label(f'{p["unrealised"]:+,.2f}', font=theme.figure(12, True))
         unreal.setStyleSheet(f"color: {theme.pnl_color(p['unrealised']).name()};")
         unreal.setFixedWidth(90)
         unreal.setToolTip("Mark-to-market profit or loss if closed now.")
         lay.addWidget(unreal)
 
         btn = QPushButton("close")
-        btn.setFont(theme.mono(9))
+        btn.setFont(theme.figure(9))
         btn.setToolTip("Close this paper position at the current price.")
         btn.clicked.connect(lambda: on_close(p["id"]))
         lay.addWidget(btn)
@@ -569,19 +736,19 @@ class ReadPanel(QFrame):
         lay.setContentsMargins(12, 10, 12, 10)
         lay.setSpacing(5)
         head = QHBoxLayout()
-        head.addWidget(label("LLM READ", "faint", theme.mono(8)))
+        head.addWidget(label("LLM READ", "faint", theme.figure(8)))
         head.addStretch(1)
-        self.badge = label("", font=theme.mono(9))
+        self.badge = label("", font=theme.figure(9))
         head.addWidget(self.badge)
         lay.addLayout(head)
-        self.subject = label("—", font=theme.ui_font(12, True))
+        self.subject = label("—", font=theme.text(12, True))
         self.subject.setWordWrap(True)
         lay.addWidget(self.subject)
         self.body = label("Select an opportunity and press “LLM read”.",
-                          "muted", theme.ui_font(11))
+                          "muted", theme.text(11))
         self.body.setWordWrap(True)
         lay.addWidget(self.body)
-        self.caveat = label("", "faint", theme.mono(9))
+        self.caveat = label("", "faint", theme.figure(9))
         self.caveat.setWordWrap(True)
         lay.addWidget(self.caveat)
         self.hide()
@@ -660,19 +827,37 @@ class MainWindow(QMainWindow):
         outer.setSpacing(10)
         outer.addLayout(self._toolbar())
 
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self._terminal_tab(), "Terminal")
-        self._asset_rows: list[AssetRow] = []   # ticked by the AGE column
-        self.tabs.addTab(self._scroll_tab("assets", AssetHeader()), "Assets")
-        self.tabs.addTab(self._wire_tab(), "Wire")
-        self.tabs.addTab(self._book_tab(), "Book")
-        self.tabs.addTab(self._macro_tab(), "Macro")
-        self.tabs.addTab(self._lab_tab(), "Lab")
-        self.tabs.addTab(self._playmaker_tab(), "Playmaker")
-        self.tabs.addTab(self._learn_tab(), "Learn")
+        # Both names on every tab: the plain one leads, the one the docs and the
+        # last month of muscle memory use sits under it. See `ui/tabs.py`.
+        self.tabs = PlainTabs()
+        self.tabs.add(self._terminal_tab(), "Live model", "Terminal",
+                      "The hourly bitcoin up/down model — the one place SONAR "
+                      "says which way it thinks something goes.")
+        self._asset_rows: list[AssetRow] = []   # ticked by the Updated column
+        self.tabs.add(self._assets_tab(), "Screener", "Assets",
+                      "129 markets ranked by how notable they look right now. "
+                      "Notable, never 'going up'.")
+        self.tabs.add(self._wire_tab(), "News", "Wire",
+                      "The newswire, the calendar of what is already scheduled, "
+                      "and alerts on what changed since the last scan.")
+        self.tabs.add(self._book_tab(), "My trades", "Book",
+                      "Your open practice positions, and the table that grades "
+                      "the score against what actually happened.")
+        self.tabs.add(self._macro_tab(), "Big picture", "Macro",
+                      "The backdrop — rates, volatility, jobs — and what the "
+                      "central banks have been saying.")
+        self.tabs.add(_scrolled(self._lab_tab()), "Practice", "Lab",
+                      "Test any claim this app makes against real history, and "
+                      "make your own calls on setups with the future hidden.")
+        self.tabs.add(_scrolled(self._playmaker_tab()), "Sports", "Playmaker",
+                      "Pricing a sports bet: what the bookmakers' margin is, "
+                      "and where they disagree with each other.")
+        self.tabs.add(self._learn_tab(), "Learn", "",
+                      "The manual and the glossary. It assumes no finance "
+                      "background — start at §1.")
         outer.addWidget(self.tabs, 1)
 
-        self.status = label("starting…", "faint", theme.mono(9))
+        self.status = label("starting…", "faint", theme.figure(9))
         outer.addWidget(self.status)
 
         self.poll = PollThread(live, self)
@@ -682,62 +867,158 @@ class MainWindow(QMainWindow):
         self.timer.start(REFRESH_MS)
 
     # -- chrome ------------------------------------------------------------ #
+    #: What each risk profile means in words. The profiles themselves carry
+    #: numbers — a stake fraction and a volatility ceiling — and "Aggressive"
+    #: tells a newcomer nothing about either.
+    RISK_WORDS = {
+        "conservative": "calmest markets only",
+        "moderate": "a middle ground",
+        "aggressive": "shows the jumpiest markets",
+    }
+
     def _toolbar(self) -> QHBoxLayout:
+        """The two knobs everything else depends on, labelled as questions.
+
+        They used to be a 22px combobox each, captioned `risk` and `horizon` in
+        9pt grey. Both words are jargon for the setting they name, both boxes
+        were smaller than the text beside them, and neither said what would
+        happen if you changed it. Asking the question the setting answers costs
+        one line and removes the guessing.
+        """
         bar = QHBoxLayout()
-        bar.setSpacing(10)
-        bar.addWidget(label("SONAR", "h1"))
+        bar.setSpacing(12)
+
+        title = QVBoxLayout()
+        title.setContentsMargins(0, 0, 0, 0)
+        title.setSpacing(1)
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        top.addWidget(label("SONAR", "h1"))
         # Next to the name, not tucked in an About box. "I opened the app and
         # nothing is new" was reported repeatedly against a bundle that was
         # simply older than the work being described, and nothing on screen
         # could have told anyone that.
         self.version_label = VersionBadge()
-        bar.addWidget(self.version_label)
-        bar.addWidget(label("paper money only", "faint", theme.mono(9)))
+        top.addWidget(self.version_label)
+        top.addStretch(1)
+        title.addLayout(top)
+        title.addWidget(label("practice money only — nothing here places a real "
+                              "order", "faint", theme.text(9)))
+        holder = QWidget()
+        holder.setLayout(title)
+        bar.addWidget(holder)
         bar.addStretch(1)
 
-        bar.addWidget(label("risk", "muted", theme.mono(9)))
+        def field(caption: str, box: QComboBox, tip: str) -> QWidget:
+            holder = QWidget()
+            col = QVBoxLayout(holder)
+            col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(3)
+            cap = label(caption, "muted", theme.text(9))
+            cap.setToolTip(tip)
+            col.addWidget(cap)
+            box.setObjectName("toolbar")       # the big variant in the theme
+            box.setFont(theme.text(11))
+            box.setToolTip(tip)
+            col.addWidget(box)
+            return holder
+
         self.risk_box = QComboBox()
-        for p in risk_mod.PROFILES.values():
-            self.risk_box.addItem(p.name.capitalize(), p.name)
+        for profile in risk_mod.PROFILES.values():
+            words = self.RISK_WORDS.get(profile.name, "")
+            self.risk_box.addItem(
+                f"{profile.name.capitalize()}  ·  {words}" if words
+                else profile.name.capitalize(), profile.name)
         self.risk_box.setCurrentIndex(
             list(risk_mod.PROFILES).index(self.live.risk.name))
-        self.risk_box.setToolTip(
-            "How much you stake and what is worth showing.\n"
-            "Never changes a confidence score — that measures the market, not you.")
         self.risk_box.currentIndexChanged.connect(self._apply_config)
-        bar.addWidget(self.risk_box)
+        bar.addWidget(field(
+            "How much risk are you willing to take?", self.risk_box,
+            "How big a practice position is, and how wild a market has to be\n"
+            "before it is hidden from the board.\n"
+            "It never changes a score — a score measures the market, not you."))
 
-        bar.addWidget(label("horizon", "muted", theme.mono(9)))
         self.hz_box = QComboBox()
         for h in hz_mod.HORIZONS.values():
             self.hz_box.addItem(h.label, h.name)
         self.hz_box.setCurrentIndex(
             list(hz_mod.HORIZONS).index(self.live.horizon.name))
-        self.hz_box.setToolTip(
-            "When you want it to resolve. Shifts the timing curve and the\n"
-            "asset momentum window; long horizons add the macro regime.")
         self.hz_box.currentIndexChanged.connect(self._apply_config)
-        bar.addWidget(self.hz_box)
+        bar.addWidget(field(
+            "How long would you hold it?", self.hz_box,
+            "Changes which window 'Recent move' measures and how far the\n"
+            "target and stop sit from the price. Long horizons also bring in\n"
+            "the big-picture backdrop."))
 
-        docs = QPushButton("Learn")
-        docs.setFont(theme.mono(9))
-        docs.setToolTip(
+        buttons = QVBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(3)
+        buttons.addWidget(label("", "faint", theme.text(9)))   # align with the boxes
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        learn = QPushButton("Learn")
+        learn.setObjectName("primary")
+        learn.setFont(theme.text(11))
+        learn.setToolTip(
             "The manual and the glossary, inside the app: what every number\n"
             "means, how the model works, and what SONAR will not do.\n"
             "Start at §1 if markets are new to you — it assumes nothing.")
-        docs.clicked.connect(self._show_learn)
-        bar.addWidget(docs)
+        learn.clicked.connect(lambda: self._show_learn())
+        row.addWidget(learn)
 
         plan = QPushButton("Test plan")
-        plan.setFont(theme.mono(9))
+        plan.setFont(theme.text(11))
         plan.setToolTip(
-            "The 80-case acceptance checklist for signing off a build.\n"
+            "The acceptance checklist for signing off a build.\n"
             "Tick each case off as you go — the page remembers what you have\n"
-            "already passed or failed. Twenty of them are marked as regressions:\n"
-            "each one has caught a real bug before.")
+            "already passed or failed. Twenty are marked as regressions: each\n"
+            "one has caught a real bug before.")
         plan.clicked.connect(self._open_testplan)
-        bar.addWidget(plan)
+        row.addWidget(plan)
+        buttons.addLayout(row)
+        holder = QWidget()
+        holder.setLayout(buttons)
+        bar.addWidget(holder)
         return bar
+
+    def _assets_tab(self) -> QWidget:
+        """The board, under one sentence saying what it is.
+
+        The sentence is there because the single most common way to misread
+        this app is to take the ranking as a list of things that will go up. It
+        is a list of things that look *notable*, the difference is the whole
+        design, and a reader who has not been told cannot be expected to guess
+        it from a column called CONF.
+        """
+        wrap = QWidget()
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+
+        banner = QFrame()
+        banner.setObjectName("banner")
+        bl = QHBoxLayout(banner)
+        bl.setContentsMargins(14, 9, 12, 9)
+        bl.setSpacing(12)
+        line = label(
+            "<b>What am I looking at?</b>  A list of markets ranked by how "
+            "<b>interesting</b> they look right now — not by whether they will "
+            "go up. Nothing here spends real money.",
+            font=theme.text(11), wrap=True)
+        line.setTextFormat(Qt.RichText)
+        bl.addWidget(line, 1)
+        for text_, anchor in [("What is \u201cworth a look\u201d?", "scores"),
+                              ("Why is it always 40%?", "scores"),
+                              ("Open the glossary", "learn")]:
+            chip = QPushButton(text_)
+            chip.setObjectName("chip")
+            chip.setFont(theme.text(9))
+            chip.setToolTip("Opens the manual at the section that answers this.")
+            chip.clicked.connect(lambda _c=False, a=anchor: self._show_learn(a))
+            bl.addWidget(chip)
+        lay.addWidget(banner)
+        lay.addWidget(self._scroll_tab("assets", AssetHeader(self._show_learn)), 1)
+        return wrap
 
     def _learn_tab(self) -> QWidget:
         """The manual, in the window rather than in a browser.
@@ -762,17 +1043,17 @@ class MainWindow(QMainWindow):
         top = QHBoxLayout()
         top.setContentsMargins(2, 0, 8, 0)
         top.setSpacing(8)
-        top.addWidget(label("FIND", "faint", theme.mono(8)))
+        top.addWidget(label("FIND", "faint", theme.figure(8)))
         self.learn_find = QLineEdit()
         self.learn_find.setPlaceholderText(
             "a word you do not recognise — vig, Brier, drawdown, base rate…")
         self.learn_find.setFixedWidth(400)
         self.learn_find.returnPressed.connect(self._learn_search)
         top.addWidget(self.learn_find)
-        self.learn_hint = label("", "faint", theme.mono(9))
+        self.learn_hint = label("", "faint", theme.figure(9))
         top.addWidget(self.learn_hint, 1)
         browser_btn = QPushButton("Open in browser")
-        browser_btn.setFont(theme.mono(9))
+        browser_btn.setFont(theme.figure(9))
         browser_btn.setToolTip(
             "The same page, rendered by a real browser. Qt draws a usable\n"
             "subset of it here; the browser draws all of it.")
@@ -786,7 +1067,7 @@ class MainWindow(QMainWindow):
 
         self.learn_toc = QListWidget()
         self.learn_toc.setFixedWidth(268)
-        self.learn_toc.setFont(theme.mono(10))
+        self.learn_toc.setFont(theme.figure(10))
         # No horizontal scrolling: a contents list you have to scroll sideways
         # to read is not contents. The width above fits the longest heading.
         self.learn_toc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -808,14 +1089,26 @@ class MainWindow(QMainWindow):
         lay.addLayout(body, 1)
         return w
 
-    def _show_learn(self) -> None:
-        """Bring the manual up. Named for what the reader wants, not for the
-        widget — the toolbar button and any future "what is this?" link both
-        land here."""
+    def _show_learn(self, anchor: str = "") -> None:
+        """Bring the manual up, at a section when one is named.
+
+        Named for what the reader wants rather than for the widget: the toolbar
+        button, every clickable column heading and every chip in the Assets
+        banner all land here. Selecting the contents row rather than scrolling
+        directly is deliberate — the reader should be able to see *where* in
+        the manual they just landed, and carry on from there.
+        """
         for i in range(self.tabs.count()):
             if self.tabs.tabText(i) == "Learn":
                 self.tabs.setCurrentIndex(i)
+                break
+        if not anchor:
+            return
+        for row in range(self.learn_toc.count()):
+            if self.learn_toc.item(row).data(Qt.UserRole) == anchor:
+                self.learn_toc.setCurrentRow(row)
                 return
+        self.learn_view.scrollToAnchor(anchor)
 
     def _learn_goto(self, item, _previous=None) -> None:
         if item is not None:
@@ -919,7 +1212,7 @@ class MainWindow(QMainWindow):
         # Model vs market, scored on every hour watched — traded or not.
         # The direct test of the realised-vs-implied thesis, and it converges
         # at 24 observations a day instead of a few trades a week.
-        self.mvm = label("", "muted", theme.mono(10), wrap=True)
+        self.mvm = label("", "muted", theme.figure(10), wrap=True)
         self.mvm.setToolTip(
             "Brier score (lower is better) of the model's P(up) against the\n"
             "market's, snapshotted mid-hour for every hour and settled on the\n"
@@ -979,7 +1272,7 @@ class MainWindow(QMainWindow):
         al = QVBoxLayout(alerts_panel)
         al.setContentsMargins(14, 10, 14, 10)
         al.setSpacing(4)
-        al.addWidget(label("WHAT CHANGED", "faint", theme.mono(8)))
+        al.addWidget(label("WHAT CHANGED", "faint", theme.figure(8)))
         al.addWidget(label(
             "Fires on a transition, not on a level — news rising to Spike, "
             "volatility breaking from an instrument's own recent range, a "
@@ -988,8 +1281,8 @@ class MainWindow(QMainWindow):
             "heuristic, five studies found no directional edge, and the "
             "blended score's measured IC is negative, so an alert shouting BUY "
             "would point at the wrong instruments with a straight face.",
-            "faint", theme.mono(8), wrap=True))
-        self.alert_list = label("nothing yet", "muted", theme.mono(9))
+            "faint", theme.figure(8), wrap=True))
+        self.alert_list = label("nothing yet", "muted", theme.figure(9))
         self.alert_list.setWordWrap(True)
         al.addWidget(self.alert_list)
         outer.addWidget(alerts_panel)
@@ -998,14 +1291,14 @@ class MainWindow(QMainWindow):
         sl = QVBoxLayout(sugg)
         sl.setContentsMargins(14, 12, 14, 12)
         sl.setSpacing(6)
-        sl.addWidget(label("WHAT THE NEWS IS POINTING AT", "faint", theme.mono(8)))
+        sl.addWidget(label("WHAT THE NEWS IS POINTING AT", "faint", theme.figure(8)))
         sl.addWidget(label(
             "These are the names with something happening today — a place to "
             "look, not an edge. Over 25,504 historical setups a news spike beat "
             "the baseline by 0.8 points against a 3.1 error bar, and momentum "
             "by nothing at all. There is no best weekday either. What is exact "
             "is the exit: a target and a stop, typically resolving in 3-10 days. "
-            "Direction is yours.", "faint", theme.mono(8), wrap=True))
+            "Direction is yours.", "faint", theme.figure(8), wrap=True))
         self._sugg_area = QScrollArea()
         self._sugg_area.setWidgetResizable(True)
         shost = QWidget()
@@ -1022,16 +1315,16 @@ class MainWindow(QMainWindow):
         ll.setContentsMargins(14, 12, 14, 12)
         ll.setSpacing(6)
         head = QHBoxLayout()
-        head.addWidget(label("NEWSWIRE", "faint", theme.mono(8)))
+        head.addWidget(label("NEWSWIRE", "faint", theme.figure(8)))
         head.addStretch(1)
-        self.wire_meta = label("", "faint", theme.mono(8))
+        self.wire_meta = label("", "faint", theme.figure(8))
         head.addWidget(self.wire_meta)
         ll.addLayout(head)
         ll.addWidget(label(
             "Reuters, AP, Bloomberg and the FT are read through Google News — "
             "their own feeds are closed. dpa publishes no usable feed at all. "
             "Headlines are context and untrusted data: never an instruction, "
-            "and no article body is fetched.", "faint", theme.mono(8), wrap=True))
+            "and no article body is fetched.", "faint", theme.figure(8), wrap=True))
         self._wire_area = QScrollArea()
         self._wire_area.setWidgetResizable(True)
         host = QWidget()
@@ -1047,10 +1340,10 @@ class MainWindow(QMainWindow):
         rl = QVBoxLayout(right)
         rl.setContentsMargins(14, 12, 14, 12)
         rl.setSpacing(6)
-        rl.addWidget(label("SCHEDULED — EARNINGS & LISTINGS", "faint", theme.mono(8)))
+        rl.addWidget(label("SCHEDULED — EARNINGS & LISTINGS", "faint", theme.figure(8)))
         rl.addWidget(label(
             "A date is a fact; a direction is not. These sharpen *when* to look, "
-            "never which way to lean.", "faint", theme.mono(8), wrap=True))
+            "never which way to lean.", "faint", theme.figure(8), wrap=True))
         self._events_area = QScrollArea()
         self._events_area.setWidgetResizable(True)
         ehost = QWidget()
@@ -1171,7 +1464,7 @@ class MainWindow(QMainWindow):
         # entries so the table below fills with measurement instead of
         # discretion — or staying empty forever on an unclicked install.
         self.protocol_box = QCheckBox("protocol mode")
-        self.protocol_box.setFont(theme.mono(9))
+        self.protocol_box.setFont(theme.figure(9))
         self.protocol_box.setChecked(self.live.protocol_on)
         self.protocol_box.setToolTip(
             "Once a day, open small fixed-risk paper positions on the five\n"
@@ -1190,10 +1483,10 @@ class MainWindow(QMainWindow):
         cl.setSpacing(4)
         ch = QHBoxLayout()
         ch.addWidget(label("CALIBRATION — DOES A HIGH SCORE ACTUALLY WIN?",
-                           "faint", theme.mono(8)))
+                           "faint", theme.figure(8)))
         ch.addStretch(1)
         self.bt_btn = QPushButton("run backtest")
-        self.bt_btn.setFont(theme.mono(9))
+        self.bt_btn.setFont(theme.figure(9))
         self.bt_btn.setToolTip(
             "Replay the same plan over two years of real bars.\n"
             "Live positions take months to grade; this answers today —\n"
@@ -1201,12 +1494,12 @@ class MainWindow(QMainWindow):
         self.bt_btn.clicked.connect(self._run_backtest)
         ch.addWidget(self.bt_btn)
         cl.addLayout(ch)
-        self.cal_verdict = label("—", font=theme.ui_font(12))
+        self.cal_verdict = label("—", font=theme.text(12))
         self.cal_verdict.setWordWrap(True)
         cl.addWidget(self.cal_verdict)
-        self.cal_table = label("", "muted", theme.mono(10))
+        self.cal_table = label("", "muted", theme.figure(10))
         cl.addWidget(self.cal_table)
-        self.bt_result = label("", "muted", theme.mono(10))
+        self.bt_result = label("", "muted", theme.figure(10))
         self.bt_result.setWordWrap(True)
         cl.addWidget(self.bt_result)
         lay.addWidget(cal)
@@ -1283,14 +1576,14 @@ class MainWindow(QMainWindow):
         hl = QVBoxLayout(head)
         hl.setContentsMargins(14, 12, 14, 12)
         hl.setSpacing(6)
-        hl.addWidget(label("SIMULATE AND TEST", "faint", theme.mono(8)))
+        hl.addWidget(label("SIMULATE AND TEST", "faint", theme.figure(8)))
         hl.addWidget(label(
             "Replays the plan over real historical bars: momentum and volatility "
             "from prior bars only, then walks forward through actual highs and "
             "lows. A bar that spans both barriers counts as a loss, because daily "
             "data cannot say which came first, and costs are excluded — so the "
             "truth is worse than whatever this prints.",
-            "faint", theme.mono(8), wrap=True))
+            "faint", theme.figure(8), wrap=True))
 
         form = QGridLayout()
         form.setHorizontalSpacing(10)
@@ -1314,7 +1607,7 @@ class MainWindow(QMainWindow):
         self.lab_news = QCheckBox("include attention (one extra request per symbol)")
 
         for col, cap in enumerate(("UNIVERSE", "RANGE", "HORIZON (DAYS)", "STEP (BARS)")):
-            form.addWidget(label(cap, "faint", theme.mono(8)), 0, col)
+            form.addWidget(label(cap, "faint", theme.figure(8)), 0, col)
         form.addWidget(self.lab_universe, 1, 0)
         form.addWidget(self.lab_range, 1, 1)
         form.addWidget(self.lab_horizon, 1, 2)
@@ -1327,7 +1620,7 @@ class MainWindow(QMainWindow):
         self.lab_btn.setFixedWidth(150)
         self.lab_btn.clicked.connect(self._lab_run)
         row.addWidget(self.lab_btn)
-        self.lab_status = label("", "faint", theme.mono(9))
+        self.lab_status = label("", "faint", theme.figure(9))
         row.addWidget(self.lab_status, 1)
         hl.addLayout(row)
         lay.addWidget(head)
@@ -1344,7 +1637,7 @@ class MainWindow(QMainWindow):
         rl = QVBoxLayout(rep)
         rl.setContentsMargins(14, 12, 14, 12)
         rl.setSpacing(6)
-        rl.addWidget(label("REPLAY — YOUR CALLS", "faint", theme.mono(8)))
+        rl.addWidget(label("REPLAY — YOUR CALLS", "faint", theme.figure(8)))
         rl.addWidget(label(
             "The run above grades the model. This grades you. One setup at a "
             "time on real history, with everything after the cursor withheld — "
@@ -1352,7 +1645,7 @@ class MainWindow(QMainWindow):
             "Call it or skip it; the model's call on the same setup is scored "
             "alongside yours either way, so skipping the hard ones cannot look "
             "like skill.",
-            "faint", theme.mono(8), wrap=True))
+            "faint", theme.figure(8), wrap=True))
 
         rrow = QHBoxLayout()
         self.rep_symbol = QComboBox()
@@ -1371,7 +1664,7 @@ class MainWindow(QMainWindow):
         rrow.addWidget(self.rep_start)
         rl.addLayout(rrow)
 
-        self.rep_setup = label("", "muted", theme.mono(10))
+        self.rep_setup = label("", "muted", theme.figure(10))
         self.rep_setup.setWordWrap(True)
         rl.addWidget(self.rep_setup)
         self.rep_spark = Sparkline(46)
@@ -1388,7 +1681,7 @@ class MainWindow(QMainWindow):
             b.setEnabled(False)
             b.clicked.connect(lambda _=False, c=choice: self._replay_decide(c))
             arow.addWidget(b)
-        self.rep_last = label("", "faint", theme.mono(9))
+        self.rep_last = label("", "faint", theme.figure(9))
         arow.addWidget(self.rep_last, 1)
         rl.addLayout(arow)
 
@@ -1655,9 +1948,13 @@ class MainWindow(QMainWindow):
 
         form = panel()
         fl = QGridLayout(form)
-        fl.setContentsMargins(14, 12, 14, 12)
+        # Tight vertical rhythm: this form stacks four rows of controls and is
+        # one of the two tabs that set the window's minimum height. The
+        # interface font is taller than the monospace it replaced, and
+        # `tests/test_layout.py` holds the whole window to a 13" laptop.
+        fl.setContentsMargins(14, 10, 14, 10)
         fl.setHorizontalSpacing(10)
-        fl.setVerticalSpacing(8)
+        fl.setVerticalSpacing(5)
 
         self.sport_box = QComboBox()
         for sp in playmaker.list_sports():
@@ -1671,14 +1968,14 @@ class MainWindow(QMainWindow):
         self.playmaker_line.setPlaceholderText("Over 252.5")
         self.playmaker_context = QLineEdit()
 
-        fl.addWidget(label("SPORT", "faint", theme.mono(8)), 0, 0)
-        fl.addWidget(label("PROP", "faint", theme.mono(8)), 0, 1)
-        fl.addWidget(label("SUBJECT", "faint", theme.mono(8)), 0, 2)
+        fl.addWidget(label("SPORT", "faint", theme.figure(8)), 0, 0)
+        fl.addWidget(label("PROP", "faint", theme.figure(8)), 0, 1)
+        fl.addWidget(label("SUBJECT", "faint", theme.figure(8)), 0, 2)
         fl.addWidget(self.sport_box, 1, 0)
         fl.addWidget(self.prop_box, 1, 1)
         fl.addWidget(self.playmaker_subject, 1, 2)
-        fl.addWidget(label("LINE", "faint", theme.mono(8)), 2, 0)
-        fl.addWidget(label("CONTEXT", "faint", theme.mono(8)), 2, 1)
+        fl.addWidget(label("LINE", "faint", theme.figure(8)), 2, 0)
+        fl.addWidget(label("CONTEXT", "faint", theme.figure(8)), 2, 1)
         fl.addWidget(self.playmaker_line, 3, 0)
         fl.addWidget(self.playmaker_context, 3, 1, 1, 2)
         fl.setColumnStretch(2, 1)
@@ -1687,28 +1984,32 @@ class MainWindow(QMainWindow):
         books_p = panel()
         bl = QVBoxLayout(books_p)
         bl.setContentsMargins(14, 12, 14, 12)
-        bl.addWidget(label("PRICES BY BOOK", "faint", theme.mono(8)))
+        bl.addWidget(label("PRICES BY BOOK", "faint", theme.figure(8)))
         bl.addWidget(label(
             "One book per line: its name, then its price for every side of the "
             "market. Both sides are required — a margin is how far a market's "
             "prices sum past certainty, so a single price cannot reveal one. "
             "Three books or more turns on the outlier screen.",
-            "muted", theme.mono(9), wrap=True))
+            "muted", theme.figure(9), wrap=True))
         self.playmaker_books = QPlainTextEdit()
+        # Pasted tables line up with spaces; a proportional font ruins them.
+        self.playmaker_books.setFont(theme.code(10))
         self.playmaker_books.setPlaceholderText(
             "DraftKings  -150  +130\nFanDuel     -155  +132\n"
             "Pinnacle    -148  +128\nBetMGM      -150  +210")
         self.playmaker_books.setFixedHeight(84)
         bl.addWidget(self.playmaker_books)
-        self.playmaker_capability = label("", "faint", theme.mono(9), wrap=True)
+        self.playmaker_capability = label("", "faint", theme.figure(9), wrap=True)
         bl.addWidget(self.playmaker_capability)
         lay.addWidget(books_p)
 
         data_p = panel()
         dl = QVBoxLayout(data_p)
         dl.setContentsMargins(14, 12, 14, 12)
-        dl.addWidget(label("SUPPORTING DATA", "faint", theme.mono(8)))
+        dl.addWidget(label("SUPPORTING DATA", "faint", theme.figure(8)))
         self.playmaker_data = QPlainTextEdit()
+        # Pasted tables line up with spaces; a proportional font ruins them.
+        self.playmaker_data.setFont(theme.code(10))
         self.playmaker_data.setPlaceholderText(
             "Splits, recent games, defensive ranks. The model is told not to "
             "invent numbers, so what you paste here is what it reasons from.")
@@ -1719,7 +2020,7 @@ class MainWindow(QMainWindow):
         self.playmaker_btn = QPushButton("Price it")
         self.playmaker_btn.clicked.connect(self._playmaker_analyse)
         row.addWidget(self.playmaker_btn)
-        self.playmaker_status = label("", "faint", theme.mono(9))
+        self.playmaker_status = label("", "faint", theme.figure(9))
         row.addWidget(self.playmaker_status, 1)
         dl.addLayout(row)
         lay.addWidget(data_p)
@@ -2011,10 +2312,10 @@ class MainWindow(QMainWindow):
         head = panel()
         hl = QVBoxLayout(head)
         hl.setContentsMargins(14, 12, 14, 12)
-        self.regime_lb = label("—", font=theme.mono(22, True))
-        self.regime_sub = label("", "muted", theme.mono(10))
+        self.regime_lb = label("—", font=theme.figure(22, True))
+        self.regime_sub = label("", "muted", theme.figure(10))
         self.regime_sub.setWordWrap(True)
-        hl.addWidget(label("MACRO REGIME", "faint", theme.mono(8)))
+        hl.addWidget(label("MACRO REGIME", "faint", theme.figure(8)))
         hl.addWidget(self.regime_lb)
         hl.addWidget(self.regime_sub)
         self.regime_bar = ComponentBar()
@@ -2026,8 +2327,8 @@ class MainWindow(QMainWindow):
         il = QVBoxLayout(inst)
         il.setContentsMargins(14, 12, 14, 12)
         il.setSpacing(4)
-        il.addWidget(label("CENTRAL BANK COMMUNICATION", "faint", theme.mono(8)))
-        self.inst_level = label("—", font=theme.mono(15, True))
+        il.addWidget(label("CENTRAL BANK COMMUNICATION", "faint", theme.figure(8)))
+        self.inst_level = label("—", font=theme.figure(15, True))
         il.addWidget(self.inst_level)
         il.addWidget(label(
             "Policy releases and speeches from the Fed and the Bank of England — "
@@ -2035,8 +2336,8 @@ class MainWindow(QMainWindow):
             "the rate path is being repriced, which widens the distribution for "
             "everything priced off it. Which way it widens is not something this "
             "can know, and it does not claim to.",
-            "faint", theme.mono(8), wrap=True))
-        self.inst_list = label("", "muted", theme.mono(9))
+            "faint", theme.figure(8), wrap=True))
+        self.inst_list = label("", "muted", theme.figure(9))
         self.inst_list.setWordWrap(True)
         il.addWidget(self.inst_list)
         lay.addWidget(inst)
@@ -2093,7 +2394,7 @@ class MainWindow(QMainWindow):
             gl.addWidget(s, i // 4, i % 4)
         lay.addWidget(grid)
 
-        self.macro_note = label("", "faint", theme.mono(9))
+        self.macro_note = label("", "faint", theme.figure(9))
         self.macro_note.setWordWrap(True)
         lay.addWidget(self.macro_note)
         lay.addStretch(1)
@@ -2298,7 +2599,7 @@ class MainWindow(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
         if not widgets:
-            lay.addWidget(label(empty_msg, "muted", theme.mono(10)))
+            lay.addWidget(label(empty_msg, "muted", theme.figure(10)))
         for wdg in widgets:
             lay.addWidget(wdg)
         lay.addStretch(1)

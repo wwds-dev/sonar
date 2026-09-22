@@ -60,11 +60,15 @@ def test_no_section_anchor_is_used_twice():
 # The docs have to describe the app that actually exists
 # --------------------------------------------------------------------------- #
 def test_every_tab_the_app_builds_is_documented():
+    """Both names. The bar shows the plain name over the original (`ui/tabs.py`),
+    and a reader who came here from the app has to find the row either way."""
     app = (Path(__file__).resolve().parents[1] / "ui" / "app.py").read_text()
-    tabs = re.findall(r'addTab\([^,]+,\s*"([^"]+)"\)', app)
+    tabs = re.findall(r'\.add\([^,]+,\s*"([^"]+)",\s*"([^"]*)"', app)
     assert tabs, "no tabs found — the pattern in app.py changed"
-    for tab in tabs:
-        assert f"<td>{tab}</td>" in HTML, f"{tab} has no row in the tabs table"
+    for plain, was in tabs:
+        assert f"<td>{plain}<" in HTML, f"{plain} has no row in the tabs table"
+        if was:
+            assert f"<b>{was}</b>" in HTML, f"the row for {plain} never says it was {was}"
 
 
 def test_every_registered_sport_is_named():

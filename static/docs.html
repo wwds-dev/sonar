@@ -281,43 +281,48 @@
     so far its honest answer about most of them has been no.</div>
 
   <h2 id="tabs"><span class="n">2</span>The eight tabs</h2>
+  <p>Each tab carries two names: the plain one it is called by, and — under it,
+    in small caps — the one this page and the README use. The plain names are
+    the Plain Language direction; the originals stay because forty sentences in
+    this document refer to them, and because a month of muscle memory is worth
+    more than tidiness.</p>
   <table>
     <tr><th>Tab</th><th>What it does</th><th>Asserts a direction?</th></tr>
-    <tr><td>Terminal</td>
+    <tr><td>Live model<div class="muted">was <b>Terminal</b></div></td>
       <td>The hourly BTC up/down paper trade. A probability model prices each
         hour, compares itself to Polymarket, and takes at most one simulated
         bet — then grades itself against the market on <em>every</em> hour,
         traded or not (§4).</td>
       <td><b class="up">Yes</b> — the only place with an independent model</td></tr>
-    <tr><td>Assets</td>
+    <tr><td>Screener<div class="muted">was <b>Assets</b></div></td>
       <td>129 instruments — 50 equities, 20 indices, 20 currency pairs,
         21 crypto, 18 commodities — with price, momentum, volatility, news
         level, reward:risk, P(profit), and buy / short / read on every row.
-        The <b>AGE</b> column says how long ago that row's price was actually
+        The <b>Updated</b> column says how long ago that row's price was actually
         fetched: only the 26 stalest instruments are refetched per scan, so a
         few minutes old is normal and a full rotation takes about fifteen. It
         turns gold past twenty minutes, which means the rotation is losing
         ground — not that the price is wrong.</td>
       <td><b class="down">No</b> — direction is yours</td></tr>
-    <tr><td>Wire</td>
+    <tr><td>News<div class="muted">was <b>Wire</b></div></td>
       <td>The live newswire — 24 feeds across nine press blocs — beside the
         earnings and IPO calendar, a panel of what the news is pointing at, and
         alerts on what changed since the last scan.</td>
       <td>No</td></tr>
-    <tr><td>Book</td>
+    <tr><td>My trades<div class="muted">was <b>Book</b></div></td>
       <td>Open paper positions, the calibration table, the protocol-mode
         switch that fills it (§6), and the backtest button.</td>
       <td>—</td></tr>
-    <tr><td>Macro</td>
+    <tr><td>Big picture<div class="muted">was <b>Macro</b></div></td>
       <td>The regime — curve, VIX, real rates, unemployment — plus central-bank
         communication: Fed releases, FOMC, speeches, Bank of England.</td>
       <td>No</td></tr>
-    <tr><td>Lab</td>
+    <tr><td>Practice<div class="muted">was <b>Lab</b></div></td>
       <td>Replay the model over real history with the knobs exposed, see which
         components of the score earn their weight, and step through history
         making your own calls. See <a href="#lab">§7</a>.</td>
       <td>—</td></tr>
-    <tr><td>Playmaker</td>
+    <tr><td>Sports<div class="muted">was <b>Playmaker</b></div></td>
       <td>Sports prop pricing across seven sports — NFL, College Football,
         NBA, MMA (UFC), International Football, Golf and Cycling. Paste what
         each book is offering and it removes
