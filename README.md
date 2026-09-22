@@ -29,7 +29,7 @@ line and clipped.
 | **My trades**  \n<sub>BOOK</sub> | Open paper positions, the calibration table, and the backtest button | — |
 | **Big picture**  \n<sub>MACRO</sub> | Regime: curve, VIX, real rates, unemployment | No |
 | **Practice**  \n<sub>LAB</sub> | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
-| **Sports**  \n<sub>PLAYMAKER</sub> | Sports prop pricing across **nine sports** (NFL, NBA, MLB, NHL, EPL, UCL, NCAAB, UFC, ATP) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
+| **Sports**  \n<sub>PLAYMAKER</sub> | Sports prop pricing across **seven sports** (NFL, College Football, NBA, MMA/UFC, International Football, Golf, Cycling) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
 | **Learn** | The manual and the glossary **inside the app** — `static/docs.html` rendered by Qt, with a contents list and a search box that takes one unfamiliar word. Same file the browser serves, so the prose cannot drift; `ui/learn.py` does the translation | — |
 
 Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
@@ -794,7 +794,7 @@ sonar/
   alerts.py    what changed — fires on transitions, never asserts a direction
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
-  playmaker/   sports prop pricing, nine sports — the Playmaker tab
+  playmaker/   sports prop pricing, seven sports — the Playmaker tab
     devig.py   three devig methods (multiplicative, Clarke power, Shin), cross-book consensus, outlier screen
     staking.py Estimate (probability + interval + source); Kelly at the interval's low end
     MODELS.md  what the successful sports models do, and the staged plan
