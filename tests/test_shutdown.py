@@ -114,7 +114,7 @@ def bare_window():
             self.live = SimpleNamespace(stop=lambda: None)
             self.poll = None
             self._read_thread = self._cfg_thread = None
-            self._bt_thread = self._lab_thread = None
+            self._bt_thread = self._lab_thread = self._sports_thread = None
             self.playmaker_thread = None
 
     return Bare()
@@ -209,7 +209,7 @@ def test_the_grace_is_a_budget_for_all_threads_not_each(bare_window):
     win = bare_window
     threads = [Slow() for _ in range(3)]
     win.poll, win._read_thread, win._cfg_thread = threads
-    win._bt_thread = win._lab_thread = None
+    win._bt_thread = win._lab_thread = win._sports_thread = None
     win.playmaker_thread = None
     win._exit_now = lambda stragglers: None
 
@@ -250,7 +250,7 @@ win = Bare()
 win.timer = None
 win.live = SimpleNamespace(stop=lambda: None, engine_lock=None)
 win.poll = Busy()
-win._read_thread = win._cfg_thread = None
+win._read_thread = win._cfg_thread = win._sports_thread = None
 win._bt_thread = win._lab_thread = win.playmaker_thread = None
 win.poll.start()
 time.sleep(0.3)

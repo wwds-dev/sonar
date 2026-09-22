@@ -235,8 +235,17 @@ def _mom_scale(horizon_days: int) -> float:
 def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
                k_target: float = scoring.K_TARGET,
                k_stop: float = scoring.K_STOP,
-               attention: dict[str, int] | None = None) -> list[dict]:
-    """Every decision point for one instrument."""
+               attention: dict[str, int] | None = None,
+               earnings: list[str] | None = None) -> list[dict]:
+    """Every decision point for one instrument.
+
+    ``earnings`` is the symbol's historical earnings dates (ISO strings,
+    sorted) from :mod:`sonar.research.earnings`; with it the catalyst
+    component is computed exactly as the live screen computes it, so the one
+    weight that had never been measured can face attribution."""
+    from . import events as events_mod
+    from .research import earnings as earnings_mod
+
     out = []
     max_bars = horizon_days * MAX_HOLD_MULTIPLE
     for i in range(MIN_LOOKBACK, len(bars) - 2, step):
@@ -266,7 +275,11 @@ def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
                # reconstruction of it that could quietly differ.
                "c_momentum": min(1.0, abs(mom) / _mom_scale(horizon_days)),
                "c_volatility": min(1.0, vol / 0.03),
-               "c_news": None}
+               "c_news": None, "c_catalyst": None}
+        if earnings:
+            day = dt.datetime.utcfromtimestamp(bars.time[i]).date()
+            away = earnings_mod.days_to_next(earnings, day)
+            row["c_catalyst"] = events_mod.catalyst_score(away, horizon_days)
         if attention:
             day = dt.datetime.utcfromtimestamp(bars.time[i]).strftime("%Y%m%d")
             row["attention"] = attention_z(attention, day)
@@ -338,13 +351,20 @@ def _verdict(delta: float, se: float, significant: bool) -> str:
 
 def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
         step: int = 3, progress=None, with_news: bool = False,
-        articles: dict | None = None) -> dict:
+        articles: dict | None = None, with_catalyst: bool = False) -> dict:
     """Backtest a whole watchlist. Returns the summary plus per-bucket views.
 
     ``with_news`` additionally pulls a historical attention series per symbol,
     so the news component is tested rather than assumed. One extra request per
-    instrument.
+    instrument. ``with_catalyst`` does the same for the catalyst weight, from
+    EDGAR's record of Item-2.02 8-K filings — US filers only; ADRs yield no
+    dates and their rows simply carry no catalyst series.
     """
+    earnings_by_symbol: dict[str, list[str]] = {}
+    if with_catalyst:
+        from .research import earnings as earnings_mod
+        earnings_by_symbol = earnings_mod.history(symbols)
+
     trials: list[dict] = []
     fetched = 0
     with_attention = 0
@@ -360,7 +380,8 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
             att = fetch_attention(sym, a, b, articles)
             if att:
                 with_attention += 1
-        trials.extend(run_symbol(bars, horizon_days, step=step, attention=att))
+        trials.extend(run_symbol(bars, horizon_days, step=step, attention=att,
+                                 earnings=earnings_by_symbol.get(sym) or None))
         if progress:
             progress(sym, len(trials))
 
@@ -489,7 +510,7 @@ def attribute(trials: list[dict], q: float = 0.10) -> dict:
 
     wins = [1.0 if t["outcome"] == "TARGET" else 0.0 for t in resolved]
     names = {"c_momentum": "momentum", "c_volatility": "volatility",
-             "c_news": "news"}
+             "c_news": "news", "c_catalyst": "catalyst"}
 
     rows, pvals = [], []
     for key, label in names.items():
@@ -525,12 +546,19 @@ def attribute(trials: list[dict], q: float = 0.10) -> dict:
                            else round(blend_ic - without, 4))
         row["survives_fdr"] = bool(survives)
         row.update(_verdict_for(row))
+    catalyst_measured = any(
+        r["component"] == "catalyst" and r.get("ic") is not None for r in rows)
     return {"n": len(resolved), "components": rows,
             "blend_ic": None if blend_ic is None else round(blend_ic, 4),
             "fdr_q": q,
-            "catalyst": "not measured — the replay has no historical earnings "
-                        "calendar, so the catalyst weight is untested rather "
-                        "than validated"}
+            # Kept as an explicit line either way: an untested component must
+            # not read as a passing one, and once tested the note says so.
+            "catalyst": ("measured — see its component row; historical "
+                         "earnings dates from EDGAR Item-2.02 8-K filings"
+                         if catalyst_measured else
+                         "not measured — no historical earnings series was "
+                         "supplied for this run, so the catalyst weight is "
+                         "untested rather than validated")}
 
 
 def _live_weight(label: str) -> float:
@@ -543,7 +571,7 @@ def _blend_ic(trials: list[dict], keys: list[str]) -> float | None:
     from .research import stats
     from .assets import _W
     names = {"c_momentum": "momentum", "c_volatility": "volatility",
-             "c_news": "news"}
+             "c_news": "news", "c_catalyst": "catalyst"}
     # Only components actually present in this replay. Demanding all of them
     # meant the blend could never be scored whenever attention was off, which
     # is the default — so leave-one-out silently returned nothing.

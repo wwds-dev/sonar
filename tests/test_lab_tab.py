@@ -166,3 +166,43 @@ def test_the_setup_line_does_not_reveal_the_model_s_call(window):
     # The plan and the score are shown; the model's side is not.
     assert "score" in shown and "R:R" in shown
     window._replay = None
+
+
+# --------------------------------------------------------------------------- #
+# The sports models, measurable from inside the app
+# --------------------------------------------------------------------------- #
+def test_the_sports_measure_panel_offers_only_measurable_sports(window):
+    """A model needs a rating *and* a results feed. Golf has no model by
+    design and cycling has no feed — offering either would be a button that
+    can only fail."""
+    from sonar import playmaker
+    offered = {window.sm_sport.itemData(i)
+               for i in range(window.sm_sport.count())}
+    expected = {s.key for s in playmaker.list_sports()
+                if s.has_model and s.has_results}
+    assert offered == expected and offered, "every measurable sport, only those"
+
+
+def test_a_measurement_result_is_rendered_with_its_verdict(window):
+    window._sports_measured({
+        "sport": "nba", "n_games": 1200, "verdict": "KEEP", "untuned": False,
+        "summary": "KEEP: Brier 0.2100 beats the base-rate baseline 0.2300 "
+                   "(skill +0.087).",
+        "buckets": [{"low": 0.6, "high": 0.7, "n": 300,
+                     "predicted": 0.648, "realised": 0.655}]})
+    assert "KEEP" in window.sm_result.text()
+    assert "said 65%, got 66%" in window.sm_result.text()
+    assert window.sm_btn.isEnabled()
+
+
+def test_an_untuned_sport_says_its_settings_are_a_stand_in(window):
+    window._sports_measured({
+        "sport": "mma", "n_games": 400, "verdict": "WEAK", "untuned": True,
+        "summary": "WEAK: …", "buckets": []})
+    assert "stand-in" in window.sm_result.text()
+
+
+def test_the_sports_thread_is_on_the_shutdown_list(window):
+    """The trap that has shipped twice: a thread missing from shutdown() is a
+    SIGABRT on quit whenever that feature happens to be mid-flight."""
+    assert "sports_measure" in dict(window._owned_threads())

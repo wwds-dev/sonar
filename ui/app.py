@@ -51,7 +51,8 @@ from . import theme
 from . import words
 from .charts import ComponentBar, DepthChart, EquityCurve, Lattice, Sparkline
 from .tabs import PlainTabs
-from .worker import BacktestThread, ConfigThread, PollThread, PropThread, ReadThread
+from .worker import (BacktestThread, ConfigThread, PollThread, PropThread,
+                     ReadThread, SportsMeasureThread)
 
 REFRESH_MS = 1000
 # Opening size, before the screen gets a say. See MainWindow._fit_to_screen.
@@ -844,6 +845,7 @@ class MainWindow(QMainWindow):
         self._cfg_thread = None
         self._bt_thread = None
         self._lab_thread = None
+        self._sports_thread = None
         self.tray = None            # set by main.py once the app exists
         self.allow_close = False    # released by a real quit — see eventFilter
         # Cmd-Q, the Dock's Quit and a logout all arrive at the *application* as
@@ -1028,8 +1030,8 @@ class MainWindow(QMainWindow):
         plan.setToolTip(
             "The acceptance checklist for signing off a build.\n"
             "Tick each case off as you go — the page remembers what you have\n"
-            "already passed or failed. Twenty are marked as regressions: each\n"
-            "one has caught a real bug before.")
+            "already passed or failed. Seventeen are marked as regressions:\n"
+            "each one has caught a real bug before.")
         plan.clicked.connect(self._open_testplan)
         row.addWidget(plan)
         buttons.addLayout(row)
@@ -1751,7 +1753,80 @@ class MainWindow(QMainWindow):
         self.rep_card.setHtml("<p style='color:#7c8798'>No replay running.</p>")
         rl.addWidget(self.rep_card)
         lay.addWidget(rep)
+
+        # -- the sports models, measurable from where the other models are -- #
+        sports = panel()
+        sl = QVBoxLayout(sports)
+        sl.setContentsMargins(14, 12, 14, 12)
+        sl.setSpacing(6)
+        sl.addWidget(label("SPORTS MODELS — MEASURE", "faint", theme.figure(8)))
+        sl.addWidget(label(
+            "The same gate the markets side runs, for the ratings behind the "
+            "Sports tab: fetch seasons of real results, predict every game "
+            "from a table that has only seen the earlier ones, and score the "
+            "predictions against the base rate. KEEP is what lets a model "
+            "size a stake; anything else cannot. Until now this ran from a "
+            "script, so a change to the rating could not be re-measured from "
+            "inside the app.", "faint", theme.figure(8), wrap=True))
+        srow = QHBoxLayout()
+        srow.setSpacing(8)
+        self.sm_sport = QComboBox()
+        for sp in playmaker.list_sports():
+            if sp.has_model and sp.has_results:
+                self.sm_sport.addItem(sp.name, sp.key)
+        srow.addWidget(self.sm_sport)
+        srow.addWidget(label("seasons", "faint", theme.figure(8)))
+        self.sm_seasons = QSpinBox()
+        self.sm_seasons.setRange(2, 6)
+        self.sm_seasons.setValue(3)
+        self.sm_seasons.setToolTip(
+            "Years of results to fetch. The verdict needs 200 scored games\n"
+            "after the burn-in, so thin leagues want more seasons.")
+        srow.addWidget(self.sm_seasons)
+        self.sm_btn = QPushButton("measure")
+        self.sm_btn.setFixedWidth(120)
+        self.sm_btn.clicked.connect(self._sports_measure)
+        srow.addWidget(self.sm_btn)
+        self.sm_status = label("", "faint", theme.figure(9))
+        srow.addWidget(self.sm_status, 1)
+        sl.addLayout(srow)
+        self.sm_result = label("", "muted", theme.figure(10), wrap=True)
+        sl.addWidget(self.sm_result)
+        lay.addWidget(sports)
         return w
+
+    # -- sports measurement -------------------------------------------------#
+    def _sports_measure(self) -> None:
+        if self._sports_thread is not None and self._sports_thread.isRunning():
+            return
+        key = self.sm_sport.currentData()
+        self.sm_btn.setEnabled(False)
+        self.sm_status.setText(f"measuring {key}…")
+        self.sm_result.setText("")
+        self._sports_thread = SportsMeasureThread(key, self.sm_seasons.value(),
+                                                  self)
+        self._sports_thread.progress.connect(self.sm_status.setText)
+        self._sports_thread.done.connect(self._sports_measured)
+        self._sports_thread.start()
+
+    def _sports_measured(self, r: dict) -> None:
+        self.sm_btn.setEnabled(True)
+        self.sm_status.setText(f'{r.get("n_games", 0)} games fetched')
+        colour = {"KEEP": theme.UP, "ERROR": theme.DOWN,
+                  "DROP": theme.DOWN}.get(r.get("verdict"), theme.GOLD)
+        lines = [r.get("summary", "")]
+        if r.get("untuned"):
+            lines.append("This sport's Elo settings are a stand-in, not a "
+                         "published figure — the measurement is exactly how "
+                         "that stops being a guess.")
+        buckets = r.get("buckets") or []
+        if buckets:
+            lines.append("calibration: " + "   ".join(
+                f'{b["low"]:.0%}–{b["high"]:.0%}: said {b["predicted"]:.0%}, '
+                f'got {b["realised"]:.0%} (n={b["n"]})'
+                for b in buckets if b["n"] >= 30))
+        self.sm_result.setText("\n".join(line for line in lines if line))
+        self.sm_result.setStyleSheet(f"color: {colour.name()};")
 
     # -- replay ------------------------------------------------------------- #
     def _replay_start(self) -> None:
@@ -2794,6 +2869,7 @@ class MainWindow(QMainWindow):
                 ("config", self._cfg_thread),
                 ("backtest", self._bt_thread),
                 ("lab", self._lab_thread),
+                ("sports_measure", self._sports_thread),
                 ("playmaker", getattr(self, "playmaker_thread", None)))
 
     def _exit_now(self, stragglers) -> None:

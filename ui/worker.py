@@ -88,6 +88,30 @@ class ConfigThread(QThread):
             self.done.emit({"error": str(exc)})
 
 
+class SportsMeasureThread(QThread):
+    """One sports-model measurement: seasons of results fetched, the rating
+    walked forward, the verdict returned. Network plus arithmetic that takes
+    tens of seconds, so never on the refresh timer — only when asked."""
+
+    done = Signal(dict)
+    progress = Signal(str)
+
+    def __init__(self, sport_key: str, seasons: int, parent=None) -> None:
+        super().__init__(parent)
+        self.sport_key, self.seasons = sport_key, seasons
+
+    def run(self) -> None:                 # noqa: D102
+        from sonar.playmaker import scoring
+        try:
+            self.done.emit(scoring.measure(
+                self.sport_key, seasons=self.seasons,
+                progress=self.progress.emit))
+        except Exception as exc:           # never take the window down
+            self.done.emit({"sport": self.sport_key, "n_games": 0,
+                            "verdict": "ERROR",
+                            "summary": f"{type(exc).__name__}: {exc}"})
+
+
 class PropThread(QThread):
     """One sports prop analysis, off the UI thread.
 

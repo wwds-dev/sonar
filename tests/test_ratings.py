@@ -550,3 +550,94 @@ def test_a_throttled_request_backs_off_rather_than_hammering(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", refuse)
     assert res.fetch_range("nba", DAY, DAY, pause=0) == []
     assert slept and max(slept) >= res.THROTTLED_PAUSE_S
+
+
+# --------------------------------------------------------------------------- #
+# measure() — the whole gate in one call, for the Lab tab
+# --------------------------------------------------------------------------- #
+def _league(n_rounds=40, teams=6, day0=0):
+    """A synthetic league with real structure: lower-numbered teams are
+    better, win *most* of their games, and play home and away — an all-wins
+    fixture would make the base rate perfect and every model read as DROP."""
+    import random
+    rng = random.Random(3)
+    out = []
+    day = day0
+    for rnd in range(n_rounds):
+        for a in range(teams):
+            for b in range(a + 1, teams):
+                strong, weak = f"T{a}", f"T{b}"
+                home, away = (strong, weak) if rnd % 2 == 0 else (weak, strong)
+                upset = rng.random() < 0.25
+                winner = weak if upset else strong
+                hs, as_ = (3, 1) if winner == home else (1, 3)
+                out.append(game(home, away, hs, as_, day=day))
+                day += 1
+    return out
+
+
+def test_measure_scores_injected_games_without_the_network():
+    r = sc.measure("nba", games=_league())
+    assert r["n_games"] == len(_league())
+    assert r["verdict"] == r["score"].verdict
+    assert r["verdict"] in ("KEEP", "WEAK"), \
+        "a league with real structure must not read as noise"
+    assert r["untuned"] is False
+
+
+def test_measure_flags_a_sport_whose_settings_are_a_guess():
+    assert sc.measure("mma", games=_league())["untuned"] is True
+
+
+def test_measure_reports_insufficient_rather_than_pretending():
+    r = sc.measure("nba", games=_league(n_rounds=2))
+    assert r["verdict"] == "INSUFFICIENT"
+
+
+def test_measure_fetches_only_when_no_games_are_injected(monkeypatch):
+    from sonar.playmaker import results as res_mod
+    calls = []
+    monkeypatch.setattr(res_mod, "fetch_seasons",
+                        lambda key, seasons: calls.append((key, seasons)) or _league())
+    notes = []
+    r = sc.measure("nba", seasons=4, progress=notes.append)
+    assert calls == [("nba", 4)]
+    assert notes and "fetching" in notes[0]
+    assert r["n_games"] == len(_league())
+
+
+# --------------------------------------------------------------------------- #
+# The KEEP bar is an interval, not a rule of thumb
+# --------------------------------------------------------------------------- #
+def test_a_robust_edge_keeps():
+    """Sharp and right on most games: the whole interval clears zero."""
+    pairs = ([(0.8, 1.0)] * 350 + [(0.2, 0.0)] * 350
+             + [(0.8, 0.0)] * 100 + [(0.2, 1.0)] * 100)
+    score = sc.score_predictions(pairs)
+    assert score.skill > 0
+    assert score.skill_floor > 0
+    assert score.verdict == "KEEP"
+
+
+def test_an_edge_inside_its_own_interval_is_weak_not_keep():
+    """Better than the base rate on average, but the bootstrap floor touches
+    zero — a reason to stake less, not a reason to stake. The old 1/sqrt(n)
+    margin had no idea how noisy this sample actually was."""
+    import random
+    rng = random.Random(5)
+    pairs = []
+    for _ in range(600):
+        actual = 1.0 if rng.random() < 0.5 else 0.0
+        # Barely-informed: right 60% of the time at 65% stated confidence —
+        # a thin real skill of ~+0.06 whose interval still touches zero.
+        right = rng.random() < 0.60
+        pairs.append((0.65 if (actual == 1.0) == right else 0.35, actual))
+    score = sc.score_predictions(pairs)
+    assert score.skill > 0, "the fixture is calibrated to a thin positive skill"
+    assert score.verdict == "WEAK"
+
+
+def test_the_floor_is_deterministic():
+    pairs = [(0.7, 1.0), (0.3, 0.0)] * 200
+    assert (sc.score_predictions(pairs).skill_floor
+            == sc.score_predictions(pairs).skill_floor)

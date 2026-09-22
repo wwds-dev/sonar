@@ -10,6 +10,7 @@ output/
 data/state.json
 data/portfolio.json
 data/protocol.json
+data/wording.json
 data/*.bak.*
 data/*.tmp
 # Runtime single-writer lock: holds a PID from whichever machine last ran the

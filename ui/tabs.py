@@ -56,6 +56,14 @@ class PlainTabBar(QTabBar):
         size.setHeight(HEIGHT)
         return size
 
+    def minimumTabSizeHint(self, index: int):
+        """The hint is also the floor. When the window is narrower than the
+        bar, Qt compresses each tab below its own sizeHint — cutting letters
+        off names that were measured to fit — unless the minimum says no, in
+        which case the bar scrolls instead. Squashed text and a scroll arrow
+        are both compromises; only one of them is legible."""
+        return self.tabSizeHint(index)
+
     # -- painting ---------------------------------------------------------- #
     def mouseMoveEvent(self, event) -> None:
         hover = self.tabAt(event.position().toPoint())
