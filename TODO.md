@@ -35,6 +35,63 @@
 - [ ] `P2` `testing` `@ai` **`research/features.py` is 31%** and every study's
       conclusion rests on it. A wrong feature invalidates findings rather than
       crashing — the worst kind of bug to leave untested.
+### Approachability — the app is unreadable without a finance background
+
+The user who commissioned this cannot read his own screener, and that is a
+product defect rather than a gap in his education. The prose to fix it already
+exists and is good (`static/docs.html` §1 and §8); what was missing was it being
+*where the confusion is*. Ordered by value per unit of work — 1.x first, because
+explaining a number in place is worth more than any amount of new prose.
+
+- [x] `P1` `design` `@ai` ~~The manual opened a **web browser**.~~ It is now the
+      **Learn** tab: `static/docs.html` translated into Qt rich text by
+      `ui/learn.py`, contents on the left, a search box that takes one
+      unfamiliar word. Same file the browser serves, so the prose cannot drift.
+- [x] `P2` `design` `@ai` ~~A stale price looked identical to a live one.~~
+      **AGE** column on every Assets row, counting between scans rather than
+      freezing at what the scan measured.
+- [ ] `P1` `design` `@ai` **Every heading needs a "?" that lands on the right
+      paragraph.** `_show_learn()` already selects the tab and the contents
+      already scroll to an anchor; what is missing is a `HelpLink` widget and a
+      topic → anchor map, plus a test that every topic resolves to a section
+      that exists (the same guard `tests/test_docs.py` puts on cross-references).
+      Hover text does not count: it cannot be found by someone who does not
+      already know there is something to hover.
+- [ ] `P1` `design` `@ai` **Plain-English second line under every jargon
+      heading**, permanently visible. `MOM` → "5-day move", `VOL` → "typical
+      daily swing", `R:R` → "reward vs risk", `P(PROF)` → "chance of hitting the
+      target first", `CONF` → "worth a look". `ASSET_COLS` already carries the
+      wording in its tooltips; this is moving it out of hover.
+- [ ] `P1` `design` `@ai` **One plain sentence per row.** `rationale` is already
+      computed per instrument and never shown on the board — "up 11.8% this
+      week, several fresh stories" reads without training and the eight numbers
+      beside it do not.
+- [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
+      it is the one that decides whether anything here is true. Three parts:
+      a guided mode whose controls are questions rather than `STEP (BARS)`;
+      a verdict in words above the table ("did not beat chance: 41% against a
+      40% baseline, error bar ±3 — that is noise"), generated from numbers the
+      run already produces; and the three tests that decide whether a result
+      means anything (error bar, out-of-sample, multiple testing) stated inline
+      with a link to §8 rather than assumed.
+- [ ] `P2` `feature` `@ai` **Nothing greets a first launch.** Five cards on
+      first run — it is paper money; a high score means *notable*, never *going
+      up*; start on Assets; check any claim in the Lab; the manual is the Learn
+      tab — reopenable from Learn, with the "seen" flag in
+      `paths.user_data_base()`.
+- [ ] `P2` `design` `@ai` **"unproven" reads as broken rather than honest.**
+      Everywhere the app refuses to claim something, say what would change it
+      and how far along it is: "unproven — needs ~20 closed positions, you have
+      3". The Book tab has the count already.
+- [ ] `P2` `design` `@me` **Decide the vocabulary question.** Renaming `P(PROF)`
+      to "Hit chance" on the board makes it readable and makes it harder to
+      match against the documentation, which is written in the standard terms
+      for a reason. A plain/expert switch is the obvious answer and is the kind
+      of setting that gets built and then never used — worth a decision before
+      it is worth code.
+
+---
+
 - [ ] `P2` `feature` `@ai` **The Lab tab cannot test the Playmaker models.**
       It measures the markets algorithm only — the Elo/Dixon-Coles scoring runs
       from a script, not the UI, so there is no way to re-run it after a change

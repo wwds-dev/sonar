@@ -30,7 +30,8 @@ from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
-                               QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+                               QHBoxLayout, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMainWindow,
                                QPlainTextEdit, QPushButton, QScrollArea,
                                QSizePolicy, QSpinBox, QTabWidget, QTextBrowser,
                                QVBoxLayout, QWidget)
@@ -45,17 +46,22 @@ from sonar import news as news_mod
 from sonar import venues
 from sonar.assets import _W as ASSET_W
 
+from . import learn as learn_mod
 from . import theme
 from .charts import ComponentBar, DepthChart, EquityCurve, Lattice, Sparkline
 from .worker import BacktestThread, ConfigThread, PollThread, PropThread, ReadThread
 
 REFRESH_MS = 1000
-# Long enough for macOS to finish collapsing the full-screen Space before the
-# window disappears into the menu bar. Shorter and the empty Space survives.
 # Opening size, before the screen gets a say. See MainWindow._fit_to_screen.
 PREFERRED_SIZE = (1180, 820)
 SCREEN_MARGIN = 40           # leave the dock and the menu bar somewhere to live
 
+# Long enough for macOS to finish collapsing the full-screen Space before the
+# window disappears into the menu bar. Shorter and the empty Space survives.
+# It has to be a timer: Qt raises WindowStateChange when showNormal() is
+# *called* — measured at 1ms after, with the animation still to come — and
+# reports the restored geometry just as early, so nothing in Qt says when the
+# transition has finished.
 FULLSCREEN_EXIT_MS = 350
 
 # How long after hiding itself the window refuses to be reopened by an
@@ -71,33 +77,68 @@ REOPEN_GRACE_MS = 1000
 # away from the heading that names it.
 ASSET_COLS = [
     ("name", "", 140, ""),
-    ("trend", "TREND", 92, "Recent price path over the horizon's window."),
+    ("trend", "TREND", 78, "Recent price path over the horizon's window."),
     ("price", "PRICE", 74, "Latest price."),
     ("1d", "1D", 58, "Change since yesterday's close."),
     ("momentum", "MOM", 86,
      "Change over the horizon's momentum window (1d / 5d / 20d)."),
-    ("volatility", "VOL", 56, "Daily volatility of returns."),
-    ("lean", "NEWS", 62,
+    ("volatility", "VOL", 52, "Daily volatility of returns."),
+    ("lean", "NEWS", 58,
      "How unusual today's coverage is: Quiet / Normal / Elevated / Spike.\n"
      "A notability flag, not odds. Over 25,504 independent historical\n"
      "setups neither momentum nor a news spike beat the 40% baseline\n"
      "(spike came in at +0.8 pts, ±3.1). It marks what is worth a look.\n"
      "Direction is yours — use buy or short."),
-    ("rr", "R:R", 46,
+    ("rr", "R:R", 42,
      "Reward divided by risk, from a volatility-scaled target and stop.\n"
      "1.5 means the target is 1.5x as far away as the stop."),
-    ("pprof", "P(PROF)", 60,
+    ("pprof", "P(PROF)", 52,
      "Probability of touching the target before the stop.\n"
      "With no proven edge this is exactly 1/(1+R:R) — so a fatter reward\n"
      "buys a lower hit rate and expected value stays zero. Only a measured\n"
      "edge (see the Book tab) moves it."),
-    ("mix", "SCORE MIX", 76,
+    ("mix", "SCORE MIX", 66,
      "What drives the confidence score: momentum, volatility, news, catalyst."),
     ("conf", "CONF", 36,
      "Confidence 0–100: how notable this looks.\n"
      "NOT the probability you will make money — that is P(PROF)."),
-    ("actions", "", 186, ""),
+    ("age", "AGE", 42,
+     "How long ago this row's price was actually fetched.\n"
+     "The screen recomputes about every 3 minutes, but only the 26 stalest\n"
+     "of 129 instruments are refetched each time — so a few minutes old is\n"
+     "normal, and a full rotation takes roughly 15. Gold past that means the\n"
+     "rotation is falling behind, usually because the source is throttling.\n"
+     "Shown because a price that is quietly out of date is the one failure\n"
+     "this app treats as unacceptable."),
+    ("actions", "", 182, ""),
 ]
+
+# Age thresholds, in seconds, derived from the rotation rather than picked:
+# `assets.ROLL_BATCH` rows of `assets.WATCHLIST` are refetched per scan, so a
+# full pass takes ceil(129/26) = 5 scans of ~3 minutes each. Anything inside
+# that is the design working; past it the fetch is losing ground.
+AGE_WARN_S = 20 * 60
+AGE_BAD_S = 60 * 60
+
+
+def _age_text(seconds: float) -> str:
+    """A compact age. Never rounds down to "0m" — a row is never brand new
+    enough for that to be true, and "0m" reads as "live" when it is not."""
+    if seconds < 60:
+        return "<1m"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m" if hours < 10 else f"{hours}h"
+
+
+def _age_color(seconds: float):
+    if seconds >= AGE_BAD_S:
+        return theme.DOWN
+    if seconds >= AGE_WARN_S:
+        return theme.GOLD
+    return theme.MUTED
 
 
 def _asset_widths() -> list[tuple[str, int]]:
@@ -202,9 +243,17 @@ class Stat(QWidget):
 class AssetRow(QFrame):
     """One instrument on the screener."""
 
-    def __init__(self, a: dict, on_read, on_trade, parent=None) -> None:
+    def __init__(self, a: dict, on_read, on_trade, generated: float = 0.0,
+                 parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("panel")
+        # When this row's price was fetched, as an absolute time. `data_age_s`
+        # is measured when the scan runs, so storing it as-is would freeze the
+        # age at whatever it was then and count nothing afterwards — the exact
+        # dishonesty the column exists to remove. Anchoring it to the scan's
+        # own `generated` stamp lets `update_age` keep counting between scans.
+        self._fetched_at = (generated or time.time()) - float(
+            a.get("data_age_s") or 0.0)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(14)
@@ -297,6 +346,12 @@ class AssetRow(QFrame):
         conf.setFixedWidth(widths["conf"])
         lay.addWidget(conf)
 
+        self.age = label("", font=theme.mono(10))
+        self.age.setFixedWidth(widths["age"])
+        self.age.setToolTip(dict((k, t) for k, _h, _w, t in ASSET_COLS)["age"])
+        self.update_age()
+        lay.addWidget(self.age)
+
         acts = QWidget()
         acts.setFixedWidth(widths["actions"])
         al = QHBoxLayout(acts)
@@ -321,6 +376,17 @@ class AssetRow(QFrame):
             b.clicked.connect(slot)
             al.addWidget(b)
         lay.addWidget(acts)
+
+    def update_age(self, now: float | None = None) -> None:
+        """Re-render the age. Cheap enough for the 1s timer because the text
+        only changes once a minute, and setText on an unchanged string still
+        costs a relayout of the row."""
+        seconds = max(0.0, (now or time.time()) - self._fetched_at)
+        text = _age_text(seconds)
+        if text == self.age.text():
+            return
+        self.age.setText(text)
+        self.age.setStyleSheet(f"color: {_age_color(seconds).name()};")
 
 
 class SuggestionCard(QFrame):
@@ -577,6 +643,8 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.installEventFilter(self)
         self._hidden_at = 0.0       # when this window last hid itself
+        # A close pressed in full screen hides on a timer — see closeEvent.
+        self._hide_on_leaving_fullscreen = False
         # The version belongs in the title too: a screenshot of a window is
         # how bugs get reported here, and the title is in every screenshot.
         self.setWindowTitle(f"SONAR {version_mod.version_string()}")
@@ -594,12 +662,14 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._terminal_tab(), "Terminal")
+        self._asset_rows: list[AssetRow] = []   # ticked by the AGE column
         self.tabs.addTab(self._scroll_tab("assets", AssetHeader()), "Assets")
         self.tabs.addTab(self._wire_tab(), "Wire")
         self.tabs.addTab(self._book_tab(), "Book")
         self.tabs.addTab(self._macro_tab(), "Macro")
         self.tabs.addTab(self._lab_tab(), "Lab")
         self.tabs.addTab(self._playmaker_tab(), "Playmaker")
+        self.tabs.addTab(self._learn_tab(), "Learn")
         outer.addWidget(self.tabs, 1)
 
         self.status = label("starting…", "faint", theme.mono(9))
@@ -649,11 +719,13 @@ class MainWindow(QMainWindow):
         self.hz_box.currentIndexChanged.connect(self._apply_config)
         bar.addWidget(self.hz_box)
 
-        docs = QPushButton("Docs")
+        docs = QPushButton("Learn")
         docs.setFont(theme.mono(9))
-        docs.setToolTip("What every number means, how the model works, and "
-                        "what SONAR deliberately will not do.")
-        docs.clicked.connect(self._open_docs)
+        docs.setToolTip(
+            "The manual and the glossary, inside the app: what every number\n"
+            "means, how the model works, and what SONAR will not do.\n"
+            "Start at §1 if markets are new to you — it assumes nothing.")
+        docs.clicked.connect(self._show_learn)
         bar.addWidget(docs)
 
         plan = QPushButton("Test plan")
@@ -666,6 +738,113 @@ class MainWindow(QMainWindow):
         plan.clicked.connect(self._open_testplan)
         bar.addWidget(plan)
         return bar
+
+    def _learn_tab(self) -> QWidget:
+        """The manual, in the window rather than in a browser.
+
+        The prose already existed and was already good; what it was missing was
+        being *here*. Someone looking at a number they do not understand is one
+        click from the paragraph that explains it, instead of one context switch
+        and a lost train of thought.
+
+        Contents on the left, because a 60KB page with no way in is a wall.
+        Search on the right, because the question is usually a single word —
+        "vig", "Brier", "drawdown" — and hunting for it through fourteen
+        sections is the thing that makes people give up on documentation.
+        """
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+
+        html, sections = learn_mod.document()
+
+        top = QHBoxLayout()
+        top.setContentsMargins(2, 0, 8, 0)
+        top.setSpacing(8)
+        top.addWidget(label("FIND", "faint", theme.mono(8)))
+        self.learn_find = QLineEdit()
+        self.learn_find.setPlaceholderText(
+            "a word you do not recognise — vig, Brier, drawdown, base rate…")
+        self.learn_find.setFixedWidth(400)
+        self.learn_find.returnPressed.connect(self._learn_search)
+        top.addWidget(self.learn_find)
+        self.learn_hint = label("", "faint", theme.mono(9))
+        top.addWidget(self.learn_hint, 1)
+        browser_btn = QPushButton("Open in browser")
+        browser_btn.setFont(theme.mono(9))
+        browser_btn.setToolTip(
+            "The same page, rendered by a real browser. Qt draws a usable\n"
+            "subset of it here; the browser draws all of it.")
+        browser_btn.clicked.connect(self._open_docs)
+        top.addWidget(browser_btn)
+        lay.addLayout(top)
+
+        body = QHBoxLayout()
+        body.setContentsMargins(2, 0, 8, 0)
+        body.setSpacing(8)
+
+        self.learn_toc = QListWidget()
+        self.learn_toc.setFixedWidth(268)
+        self.learn_toc.setFont(theme.mono(10))
+        # No horizontal scrolling: a contents list you have to scroll sideways
+        # to read is not contents. The width above fits the longest heading.
+        self.learn_toc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        for anchor, number, title in sections:
+            item = QListWidgetItem(f"{number} · {title}")
+            item.setData(Qt.UserRole, anchor)
+            item.setToolTip(f"{number} · {title}")   # the two long ones elide
+            self.learn_toc.addItem(item)
+        self.learn_toc.currentItemChanged.connect(self._learn_goto)
+        body.addWidget(self.learn_toc)
+
+        self.learn_view = QTextBrowser()
+        self.learn_view.setOpenLinks(False)          # handled below
+        self.learn_view.setOpenExternalLinks(False)
+        self.learn_view.document().setDefaultStyleSheet(learn_mod.STYLESHEET)
+        self.learn_view.setHtml(html)
+        self.learn_view.anchorClicked.connect(self._learn_link)
+        body.addWidget(self.learn_view, 1)
+        lay.addLayout(body, 1)
+        return w
+
+    def _show_learn(self) -> None:
+        """Bring the manual up. Named for what the reader wants, not for the
+        widget — the toolbar button and any future "what is this?" link both
+        land here."""
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Learn":
+                self.tabs.setCurrentIndex(i)
+                return
+
+    def _learn_goto(self, item, _previous=None) -> None:
+        if item is not None:
+            self.learn_view.scrollToAnchor(item.data(Qt.UserRole))
+
+    def _learn_link(self, url: QUrl) -> None:
+        """A cross-reference inside the page scrolls; anything else leaves."""
+        if url.scheme() in ("http", "https"):
+            QDesktopServices.openUrl(url)
+            return
+        fragment = url.fragment() or url.toString().lstrip("#")
+        if fragment:
+            self.learn_view.scrollToAnchor(fragment)
+
+    def _learn_search(self) -> None:
+        """Wrap around rather than stopping dead at the end of the document —
+        a search that silently finds nothing because the cursor was already
+        past the only match reads as a broken search box."""
+        term = self.learn_find.text().strip()
+        if not term:
+            return
+        if self.learn_view.find(term):
+            self.learn_hint.setText("")
+            return
+        cursor = self.learn_view.textCursor()
+        cursor.movePosition(cursor.MoveOperation.Start)
+        self.learn_view.setTextCursor(cursor)
+        found = self.learn_view.find(term)
+        self.learn_hint.setText("" if found else f"nothing matches {term!r}")
 
     def _open_page(self, filename: str, what: str) -> None:
         """Open a bundled page in the default browser.
@@ -2098,10 +2277,19 @@ class MainWindow(QMainWindow):
         asig = (assets.get("generated"), assets.get("n"))
         if asig != self._assets_sig:
             self._assets_sig = asig
-            self._rebuild(self._assets_lay,
-                          [AssetRow(a, self._read, self._trade)
-                           for a in assets.get("assets", [])],
+            generated = float(assets.get("generated") or 0.0)
+            # Kept so the AGE column can keep counting between scans. The list
+            # is replaced in the same breath as the widgets it names, so it can
+            # never outlive them — a stale entry here would be a deleted C++
+            # object and a RuntimeError on the next tick.
+            self._asset_rows = [AssetRow(a, self._read, self._trade, generated)
+                                for a in assets.get("assets", [])]
+            self._rebuild(self._assets_lay, list(self._asset_rows),
                           "No instruments pass this risk profile's volatility filter.")
+        else:
+            now = time.time()
+            for row in self._asset_rows:
+                row.update_age(now)
 
     @staticmethod
     def _rebuild(lay: QVBoxLayout, widgets: list[QWidget], empty_msg: str) -> None:
@@ -2323,11 +2511,26 @@ class MainWindow(QMainWindow):
             # nothing in it — the user closes SONAR and is left staring at a
             # black screen. Drop back to a normal window first, and let the
             # Space transition finish before actually hiding.
+            self._hide_on_leaving_fullscreen = True
             self.showNormal()
-            QTimer.singleShot(FULLSCREEN_EXIT_MS, self._hide_now)
+            QTimer.singleShot(FULLSCREEN_EXIT_MS, self._hide_after_fullscreen)
         else:
             self._hide_now()
         self.tray.note_hidden()
+
+    def _hide_after_fullscreen(self) -> None:
+        """The deferred half of a close pressed in full screen.
+
+        It can arrive after the user has already reopened the window — from the
+        menu bar, or by clicking the close button again while the Space was
+        still animating — and hiding then would be the app swallowing a window
+        the user just asked for. `reveal()` clears the flag; this is a no-op
+        once it has.
+        """
+        if not self._hide_on_leaving_fullscreen:
+            return
+        self._hide_on_leaving_fullscreen = False
+        self._hide_now()
 
     def _fit_to_screen(self) -> None:
         """Open at the preferred size, or the screen's, whichever is smaller.
@@ -2344,6 +2547,19 @@ class MainWindow(QMainWindow):
             want_w = min(want_w, avail.width() - SCREEN_MARGIN)
             want_h = min(want_h, avail.height() - SCREEN_MARGIN)
         self.resize(want_w, want_h)
+
+    def reveal(self) -> None:
+        """Bring the window back — the tray item and a Dock click both land here.
+
+        Everything that reopens the window goes through this, because a reveal
+        has to call off a hide that is still pending: closing from full screen
+        schedules one for a third of a second later, and that timer would
+        otherwise hide the window the user has just asked for.
+        """
+        self._hide_on_leaving_fullscreen = False
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
 
     def _hide_now(self) -> None:
         """Hide, and remember when — see :meth:`reopen_allowed`."""

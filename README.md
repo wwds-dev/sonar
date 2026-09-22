@@ -10,19 +10,20 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 > probability model priced against a real market. SONAR builds exactly that — and keeps it
 > **paper money** so it can be honest about what it is.
 
-## Seven tabs
+## Eight tabs
 
 A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no web view.
 
 | Tab | What it does | Asserts a direction? |
 |---|---|---|
 | **Terminal** | Hourly BTC up/down paper trade — the model prices each hour, compares to Polymarket, takes at most one simulated bet, and grades itself against the market on every hour, traded or not | **Yes** — the only independent model |
-| **Assets** | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, and buy/short per row | **No** — direction is yours |
+| **Assets** | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, **how old each row's price is**, and buy/short per row | **No** — direction is yours |
 | **Wire** | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
 | **Book** | Open paper positions, the calibration table, and the backtest button | — |
 | **Macro** | Regime: curve, VIX, real rates, unemployment | No |
 | **Lab** | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
 | **Playmaker** | Sports prop pricing across **nine sports** (NFL, NBA, MLB, NHL, EPL, UCL, NCAAB, UFC, ATP) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
+| **Learn** | The manual and the glossary **inside the app** — `static/docs.html` rendered by Qt, with a contents list and a search box that takes one unfamiliar word. Same file the browser serves, so the prose cannot drift; `ui/learn.py` does the translation | — |
 
 Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
 Sentinel's NFL agent early on but was never a standalone project, and the scaffold
@@ -374,6 +375,22 @@ can change shape or start refusing requests without notice, and it already has:
 the `quoteSummary` endpoint used for earnings dates now answers 401. One
 undocumented endpoint carrying the whole app is its largest fragility.
 
+### How old is a price on the Assets board?
+
+Visible on the row, in the **AGE** column, because a price that is quietly out
+of date is the failure mode this project treats as unacceptable.
+
+The board does not refetch all 129 instruments at once. Doing that took the
+request rate from ~13 a minute to ~64 and got this machine throttled — and a
+throttled scan does not error, it returns fewer rows and the screen silently
+shrinks. So `assets.ROLL_BATCH` refetches the **26 stalest** rows per scan and
+scores the rest from cache. The cadence underneath: the poll loop ticks every
+4s (`core.PRICE_EVERY`), a rescan is due after 90s (`core.SCAN_EVERY`), and the
+scanner's own cache holds for 120s (`AssetScanner.ttl`) — so the screen
+recomputes about every three minutes, and one instrument comes round roughly
+every fifteen. The column goes gold past 20 minutes and red past an hour, which
+means the rotation is losing ground rather than that the price is wrong.
+
 `sonar/providers.py` puts sources behind one interface — a **capability**
 (quotes, bars, FX, crypto), a **tier** (keyless or keyed), and a persisted
 **on/off switch**. A request walks the enabled providers in preference order and
@@ -518,8 +535,13 @@ landed too (`feeds.py` 30% → 82%, `server.py` 0% → 92%); `universe.py` and
 
 ### Learning what the numbers mean
 
-The **Docs** button opens the manual. §1 is a plain-English primer with a
-25-term glossary — it assumes no finance background. **§8 is the one to read
+The **Learn** tab *is* the manual — contents on the left, a search box that
+takes one unfamiliar word ("vig", "Brier", "drawdown"), and **Open in browser**
+for the full-fidelity page. It used to be a button that launched a web browser,
+which is the wrong place for it: someone looking at a number they do not
+understand is exactly the person who will not go and find a second window.
+§1 is a plain-English primer with a 25-term glossary — it assumes no finance
+background. **§8 is the one to read
 before trusting a Lab run**: how to read an error bar, what the four attribution
 verdicts mean, how many trials a number needs before it means anything (at 20
 trials the band is ±21.5 points), and five ways to fool yourself, each of which
@@ -556,7 +578,16 @@ clicking the Dock icon brings the window back if the menu-bar item is hard to fi
 Leaving full-screen and hiding are also untangled from each other: exiting a full-screen
 Space and clicking the close button both trigger the macOS activation event a real Dock click
 uses, so for about a second after either one the window ignores that event rather than
-reopening itself the moment it just hid.
+reopening itself the moment it just hid. Everything that reopens the window goes through one
+method, because a reveal has to call off the hide a full-screen close leaves pending.
+
+**Nothing the window waits on may fetch**, which is a wider rule than it sounds. The UI
+thread reads the shared snapshot under a lock every second, so a background thread holding
+that lock across a network call freezes the window just as thoroughly as fetching on the UI
+thread would: the window goes blank, ignores the close button, and comes back a few seconds
+later when the fetch finishes. That is what the central-bank feed did every fifteen minutes.
+Build the payload first, then take the lock for the assignment — `tests/test_ui_thread.py`
+checks both the behaviour and, by AST, that no known fetch sits inside a lock.
 
 **Quitting never waits for the network.** A quit that lands while the app is fetching gives
 the background threads about a second and then ends the process, printing what it gave up on.
@@ -733,7 +764,8 @@ sonar/
   research/    the study apparatus — features, panel, stats, validate, regimes,
                and hourlyvol (the measured EWMA × hour-of-day σ the Terminal prices with)
 ui/
-  app.py       the window — Terminal / Assets / Wire / Book / Macro / Lab / Playmaker
+  app.py       the window — Terminal / Assets / Wire / Book / Macro / Lab / Playmaker / Learn
+  learn.py     static/docs.html translated into what Qt's rich text can render
   charts.py    QPainter charts: equity curve, sparkline, depth, lattice, bars
   theme.py     palette, lifted from the original terminal's CSS
   worker.py    QThreads for the poll loop, LLM reads, and config changes

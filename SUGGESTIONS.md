@@ -39,6 +39,15 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 |---|---|---|---|---|
 | 9 | Confidence score shown as a distribution rather than a single number | design | M | IDEA |
 | 10 | Export a closed round trip as a one-page post-mortem (entry, exit, thesis, realized cost) | feature | S | IDEA |
+| 11 | **The manual inside the app** rather than behind a button that opens a browser | design | M | **DONE** — the Learn tab. `ui/learn.py` translates `static/docs.html` into Qt rich text (its CSS is variables and flexbox, none of which Qt renders); contents from the page's own headings, so a new section appears without anyone remembering to list it |
+| 12 | **How old is this price?** on every Assets row | design | S | **DONE** — the AGE column. Anchored to the scan's `generated` stamp so it keeps counting between scans instead of freezing at what the scan measured; gold past a full rotation, red past an hour |
+| 13 | A **"?" on every heading** that opens the Learn tab at the paragraph explaining that number — with a test that every topic resolves to a section that exists | design | M | PLANNED |
+| 14 | **Plain-English second line under every jargon heading**, and one plain sentence per row from the `rationale` already computed and never shown | design | S | PLANNED |
+| 15 | **Guided mode for the Lab** — controls phrased as questions, a verdict in words above the table, and the three tests that decide whether a result means anything stated inline rather than assumed | feature | L | PLANNED |
+| 16 | **First-run cards**: paper money, notability is not direction, start on Assets, check claims in the Lab, the manual is a tab | feature | M | PLANNED |
+| 17 | Say what would change an "unproven" — "needs ~20 closed positions, you have 3" — wherever the app refuses to claim something | design | S | PLANNED |
+| 18 | **Plain / expert vocabulary switch.** Renaming P(PROF) to "Hit chance" makes the board readable and makes it harder to match against docs written in the standard terms. Needs a decision, not code | design | M | CONSIDERING |
+| 19 | **GUI direction** — three mockups exist (refined dark, light high-contrast, plain-language restructure). The complaints driving it are the mono-everywhere type, the low-contrast greys (`theme.FAINT` is under 3:1), and the dropdowns | design | L | CONSIDERING |
 
 ## Done
 
