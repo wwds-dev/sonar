@@ -5,12 +5,12 @@ count. Every commit is therefore a version, so this file records the **builds
 that were installed** and what changed in them — not every number that existed.
 Newest first.
 
-Builds before v2.102 predate the version number. Nothing has been
+Builds before v2.103 predate the version number. Nothing has been
 back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## v2.102 — 2026-09-22
+## v2.103 — 2026-09-22
 
 The first build that can say what it is, and whether it is current.
 

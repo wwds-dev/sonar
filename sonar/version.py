@@ -141,15 +141,18 @@ def _checkout_root() -> Path | None:
     sitting right there. So the stamp records where it was.
 
     This is generated build metadata, not a path written into the source: it is
-    produced per build by `scripts/stamp_version.py`, git-ignored, and checked
-    for existence before use. A bundle copied to another machine finds nothing
-    here and falls back to saying so, which is the honest answer there.
+    produced per build by `scripts/stamp_version.py` and git-ignored. A bundle
+    copied to another machine finds nothing at that path and falls back to
+    saying so, which is the honest answer there.
+
+    Whether the path is *usable* is `_git_build`'s decision, not this one. An
+    earlier version checked for `.git` here as well; that check could be deleted
+    without failing a single test, because `_git_build` already rejects a
+    directory that is not a repository. Two guards where one decides is a guard
+    nobody is testing.
     """
     root = (_baked() or {}).get("root")
-    if not root:
-        return None
-    candidate = Path(root)
-    return candidate if (candidate / ".git").exists() else None
+    return Path(root) if root else None
 
 
 def _baked() -> dict | None:

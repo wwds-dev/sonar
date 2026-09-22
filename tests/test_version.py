@@ -126,7 +126,7 @@ class TestStalenessIsHonest:
         assert "7 commits behind" in verdict["detail"]
         assert "v2.097" in verdict["detail"], "say which build would be current"
 
-    def test_a_bundle_finds_the_checkout_its_stamp_points_at(self, monkeypatch):
+    def test_a_bundle_finds_the_checkout_its_stamp_points_at(self, monkeypatch, tmp_path):
         """Without this a PyInstaller bundle can only ever say "cannot be
         known": there is no .git anywhere inside it. Correct, and useless on the
         machine the app is developed on, where the source is right there."""
@@ -134,10 +134,10 @@ class TestStalenessIsHonest:
                             lambda: {"build": 90, "commit": "old", "date": "",
                                      "source": "baked", "root": str(ROOT)})
         monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
-        # PROJECT_ROOT stands in for the bundle: no git to be had there.
-        real = app_version._git_build
-        monkeypatch.setattr(app_version, "_git_build",
-                            lambda cwd=None, **k: None if cwd is None else real(cwd))
+        # A bundle's PROJECT_ROOT is inside the .app and has no .git, which is
+        # the whole reason _checkout_root exists. Point it at an empty directory
+        # rather than stubbing _git_build, so the real lookup runs.
+        monkeypatch.setattr(app_version, "PROJECT_ROOT", tmp_path)
         app_version.info.cache_clear()
         verdict = app_version.staleness()
         assert verdict["known"] is True, verdict["detail"]
@@ -151,7 +151,12 @@ class TestStalenessIsHonest:
                                      "source": "baked",
                                      "root": str(tmp_path / "gone")})
         monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
-        monkeypatch.setattr(app_version, "_git_build", lambda cwd=None, **k: None)
+        # Both lookups are real: PROJECT_ROOT is a bundle-like directory with no
+        # .git, and the recorded root does not exist. Stubbing _git_build to
+        # None made this pass whatever _checkout_root returned, so it tested
+        # nothing -- which a mutation deleting that path check proved by not
+        # failing anything.
+        monkeypatch.setattr(app_version, "PROJECT_ROOT", tmp_path)
         app_version.info.cache_clear()
         verdict = app_version.staleness()
         assert verdict["known"] is False
