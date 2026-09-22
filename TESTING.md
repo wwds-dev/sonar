@@ -1,15 +1,19 @@
 # Testing roadmap
 
 What is covered, what is not, and the order to fix it in. Every number here was
-measured on 2026-09-16 with `coverage run --branch -m pytest tests/`, not
-estimated.
+measured, not estimated — with
+`coverage run --branch --source=sonar,ui -m pytest tests/`. The headline figures
+are from 2026-09-22; where an older section still carries its own date, that is
+what it was measured on.
 
 ---
 
 ## 0. Where we are
 
-**1,253 tests** (66% of statements when last measured, 2026-09-16 — the
-2026-09-19/20 additions have not been re-measured).
+**1,339 tests**, 71% of statements and branches across `sonar/` and `ui/`
+(2026-09-22). The 2026-09-16 figure was 66% of statements over `sonar/` alone;
+the rise is mostly the UI, which went from three tests that built a window to
+six files' worth — see §4.
 
 > **Progress.** Steps 1–5 are done, plus `research/features.py`. `model.py` 39% → **100%**, `engine.py`
 > 38% → **100%**, `feeds.py` 30% → **82%**, `server.py` 0% → **92%**. The overall figure barely moves,
@@ -212,19 +216,50 @@ network layer stubbed and is its own piece of work.
 
 ## 4. What the UI needs
 
-`ui/app.py` is 61%, which is high for a 1,879-line window, and the three tests
-that build a real `MainWindow` are how it got there. The gap is the interactive
-half — the handlers nothing clicks in a test.
+`ui/app.py` is **74%** of a 2,960-line window, and the tests that build a real
+`MainWindow` are how it got there. The gap is the interactive half — the
+handlers nothing clicks in a test.
 
-The pattern that works is already in `test_lab_tab.py` and the Playmaker check:
-build the window, drive the handler directly, assert on what it rendered. No
-clicking required. Worth extending to:
+The pattern that works is in `test_lab_tab.py`, `test_learn_tab.py` and
+`test_wording.py`: build the window, drive the handler directly, assert on what
+it rendered. No clicking required.
+
+| module | cover | note |
+|---|---|---|
+| `ui/app.py` | 74% | the window |
+| `ui/learn.py` | 100% | `tests/test_learn_tab.py` |
+| `ui/theme.py` | 93% | `tests/test_age_column.py`, `test_plain_language.py` |
+| `ui/words.py` | 93% | `tests/test_wording.py` |
+| `ui/tabs.py` | 89% | `tests/test_plain_language.py` — the painter is the gap |
+| `ui/worker.py` | 46% | threads; the poll loop is covered through `core` |
+| `ui/charts.py` | 28% | painters — see below |
+| `ui/tray.py` | 0% | the menu-bar companion, never built by a test |
+
+Worth extending to:
 
 - the Book tab's buy/short/close path end to end against the paper engine
 - the Terminal tab's render across every engine status
-- the Assets table's sort and filter
-- `ui/charts.py` (22%) — the painters take a data series and produce geometry,
-  which is checkable without a screen
+- `ui/charts.py` (28%) — the painters take a data series and produce geometry,
+  which is checkable without a screen. `ComponentBar` now also takes a `fill`
+  fraction, so "the bar is a breakdown" and "the bar is a meter" are two
+  behaviours in one painter and neither is tested.
+- `ui/tabs.py`'s `paintEvent` — it draws two lines per tab and had two bugs
+  worth a test each (a tab sized from the unselected font lost its last letter
+  when clicked; a tab with no second line drew its title at the top of a 48px
+  box)
+
+**The UI rules that now have tests rather than intentions.** They are the ones
+most likely to be undone by accident, because each is a property of the whole
+board rather than of any one widget:
+
+- headings are words, and every heading that links into the manual links to a
+  section that exists — `tests/test_plain_language.py`
+- the plain sentence on a row can never acquire a direction — same file
+- plain and expert wording have identical columns, widths and order —
+  `tests/test_wording.py`
+- the age on a row counts between scans instead of freezing at what the scan
+  measured, and never rounds down to something that reads as live —
+  `tests/test_age_column.py`
 
 ---
 
@@ -240,6 +275,7 @@ test, and they each need a different net.
 | Qt plugin inheritance crash when one frozen app launches another | a packaged run; invisible from source |
 | A `QLabel` that will not wrap setting the window's minimum width | `tests/test_layout.py` |
 | The UI thread blocking on a fetch → blank window | `tests/test_ui_thread.py` |
+| A `QLabel` painting the window background over the panel it sits on | the eye — invisible until two colours move apart |
 | An ESPN/Yahoo payload changing shape | `-m network` tests, run deliberately |
 
 **The rule that falls out: after any packaging or threading change, run

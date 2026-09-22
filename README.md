@@ -597,7 +597,7 @@ happened here and each naming what caught it.
 ### Testing
 
 `TESTING.md` is the automated side — what is covered, what is not, and the order
-to fix it in. **`TESTPLAN.md` is the manual side**: 101 acceptance cases for
+to fix it in. **`TESTPLAN.md` is the manual side**: 117 acceptance cases for
 signing off v2, run against the installed bundle rather than the checkout,
 because several of the failures only exist in a build. Seventeen of them are marked
 as regressions, which makes the list double as this project's bug history.
@@ -609,7 +609,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,253 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,339 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 
@@ -811,11 +811,14 @@ sonar/
   research/    the study apparatus — features, panel, stats, validate, regimes,
                and hourlyvol (the measured EWMA × hour-of-day σ the Terminal prices with)
 ui/
-  app.py       the window — Terminal / Assets / Wire / Book / Macro / Lab / Playmaker / Learn
+  app.py       the window — Live model / Screener / News / My trades / Big picture / Practice / Sports / Learn
+  tabs.py      the two-line tab bar: plain name over the name the docs use
+  words.py     plain or expert vocabulary, and the file that remembers which
   learn.py     static/docs.html translated into what Qt's rich text can render
   charts.py    QPainter charts: equity curve, sparkline, depth, lattice, bars
-  theme.py     palette, lifted from the original terminal's CSS
+  theme.py     type, contrast and the stylesheet — the Plain Language rules
   worker.py    QThreads for the poll loop, LLM reads, and config changes
+  tray.py      the menu-bar companion; the window hides rather than quitting
 assets/
   make_icon.py one-off icon generator (QPainter, no extra deps)
 static/

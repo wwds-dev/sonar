@@ -31,3 +31,7 @@ assets/icon.iconset/
 # Written by scripts/stamp_version.py at package time: identifies a build,
 # not the source. See VERSIONING.md.
 _build_info.json
+
+# Coverage database — a generated cache, and it churns on every measured run.
+.coverage
+.coverage.*

@@ -11,13 +11,13 @@ process. A green suite says nothing about any of them.
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **1,253 passed** |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **1,339 passed** |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
-**Run it from inside the app.** The **Test plan** button, next to *Docs*, opens
+**Run it from inside the app.** The **Test plan** button, next to *Learn*, opens
 this as a page that remembers which cases you have passed or failed — a hundred
-and one of them is more than one sitting. The daemon serves it at `/testplan` too.
+and seventeen of them is more than one sitting. The daemon serves it at `/testplan` too.
 
 That page is *generated* from this file by `scripts/build_testplan.py`, which
 `build_app.sh` runs before packaging. Edit the markdown, never the HTML.
@@ -31,7 +31,7 @@ running even when short of time — the list doubles as this project's bug histo
 
 | # | Step | Expected |
 |---|---|---|
-| 0.1 | `./run-tests.sh tests/ -q` | 1,253 passed, in about ten seconds. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue. |
+| 0.1 | `./run-tests.sh tests/ -q` | 1,339 passed, in about ten seconds. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue. |
 | 0.2 | `./build_app.sh --install` | Ends with `All checks passed.` then `Installed:` |
 | 0.3 | `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` | `All checks passed.` Reports 7 sports, 5 rated, cycling with no feed. |
 | 0.4 | Note the bankroll before you start | You will compare against it in 5.x |
@@ -43,7 +43,7 @@ running even when short of time — the list doubles as this project's bug histo
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
 | 1.1 | ⚠ | Launch from `/Applications`. Time it. | First paint in **under 3s**. *Once took 11s of sequential fetches.* |
-| 1.2 | | Count the tabs | Seven: Terminal · Assets · Wire · Book · Macro · Lab · Playmaker |
+| 1.2 | | Count the tabs, and read both lines on each | Eight, each showing a plain name over the name the docs use: Live model/TERMINAL · Screener/ASSETS · News/WIRE · My trades/BOOK · Big picture/MACRO · Practice/LAB · Sports/PLAYMAKER · Learn |
 | 1.3 | | Wait 30s, visit each tab | No tab shows "—" in every field |
 | 1.4 | ⚠ | Resize the display to 1280×800 (or check on a laptop screen) | Nothing clipped, no horizontal scroll. *Once opened 4,540pt wide on a 1,280pt display.* |
 | 1.5 | ⚠ | Click the **red close button** | Window disappears; menu-bar icon stays; app still running. *Reported broken five times, five different causes.* |
@@ -75,22 +75,38 @@ running even when short of time — the list doubles as this project's bug histo
 
 ---
 
-## 3. Assets
+## 3. Screener (Assets)
 
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
 | 3.1 | | Count the rows | **129** instruments (50 Equity · 20 Index · 20 Forex · 21 Crypto · 18 Commodity) |
-| 3.2 | | Read the columns | `TREND · PRICE · 1D · MOM · VOL · NEWS · R:R · P(PROF) · SCORE MIX · CONF` |
-| 3.3 | | Read **P(PROF)** down the column | A flat **40%**, drawn grey. Anything else means calibration has moved it — check §5.5 agrees. |
-| 3.4 | | Check the NEWS column | Quiet / Normal / Elevated / Spike. **No bullish/bearish lean anywhere.** |
-| 3.5 | | Click each column header | Sorts, both directions |
-| 3.6 | | Change **horizon** (5 options) | Numbers change; board redraws immediately, not on the next tick |
-| 3.7 | | Change **risk profile** (3 options) | Same |
-| 3.8 | ⚠ | Press **Buy** on a row | Status shows ✓ and "paper money only"; position appears in **Book at once**. *A cached board signature once made this look like a dead button.* |
-| 3.9 | | Press **Short** on a different row | Same, direction SHORT |
-| 3.10 | | Press **Buy** on the same row again | Refused: "already holding" |
-| 3.11 | | Hover each column header | Tooltip explains the number, and CONF's says it is **not** the odds of profit |
-| 3.12 | | Hover a row's name | Names where it could actually be traded. 58 of 129 are proxied (indices via UCITS ETFs, futures via ETCs) and one — Monero — is not tradeable at all; it must say so rather than implying you can buy it. |
+| 3.2 | | Read the columns | Plain wording: `What it is · Trend · Price · Today · Recent move · Swing size · In the news · If you traded it · Worth a look · Updated`. No abbreviations anywhere on the board. |
+| 3.3 | | Read **If you traded it** down the column | "win 1.5× the risk / 40% of the time", flat. Anything else means calibration has moved it — check §5.5 agrees. |
+| 3.4 | | Check **In the news** | Quiet / Normal / Elevated / Spike. **No bullish/bearish lean anywhere.** |
+| 3.5 | | Read the banner above the board | Says the list ranks markets by how *interesting* they look, **not** by whether they will go up, and that nothing spends real money |
+| 3.6 | | Click each of the three banner chips | Each opens the **Learn** tab with the matching section selected in the contents |
+| 3.7 | | Click the headings drawn in blue | Opens Learn at the section explaining that column. The black headings (What it is, Trend, Price, Today, Updated) are not links — they explain themselves. |
+| 3.8 | | Change **horizon** (5 options) | Numbers change; board redraws immediately, not on the next tick |
+| 3.9 | | Change **risk profile** (3 options) | Same |
+| 3.10 | ⚠ | Press **Buy** on a row | Status shows ✓ and "practice money only"; position appears in **My trades at once**. *A cached board signature once made this look like a dead button.* |
+| 3.11 | | Press **Short** on a different row | Same, direction SHORT |
+| 3.12 | | Press **Buy** on the same row again | Refused: "already holding" |
+| 3.13 | | Hover a row's name | Names where it could actually be traded. 58 of 129 are proxied (indices via UCITS ETFs, futures via ETCs) and one — Monero — is not tradeable at all; it must say so rather than implying you can buy it. |
+| 3.14 | ⚠ | Read the **Updated** column down the board | Ages spread from about a minute to about fifteen, and they **count up** while you watch — the board refetches only the 26 stalest of 129 per scan, so a frozen age means it is reporting the scan rather than the fetch. Gold past 20 minutes, red past an hour. *A price that is quietly out of date is the failure this app treats as unacceptable.* |
+| 3.15 | | Read the line under each name | One plain phrase — "up hard, heavy news". It must describe the **past** only: nothing saying a market will rise, is a buy, or looks bullish. |
+
+**Wording — plain and expert.** Same table, continuing the numbering: the
+generator only accepts `\d+\.\d+`, so a `3a.1` renders without pass/fail buttons
+and is silently dropped from the count.
+
+| # | ⚠ | Steps | Expected |
+|---|---|---|---|
+| 3.16 | | Press **Wording: plain** | Becomes *Wording: expert*. Headings become `TREND · PRICE · 1D · MOM · VOL · NEWS · R:R · P(PROF) · CONF · AGE`, the ticker replaces the sentence under each name, the banner disappears, and the tab bar drops to one line of original names. |
+| 3.17 | ⚠ | Compare the two boards side by side | **Same columns, same order, same widths.** Only the words and the row height change. *A mode that rearranged the board would be a second interface to keep true.* |
+| 3.18 | | Check a stat strip on **Live model** | `TAU` in expert, `HOUR REMAINING` in plain — the captions follow the switch without a relaunch |
+| 3.19 | | Switch to expert, quit, relaunch | Still expert. The choice is remembered in `wording.json` beside the other user data. |
+| 3.20 | | Put junk in `wording.json` and relaunch | Opens in plain wording. A preference file a person can edit must not be able to break the app. |
+| 3.21 | | Switch back to plain | Everything returns; no relaunch needed |
 
 ---
 
@@ -128,7 +144,7 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
-| 5.9 | | On Assets, pick a row and read **R:R** and **P(PROF)** together | R:R 1.50 and P(PROF) 40% — and `0.40 × 1.50 − 0.60 = 0` exactly. The pair is **expected-value zero by construction**, not a forecast. |
+| 5.9 | | On the Screener, pick a row and read **If you traded it** (expert: **R:R** and **P(PROF)**) | R:R 1.50 and P(PROF) 40% — and `0.40 × 1.50 − 0.60 = 0` exactly. The pair is **expected-value zero by construction**, not a forecast. |
 | 5.10 | | Read **CONF** on the same row, then its tooltip | It says plainly that confidence is *notability*, **not** the odds of profit. If a row makes you feel it is a good bet, that is the number doing something it is not entitled to do. |
 | 5.11 | | Open the position and read its **target** and **stop** | Both set from volatility, before entry. A position with no barriers never resolves and is never falsifiable. |
 | 5.12 | | Change the **risk profile** and open a position on another row | Size changes, barriers do not: at €10,000 the cash at risk is ~€37.50 conservative, ~€100 moderate, ~€187.50 aggressive. Risk appetite moves the stake, never the plan. |
@@ -206,14 +222,19 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 
 ---
 
-## 9. Docs
+## 9. Learn — the manual, in the app
 
-| # | Steps | Expected |
-|---|---|---|
-| 9.1 | Press **Docs** | Opens; §1 is "Start here — plain English" |
-| 9.2 | Click every entry in the table of contents | All 13 resolve |
-| 9.3 | Read the glossary | 24 terms across markets, probability, betting, macro |
-| 9.4 | Check §13 | Documents Playmaker, including Kaunitz's account-limiting caveat next to the profit figure |
+| # | ⚠ | Steps | Expected |
+|---|---|---|---|
+| 9.1 | | Press **Learn** | The **Learn tab** opens inside the window. No web browser launches. |
+| 9.2 | | Read the first contents entry | §1 "Start here — plain English" |
+| 9.3 | | Click every entry in the contents | All 14 scroll to their section. *Qt does not follow the `id` a browser follows, so this breaks silently if the injected anchors go.* |
+| 9.4 | | Read the glossary | 24 terms across markets, probability, betting, macro — rendered, not raw HTML |
+| 9.5 | | Type `devigging` in **Find** and press return | Jumps to it and highlights. Press return twice more: it keeps finding rather than stopping dead at the end of the document. |
+| 9.6 | | Type a word that is not there | Says so, rather than doing nothing |
+| 9.7 | | Check §14 | Documents Playmaker, including Kaunitz's account-limiting caveat next to the profit figure |
+| 9.8 | | Press **Open in browser** | The same page in a real browser, with the styling Qt cannot draw |
+| 9.9 | | Check §2's table | Eight rows, each naming the plain tab name and the original underneath |
 
 ---
 
@@ -239,7 +260,7 @@ The cases most likely to be skipped, and the ones that produced the worst bugs.
 v2 signs off when:
 
 - [ ] Every ⚠ case passes. These are regressions; a failure is a re-opened bug.
-- [ ] §0 passes — build, self-test, and 1,253 automated tests.
+- [ ] §0 passes — build, self-test, and 1,339 automated tests.
 - [ ] No case in §1 (launch, window, quit) fails. The app being hard to close or
       quit has been reported twice and is the most visible class of defect here.
 - [ ] §10 passes. An app that misbehaves offline is worse than one that says it
