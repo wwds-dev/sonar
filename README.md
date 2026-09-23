@@ -316,9 +316,45 @@ Conditioning doubles the hypothesis count, which is exactly how "it only works
 when X" results get published and then fail. Here it produced nothing that a
 control could not match.
 
+## The sixth study: the catalyst weight, finally on trial
+
+The catalyst component — 0.20 of the confidence score — was the one weight
+attribution could never grade: the replay had no historical earnings calendar.
+September 2026 gave it one, from EDGAR's own record: every **Item-2.02 8-K**
+filing *is* an earnings release, so the SEC's submissions API is a free,
+documented calendar reaching back years (`sonar/research/earnings.py`; ADRs
+file 20-F/6-K with no item numbers and are skipped honestly). The replay then
+computes the catalyst score exactly as the live board does, on real dates.
+
+Over 10,873 five-day setups across 50 equities and five years, 6,268 carried a
+catalyst series, and **the component became the first ever to come back KEEP**:
+
+| reading | value |
+|---|---|
+| IC | **+0.040**, p = 0.003, survives FDR |
+| Quintile spread | top 44.0% vs bottom 39.0% — **+5.0 points (±2.0)** |
+| Time blocks | positive in **6 of 6** |
+| Leave-one-out | removing it costs the blend 0.028 IC — the only weight buying anything |
+| Control: another company's dates | +0.016 — the earnings-*season* residual, as it should be |
+| Control: every date shifted +45d | **−0.029, 0 of 6** — not a shrug but the mirror image |
+
+The phase-shift control is the telling one: a spurious pattern would fade when
+the dates move; this *inverts*, because mid-quarter genuinely is the quiet
+regime.
+
+**Read it carefully — it is not a direction.** Direction in the replay is
+still momentum's sign, still a coin. What a scheduled date brings is *jumps*:
+the advertised 40% comes from a smooth random walk, and symmetric fat tails
+favour the barrier that is further away, so near a known event the realised
+hit rate at 1.5:1 runs above the diffusion baseline. That is volatility being
+forecastable off a calendar — precisely the shape `CONFIDENCE.md` predicted —
+measured **before costs**, which widen into the very events it keys on. It
+earns the weight the score already carried, as notability; it moves nothing
+else.
+
 ## Where the research ended up
 
-Five studies, each more careful than the last:
+Six studies, each more careful than the last:
 
 | question | answer |
 |---|---|
@@ -327,18 +363,20 @@ Five studies, each more careful than the last:
 | Does anything sort the cross-section? | No — 0 of 16 survived FDR |
 | Does the one surviving lead replicate? | No — one period, wrong asset class, no decay |
 | Does anything work conditionally? | No — 0 of 48, floor set by a control |
+| Does a scheduled earnings date sharpen the barrier odds? | **Yes** — the first survivor; see above |
 
-That is a complete negative result over this feature space, and it is the
-expected one: these are liquid instruments priced by people running the same
-arithmetic. The value built here is not a signal but an apparatus that can tell
-the difference — one that has now caught itself three times (a +4.9 attention
-claim, a Thursday effect, and a t = +3.39 holdout), each time because a control
-was run under identical conditions rather than compared to a textbook threshold.
+Five directional nulls and one volatility-shaped survivor is the expected
+picture for liquid instruments priced by people running the same arithmetic.
+The value built here is the apparatus that can tell the difference — one that
+has caught itself three times (a +4.9 attention claim, a Thursday effect, and
+a t = +3.39 holdout) and has now also *passed* something, using the same
+controls that killed the rest.
 
 **What this means for the app.** SONAR stays what it is: an honest notability
 screener with real paper trading. `P(profit)` stays pinned at its driftless
-`1/(1+R:R)` baseline, because five studies have failed to find the drift that
-would move it. Nothing here is a reason to trade.
+`1/(1+R:R)` baseline — the catalyst effect is fat tails, not drift, and drift
+is only ever supplied by `calibration.py` from positions that actually closed.
+Nothing here is a reason to trade.
 
 
 ## Paper trading through Alpaca (optional)

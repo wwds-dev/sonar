@@ -206,3 +206,12 @@ def test_the_sports_thread_is_on_the_shutdown_list(window):
     """The trap that has shipped twice: a thread missing from shutdown() is a
     SIGABRT on quit whenever that feature happens to be mid-flight."""
     assert "sports_measure" in dict(window._owned_threads())
+
+
+def test_the_catalyst_series_is_one_checkbox_away(window):
+    """The component that was untested until Sep 2026 must stay re-measurable
+    from inside the app, not only from the script that first measured it."""
+    from ui.worker import BacktestThread
+    assert not window.lab_catalyst.isChecked(), "off by default — it fetches"
+    t = BacktestThread(["AAPL"], 5, with_catalyst=True)
+    assert t.with_catalyst is True

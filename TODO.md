@@ -26,15 +26,6 @@
       92%, against a real server on an ephemeral port. `conftest.py` grew a
       `loopback` fixture so this did not mean weakening the suite's ban on
       sockets.
-- [ ] `P2` `testing` `@ai` **`universe.py` is 17%** — `canonical_title`,
-      `wiki_article`, `article_map` and the cache are pure string handling with
-      no excuse for being untested. `TESTING.md` §2.
-- [ ] `P3` `testing` `@ai` **`charts.py` (22%) and `tray.py` (0%)** — the
-      painters take a series and produce geometry, and `update_state` is
-      formatting over a snapshot dict. Both checkable without a screen.
-- [ ] `P2` `testing` `@ai` **`research/features.py` is 31%** and every study's
-      conclusion rests on it. A wrong feature invalidates findings rather than
-      crashing — the worst kind of bug to leave untested.
 ### Approachability — the app is unreadable without a finance background
 
 The user who commissioned this cannot read his own screener, and that is a
@@ -103,11 +94,7 @@ explaining a number in place is worth more than any amount of new prose.
 
 ---
 
-- [ ] `P2` `feature` `@ai` **The Lab tab cannot test the Playmaker models.**
-      It measures the markets algorithm only — the Elo/Dixon-Coles scoring runs
-      from a script, not the UI, so there is no way to re-run it after a change
-      from inside the app. Everything it needs exists in
-      `playmaker/scoring.py`.
+
 
 ---
 
@@ -141,6 +128,55 @@ need an account and time rather than code, kept at the top.
 - [x] `P1` `feature` `@ai` ~~The app could not say which version it was.~~ `v<MAJOR>.<BUILD>` — MAJOR hand-edited in `VERSION`, BUILD derived from `git rev-list --count HEAD` and zero-padded, which is the lab-wide scheme `imprint` and `sentinel_fork` already use and the one the Lab Project Monitor derives, so the dashboard and the app read from the same two inputs and cannot disagree. Shown beside the wordmark, in the window title (bug reports arrive as screenshots), in the menu-bar menu, in `Info.plist`, and in `--selftest`, which now **fails** for a frozen bundle with no build stamp. Hovering reports commit, date, packaged-vs-checkout, and how far behind the checkout it is — and says it cannot know rather than claiming "up to date" when there is nothing to compare against. Frozen builds carry `_build_info.json` from `scripts/stamp_version.py`. Scheme in `VERSIONING.md`, history in `CHANGELOG.md`. This answers the failure that prompted it: a rebuild lands, the app is opened, the new work is not there, and nothing on screen explains that the bundle is older than the conversation.
 - [x] `P0` `bug` `@ai` ~~"SONAR doesn't quit" — the blank white window, fourth report and the actual cause.~~ `shutdown()`'s last resort for a thread that would not stop was `QThread.terminate()`. It kills the thread wherever it stands, and a thread running Python holds the **GIL**, which is then never returned — so every Python thread blocks in `take_gil` forever, the Qt event loop included. Nothing repaints, and macOS shows the window's empty backing store: a white rectangle in an app themed `#080b11`, ignoring every click. Not a rare race — `live.stop()` only lands between fetches, so any quit during an in-flight request had to outlast an 8–30s socket timeout inside the grace, then terminated a thread that was by construction mid-`read()`. The fix is to stop trying to stop it and leave by `os._exit` instead, which skips the QThread destructors whose `qFatal()` was the only reason terminate was wanted; the engine writes through on every change and the engine lock is a PID file the next launch reclaims, so nothing is lost. The per-thread 4s wait also became a 1.5s budget **shared across all six threads** — six waits on the UI thread was up to 24s of the same unpainted window, self-healing but identical to look at. `tests/test_shutdown.py` fails the build on any `.terminate()` call by AST, and quits a real subprocess mid-fetch — against the old code that test does not fail, it hangs.
 - [x] `P0` `bug` `@ai` ~~Closing SONAR could leave a blank white window that never went away.~~ `_refresh_wire()` fetched on the UI thread whenever the news (8 min TTL) or events cache aged out — a coin flip every eight minutes on whether the event loop blocked up to 30s, painting nothing and ignoring input. The Wire path now reads cache-only (`news.cached()`, `events.cached_payload()`); `tests/test_ui_thread.py` and `test_refresh.py` assert nothing reaches the network from a real window with both caches aged out.
+
+### The remaining findings, closed — 2026-09-22/23
+
+- [x] `P1` `research` `@ai` **The catalyst weight faced attribution — and
+      became the first component ever to come back KEEP.** A historical
+      earnings calendar built from EDGAR Item-2.02 8-K filings
+      (`sonar/research/earnings.py`; measured trap: data.sec.gov and
+      efts.sec.gov 403 a UA *with* a contact email and accept a plain
+      descriptive one, the opposite of the documented policy, while
+      www.sec.gov refuses every non-browser agent — hence a per-symbol
+      entityName fallback on the full-text search host). Result over 10,873
+      setups / 6,268 with a series: IC +0.040 (survives FDR), quintile spread
+      +5.0 (±2.0), 6/6 time blocks, LOO +0.028 — and it passed the controls
+      that killed three earlier findings (swapped dates keep only the
+      season residual +0.016; a +45-day phase shift *inverts*, −0.029, 0/6).
+      Not a direction: fat tails near scheduled events vs a diffusion
+      baseline, before costs. README carries the full table; the Lab's
+      earnings-history checkbox reproduces it in-app.
+- [x] `P2` `feature` `@ai` ~~The Lab tab cannot test the Playmaker models.~~
+      `scoring.measure()` + a SPORTS MODELS panel on the Lab tab: pick a
+      rated sport, fetch seasons through the ESPN adapter, walk the rating
+      forward and print the verdict with its calibration buckets. The thread
+      is on `shutdown()`'s list, with a test — the trap that has shipped
+      twice.
+- [x] `P2` `research` `@ai` **The Playmaker KEEP bar is a measured interval
+      now.** `Score.skill_floor` — a seeded moving-block bootstrap on the
+      per-game Brier differences — replaces the `1/√games` margin: KEEP only
+      when the whole interval clears zero, WEAK when a positive average
+      touches it.
+- [x] `P2` `testing` `@ai` ~~`universe.py` is 17%~~ → the fetch, the filters,
+      the cache TTL, redirect-chasing, the alias chain, a redirect loop, and
+      cached misses — 17 tests, network stubbed at `urlopen`/`_wiki_get`.
+- [x] `P3` `testing` `@ai` ~~`charts.py` (22%) and `tray.py` (0%)~~ → offscreen
+      renders with a modal-colour ink count and colour-targeted checks (the
+      gold LIVE divider, the meter fill); the tray's readout, the
+      notify-once/re-arm stall alarm, and the template icon. 24 tests.
+- [x] `P2` `testing` `@ai` ~~`research/features.py` is 31%~~ → closed by the
+      Plain Language session's `tests/test_features.py` (99%, parametrised
+      across the registry); recorded here so the roadmap row stops pointing
+      at a solved problem.
+- [x] `P2` `bug` `@ai` **The Plain Language tab bar compressed below its own
+      measurements.** Qt shrinks tabs under a narrow window regardless of
+      `tabSizeHint`, cutting letters off names measured to fit;
+      `minimumTabSizeHint` now returns the hint, so the bar scrolls instead.
+      Found by that session's own test, which had never been run — the nine
+      commits were never pushed, so CI never saw them.
+- [x] `P3` `bug` `@ai` `data/wording.json` was committed — a runtime
+      preference in git means every toggle dirties the tree. Untracked and
+      ignored, next to `protocol.json`.
 
 ### Caught by the instrumentation on night one — 2026-09-22
 

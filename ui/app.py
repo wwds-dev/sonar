@@ -1667,6 +1667,12 @@ class MainWindow(QMainWindow):
         self.lab_step.setRange(1, 30)
         self.lab_step.setValue(3)
         self.lab_news = QCheckBox("include attention (one extra request per symbol)")
+        self.lab_catalyst = QCheckBox("include earnings history (US equities, via EDGAR)")
+        self.lab_catalyst.setToolTip(
+            "Attributes the catalyst weight against real Item-2.02 8-K filing\n"
+            "dates — the component that was untested until Sep 2026, and the\n"
+            "first to come back KEEP. ADRs carry no such filings and are\n"
+            "skipped honestly.")
 
         for col, cap in enumerate(("UNIVERSE", "RANGE", "HORIZON (DAYS)", "STEP (BARS)")):
             form.addWidget(label(cap, "faint", theme.figure(8)), 0, col)
@@ -1676,6 +1682,7 @@ class MainWindow(QMainWindow):
         form.addWidget(self.lab_step, 1, 3)
         hl.addLayout(form)
         hl.addWidget(self.lab_news)
+        hl.addWidget(self.lab_catalyst)
 
         row = QHBoxLayout()
         self.lab_btn = QPushButton("Run simulation")
@@ -1937,7 +1944,8 @@ class MainWindow(QMainWindow):
         self._lab_thread = BacktestThread(
             symbols, self.lab_horizon.value(), self,
             rng=self.lab_range.currentData(), step=self.lab_step.value(),
-            with_news=self.lab_news.isChecked())
+            with_news=self.lab_news.isChecked(),
+            with_catalyst=self.lab_catalyst.isChecked())
         self._lab_thread.progress.connect(
             lambda sym, n: self.lab_status.setText(f"{sym} — {n} setups so far"))
         self._lab_thread.done.connect(self._lab_done)

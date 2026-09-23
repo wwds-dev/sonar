@@ -511,9 +511,14 @@ APCA_API_SECRET_KEY=...</code></pre>
     positive weight it actively pushes the wrong instruments up the board.
     p-values go through Benjamini-Hochberg together, because testing four
     components and reporting the best one is how noise gets published.</p>
-  <p>The catalyst component reports <b>not measured</b> rather than passing: the
-    replay has no historical earnings calendar, and an untested component must
-    not read as a validated one.</p>
+  <p>The catalyst component spent a year reporting <b>not measured</b> — an
+    untested component must not read as a validated one. In September 2026 it
+    got its trial: a historical earnings calendar built from EDGAR's own
+    record (every Item-2.02 8-K filing <em>is</em> an earnings release), tick
+    the earnings-history box in the simulation and the replay computes the
+    same catalyst number the live board does. It became <b>the first
+    component ever to come back KEEP</b> — see §11 for the result and, more
+    importantly, for what it does and does not mean.</p>
 
   <h3>Replay</h3>
   <p>The simulation grades the model. Replay grades <b>you</b>. The app's whole
@@ -776,7 +781,26 @@ APCA_API_SECRET_KEY=...</code></pre>
         equities its theory requires, and had no orderly decay.</td></tr>
     <tr><td>Does anything work <em>conditionally</em>?</td>
       <td>No — 0 of 48 feature-by-regime tests, with the floor set by a control.</td></tr>
+    <tr><td>Does a scheduled earnings date sharpen the barrier odds?</td>
+      <td><b class="up">Yes — the first survivor.</b> IC +0.040 over 6,268
+        setups, top quintile beating the bottom by 5.0 points (±2.0),
+        positive in <b>6 of 6</b> time blocks, and it passed the controls the
+        three dead findings failed: another company's dates keep only the
+        earnings-<em>season</em> residual (+0.016), and shifting every date by
+        45 days does not shrug — it <em>inverts</em> (−0.029, 0 of 6), which
+        is what a real event-proximity effect does.</td></tr>
   </table>
+  <div class="callout"><b>Read the survivor carefully — it is not a
+    direction.</b> Direction in that replay is still momentum's sign, still a
+    coin. What a scheduled date brings is <em>jumps</em>: the plan's 40% is
+    derived from a smooth random walk, and symmetric fat tails favour the
+    barrier that is further away, so near a known event the realised hit rate
+    at 1.5:1 runs above the diffusion baseline — about 44% against the
+    advertised 40%. That is volatility being forecastable on a calendar,
+    exactly the shape §5's research file predicted, and it is measured
+    <em>before costs</em>, which widen into the very events it keys on.
+    P(PROF) stays pinned: drift is only ever supplied by closed positions,
+    and this is not drift.</div>
   <div class="callout"><b>The most useful thing the research produced was a
     warning.</b> In one holdout window a <em>seeded random number</em> — a
     feature that cannot predict anything — reached t = −1.87, while real features
@@ -790,7 +814,9 @@ APCA_API_SECRET_KEY=...</code></pre>
     leave exactly the false impression this project exists to argue against.</p>
   <p>Two things are still <b>untested</b>, not cleared: SONAR's own word-list
     <b>sentiment</b> (Wikipedia pageviews measure attention volume, not tone), and
-    anything requiring intraday or order-flow data.</p>
+    anything requiring intraday or order-flow data. The catalyst weight left
+    this list in September 2026 — measured at last, and the row above is what
+    it earned.</p>
 
   <h2 id="run"><span class="n">12</span>Running it &amp; what it costs</h2>
   <p>A native macOS app — PySide6 widgets, every chart drawn with QPainter, no

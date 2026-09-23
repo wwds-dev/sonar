@@ -56,10 +56,12 @@ class BacktestThread(QThread):
     progress = Signal(str, int)
 
     def __init__(self, symbols, horizon_days: int, parent=None, *,
-                 rng: str = "2y", step: int = 3, with_news: bool = False) -> None:
+                 rng: str = "2y", step: int = 3, with_news: bool = False,
+                 with_catalyst: bool = False) -> None:
         super().__init__(parent)
         self.symbols, self.horizon_days = symbols, horizon_days
         self.rng, self.step, self.with_news = rng, step, with_news
+        self.with_catalyst = with_catalyst
 
     def run(self) -> None:                 # noqa: D102
         from sonar import backtest
@@ -67,6 +69,7 @@ class BacktestThread(QThread):
             self.done.emit(backtest.run(
                 self.symbols, horizon_days=self.horizon_days, rng=self.rng,
                 step=self.step, with_news=self.with_news,
+                with_catalyst=self.with_catalyst,
                 progress=lambda sym, n: self.progress.emit(sym, n)))
         except Exception as exc:
             self.done.emit({"n": 0, "verdict": f"{type(exc).__name__}: {exc}"})

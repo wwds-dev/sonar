@@ -32,19 +32,23 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import time
+import urllib.parse
 import urllib.request
 
 from .. import paths
 
 _TICKERS = "https://www.sec.gov/files/company_tickers.json"
 _SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
-#: The SEC's fair-access policy wants a descriptive agent **with a contact** —
-#: www.sec.gov 403s one without, while data.sec.gov shrugs. The contact is the
-#: project's public git identity, which is pseudonymous by workspace
-#: convention and already on every commit.
-_UA = {"User-Agent": "sonar-research/0.4 "
-                     "(243015673+Netrunner3000@users.noreply.github.com)"}
+#: Measured on 2026-09-22, against the documentation: the SEC's fair-access
+#: page asks for an agent carrying a contact address, but data.sec.gov and
+#: efts.sec.gov both 403 a UA containing an email and answer this plain
+#: descriptive one — while www.sec.gov 403s every non-browser agent either
+#: way, which is why the bulk ticker file has a per-symbol fallback. Same
+#: lesson as ESPN in playmaker/results.py: send what is *accepted*, never a
+#: browser costume, and record the measurement.
+_UA = {"User-Agent": "sonar-research/0.4 (personal research; no bulk redistribution)"}
 
 #: The 8-K item that is an earnings release.
 EARNINGS_ITEM = "2.02"
@@ -73,7 +77,14 @@ def _get(url: str):
 
 
 def ticker_cik_map() -> dict[str, int]:
-    """``{ticker: CIK}`` for every registrant the SEC lists."""
+    """``{ticker: CIK}`` for every registrant the SEC lists — the bulk path.
+
+    Measured on 2026-09-22: www.sec.gov 403s this file for any non-browser
+    User-Agent, contact or no contact, while data.sec.gov and efts.sec.gov
+    answer the same agent happily. So this is tried first because it is one
+    request for everything, and :func:`cik_for` is the per-symbol fallback
+    that actually works from here.
+    """
     d = _get(_TICKERS)
     if not isinstance(d, dict):
         return {}
@@ -84,6 +95,43 @@ def ticker_cik_map() -> dict[str, int]:
         except (KeyError, TypeError, ValueError):
             continue
     return out
+
+
+_ENTITY = ("https://efts.sec.gov/LATEST/search-index"
+           "?q=%22results%22&forms=8-K&entityName={sym}")
+_CIK_IN_NAME = re.compile(r"CIK (\d{10})")
+
+
+def cik_from_display(display_names: list[str], symbol: str) -> int | None:
+    """Extract the CIK from entity display names, only for an exact ticker.
+
+    A name reads ``APPLE INC  (AAPL)  (CIK 0000320193)``; requiring the
+    bracketed ticker keeps ``Permuto Capital AAPL Trust`` from answering for
+    Apple — the full-text index matches generously, and a generous match here
+    would hang another company's earnings dates on this symbol.
+    """
+    want = f"({symbol.upper()})"
+    for name in display_names or []:
+        if want in name:
+            m = _CIK_IN_NAME.search(name)
+            if m:
+                return int(m.group(1))
+    return None
+
+
+def cik_for(symbol: str) -> int | None:
+    """One symbol's CIK via the full-text search's entity filter."""
+    d = _get(_ENTITY.format(sym=urllib.parse.quote(symbol)))
+    try:
+        hits = d["hits"]["hits"]
+    except (TypeError, KeyError):
+        return None
+    for hit in hits:
+        cik = cik_from_display(hit.get("_source", {}).get("display_names"),
+                               symbol)
+        if cik:
+            return cik
+    return None
 
 
 def earnings_dates_from_submissions(d: dict) -> list[str]:
@@ -127,9 +175,9 @@ def history(symbols: list[str], refresh: bool = False) -> dict[str, list[str]]:
             stored = {}
     todo = [s for s in symbols if s.upper() not in stored]
     if todo:
-        ciks = ticker_cik_map()
+        ciks = ticker_cik_map()          # bulk when www allows; usually empty
         for sym in todo:
-            cik = ciks.get(sym.upper())
+            cik = ciks.get(sym.upper()) or cik_for(sym)
             payload = _get(_SUBMISSIONS.format(cik=cik)) if cik else None
             stored[sym.upper()] = (earnings_dates_from_submissions(payload)
                                    if payload else [])
