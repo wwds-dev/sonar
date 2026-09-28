@@ -119,7 +119,7 @@ ASSET_COLS = [
      "0–100: how notable this looks right now.\n"
      "NOT the chance you will make money — that is the column to the left.\n"
      "The bar underneath splits the score into what produced it."),
-    ("age", ("Updated", "AGE"), 66, "",
+    ("age", ("Updated", "AGE"), 72, "",
      "How long ago this row's price was actually fetched.\n"
      "The board recomputes about every 3 minutes, but only the 26 stalest of\n"
      "129 markets are refetched each time — so a few minutes old is normal,\n"
