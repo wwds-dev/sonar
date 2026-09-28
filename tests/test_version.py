@@ -236,10 +236,16 @@ class TestTheDashboardCannotDisagree:
         """
         import importlib.util
 
-        spec = importlib.util.spec_from_file_location(
-            "_lab_monitor", ROOT.parent.parent / "regenerate_dashboard_v2.py")
-        if spec is None or spec.loader is None:
+        monitor = ROOT.parent.parent / "regenerate_dashboard_v2.py"
+        if not monitor.exists():
+            # The guard has to be an exists() check: spec_from_file_location
+            # happily returns a spec for a missing file and the skip below
+            # never fired — CI, which has no lab beside the checkout, learned
+            # that the hard way with a FileNotFoundError.
             pytest.skip("Lab Project Monitor not present beside this checkout")
+        spec = importlib.util.spec_from_file_location("_lab_monitor", monitor)
+        if spec is None or spec.loader is None:
+            pytest.skip("Lab Project Monitor not loadable")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
