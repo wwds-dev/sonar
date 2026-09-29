@@ -129,6 +129,57 @@ need an account and time rather than code, kept at the top.
 - [x] `P0` `bug` `@ai` ~~"SONAR doesn't quit" — the blank white window, fourth report and the actual cause.~~ `shutdown()`'s last resort for a thread that would not stop was `QThread.terminate()`. It kills the thread wherever it stands, and a thread running Python holds the **GIL**, which is then never returned — so every Python thread blocks in `take_gil` forever, the Qt event loop included. Nothing repaints, and macOS shows the window's empty backing store: a white rectangle in an app themed `#080b11`, ignoring every click. Not a rare race — `live.stop()` only lands between fetches, so any quit during an in-flight request had to outlast an 8–30s socket timeout inside the grace, then terminated a thread that was by construction mid-`read()`. The fix is to stop trying to stop it and leave by `os._exit` instead, which skips the QThread destructors whose `qFatal()` was the only reason terminate was wanted; the engine writes through on every change and the engine lock is a PID file the next launch reclaims, so nothing is lost. The per-thread 4s wait also became a 1.5s budget **shared across all six threads** — six waits on the UI thread was up to 24s of the same unpainted window, self-healing but identical to look at. `tests/test_shutdown.py` fails the build on any `.terminate()` call by AST, and quits a real subprocess mid-fetch — against the old code that test does not fail, it hangs.
 - [x] `P0` `bug` `@ai` ~~Closing SONAR could leave a blank white window that never went away.~~ `_refresh_wire()` fetched on the UI thread whenever the news (8 min TTL) or events cache aged out — a coin flip every eight minutes on whether the event loop blocked up to 30s, painting nothing and ignoring input. The Wire path now reads cache-only (`news.cached()`, `events.cached_payload()`); `tests/test_ui_thread.py` and `test_refresh.py` assert nothing reaches the network from a real window with both caches aged out.
 
+### Week one of the run — 2026-09-28/29
+
+- [x] `P0` `bug` `@ai` **The engine could buy an hour that had already
+      settled.** `tick()` never checked that the market belongs to the
+      candle: tau was computed off the *market's* clock while the outcome
+      came from the *candle's*, so a stale candle meeting a fresh market
+      (around wakes and feed hiccups) opened positions with hindsight — five
+      live fills entered 22–51 minutes after their own hour closed, one
+      buying the known outcome at 5.5¢ for +16,898, together **71% of the
+      week's paper P&L**. Found by an adversarial review panel attacking the
+      buyability report, not by any test or by the (settlement-side-only)
+      verification that had called the P&L honest. Fixed with one invariant
+      — an hourly market ends exactly one hour after its candle opens or the
+      tick is refused — which also covers the signal and scoring paths; the
+      five trades were scrubbed with the agent stopped and the equity curve
+      rebuilt (bankroll 43,130 → 19,880), plus one settlement-state scorelog
+      row (bid 0.999/ask 1.0) that had been charging the market ~1.0 Brier.
+      Three regression tests pin it, including the wild case verbatim.
+- [x] `P2` `research` `@ai` **`Engine.buyability()` rebuilt to measure the
+      strategy the engine actually trades**, after the same panel refuted the
+      first version: side chosen against `market_up` as the entry path does
+      (not a recomputed book mid), only hours inside the profile's entry
+      window, settlement-state books excluded and counted, the wider of
+      plain and Newey-West errors, and a positive verdict that must survive
+      leave-one-out — one whale is a story, not an edge. The active profile's
+      own gate always has a row, so an aggressive book is never silently
+      graded at 4¢.
+
+- [x] `P2` `infra` `@ai` **CI made portable** (9a1ddb1): the dashboard test
+      skips on an `exists()` check, the AGE column widened 66→72 so DejaVu
+      fits too, and the checkout fetches full history because the version
+      *is* the commit count. A four-lens adversarial audit then found nothing
+      further real (the module repos' owner name in the workflow is stale but
+      GitHub's rename redirect keeps it working — left alone on purpose).
+- [x] `P2` `research` `@ai` **`Engine.buyability()`** — calibrated is not the
+      same as buyable, and the score log's recorded touch now answers the
+      second question: the model's favoured side priced at bid/ask+slippage
+      across five executable-edge gates, EV per stake with its error bar, a
+      refusal below 100 qualifying hours, in the snapshot next to
+      model_vs_market. First live readout (n=139): positive at every gate,
+      significant at none — the same longshot tail that carries the paper
+      P&L, and the report says so rather than celebrating.
+- [x] `P2` `research` `@ai` **Week-one verdicts, as corrected by the
+      review**: model vs market Brier 0.1696 / 0.1657 at n=139 — within
+      noise both before and after the scrub (the sign flips inside the
+      band); the paper P&L, once the five phantom fills were removed, is
+      +99% — settlement-honest, still longshot-flavoured, still not
+      evidence. Buyability at the engine's gate: 55 qualifying hours of the
+      100 needed — the report refuses, correctly. Protocol on pace (5 closed
+      of the 20 gate ② needs).
+
 ### The remaining findings, closed — 2026-09-22/23
 
 - [x] `P1` `research` `@ai` **The catalyst weight faced attribution — and

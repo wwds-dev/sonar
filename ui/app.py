@@ -14,10 +14,14 @@ election or a Fed decision, so every row was just repeating the crowd. The one
 part that *did* have a model, the hourly crypto up/down market, lives on the
 Terminal where it always did.
 
-The toolbar carries the two knobs that shape everything: **risk** (how much you
-stake, and what is worth showing) and **horizon** (when you want it to resolve).
-Neither touches a confidence score — see ``sonar/risk.py`` for why that boundary
-is load-bearing.
+The shell is the **Cockpit** (2026-09-29): a left rail carries the
+destinations (both names each — see ``ui/tabs.py``), the wordmark, the wording
+switch and the status line, and collapses to icons below
+``RAIL_COLLAPSE_BELOW``; a page header names the current screen and keeps the
+two knobs that shape everything visible everywhere: **risk** (how much you
+stake, and what is worth showing) and **horizon** (when you want it to
+resolve). Neither touches a confidence score — see ``sonar/risk.py`` for why
+that boundary is load-bearing.
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow,
                                QPlainTextEdit, QPushButton, QScrollArea,
-                               QSizePolicy, QSpinBox, QTabWidget, QTextBrowser,
+                               QSizePolicy, QSpinBox, QTextBrowser,
                                QVBoxLayout, QWidget)
 
 from sonar import horizon as hz_mod
@@ -49,15 +53,27 @@ from sonar.assets import _W as ASSET_W
 from . import learn as learn_mod
 from . import theme
 from . import words
-from .charts import ComponentBar, DepthChart, EquityCurve, Lattice, Sparkline
+from .charts import (ComponentBar, DepthChart, EquityCurve, HourBar, Lattice,
+                     Sparkline)
 from .tabs import PlainTabs
 from .worker import (BacktestThread, ConfigThread, PollThread, PropThread,
                      ReadThread, SportsMeasureThread)
 
 REFRESH_MS = 1000
 # Opening size, before the screen gets a say. See MainWindow._fit_to_screen.
-PREFERRED_SIZE = (1240, 820)
+# Wider than a 13" laptop on purpose: on a screen that has the room, the rail
+# opens with its names showing; _fit_to_screen clamps it on one that does not,
+# and the rail collapses to icons there (RAIL_COLLAPSE_BELOW).
+PREFERRED_SIZE = (1440, 850)
 SCREEN_MARGIN = 40           # leave the dock and the menu bar somewhere to live
+
+# Below this window width the rail shows icons alone. The Screener's columns
+# need ~1200pt before the rail takes a single point, so on the tested 1280×775
+# minimum the full rail would crowd the board it navigates to. The expanded
+# window's *minimum* must stay below this number — the fold triggers while the
+# user drags the window narrower, and Qt stops a drag at the layout minimum,
+# so a threshold under the minimum would be unreachable. test_layout holds it.
+RAIL_COLLAPSE_BELOW = 1420
 
 # Long enough for macOS to finish collapsing the full-screen Space before the
 # window disappears into the menu bar. Shorter and the empty Space survives.
@@ -288,6 +304,16 @@ def _scrolled(inner: QWidget) -> QScrollArea:
 def panel() -> QFrame:
     f = QFrame()
     f.setObjectName("panel")
+    return f
+
+
+def _vline() -> QFrame:
+    """A hairline between groups in a strip. Styled directly: a bare QFrame
+    inherits the blanket QWidget background, which is invisible against a
+    panel until the day it is not."""
+    f = QFrame()
+    f.setFixedWidth(1)
+    f.setStyleSheet(f"background: {theme.BORDER.name()};")
     return f
 
 
@@ -869,13 +895,15 @@ class MainWindow(QMainWindow):
         root = QWidget()
         self.setCentralWidget(root)
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(14, 12, 14, 12)
-        outer.setSpacing(10)
-        outer.addLayout(self._toolbar())
+        # The rail runs the full height of the window, so the window itself
+        # has no chrome margins — each region owns its own padding.
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
         # Both names on every tab: the plain one leads, the one the docs and the
         # last month of muscle memory use sits under it. See `ui/tabs.py`.
         self.tabs = PlainTabs()
+        self.tabs.set_rail_header(self._rail_header())
         self.tabs.add(self._terminal_tab(), "Live model", "Terminal",
                       "The hourly bitcoin up/down model — the one place SONAR "
                       "says which way it thinks something goes.")
@@ -903,10 +931,10 @@ class MainWindow(QMainWindow):
                       "background — start at §1.")
         outer.addWidget(self.tabs, 1)
 
+        self.tabs.set_header_widget(self._knobs())
+        self.tabs.set_rail_footer(self._rail_footer())   # creates self.status
         self._apply_wording()
-
-        self.status = label("starting…", "faint", theme.figure(9))
-        outer.addWidget(self.status)
+        self._sync_rail()
 
         self.poll = PollThread(live, self)
         self.poll.start()
@@ -924,41 +952,48 @@ class MainWindow(QMainWindow):
         "aggressive": "shows the jumpiest markets",
     }
 
-    def _toolbar(self) -> QHBoxLayout:
+    def _rail_header(self) -> QWidget:
+        """The rail's masthead: the wordmark, the build, and the promise.
+
+        The version sits next to the name, not tucked in an About box. "I
+        opened the app and nothing is new" was reported repeatedly against a
+        bundle that was simply older than the work being described, and
+        nothing on screen could have told anyone that.
+        """
+        holder = QWidget()
+        col = QVBoxLayout(holder)
+        col.setContentsMargins(6, 0, 4, 0)
+        col.setSpacing(4)
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        top.addWidget(label("SONAR", "h1"))
+        self.version_label = VersionBadge()
+        top.addWidget(self.version_label)
+        top.addStretch(1)
+        col.addLayout(top)
+        col.addWidget(label("practice money only — nothing here places a real "
+                            "order", "faint", theme.text(9), wrap=True))
+        return holder
+
+    def _knobs(self) -> QWidget:
         """The two knobs everything else depends on, labelled as questions.
 
         They used to be a 22px combobox each, captioned `risk` and `horizon` in
         9pt grey. Both words are jargon for the setting they name, both boxes
         were smaller than the text beside them, and neither said what would
         happen if you changed it. Asking the question the setting answers costs
-        one line and removes the guessing.
+        one line and removes the guessing. They live in the page header — not
+        on any one tab — because every screen depends on them.
         """
-        bar = QHBoxLayout()
-        bar.setSpacing(12)
-
-        title = QVBoxLayout()
-        title.setContentsMargins(0, 0, 0, 0)
-        title.setSpacing(1)
-        top = QHBoxLayout()
-        top.setSpacing(8)
-        top.addWidget(label("SONAR", "h1"))
-        # Next to the name, not tucked in an About box. "I opened the app and
-        # nothing is new" was reported repeatedly against a bundle that was
-        # simply older than the work being described, and nothing on screen
-        # could have told anyone that.
-        self.version_label = VersionBadge()
-        top.addWidget(self.version_label)
-        top.addStretch(1)
-        title.addLayout(top)
-        title.addWidget(label("practice money only — nothing here places a real "
-                              "order", "faint", theme.text(9)))
         holder = QWidget()
-        holder.setLayout(title)
-        bar.addWidget(holder)
-        bar.addStretch(1)
+        holder.setObjectName("cell")
+        bar = QHBoxLayout(holder)
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setSpacing(12)
 
         def field(caption: str, box: QComboBox, tip: str) -> QWidget:
             holder = QWidget()
+            holder.setObjectName("cell")
             col = QVBoxLayout(holder)
             col.setContentsMargins(0, 0, 0, 0)
             col.setSpacing(3)
@@ -997,15 +1032,24 @@ class MainWindow(QMainWindow):
             "Changes which window 'Recent move' measures and how far the\n"
             "target and stop sit from the price. Long horizons also bring in\n"
             "the big-picture backdrop."))
+        return holder
 
-        buttons = QVBoxLayout()
-        buttons.setContentsMargins(0, 0, 0, 0)
-        buttons.setSpacing(3)
-        buttons.addWidget(label("", "faint", theme.text(9)))   # align with the boxes
+    def _rail_footer(self) -> QWidget:
+        """The rail's foot: the wording switch, the test plan, and the status
+        line — the one line of running commentary the whole app gets.
+
+        The old Learn button is gone because Learn is a destination on the
+        rail now; two doors to the same tab is the pattern this workspace
+        keeps removing.
+        """
+        holder = QWidget()
+        col = QVBoxLayout(holder)
+        col.setContentsMargins(4, 0, 4, 0)
+        col.setSpacing(8)
         row = QHBoxLayout()
-        row.setSpacing(8)
+        row.setSpacing(6)
         self.wording_btn = QPushButton("")
-        self.wording_btn.setFont(theme.text(11))
+        self.wording_btn.setFont(theme.text(10))
         self.wording_btn.setToolTip(
             "Which words the app uses for the same numbers.\n\n"
             "Plain — 'Worth a look', 'Swing size', a sentence on every row.\n"
@@ -1013,32 +1057,24 @@ class MainWindow(QMainWindow):
             "second lines, which makes the board about a third shorter.\n\n"
             "Same columns, same order, same arithmetic either way.")
         self.wording_btn.clicked.connect(self._toggle_wording)
-        row.addWidget(self.wording_btn)
-
-        learn = QPushButton("Learn")
-        learn.setObjectName("primary")
-        learn.setFont(theme.text(11))
-        learn.setToolTip(
-            "The manual and the glossary, inside the app: what every number\n"
-            "means, how the model works, and what SONAR will not do.\n"
-            "Start at §1 if markets are new to you — it assumes nothing.")
-        learn.clicked.connect(lambda: self._show_learn())
-        row.addWidget(learn)
+        row.addWidget(self.wording_btn, 1)
 
         plan = QPushButton("Test plan")
-        plan.setFont(theme.text(11))
+        plan.setFont(theme.text(10))
         plan.setToolTip(
             "The acceptance checklist for signing off a build.\n"
             "Tick each case off as you go — the page remembers what you have\n"
             "already passed or failed. Seventeen are marked as regressions:\n"
             "each one has caught a real bug before.")
         plan.clicked.connect(self._open_testplan)
-        row.addWidget(plan)
-        buttons.addLayout(row)
-        holder = QWidget()
-        holder.setLayout(buttons)
-        bar.addWidget(holder)
-        return bar
+        row.addWidget(plan, 1)
+        col.addLayout(row)
+
+        # Wrapped, or one long trade confirmation sets the rail's minimum
+        # width — the same QLabel trap tests/test_layout.py guards.
+        self.status = label("starting…", "faint", theme.figure(9), wrap=True)
+        col.addWidget(self.status)
+        return holder
 
     def _assets_tab(self) -> QWidget:
         """The board, under one sentence saying what it is.
@@ -1226,19 +1262,55 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 8, 0, 0)
         lay.setSpacing(10)
 
+        # -- this hour ------------------------------------------------------ #
+        # Six figures used to sit in six equal cells, which told the reader
+        # they mattered equally. They do not: the edge is the only number in
+        # the app that is a disagreement with a market, so it is the biggest
+        # thing on the screen and sits in the one highlighted cell; the price
+        # anchors the left, and tau is drawn as the clock it is.
         strip = panel()
-        g = QGridLayout(strip)
-        g.setContentsMargins(14, 10, 14, 10)
+        g = QHBoxLayout(strip)
+        g.setContentsMargins(16, 12, 16, 12)
+        g.setSpacing(18)
         self.stats = {}
-        cells = [("price", "BTC/USD, live"), ("hour", "This hour's open → now"),
-                 ("model", "Our P(up) from the barrier model"),
-                 ("market", "Polymarket's implied P(up)"),
-                 ("edge", "Model minus market — our only disagreement"),
-                 ("tau", "Fraction of the hour still to run")]
-        for i, (k, tip) in enumerate(cells):
-            s = Stat(k, tip)
-            self.stats[k] = s
-            g.addWidget(s, 0, i)
+
+        def stat(key: str, tip: str, val_font=None) -> Stat:
+            s = Stat(key, tip)
+            if val_font is not None:
+                s.val.setFont(val_font)
+            self.stats[key] = s
+            return s
+
+        price_col = QVBoxLayout()
+        price_col.setSpacing(4)
+        price_col.addWidget(stat("price", "BTC/USD, live",
+                                 theme.figure(21, True)))
+        price_col.addWidget(stat("hour", "This hour's open → now"))
+        g.addLayout(price_col)
+        g.addWidget(_vline())
+        g.addWidget(stat("model", "Our P(up) from the barrier model",
+                         theme.figure(18, True)))
+        g.addWidget(stat("market", "Polymarket's implied P(up)",
+                         theme.figure(18, True)))
+
+        edge_cell = QFrame()
+        edge_cell.setObjectName("banner")
+        el = QVBoxLayout(edge_cell)
+        el.setContentsMargins(14, 8, 14, 8)
+        el.addWidget(stat("edge", "Model minus market — our only disagreement",
+                          theme.figure(20, True)))
+        g.addWidget(edge_cell)
+        g.addStretch(1)
+
+        tau_col = QVBoxLayout()
+        tau_col.setSpacing(5)
+        tau_col.addWidget(stat("tau", "Fraction of the hour still to run"))
+        self.hour_bar = HourBar()
+        self.hour_bar.setFixedWidth(120)
+        self.hour_bar.setToolTip("Fills as the hour runs; settles at :00.")
+        tau_col.addWidget(self.hour_bar)
+        tau_col.addStretch(1)
+        g.addLayout(tau_col)
         lay.addWidget(strip)
 
         mid = QHBoxLayout()
@@ -1257,9 +1329,13 @@ class MainWindow(QMainWindow):
                                "value ≈ 0 — variance, not profit.")
         lay.addWidget(self.equity)
 
+        # The ledger strip: what the paper book stands at, and how the model
+        # is scoring against the market — one panel, because both are the
+        # running account of the same bet.
         pstrip = panel()
         pg = QGridLayout(pstrip)
         pg.setContentsMargins(14, 10, 14, 10)
+        pg.setVerticalSpacing(8)
         for i, (k, tip) in enumerate([
                 ("bankroll", "Paper bankroll"), ("pnl", "Total paper P&L"),
                 ("trades", "Settled live trades — the fair-odds warm-up rows "
@@ -1269,7 +1345,6 @@ class MainWindow(QMainWindow):
             s = Stat(k, tip)
             self.stats[k] = s
             pg.addWidget(s, 0, i)
-        lay.addWidget(pstrip)
 
         # Model vs market, scored on every hour watched — traded or not.
         # The direct test of the realised-vs-implied thesis, and it converges
@@ -1280,7 +1355,8 @@ class MainWindow(QMainWindow):
             "market's, snapshotted mid-hour for every hour and settled on the\n"
             "real candle. Unlike the P&L this scores the hours the engine did\n"
             "NOT trade too, so it cannot be flattered by selection.")
-        lay.addWidget(self.mvm)
+        pg.addWidget(self.mvm, 1, 0, 1, 5)
+        lay.addWidget(pstrip)
 
         self.read_panel = ReadPanel()
         lay.addWidget(self.read_panel)
@@ -2706,6 +2782,7 @@ class MainWindow(QMainWindow):
             self.stats["edge"].set(f'{sig["edge"]*100:+.1f}¢',
                                    theme.side_color(sig["side"]))
             self.stats["tau"].set(f'{sig["tau"]*100:.0f}%')
+            self.hour_bar.set_fraction(sig["tau"])
         self.lattice.set_data(snap.get("lattice", {}))
         m = snap.get("market") or {}
         self.depth.set_book(m.get("bids"), m.get("asks"))
@@ -2722,6 +2799,12 @@ class MainWindow(QMainWindow):
             self.stats["profile"].set(st.get("risk_profile", "—"))
         mvm = pf.get("model_vs_market") or {}
         rh = pf.get("run_health") or {}
+        buy = pf.get("buyability") or {}
+        if buy.get("verdict"):
+            # Calibrated is not the same as buyable; the second answer lives
+            # on hover, where there is room for its error bar.
+            self.mvm.setToolTip(self.mvm.toolTip().split("\n\nAt the touch:")[0]
+                                + "\n\nAt the touch: " + buy["verdict"])
         health = ""
         if rh.get("started"):
             health = (f' · coverage {rh.get("coverage_pct", 0):.0f}%'
@@ -3015,6 +3098,28 @@ class MainWindow(QMainWindow):
             want_w = min(want_w, avail.width() - SCREEN_MARGIN)
             want_h = min(want_h, avail.height() - SCREEN_MARGIN)
         self.resize(want_w, want_h)
+
+    def _sync_rail(self) -> None:
+        """Fold or unfold the rail to match the window's width.
+
+        Split out of resizeEvent because Qt only delivers resize events to a
+        window that is (about to be) shown — a hidden window resized
+        programmatically, which is what every test does, changes geometry
+        without the event, so the tests call this directly.
+        """
+        self.tabs.set_collapsed(self.width() < RAIL_COLLAPSE_BELOW)
+
+    def resizeEvent(self, e) -> None:
+        """Give the board its width back on a small screen.
+
+        Below RAIL_COLLAPSE_BELOW the rail drops to icons — state untouched,
+        painting only, see ``PlainTabs.set_collapsed``. Guarded because Qt
+        delivers the first resize while ``_fit_to_screen`` runs, before the
+        rail exists.
+        """
+        super().resizeEvent(e)
+        if getattr(self, "tabs", None) is not None:
+            self._sync_rail()
 
     def reveal(self) -> None:
         """Bring the window back — the tray item and a Dock click both land here.

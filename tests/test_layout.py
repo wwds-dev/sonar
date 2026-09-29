@@ -39,11 +39,27 @@ def window():
 
 
 def test_the_window_fits_a_small_laptop(window):
+    """Measured with the rail folded, which is the state a small screen gets:
+    _fit_to_screen sizes the window under RAIL_COLLAPSE_BELOW there, and the
+    fold runs before the window is shown."""
+    window.tabs.set_collapsed(True)
     m = window.minimumSizeHint()
     assert m.width() <= SCREEN_W, (
         f"the window cannot be made narrower than {m.width()}pt, so on a "
         f"{SCREEN_W}pt screen it opens with {m.width() - SCREEN_W}pt off the edge")
     assert m.height() <= SCREEN_H
+    window._sync_rail()
+
+
+def test_the_expanded_rail_leaves_the_fold_reachable(window):
+    """Qt stops an interactive resize at the layout minimum. If the expanded
+    window's minimum sat at or above the collapse threshold, dragging the
+    window narrower could never cross the threshold, and the rail could never
+    fold — a deadlock the first cut of this shell actually had."""
+    from ui.app import RAIL_COLLAPSE_BELOW
+    window.tabs.set_collapsed(False)
+    assert window.minimumSizeHint().width() < RAIL_COLLAPSE_BELOW
+    window._sync_rail()
 
 
 def test_no_single_tab_forces_the_window_wide(window):
@@ -67,11 +83,35 @@ def test_long_prose_labels_wrap(window):
 
 
 def test_the_preferred_size_is_itself_reasonable():
-    """A preferred size larger than a common screen is a bug in waiting."""
-    assert PREFERRED_SIZE[0] <= SCREEN_W
+    """An unclamped preferred size is a bug in waiting.
+
+    Since the Cockpit shell the preferred width deliberately exceeds a 13"
+    laptop — on a screen with the room, the rail opens with its names showing
+    — and `_fit_to_screen` clamps it on one without. What must stay true is
+    that the clamp target is sane and the *minimum* (tested above) fits.
+    """
+    assert PREFERRED_SIZE[0] <= 1440
     # Height is allowed to exceed the small-laptop case because _fit_to_screen
     # clamps it, but it should not be absurd.
     assert PREFERRED_SIZE[1] <= 1000
+
+
+def test_the_rail_collapses_on_a_small_screen_and_recovers(window):
+    """At the tested minimum the board needs the width, so the rail yields it
+    — icons only — and gives the names back the moment there is room. State
+    must survive the round trip: collapse changes painting, never wording."""
+    from ui.app import RAIL_COLLAPSE_BELOW
+
+    window.resize(SCREEN_W, SCREEN_H)
+    window._sync_rail()      # a hidden window gets no resizeEvent from Qt
+    assert window.tabs.is_collapsed(), \
+        f"{SCREEN_W}pt is below {RAIL_COLLAPSE_BELOW}pt, the rail should fold"
+    subtitles_while_folded = dict(window.tabs.tabBar()._subtitles)
+
+    window.resize(RAIL_COLLAPSE_BELOW + 60, SCREEN_H)
+    window._sync_rail()
+    assert not window.tabs.is_collapsed()
+    assert dict(window.tabs.tabBar()._subtitles) == subtitles_while_folded
 
 
 def test_fit_to_screen_never_grows_the_window(window):
