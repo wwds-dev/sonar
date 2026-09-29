@@ -122,12 +122,14 @@ def test_every_tab_shows_both_names(window):
 
 
 def test_a_tab_is_wide_enough_for_its_own_name(window):
-    """Sized from the unselected font, every tab lost its last letter the
-    moment it was clicked."""
+    """Sized from the unselected font, every tab once lost its last letter the
+    moment it was clicked. On the rail the text shares its row with an icon
+    and padding, so the room that matters is what is left after both — and
+    only with the rail expanded, since collapsed rows show the icon alone."""
     from PySide6.QtGui import QFontMetrics
     from ui import theme
-    bar = window.tabs.tabBar()
+    room = window.tabs.text_room()
     for i in range(window.tabs.count()):
         needed = QFontMetrics(theme.text(12, True)).horizontalAdvance(
             window.tabs.tabText(i))
-        assert bar.tabRect(i).width() >= needed, window.tabs.tabText(i)
+        assert room >= needed, window.tabs.tabText(i)

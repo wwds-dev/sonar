@@ -312,3 +312,38 @@ class ComponentBar(QWidget):
             p.fillRect(QRectF(x, 0, seg, self.height()),
                        QBrush(theme.COMP.get(name, theme.MUTED)))
             x += seg
+
+
+class HourBar(QWidget):
+    """How far through the hour the model's trade is — tau, drawn as time.
+
+    The signal's tau is the *fraction of the hour still to run*, and as a bare
+    percentage it reads like yet another probability sitting between four real
+    ones. A filling bar cannot be misread that way: it is visibly a clock.
+    The number stays printed above it; this adds the shape, not a new claim.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFixedHeight(5)
+        self.remaining: float | None = None
+
+    def set_fraction(self, remaining: float | None) -> None:
+        self.remaining = None if remaining is None else \
+            max(0.0, min(1.0, float(remaining)))
+        self.update()
+
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        radius = self.height() / 2
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(theme.GRID))
+        p.drawRoundedRect(QRectF(self.rect()), radius, radius)
+        if self.remaining is None:
+            return
+        elapsed = (1.0 - self.remaining) * self.width()
+        if elapsed >= 1:
+            p.setBrush(QBrush(theme.UP))
+            p.drawRoundedRect(QRectF(0, 0, elapsed, self.height()),
+                              radius, radius)

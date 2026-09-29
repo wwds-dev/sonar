@@ -31,6 +31,8 @@ from PySide6.QtGui import QColor, QFont
 
 # --- surfaces --------------------------------------------------------------- #
 BG = QColor("#12171f")
+RAIL = QColor("#0e1319")         # the navigation rail — one step below BG, so
+                                 # chrome reads as chrome and content as content
 PANEL = QColor("#1a212c")
 PANEL_HI = QColor("#202936")     # hover, and controls that sit on a panel
 BORDER = QColor("#2b3746")
@@ -134,6 +136,17 @@ QLabel#faint {{ color: {FAINT.name()}; }}
    holders have no business painting a background, so they stop. */
 QLabel {{ background: transparent; }}
 QWidget#cell {{ background: transparent; }}
+/* The navigation rail (the Cockpit shell, 2026-09-29). The rail is chrome:
+   one surface below the window background, a hairline on its content edge.
+   The bar inside it paints itself and must stay transparent, or the blanket
+   QWidget rule above puts a BG-coloured box behind every nav item — the same
+   trap the comment above records for labels. */
+QFrame#rail {{
+    background: {RAIL.name()};
+    border: none;
+    border-right: 1px solid {BORDER.name()};
+}}
+PlainTabBar {{ background: transparent; }}
 QFrame#panel {{
     background: {PANEL.name()};
     border: 1px solid {BORDER.name()};

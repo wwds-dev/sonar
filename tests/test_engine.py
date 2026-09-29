@@ -54,9 +54,17 @@ def engine(tmp_path, clock):
     return eng.Engine(tmp_path / "state.json", starting_bankroll=10_000.0)
 
 
-def market_at(clock, tau: float, **kw) -> Market:
-    """A market with `tau` of the hour left, per `Engine._tau`."""
-    return Market(end_time=clock[0] + tau * 3600.0, **kw)
+def market_at(clock, tau: float, hour: int = HOUR, **kw) -> Market:
+    """THE market for ``hour``, observed with ``tau`` of it left.
+
+    Since the alignment guard, a market must end exactly one hour after its
+    candle opens or the engine refuses the tick — so the fixture sets the
+    frozen clock to the moment inside ``hour`` where that much of it remains,
+    instead of inventing an end time from wherever the clock happened to be.
+    Pass ``hour=`` when ticking a later candle and expecting a signal from it.
+    """
+    clock[0] = hour + 3600.0 - tau * 3600.0
+    return Market(end_time=hour + 3600.0, **kw)
 
 
 def eager() -> risk_mod.RiskProfile:
@@ -510,7 +518,7 @@ def test_live_trades_count_alongside_seeded_ones(engine, clock):
     engine.seed_backtest(_rows(10))
     engine.risk = eager()
     engine.tick(Candle(HOUR * 99, 100.0, 100.5),
-                market_at(clock, 0.5, implied_up=0.30), 0.0045)
+                market_at(clock, 0.5, hour=HOUR * 99, implied_up=0.30), 0.0045)
     engine.finalize(HOUR * 99, close_price=101.0)
     s = engine.stats()
     assert s["n_trades"] == 1 and s["n_wins"] == 1
@@ -707,3 +715,155 @@ def test_run_health_survives_a_restart(engine, tmp_path, clock):
     assert rh["scored"] == 1
     assert rh["started"] == engine.score_started
     assert rh["last_settled"] == engine.last_settled_at
+
+
+# --------------------------------------------------------------------------- #
+# Buyability — calibrated is not the same as buyable
+# --------------------------------------------------------------------------- #
+def _priced(model_up, bid, ask, outcome):
+    return {"model_up": model_up, "market_up": (bid + ask) / 2,
+            "bid": bid, "ask": ask, "outcome": outcome, "open": 100.0,
+            "close": 101.0 if outcome else 99.0, "tau": 0.5, "hour_key": 0}
+
+
+def test_a_right_and_cheap_model_shows_positive_ev(engine):
+    """Model says 0.70, the ask sells UP at 0.50, UP happens: one stake
+    returns (1-0.505)/0.505. The gate reads the *executable* edge."""
+    engine.scorelog = [_priced(0.70, 0.49, 0.50, 1.0)] * 120
+    r = engine.buyability()
+    g = next(g for g in r["gates"] if g["gate"] == 0.04)
+    assert g["n"] == 120
+    assert g["ev_per_stake"] == pytest.approx((1 - 0.505) / 0.505, abs=1e-4)
+    assert "beyond two standard errors and surviving leave-one-out" in r["verdict"]
+
+
+def test_a_wrong_model_loses_its_stake(engine):
+    engine.scorelog = [_priced(0.70, 0.49, 0.50, 0.0)] * 120
+    r = engine.buyability()
+    g = next(g for g in r["gates"] if g["gate"] == 0.04)
+    assert g["ev_per_stake"] == pytest.approx(-1.0)
+    assert "LOST" in r["verdict"]
+
+
+def test_the_down_side_is_priced_off_the_bid(engine):
+    """Model below the mid buys DOWN at (1 - bid) + slippage — the same
+    arithmetic the live entry path uses."""
+    engine.scorelog = [_priced(0.20, 0.60, 0.62, 0.0)] * 60
+    r = engine.buyability()
+    g = next(g for g in r["gates"] if g["gate"] == 0.04)
+    price = (1 - 0.60) + eng.SLIPPAGE
+    assert g["ev_per_stake"] == pytest.approx((1 - price) / price, abs=1e-4)
+
+
+def test_an_edge_inside_the_gate_is_not_a_trade(engine):
+    """Executable edge 3c: counted at the 1c and 2c gates, absent at 4c."""
+    engine.scorelog = [_priced(0.535, 0.49, 0.50, 1.0)] * 50
+    r = engine.buyability()
+    by = {g["gate"]: g["n"] for g in r["gates"]}
+    assert by[0.01] == 50 and by[0.02] == 50 and by[0.04] == 0
+
+
+def test_unpriced_hours_are_left_out_not_guessed(engine):
+    row = _priced(0.70, 0.49, 0.50, 1.0)
+    bare = dict(row, bid=None, ask=None)
+    engine.scorelog = [row] * 10 + [bare] * 10
+    assert engine.buyability()["n_priced"] == 10
+
+
+def test_too_few_qualifying_hours_is_a_refusal(engine):
+    engine.scorelog = [_priced(0.70, 0.49, 0.50, 1.0)] * 30
+    assert "too few" in engine.buyability()["verdict"]
+
+
+# --------------------------------------------------------------------------- #
+# The candle/market alignment guard — one hour must never price another
+# --------------------------------------------------------------------------- #
+def test_a_market_for_another_hour_prices_nothing(engine, clock):
+    """The wild bug from week one, pinned as it happened: a stale candle met
+    the NEXT hour's market, tau read mid-window off the market's clock while
+    the candle's own hour was already settled, and the engine bought the
+    known outcome at longshot prices — five such fills were 71% of a week's
+    paper P&L. Alignment is the invariant: an hourly market ends exactly one
+    hour after its candle opens, or the tick is refused."""
+    engine.risk = eager()
+    sig = engine.tick(Candle(HOUR, 100.0, 99.0),
+                      market_at(clock, 0.5, hour=HOUR * 2, implied_up=0.965),
+                      0.0045)
+    assert engine.open_position is None, "hindsight is not an edge"
+    assert engine.pending_score is None, "and it must not be scored either"
+    assert sig is None, "no signal is honest; a cross-hour signal is not"
+
+
+def test_an_expired_markets_hour_is_not_entered(engine, clock):
+    engine.risk = eager()
+    clock[0] = HOUR + 3600 + 51 * 60          # 51 minutes past the close
+    engine.tick(Candle(HOUR, 100.0, 99.0),
+                Market(end_time=HOUR + 3600.0, implied_up=0.965), 0.0045)
+    assert engine.open_position is None
+
+
+def test_an_aligned_market_still_trades(engine, clock):
+    """The control: the guard must not eat legitimate hours."""
+    engine.risk = eager()
+    engine.tick(Candle(HOUR, 100.0, 100.5),
+                market_at(clock, 0.5, implied_up=0.30), 0.0045)
+    assert engine.open_position is not None
+
+
+def test_the_side_is_chosen_as_the_engine_chooses_it(engine):
+    """Against market_up — the mid the live entry path reads — never against
+    a recomputed book mid that can sit on the other side of it. Here the
+    model (0.55) is above the book mid (0.495) but below market_up (0.57):
+    the engine's rule says DOWN-or-nothing, so booking UP at the ask would be
+    measuring a strategy nobody trades."""
+    row = _priced(0.55, 0.49, 0.50, 1.0)
+    row["market_up"] = 0.57
+    engine.scorelog = [row] * 120
+    g = next(g for g in engine.buyability()["gates"] if g["gate"] == 0.04)
+    assert g["n"] == 0
+
+
+def test_hours_outside_the_entry_window_are_not_priced(engine):
+    """A snapshot at tau 0.05 is an hour the engine is forbidden to trade —
+    and where a pinned model meets a near-settled book. The first live
+    readout carried 34 such rows; they are exactly the phantom edges."""
+    row = dict(_priced(0.9996, 0.94, 0.95, 1.0), tau=0.05)
+    engine.scorelog = [row] * 120
+    r = engine.buyability()
+    assert r["n_priced"] == 0
+    assert r["n_out_of_window"] == 120
+
+
+def test_a_settlement_state_book_is_excluded_and_counted(engine):
+    """bid 0.999 / ask 1.0 is a resolution, not a market. The first live
+    readout's headline EV was 77% one such row — 'bought DOWN at 0.6c' for a
+    +165x return no book would ever have filled."""
+    row = _priced(0.0, 0.999, 1.0, 0.0)
+    engine.scorelog = [row] * 120
+    r = engine.buyability()
+    assert r["n_priced"] == 0
+    assert r["n_bad_book"] == 120
+
+
+def test_one_whale_cannot_carry_a_positive_verdict(engine):
+    """Leave-one-out is the gate: many small losses and one huge win can
+    clear 2se on the mean while the strategy is a lottery ticket."""
+    rows = [_priced(0.30, 0.03, 0.04, 1.0)]                # +21x longshot hit
+    rows += [_priced(0.60, 0.49, 0.50, 0.0)] * 60          # steady losers
+    engine.scorelog = rows * 2
+    r = engine.buyability()
+    g = next(g for g in r["gates"] if g["gate"] == 0.04)
+    assert g["top_share"] > 0.4
+    assert "whale" in r["verdict"] or "within noise" in r["verdict"] \
+        or "LOST" in r["verdict"], r["verdict"]
+    assert "surviving leave-one-out" not in r["verdict"]
+
+
+def test_the_active_profiles_gate_always_has_a_row(engine):
+    """The aggressive threshold (2.5c) matches no table gate; the verdict
+    must grade the engine's real gate, not silently fall back to 4c."""
+    engine.risk = risk_mod.get("aggressive")
+    engine.scorelog = [_priced(0.70, 0.49, 0.50, 1.0)] * 120
+    r = engine.buyability()
+    assert any(abs(g["gate"] - 0.025) < 1e-9 for g in r["gates"])
+    assert "2.5c gate" in r["verdict"]

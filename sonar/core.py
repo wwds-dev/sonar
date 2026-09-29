@@ -646,6 +646,9 @@ class Live:
             # Coverage, voids and staleness — whether the experiment is
             # actually collecting, which a quiet menu bar cannot show.
             "run_health": eng.run_health(now),
+            # Calibrated is not the same as buyable: this prices the model's
+            # disagreements at the recorded touch.
+            "buyability": eng.buyability(),
         }
         # The macro regime is noise on an hourly view and the dominant term
         # on a yearly one, so it rides along only at horizons where it matters.

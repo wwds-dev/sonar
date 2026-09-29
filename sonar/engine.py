@@ -200,6 +200,19 @@ class Engine:
         if market is None:
             return self.last_signal
 
+        # The market must be THIS candle's market: an hourly market ends
+        # exactly one hour after its candle opens. Nothing downstream survives
+        # a mismatch — tau is computed from the market's clock while the
+        # outcome comes from the candle's, so a cached market meeting a stale
+        # candle (or the reverse, around a wake or a feed hiccup) prices one
+        # hour against another. The scoring path had a tau bound that mostly
+        # caught this; the ENTRY path had nothing, and five live trades were
+        # opened up to 51 minutes after their own hour had settled — buying
+        # the known outcome at longshot prices, 71% of a week's paper P&L.
+        # An honest engine refuses the tick instead.
+        if market.end_time != candle.open_time + 3600:
+            return self.last_signal
+
         tau = self._tau(market.end_time)
         sig = _model.evaluate(candle.price, candle.open, sigma, tau,
                               market.implied_up)
@@ -485,6 +498,146 @@ class Engine:
         else:
             out["verdict"] = ("Model and market are within noise of each "
                               "other, which is what no edge looks like.")
+        return out
+
+    #: Executable-edge thresholds the buyability table reports. The active
+    #: risk profile's own threshold is always added at call time, so the
+    #: verdict never silently grades a different gate than the engine trades.
+    BUYABILITY_GATES = (0.01, 0.02, 0.04, 0.07, 0.10)
+
+    #: A bought side priced outside this band is a settlement-state book, not
+    #: a market — the same clip seed_backtest applies, for the same reason. A
+    #: per-stake return weights each hour by 1/price, so exactly the least
+    #: believable quotes would otherwise dominate the mean.
+    BUYABILITY_PRICE_BAND = (0.02, 0.98)
+
+    def buyability(self) -> dict:
+        """Was the model's disagreement ever worth buying — at the touch?
+
+        :meth:`model_vs_market` answers *calibration*: whose probabilities were
+        closer to what happened. This prices the question the recorded bid/ask
+        exists for: buy the model's favoured side at the touch (plus the
+        engine's slippage constant) every hour its executable edge clears a
+        threshold, and report the realised return per unit staked.
+
+        It measures the strategy the engine actually trades, which an
+        adversarial review of the first version found it did not:
+
+        * the favoured side is chosen against ``market_up`` — the same mid the
+          live entry path reads — never against a recomputed book mid that can
+          sit on the other side of it;
+        * only hours whose snapshot ``tau`` falls inside the active profile's
+          entry window count, because the engine is forbidden the rest;
+        * a book outside :data:`BUYABILITY_PRICE_BAND`, crossed, or touching
+          0/1 is a resolution state and is excluded — and counted, so the
+          exclusion is visible;
+        * the standard error is the wider of the plain one and a Newey-West
+          one over the hour-ordered returns, because qualifying hours cluster
+          through shared volatility regimes;
+        * each gate carries ``loo_ev`` (the mean without its single best
+          return) and ``top_share`` (that return's share of gross profit), and
+          a positive verdict must survive the leave-one-out — one whale is a
+          story, not an edge.
+
+        Still assumed, still named: fills of one stake at the touch, size
+        unrecorded, one snapshot per hour.
+        """
+        from .research import stats as _stats
+
+        lo, hi = self.BUYABILITY_PRICE_BAND
+        priced, n_unpriced, n_out_of_window, n_bad_book = [], 0, 0, 0
+        for r in self.scorelog:
+            if r.get("outcome") is None:
+                continue
+            bid, ask = r.get("bid"), r.get("ask")
+            if bid is None or ask is None:
+                n_unpriced += 1
+                continue
+            if not (0.0 < bid <= ask < 1.0):
+                n_bad_book += 1
+                continue
+            tau = r.get("tau")
+            if tau is None or not (self.risk.enter_tau_min <= tau
+                                   <= self.risk.enter_tau_max):
+                n_out_of_window += 1
+                continue
+            mid = r.get("market_up")
+            mid = mid if mid is not None else (bid + ask) / 2.0
+            if r["model_up"] >= mid:
+                price = min(0.99, ask + SLIPPAGE)
+                p_model, won = r["model_up"], r["outcome"] >= 0.5
+            else:
+                price = min(0.99, (1.0 - bid) + SLIPPAGE)
+                p_model, won = 1.0 - r["model_up"], r["outcome"] < 0.5
+            if not (lo <= price <= hi):
+                n_bad_book += 1
+                continue
+            priced.append((p_model - price,
+                           (1.0 - price) / price if won else -1.0))
+
+        out: dict = {"n_priced": len(priced), "n_unpriced": n_unpriced,
+                     "n_out_of_window": n_out_of_window,
+                     "n_bad_book": n_bad_book, "gates": [],
+                     "min_sample": self.SCORE_MIN_SAMPLE}
+        gates = sorted(set(self.BUYABILITY_GATES) | {self.risk.edge_threshold})
+        for gate in gates:
+            rets = [ret for edge, ret in priced if edge >= gate]
+            n = len(rets)
+            row = {"gate": gate, "n": n}
+            if n:
+                mean = sum(rets) / n
+                var = (sum((x - mean) ** 2 for x in rets) / (n - 1)) if n > 1 else 0.0
+                plain = (var / n) ** 0.5
+                _t, hac = _stats.newey_west_t(rets, lags=min(24, n - 1)) \
+                    if n >= 10 else (0.0, 0.0)
+                best = max(rets)
+                gross = sum(x for x in rets if x > 0)
+                row.update({
+                    "ev_per_stake": round(mean, 4),
+                    "se": round(max(plain, hac), 4),
+                    "hit_rate": round(sum(1 for x in rets if x > 0) / n, 4),
+                    "loo_ev": round((sum(rets) - best) / (n - 1), 4)
+                    if n > 1 else None,
+                    "top_share": round(best / gross, 4) if gross > 0 and best > 0
+                    else 0.0,
+                })
+            out["gates"].append(row)
+
+        at_gate = next(g for g in out["gates"]
+                       if abs(g["gate"] - self.risk.edge_threshold) < 1e-9)
+        gate_pct = f"{self.risk.edge_threshold * 100:g}c"
+        if at_gate["n"] < self.SCORE_MIN_SAMPLE:
+            out["verdict"] = (f'{at_gate["n"]} of {self.SCORE_MIN_SAMPLE} '
+                              f"qualifying hours at the {gate_pct} gate — too "
+                              "few to price the edge.")
+        else:
+            # se can be exactly 0.0 when every return is identical — the
+            # comparison must not read that as noise (model_vs_market learned
+            # this the same way).
+            ev, se = at_gate["ev_per_stake"], at_gate["se"] or 0.0
+            loo = at_gate.get("loo_ev")
+            if ev > 2 * se and ev > 0 and loo is not None and loo > 0:
+                out["verdict"] = (f"Buying the model's side at the touch "
+                                  f"returned {ev:+.1%} per stake at the "
+                                  f"{gate_pct} gate, beyond two standard "
+                                  "errors and surviving leave-one-out — "
+                                  "before size limits, and deserving of "
+                                  "suspicion before belief.")
+            elif ev > 2 * se and ev > 0:
+                out["verdict"] = (f"{ev:+.1%} per stake at the {gate_pct} "
+                                  "gate, but a single hour carries it — "
+                                  f"without that hour: {loo:+.1%}. One whale "
+                                  "is a story, not an edge.")
+            elif ev < -2 * se and ev < 0:
+                out["verdict"] = (f"Buying the model's side at the touch "
+                                  f"LOST {ev:+.1%} per stake at the "
+                                  f"{gate_pct} gate, beyond two standard "
+                                  "errors — the disagreements were the "
+                                  "market being right.")
+            else:
+                out["verdict"] = (f"{ev:+.1%} per stake at the {gate_pct} "
+                                  "gate, within noise of zero — no buyable "
+                                  "edge demonstrated either way.")
         return out
 
     def run_health(self, now: float | None = None) -> dict:
