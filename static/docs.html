@@ -126,7 +126,7 @@
   <p>Roughly in the order you will bump into them. You will meet most of them
     on the board itself only if you ask to: SONAR ships in <b>plain</b> wording,
     where the columns are called "Recent move", "Swing size" and "Worth a look",
-    and the <b>Wording</b> button in the toolbar switches to <b>expert</b>, where
+    and the <b>Wording</b> button at the foot of the rail switches to <b>expert</b>, where
     the same columns are <code>MOM</code>, <code>VOL</code> and <code>CONF</code>
     — the terms this page and every other market tool use. Expert also drops the
     second line under each figure and puts the ticker back, which makes the board
@@ -289,12 +289,15 @@
     so far its honest answer about most of them has been no.</div>
 
   <h2 id="tabs"><span class="n">2</span>The eight tabs</h2>
-  <p>Each tab carries two names: the plain one it is called by, and — under it,
-    in small caps — the one this page and the README use. The plain names are
-    the Plain Language direction; the originals stay because forty sentences in
-    this document refer to them, and because a month of muscle memory is worth
-    more than tidiness. In <b>expert</b> wording (<a href="#learn">§1</a>) the
-    bar shows only the original name, on one line.</p>
+  <p>The tabs live on the rail down the left of the window. Each carries two
+    names: the plain one it is called by, and — under it, in small caps — the
+    one this page and the README use. The plain names are the Plain Language
+    direction; the originals stay because forty sentences in this document
+    refer to them, and because a month of muscle memory is worth more than
+    tidiness. In <b>expert</b> wording (<a href="#learn">§1</a>) the rail shows
+    only the original name, on one line. On a window too narrow for the board
+    and the names both, the rail folds to its icons — rest the pointer on one
+    for the names — and unfolds when the window is widened.</p>
   <table>
     <tr><th>Tab</th><th>What it does</th><th>Asserts a direction?</th></tr>
     <tr><td>Live model<div class="muted">was <b>Terminal</b></div></td>
@@ -351,7 +354,8 @@
     own odds back at you is not analysis — there was no independent model behind
     any non-crypto row, so each one simply repeated the crowd. Dropping it also
     removed about 52MB an hour of downloads.</p>
-  <p>The <b>Tooltips</b> switch in the toolbar explains every number on hover.</p>
+  <p>Every number explains itself on hover — rest the pointer on a figure for
+    what it is and how to read it.</p>
 
   <h2 id="data"><span class="n">3</span>Where the data comes from</h2>
   <p>All free, public and read-only. No API key is required for anything the app
@@ -539,6 +543,18 @@ APCA_API_SECRET_KEY=...</code></pre>
   <p>The scorecard reports your hit rate with its error bar next to the model's
     and the barrier baseline. Below twenty resolved calls it refuses to draw a
     conclusion, which is the same rule the app applies to itself.</p>
+
+  <h3>Sports models</h3>
+  <p>The same gate, for the ratings behind the Sports tab. Pick a rated sport
+    and a number of seasons, press <b>measure</b>, and the panel fetches real
+    results, predicts every game from a table that has only seen the earlier
+    ones, and grades the predictions against the base rate — Brier, log loss,
+    and the calibration buckets, ending in the same KEEP / WEAK / DROP
+    vocabulary the rest of the app uses. KEEP is what lets a model size a
+    stake; anything else cannot, and a KEEP must clear a measured interval,
+    not a rule of thumb. Until this panel existed the sports verdicts could
+    only be re-measured from a script, which meant in practice they were
+    not.</p>
 
   <h2 id="reading"><span class="n">8</span>Reading a result</h2>
   <p>§7 says what the Lab does. This is how to judge what it gives back, which
