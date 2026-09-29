@@ -11,7 +11,7 @@ process. A green suite says nothing about any of them.
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **1,416 passed** |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **1,425 passed** |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -31,7 +31,7 @@ running even when short of time — the list doubles as this project's bug histo
 
 | # | Step | Expected |
 |---|---|---|
-| 0.1 | `./run-tests.sh tests/ -q` | 1,416 passed, in about ten seconds. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue. |
+| 0.1 | `./run-tests.sh tests/ -q` | 1,425 passed, in about ten seconds. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue. |
 | 0.2 | `./build_app.sh --install` | Ends with `All checks passed.` then `Installed:` |
 | 0.3 | `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` | `All checks passed.` Reports 7 sports, 5 rated, cycling with no feed. |
 | 0.4 | Note the bankroll before you start | You will compare against it in 5.x |
@@ -260,7 +260,7 @@ The cases most likely to be skipped, and the ones that produced the worst bugs.
 v2 signs off when:
 
 - [ ] Every ⚠ case passes. These are regressions; a failure is a re-opened bug.
-- [ ] §0 passes — build, self-test, and 1,416 automated tests.
+- [ ] §0 passes — build, self-test, and 1,425 automated tests.
 - [ ] No case in §1 (launch, window, quit) fails. The app being hard to close or
       quit has been reported twice and is the most visible class of defect here.
 - [ ] §10 passes. An app that misbehaves offline is worse than one that says it

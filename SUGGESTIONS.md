@@ -13,25 +13,11 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 | 3 | Calibration table auto-refresh once ≥20 paper positions have closed | feature | M | PLANNED |
 | 4 | Week-over-week scan deltas from the cached scans already on disk | feature | M | IDEA |
 | 5 | Intraday bars or order flow as a research input — the only honest way to reopen the study | research | XL | IDEA |
-| 6 | Volatility *forecast* instead of trailing realised vol | research | M | **DONE** — `sonar/volatility.py`. GARCH below 10 days (+11.6% at 3d, +17.8% at 5d on QLIKE), trailing-250 above (+5.6% at 20d). A synthetic control killed the first, much larger result: most of it was sample size, not clustering |
 | 7 | Turn news/vol/catalyst from levels into surprises against each instrument's own baseline (`CONFIDENCE.md` §5) | research | S | PLANNED |
-| 8 | Cross-sectional z-scoring within asset class (`CONFIDENCE.md` §3) | research | S | **DONE** — duplicate of #11, see there |
 | 9 | Daily GPR-style political index computed from the newswire SONAR already reads (`CONFIDENCE.md` §7.1) | feature | M | IDEA |
 | 10 | **Volatility component is inverted for ranking** — 10 of 12 configurations show a negative IC, quintile gradient 45.3%→34.5%, and the tie-break artefact is ruled out (zero ambiguous bars). But it fails the time-block test at 5/6, p=0.22, with the most recent period reversing — so the weights are unchanged. Also a design question, not only an empirical one: high volatility is correct for *notability* and backwards for *ranking winners* (`CONFIDENCE.md` §10a) | research | M | BLOCKED |
-| 11 | Cross-sectional z-scoring within asset class | research | M | **DONE** — `sonar/crosssection.py`. Class median CONF spread 18 → 8.6 points; Forex's volatility component went from a 0.23 ceiling to a 0.60 one. Standardises the *raw* quantity, not the clipped component — doing the latter is a silent no-op for the saturated classes |
-| 12 | Grow the watchlist so classes can carry a cross-sectional statistic | data | M | **DONE** — 26 → 129, every class ≥18. Every symbol verified to return a year of closes before being added; the growth also forced a rolling refresh, because refetching all of them took the request rate from ~13/min to ~64 and the source throttles below that |
-| 13 | Backfill a historical earnings calendar so the catalyst weight can face attribution | research | M | **DONE** — `sonar/research/earnings.py` (EDGAR Item-2.02 8-Ks). The first component ever to pass: IC +0.040, +5.0-point quintile spread, 6/6 blocks, and the phase-shift control *inverts* rather than shrugs. A volatility effect, not a direction; README carries the table |
 | 14 | Hit rate vs τ-at-entry | research | S | BLOCKED — first readout at 118 trades says nothing yet: 75% of entries land at τ 0.6–0.85 and the other buckets hold 5–10 trades with ±28–44-point bands. Re-read at gate ② |
-| 16 | Executable model-vs-market | research | S | **DONE** — `Engine.buyability()` prices the model's side at each hour's recorded touch across five edge gates, in the snapshot and refusing below 100 qualifying hours. First honest readout (117 priced hours, 55 at the moderate gate): refuses a verdict below 100 qualifying hours — the first version's 'positive at every gate' was 77% one settlement-state row and died under adversarial review |
 | 15 | Playmaker verdict polish | research | S | **PART DONE** — the KEEP bar is now `Score.skill_floor`, a seeded block-bootstrap interval on the per-game Brier differences. The Dixon-Coles outer refit stays open: it would shift fitted numbers, and the football feed measurement to re-earn them should run through the Lab's new sports panel first |
-
-## Safety rails
-
-| # | Suggestion | Category | Effort | Status |
-|---|---|---|---|---|
-| 6 | Order-state poller so the book records fills rather than intents | bug | L | **DONE** — `Portfolio.poll_fills()`, wired into `_mark_book` |
-| 7 | `GuardedBroker.confirmation_text` rendered verbatim in the dialog, never re-composed by callers — the `*** REAL MONEY ***` prefix only works if nothing else writes it | security | S | **DONE** — `execution.confirmation_text()` is the only composer, and no UI path re-writes it |
-| 8 | Automated reconciliation and kill-switch drills | testing | M | **DONE** — `tests/test_drills.py`, 8 tests. Now also run by CI on every push (see Done) |
 
 ## Interface
 
@@ -39,20 +25,29 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `DONE` · `REJECTED`
 |---|---|---|---|---|
 | 9 | Confidence score shown as a distribution rather than a single number | design | M | IDEA |
 | 10 | Export a closed round trip as a one-page post-mortem (entry, exit, thesis, realized cost) | feature | S | IDEA |
-| 11 | **The manual inside the app** rather than behind a button that opens a browser | design | M | **DONE** — the Learn tab. `ui/learn.py` translates `static/docs.html` into Qt rich text (its CSS is variables and flexbox, none of which Qt renders); contents from the page's own headings, so a new section appears without anyone remembering to list it |
-| 12 | **How old is this price?** on every Assets row | design | S | **DONE** — the AGE column. Anchored to the scan's `generated` stamp so it keeps counting between scans instead of freezing at what the scan measured; gold past a full rotation, red past an hour |
-| 13 | A **link on every heading** that opens the Learn tab at the paragraph explaining that number | design | M | **DONE** — headings that name something non-obvious carry a docs anchor and are drawn in the link colour; `tests/test_plain_language.py` asserts every anchor resolves to a section that exists |
-| 14 | **Plain-English headings**, and one plain sentence per row | design | S | **DONE** — headings are words, values carry a second line saying what they mean (*big swings*, *over 5 days*), and each row reads "up hard, heavy news". A test asserts that sentence can never acquire a direction |
 | 15 | **Guided mode for the Lab** — controls phrased as questions, a verdict in words above the table, and the three tests that decide whether a result means anything stated inline rather than assumed | feature | L | PLANNED |
 | 16 | **First-run cards**: paper money, notability is not direction, start on Assets, check claims in the Lab, the manual is a tab | feature | M | PLANNED |
 | 17 | Say what would change an "unproven" — "needs ~20 closed positions, you have 3" — wherever the app refuses to claim something | design | S | PLANNED |
-| 18 | **Plain / expert vocabulary switch** | design | M | **DONE** — `ui/words.py` plus a toolbar button. Plain is the default; expert restores MOM/VOL/R:R/CONF, the ticker and single-line tabs, and drops the second lines (~⅓ shorter rows). Vocabulary and density only — a test asserts the columns are identical in both, so there is never a second layout to keep true |
-| 19 | **GUI direction** — three mockups (refined dark, light high-contrast, plain-language restructure) | design | L | **DONE** — Plain Language chosen. `ui/theme.py` rewritten, `ui/tabs.py` added, the Screener rebuilt around it. README §"The Plain Language direction" records the rules |
 
 ## Done
 
 | Suggestion | When |
 |---|---|
+| **The Cockpit shell** — GUI round 2, from a mockup approved before any code moved: the eight tabs became a left rail (both names each, folding to icons below 1420pt), a page header names every screen and keeps the risk/horizon knobs visible everywhere, and the Terminal's six equal cells became a hierarchy with the edge largest. CHANGELOG v2.116, README §"The Cockpit shell" | 2026-09-29 |
+| GUI direction — three mockups (refined dark, light high-contrast, plain-language restructure); Plain Language chosen. `ui/theme.py` rewritten, `ui/tabs.py` added, the Screener rebuilt around it. README §"The Plain Language direction" records the rules | 2026-09-22 |
+| Plain / expert vocabulary switch — `ui/words.py` plus the Wording button. Plain default; expert restores MOM/VOL/R:R/CONF, the ticker and single-line names, and drops the second lines. Vocabulary and density only — a test asserts the columns are identical in both | Sep 2026 |
+| The manual inside the app — the Learn tab; `ui/learn.py` translates `static/docs.html` into Qt rich text, contents built from the page's own headings | Sep 2026 |
+| "How old is this price?" — the AGE/Updated column, anchored to the scan's `generated` stamp so it keeps counting between scans; gold past a full rotation, red past an hour | Sep 2026 |
+| A link on every heading — headings that name something non-obvious open the Learn tab at the explaining section; a test asserts every anchor resolves | Sep 2026 |
+| Plain-English headings and one plain sentence per row — "up hard, heavy news", generated from numbers already on the row; a test asserts the sentence can never acquire a direction | Sep 2026 |
+| Executable model-vs-market — `Engine.buyability()` prices the model's side at each hour's recorded touch across five edge gates, refusing below 100 qualifying hours; the first version's 'positive at every gate' was 77% one settlement-state row and died under adversarial review | 2026-09-29 |
+| Backfill a historical earnings calendar — `sonar/research/earnings.py` (EDGAR Item-2.02 8-Ks); the catalyst weight became the first component ever to pass attribution (IC +0.040, 6/6 blocks, phase-shift control inverts). A volatility effect, not a direction | Sep 2026 |
+| Cross-sectional z-scoring within asset class — `sonar/crosssection.py`; class median CONF spread 18 → 8.6 points. Standardises the raw quantity, not the clipped component (the latter is a silent no-op for saturated classes). Was listed twice (#8/#11) | Sep 2026 |
+| Grow the watchlist — 26 → 129, every class ≥18, every symbol verified to return a year of closes first; forced the rolling refresh, because refetching all of them got the source throttling | Sep 2026 |
+| Volatility forecast instead of trailing realised vol — `sonar/volatility.py`: GARCH below 10 days (+11.6% at 3d, +17.8% at 5d on QLIKE), trailing-250 above. A synthetic control killed the first, much larger result | Sep 2026 |
+| Order-state poller so the book records fills rather than intents — `Portfolio.poll_fills()`, wired into `_mark_book` | Sep 2026 |
+| `GuardedBroker.confirmation_text` rendered verbatim, never re-composed — `execution.confirmation_text()` is the only composer | Sep 2026 |
+| Automated reconciliation and kill-switch drills — `tests/test_drills.py`, run by CI on every push | Sep 2026 |
 | A CI runner — `.github/workflows/tests.yml`, the suite on every push under `QT_QPA_PLATFORM=offscreen`. The recorded blocker (window tests wedging ~1 in 3) was fixed 2026-09-19 by the session-scoped conftest guards, so the row's premise was stale | Sep 2026 |
 | Pre-run instrumentation — bid/ask on every hourly snapshot (unbackfillable), run-health line + STALLED menu-bar notification, daily rotating state-file backups, and protocol mode for the calibration table. Detail in `TODO.md` | Sep 2026 |
 | The 2026-09-19 review fixes — gap settlement, seeded rows out of live stats, executable-edge gate, the hourly model-vs-market Brier log, EWMA × hour-of-day σ (measured +7.5% QLIKE first), overlap-corrected backtest error bars, rank-IC calibration verdict, measured draw rate, draws out of Playmaker accuracy, the run-tests.sh watchdog leak. Detail in `TODO.md` | Sep 2026 |
