@@ -105,7 +105,7 @@
 <p class="callout"><b>Run it against <code>/Applications/SONAR.app</code>, not the checkout.</b> Several of the failures below only exist in a packaged build — a module PyInstaller could not see, a resource path that moves when frozen, a Qt plugin inherited from a parent process. A green suite says nothing about any of them.</p>
 <table><tr><th></th><th></th></tr>
 <tr><td>Build under test</td><td><code>./build_app.sh --install</code>, then <code>/Applications/SONAR.app/Contents/MacOS/SONAR --selftest</code></td></tr>
-<tr><td>Automated suite</td><td><code>./run-tests.sh tests/ -q</code> — expect <b>1,416 passed</b></td></tr>
+<tr><td>Automated suite</td><td><code>./run-tests.sh tests/ -q</code> — expect <b>1,425 passed</b></td></tr>
 <tr><td>Time to run this plan</td><td>~30 minutes</td></tr>
 <tr><td>Prerequisite</td><td>A working internet connection. Two cases deliberately need it off.</td></tr>
 </table>
@@ -114,7 +114,7 @@
 <p><b>⚠ marks a case that has caught a real regression.</b> Those are the ones worth running even when short of time — the list doubles as this project's bug history.</p>
 <h2><span class="n">0</span>Before starting</h2>
 <table><tr><th>Result</th><th>#</th><th>Step</th><th>Expected</th></tr>
-<tr data-case="0.1"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.1</td><td><code>./run-tests.sh tests/ -q</code></td><td>1,416 passed, in about ten seconds. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue.</td></tr>
+<tr data-case="0.1"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.1</td><td><code>./run-tests.sh tests/ -q</code></td><td>1,425 passed, in about ten seconds. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue.</td></tr>
 <tr data-case="0.2"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.2</td><td><code>./build_app.sh --install</code></td><td>Ends with <code>All checks passed.</code> then <code>Installed:</code></td></tr>
 <tr data-case="0.3"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.3</td><td><code>/Applications/SONAR.app/Contents/MacOS/SONAR --selftest</code></td><td><code>All checks passed.</code> Reports 7 sports, 5 rated, cycling with no feed.</td></tr>
 <tr data-case="0.4"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.4</td><td>Note the bankroll before you start</td><td>You will compare against it in 5.x</td></tr>
@@ -281,7 +281,7 @@
 </table>
 <h2><span class="n">11</span>Exit criteria</h2>
 <p>v2 signs off when:</p>
-<ul><li>Every ⚠ case passes. These are regressions; a failure is a re-opened bug.</li><li>§0 passes — build, self-test, and 1,416 automated tests.</li><li>No case in §1 (launch, window, quit) fails. The app being hard to close or</li></ul>
+<ul><li>Every ⚠ case passes. These are regressions; a failure is a re-opened bug.</li><li>§0 passes — build, self-test, and 1,425 automated tests.</li><li>No case in §1 (launch, window, quit) fails. The app being hard to close or</li></ul>
 <p>quit has been reported twice and is the most visible class of defect here.</p>
 <ul><li>§10 passes. An app that misbehaves offline is worse than one that says it</li></ul>
 <p>is offline.</p>
