@@ -63,6 +63,17 @@ explaining a number in place is worth more than any amount of new prose.
       generated from numbers already on the row. A test asserts it can never
       acquire a direction — that sentence is the easiest place in the app to
       break the rule the whole project rests on.
+- [x] `P1` `design` `@ai` ~~The shell: structure and hierarchy, after the
+      vocabulary.~~ **The Cockpit shell** (2026-09-29, from a mockup approved
+      before any code moved — README §"The Cockpit shell"). The eight tabs
+      became a left rail with both names each, folding to icons below 1420pt;
+      a page header names every screen and keeps the two knobs visible
+      everywhere; the Terminal's six equal stat cells became a hierarchy with
+      the edge — the app's only asserted disagreement — as the largest figure,
+      tau drawn as a filling hour-bar, and the bankroll strip and Brier line
+      sharing one ledger panel. Two invariants in `tests/test_layout.py`:
+      folded, the minimum fits 1280×775; expanded, the minimum stays below the
+      fold threshold, or dragging the window narrower could never reach it.
 - [ ] `P2` `design` `@ai` **The other six tabs are still written in jargon.**
       The Screener is done and the shared stat strips got English captions via
       `STAT_WORDS`, but the Practice tab still asks for `STEP (BARS)`, and the
