@@ -10,6 +10,42 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.115 — 2026-09-29
+
+**The engine can no longer trade an hour that has already settled.** `tick()`
+never checked that the market belongs to the candle, so around wakes and feed
+hiccups a stale candle could meet a fresh market and buy the known outcome —
+five live fills entered 22–51 minutes after their own hour closed were 71% of
+the first week's paper P&L. One invariant now guards signal, scoring and entry
+alike: an hourly market ends exactly one hour after its candle opens, or the
+tick is refused. The phantom fills were scrubbed and the equity curve rebuilt.
+`Engine.buyability()` also lands in this build, rebuilt after adversarial
+review to price the strategy the engine actually trades — entry-window hours
+only, side chosen as the entry path chooses it, settlement-state books
+excluded and counted, Newey-West-widened errors, and a positive verdict that
+must survive leave-one-out of its best hour.
+
+## v2.114 — 2026-09-28
+
+**CI survives a machine that is not this one.** The dashboard-consistency
+test skips on an `exists()` check instead of trusting a spec for a missing
+file, the AGE column widened 66→72 so DejaVu's metrics fit as well as SF's,
+and the checkout fetches full history because the version *is* the commit
+count. A four-lens adversarial audit found nothing further real.
+
+## v2.113 — 2026-09-23
+
+**The catalyst weight faced attribution — the first component ever to come
+back KEEP** (IC +0.040 surviving FDR, +5.0-point quintile spread, 6/6 time
+blocks, and the phase-shift control inverts rather than shrugs), measured
+against a historical earnings calendar built from EDGAR Item-2.02 8-K
+filings; a volatility effect, not a direction, and P(profit) stays pinned.
+The Lab gained the earnings-history checkbox and the SPORTS MODELS panel, so
+both studies re-run from inside the app; the Playmaker KEEP bar became a
+measured bootstrap interval; `universe.py`, `charts.py` and `tray.py` got
+their tests; and the score log stopped booking snapshots against
+already-ended markets.
+
 ## v2.112 — 2026-09-22
 
 **SONAR no longer aborts when its menu bar menu opens.** macOS 27 made

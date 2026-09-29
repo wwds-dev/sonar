@@ -1045,9 +1045,10 @@ class MainWindow(QMainWindow):
         holder = QWidget()
         col = QVBoxLayout(holder)
         col.setContentsMargins(4, 0, 4, 0)
-        col.setSpacing(8)
-        row = QHBoxLayout()
-        row.setSpacing(6)
+        col.setSpacing(6)
+        # Stacked, not side by side: half a rail is ~80px, and Qt elides a
+        # button squeezed below its text into glyph soup rather than
+        # shrinking the font — the same failure the row buttons pin at 44px.
         self.wording_btn = QPushButton("")
         self.wording_btn.setFont(theme.text(10))
         self.wording_btn.setToolTip(
@@ -1057,7 +1058,7 @@ class MainWindow(QMainWindow):
             "second lines, which makes the board about a third shorter.\n\n"
             "Same columns, same order, same arithmetic either way.")
         self.wording_btn.clicked.connect(self._toggle_wording)
-        row.addWidget(self.wording_btn, 1)
+        col.addWidget(self.wording_btn)
 
         plan = QPushButton("Test plan")
         plan.setFont(theme.text(10))
@@ -1067,12 +1068,15 @@ class MainWindow(QMainWindow):
             "already passed or failed. Seventeen are marked as regressions:\n"
             "each one has caught a real bug before.")
         plan.clicked.connect(self._open_testplan)
-        row.addWidget(plan, 1)
-        col.addLayout(row)
+        col.addWidget(plan)
 
         # Wrapped, or one long trade confirmation sets the rail's minimum
-        # width — the same QLabel trap tests/test_layout.py guards.
+        # width — the same QLabel trap tests/test_layout.py guards. The
+        # width is pinned because heightForWidth through nested layouts
+        # under-reports, and the label then paints past the window's bottom
+        # edge rather than asking for the height it needs.
         self.status = label("starting…", "faint", theme.figure(9), wrap=True)
+        self.status.setFixedWidth(PlainTabs.RAIL_W - 32)
         col.addWidget(self.status)
         return holder
 
