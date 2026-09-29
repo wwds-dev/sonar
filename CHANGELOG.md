@@ -10,6 +10,28 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.118 — 2026-09-29
+
+**The close button, and the menu bar's manners.** Two reports from the same
+session, both about the window doing something other than what was asked.
+
+Closing from full screen left the window on screen, blank, and a second press
+of the red X did nothing at all — the app had to be quit from the Dock. The
+deferred hide waited 350ms for the Space to collapse and the animation takes
+longer than that; AppKit drops a hide aimed at a window still animating out of
+full screen, while Qt records it as hidden anyway. That mismatch explains both
+halves: a window nobody could see hidden, and a close button with nothing left
+to hide. The hide now waits until the window has actually left full screen,
+confirms against the platform window that it landed, and a close arriving at a
+window Qt already thinks is hidden shows it before hiding it again.
+
+Clicking the menu-bar icon dragged the whole app to the front over whatever the
+user was working in. It opens the menu now, and nothing else — which is what
+every other Mac menu-bar item does. "Open SONAR" is the item that opens SONAR.
+Because macOS activates the app to show the menu, and `main.py` reads an
+activation as a Dock click, the click is recorded so the Dock handler can tell
+the two apart.
+
 ## v2.116 — 2026-09-29
 
 **The Cockpit shell.** The second design round, from a mockup approved before

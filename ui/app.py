@@ -76,12 +76,24 @@ SCREEN_MARGIN = 40           # leave the dock and the menu bar somewhere to live
 RAIL_COLLAPSE_BELOW = 1420
 
 # Long enough for macOS to finish collapsing the full-screen Space before the
-# window disappears into the menu bar. Shorter and the empty Space survives.
+# window disappears into the menu bar. Shorter and the empty Space survives —
+# and, reported twice now, the hide itself is dropped: AppKit ignores a hide
+# aimed at a window that is still animating out of its Space, while Qt records
+# it as hidden anyway. The window stays on screen, painting nothing, and every
+# later close is a no-op because Qt believes there is nothing left to hide.
+# 350ms was measured against the animation, not the drop; the exit animation
+# alone runs ~0.55s on an idle machine and longer under load.
 # It has to be a timer: Qt raises WindowStateChange when showNormal() is
 # *called* — measured at 1ms after, with the animation still to come — and
 # reports the restored geometry just as early, so nothing in Qt says when the
 # transition has finished.
-FULLSCREEN_EXIT_MS = 350
+FULLSCREEN_EXIT_MS = 900
+
+# A hide that did not reach the screen is retried this often, this far apart.
+# `_confirm_hidden` asks the platform window whether it is still exposed, which
+# is the one thing that disagrees with Qt when AppKit has dropped the hide.
+HIDE_CONFIRM_MS = 250
+HIDE_CONFIRM_TRIES = 6
 
 # How long after hiding itself the window refuses to be reopened by an
 # app-activation event. Leaving macOS full screen animates a Space transition
@@ -89,7 +101,7 @@ FULLSCREEN_EXIT_MS = 350
 # run. The Dock-click handler in main.py then faithfully reopens the window the
 # user just closed, which looks exactly like a close button that does nothing.
 # A real Dock click a second later still works.
-REOPEN_GRACE_MS = 1000
+REOPEN_GRACE_MS = 1200
 
 # The Assets board's columns: key, (plain heading, expert heading), width, docs
 # anchor, tooltip. Widths and order are the same in both wordings — see
@@ -3043,13 +3055,17 @@ class MainWindow(QMainWindow):
         collect. Quitting is available, but it is a deliberate act from the
         menu bar rather than the side effect of a close button.
 
-        This has been reported as broken twice, and **both times the design was
-        fine and the hide was not**. Once because leaving a full-screen Space
-        re-activated the app after the deferred hide had run, so the Dock
-        handler reopened the window it had just closed (`reopen_allowed`). Once
-        because the UI thread was blocked in a network fetch, so the event loop
-        never ran and the window sat on screen painting nothing
-        (`tests/test_ui_thread.py`).
+        This has been reported as broken three times, and **every time the
+        design was fine and the hide was not**. Once because leaving a
+        full-screen Space re-activated the app after the deferred hide had run,
+        so the Dock handler reopened the window it had just closed
+        (`reopen_allowed`). Once because the UI thread was blocked in a network
+        fetch, so the event loop never ran and the window sat on screen painting
+        nothing (`tests/test_ui_thread.py`). Once because the deferred hide ran
+        while the Space was still animating: AppKit drops a hide aimed at a
+        window in that state and Qt records it anyway, so the window stayed on
+        screen and the next close had nothing left to hide
+        (`_hide_after_fullscreen`, `_confirm_hidden`).
 
         So the thing to check when someone says the close button does nothing is
         whether the window actually became invisible — not whether it should
@@ -3061,6 +3077,18 @@ class MainWindow(QMainWindow):
             e.accept()
             return
         e.ignore()
+        if not self.isVisible():
+            # Qt already considers this window hidden, yet the user just pressed
+            # its close button — so the last hide never reached the screen and
+            # `hide()` would be a no-op. Reported as "I click the red X again
+            # and nothing happens". Put Qt back in sync with what is actually
+            # on screen, then hide for real.
+            self.setVisible(True)
+            self._hide_now()
+            QTimer.singleShot(HIDE_CONFIRM_MS,
+                              lambda: self._confirm_hidden(HIDE_CONFIRM_TRIES))
+            self.tray.note_hidden()
+            return
         if self.isFullScreen():
             # Hiding a full-screen window leaves its macOS Space behind with
             # nothing in it — the user closes SONAR and is left staring at a
@@ -3073,7 +3101,7 @@ class MainWindow(QMainWindow):
             self._hide_now()
         self.tray.note_hidden()
 
-    def _hide_after_fullscreen(self) -> None:
+    def _hide_after_fullscreen(self, tries: int = HIDE_CONFIRM_TRIES) -> None:
         """The deferred half of a close pressed in full screen.
 
         It can arrive after the user has already reopened the window — from the
@@ -3084,8 +3112,45 @@ class MainWindow(QMainWindow):
         """
         if not self._hide_on_leaving_fullscreen:
             return
+        if self.isFullScreen():
+            # showNormal() has not taken yet. Hiding now would leave an empty
+            # Space behind, so wait for the transition rather than force it.
+            # Bounded, because a window the user has put back into full screen
+            # would otherwise keep a hide armed for the rest of the session.
+            if tries > 0:
+                QTimer.singleShot(
+                    FULLSCREEN_EXIT_MS,
+                    lambda: self._hide_after_fullscreen(tries - 1))
+            else:
+                self._hide_on_leaving_fullscreen = False
+            return
         self._hide_on_leaving_fullscreen = False
         self._hide_now()
+        QTimer.singleShot(HIDE_CONFIRM_MS,
+                          lambda: self._confirm_hidden(HIDE_CONFIRM_TRIES))
+
+    def _confirm_hidden(self, tries: int) -> None:
+        """Ask again if the hide did not reach the screen.
+
+        AppKit drops a hide aimed at a window that is still animating out of its
+        full-screen Space. Qt marks the window hidden regardless, so `isVisible`
+        agrees with the hide and only the platform window knows better: it stays
+        *exposed*. That mismatch is the bug behind both halves of the report —
+        a window left on screen painting nothing, and a second press of the
+        close button doing nothing because Qt had nothing left to hide.
+
+        Showing before hiding again is deliberate: a `hide()` Qt considers
+        redundant never reaches the platform window at all.
+        """
+        if tries <= 0 or self.isVisible():
+            return
+        handle = self.windowHandle()
+        if handle is None or not handle.isExposed():
+            return
+        self.setVisible(True)
+        self._hide_now()
+        QTimer.singleShot(HIDE_CONFIRM_MS,
+                          lambda: self._confirm_hidden(tries - 1))
 
     def _fit_to_screen(self) -> None:
         """Open at the preferred size, or the screen's, whichever is smaller.
@@ -3130,7 +3195,7 @@ class MainWindow(QMainWindow):
 
         Everything that reopens the window goes through this, because a reveal
         has to call off a hide that is still pending: closing from full screen
-        schedules one for a third of a second later, and that timer would
+        schedules one for once the Space has collapsed, and that timer would
         otherwise hide the window the user has just asked for.
         """
         self._hide_on_leaving_fullscreen = False

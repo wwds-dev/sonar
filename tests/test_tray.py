@@ -119,12 +119,48 @@ def test_the_first_hide_is_explained_once(tray):
     assert tray.messages == ["SONAR is still running"]
 
 
-def test_activation_reveals_the_window(tray):
+def test_clicking_the_menu_bar_item_only_opens_the_menu(tray):
+    """Reported: asking what the bankroll was dragged the whole app to the
+    front over whatever the user was working in. Every Mac menu-bar item opens
+    its menu and nothing else; "Open SONAR" is the item that opens SONAR."""
     from PySide6.QtWidgets import QSystemTrayIcon
-    tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
+    tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+    tray.activated.emit(QSystemTrayIcon.ActivationReason.DoubleClick)
+    assert tray.window.revealed == 0, "a menu-bar click reopened the window"
+
+
+def test_a_menu_bar_click_is_recorded_so_the_dock_handler_can_tell(tray):
+    """macOS activates the app to show the menu, and main.py reads an
+    activation as a Dock click. Without this the click reopens the window by
+    the back door — the same bug, one layer down."""
+    from PySide6.QtWidgets import QSystemTrayIcon
+    assert tray.menu_recently_used() is False
+    tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+    assert tray.menu_recently_used() is True
+
+
+def test_the_menu_opening_counts_too(tray):
+    """The click and the menu appearing arrive in an order the platform picks,
+    so both are watched."""
+    tray.menu.aboutToShow.emit()
+    assert tray.menu_recently_used() is True
+
+
+def test_the_record_expires(tray):
+    """It is a brief window, not a permanent block: a real Dock click a
+    second and a half later still reopens the window."""
+    import time
+
+    from ui.tray import TRAY_TOUCH_GRACE_MS
+    tray._note_touch()
+    tray._touched_at -= (TRAY_TOUCH_GRACE_MS + 200) / 1000.0
+    assert tray.menu_recently_used() is False
+    assert time.monotonic() >= tray._touched_at
+
+
+def test_open_sonar_still_reveals(tray):
+    tray.reveal()
     assert tray.window.revealed == 1
-    tray._on_activated(QSystemTrayIcon.ActivationReason.Context)
-    assert tray.window.revealed == 1, "the context menu is not a reveal"
 
 
 def test_the_version_sits_in_the_menu(tray):

@@ -17,7 +17,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from ui.app import REOPEN_GRACE_MS, MainWindow
+from ui.app import HIDE_CONFIRM_TRIES, REOPEN_GRACE_MS, MainWindow
 
 
 class FakeWindow:
@@ -219,3 +219,69 @@ def test_every_route_back_in_goes_through_reveal():
     for path in (root / "ui" / "tray.py", root / "main.py"):
         assert "showNormal()" not in path.read_text(), \
             f"{path.name} reopens the window without going through reveal()"
+
+
+# --------------------------------------------------------------------------- #
+# The hide macOS dropped
+# --------------------------------------------------------------------------- #
+def test_the_deferred_hide_waits_for_the_space_to_collapse(window):
+    """Reported a third time, and this time the hide really did fail: pressed in
+    full screen, the window dropped out of its Space and sat there blank, and
+    pressing the close button again did nothing at all.
+
+    AppKit ignores a hide aimed at a window still animating out of full screen,
+    while Qt records it as hidden regardless — so the window stays on screen and
+    every later close is a no-op. The fix is not to hide until the window has
+    actually left full screen.
+    """
+    window._hide_on_leaving_fullscreen = True
+    window.isFullScreen = lambda: True            # still animating
+    window._hide_after_fullscreen()
+    assert window.isVisible(), "hidden mid-transition — macOS would drop it"
+    assert window._hide_on_leaving_fullscreen, "the pending hide was forgotten"
+
+    window.isFullScreen = lambda: False           # the Space has collapsed
+    window._hide_after_fullscreen()
+    assert not window.isVisible()
+
+
+def test_the_wait_for_full_screen_to_end_gives_up(window):
+    """A user who puts the window back into full screen must not be left with a
+    hide armed for the rest of the session."""
+    window._hide_on_leaving_fullscreen = True
+    window.isFullScreen = lambda: True
+    window._hide_after_fullscreen(tries=0)
+    assert window.isVisible()
+    assert not window._hide_on_leaving_fullscreen, "the hide is still armed"
+
+
+def test_a_close_on_an_already_hidden_window_hides_it_again(window):
+    """The second half of the report: "I click the red X again and nothing
+    happens". Qt thought the window was hidden, so `hide()` had nothing to do,
+    while macOS still had it on screen. A close arriving in that state is proof
+    the two disagree, and the window has to be shown before it can be hidden."""
+    from PySide6.QtGui import QCloseEvent
+
+    window.hide()                       # what Qt believes
+    before = window.tray.notices
+    event = QCloseEvent()
+    window.closeEvent(event)
+    assert not event.isAccepted(), "the close was accepted — Qt would quit"
+    assert not window.isVisible()
+    assert window.tray.notices == before + 1
+
+
+def test_a_confirmation_gives_way_to_a_reveal(window):
+    """The retries run on a timer and can arrive after the user has reopened the
+    window from the menu bar. Hiding then would be the app swallowing a window
+    the user just asked for."""
+    window.reveal()
+    window._confirm_hidden(HIDE_CONFIRM_TRIES)
+    assert window.isVisible()
+
+
+def test_the_confirmation_stops(window):
+    """It is a handful of retries, not a loop that outlives the problem."""
+    window.hide()
+    window._confirm_hidden(0)
+    assert not window.isVisible()

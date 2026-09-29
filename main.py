@@ -167,13 +167,17 @@ def headless(argv: list[str]) -> int:
 
 
 def run_app() -> int:
-    from PySide6.QtCore import QEvent
+    from PySide6.QtCore import QEvent, QTimer
     from PySide6.QtWidgets import QApplication
 
     from sonar import paths
     from sonar.core import Live
     from ui import theme
     from ui.app import MainWindow
+
+    # Long enough for a menu-bar click's own events to arrive, short enough that
+    # a Dock click still feels immediate.
+    ACTIVATE_SETTLE_MS = 120
 
     class SonarApp(QApplication):
         """Clicking the Dock icon brings the window back.
@@ -188,12 +192,28 @@ def run_app() -> int:
 
         def event(self, e):
             if e.type() == QEvent.ApplicationActivate and self.window is not None:
-                # reopen_allowed() rejects the activation macOS sends when a
-                # Space transition finishes, which arrives just after the
-                # window hid itself and would otherwise reopen it immediately.
-                if not self.window.isVisible() and self.window.reopen_allowed():
-                    self.window.reveal()
+                # Decided a moment later rather than here: clicking the menu-bar
+                # item activates the app too, and whether that click, this
+                # activation or the menu appearing comes first is the platform's
+                # business. A Dock click reopening a window a fraction of a
+                # second later is invisible; a menu-bar click dragging the whole
+                # app to the front is what was reported.
+                QTimer.singleShot(ACTIVATE_SETTLE_MS, self._maybe_reveal)
             return super().event(e)
+
+        def _maybe_reveal(self):
+            win = self.window
+            if win is None or win.isVisible():
+                return
+            # reopen_allowed() rejects the activation macOS sends when a Space
+            # transition finishes, which arrives just after the window hid
+            # itself and would otherwise reopen it immediately.
+            if not win.reopen_allowed():
+                return
+            tray = getattr(win, "tray", None)
+            if tray is not None and tray.menu_recently_used():
+                return
+            win.reveal()
 
     from PySide6.QtWidgets import QSystemTrayIcon
 
