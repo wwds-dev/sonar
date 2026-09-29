@@ -16,6 +16,8 @@ half of them.
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QAction, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
@@ -23,6 +25,12 @@ from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 from sonar import version
 
 from . import theme
+
+
+# How long after a menu-bar click an app activation is still attributed to it
+# rather than to the Dock. The click, the activation and the menu appearing are
+# one gesture arriving as three events, in an order the platform chooses.
+TRAY_TOUCH_GRACE_MS = 1500
 
 
 def _tray_icon() -> QIcon:
@@ -86,17 +94,40 @@ class Tray(QSystemTrayIcon):
         quit_action.triggered.connect(self._quit)
         menu.addAction(quit_action)
 
+        self.menu = menu
         self.setContextMenu(menu)
         self.setToolTip("SONAR — paper money only")
-        self.activated.connect(self._on_activated)
 
-    def _on_activated(self, reason) -> None:
-        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
-            self.reveal()
+        # Clicking a menu-bar item opens its menu. That is all it does in every
+        # Mac app that has one, and SONAR used to do more: the click revealed
+        # the window as well, so asking what the bankroll was dragged the whole
+        # app to the front over whatever you were working in. "Open SONAR" is
+        # the item that opens SONAR.
+        #
+        # The click still has to be *recorded*, because macOS activates the app
+        # to show the menu and main.py reads an activation as a Dock click. Both
+        # signals are watched because their order is the platform's to decide.
+        self._touched_at = 0.0
+        self.activated.connect(self._note_touch)
+        menu.aboutToShow.connect(self._note_touch)
+
+    def _note_touch(self, *_) -> None:
+        self._touched_at = time.monotonic()
+
+    def menu_recently_used(self) -> bool:
+        """Did this activation come from the menu bar rather than the Dock?
+
+        Qt reports both as a bare ApplicationActivate. The menu being open is
+        proof on its own; the timestamp covers the moment between the click
+        landing and the menu appearing.
+        """
+        if self.menu.isVisible():
+            return True
+        return (time.monotonic() - self._touched_at) * 1000 < TRAY_TOUCH_GRACE_MS
 
     def reveal(self) -> None:
         # MainWindow.reveal, not showNormal: a close pressed in full screen
-        # leaves a hide pending for a third of a second, and reopening the
+        # leaves a hide pending until the Space has collapsed, and reopening the
         # window has to call that off rather than race it.
         self.window.reveal()
 
