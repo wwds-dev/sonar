@@ -10,6 +10,27 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.116 — 2026-09-29
+
+**The Cockpit shell.** The second design round, from a mockup approved before
+any code moved (the first round, v2.108, fixed vocabulary and contrast; this
+one fixes structure). The eight top tabs became a **left rail** — both names
+per destination, exactly as before, folding to icons below 1420pt of window
+width and unfolding above it; the toolbar's wordmark, version badge and
+practice-money line moved to the rail's head, the Wording and Test plan
+buttons and the status line to its foot. A **page header** names every screen
+in one sentence and keeps the risk and horizon knobs visible everywhere. The
+Terminal's six equal stat cells became a hierarchy: the edge — the only
+number in the app that is a disagreement with a market — is the largest
+figure on screen in the one highlighted cell, tau is drawn as a filling
+hour-bar as well as printed, and the bankroll strip and the model-vs-market
+Brier line share one ledger panel under the equity curve. Same readouts, same
+tooltips, same wording rules; `tests/test_layout.py` gained the two shell
+invariants (folded fits 1280×775; expanded minimum stays below the fold
+threshold, or the fold could never be reached by dragging). For the record:
+two sessions shared this checkout on the day, so the shell's code landed
+split across the v2.115 and v2.116 commits rather than under its own message.
+
 ## v2.115 — 2026-09-29
 
 **The engine can no longer trade an hour that has already settled.** `tick()`
