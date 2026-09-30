@@ -177,7 +177,7 @@ need an account and time rather than code, kept at the top.
 - [x] `P2` `research` `@ai` **`Engine.buyability()`** — calibrated is not the
       same as buyable, and the score log's recorded touch now answers the
       second question: the model's favoured side priced at bid/ask+slippage
-      across five executable-edge gates, EV per stake with its error bar, a
+      across five fixed executable-edge gates plus the active profile's own, EV per stake with its error bar, a
       refusal below 100 qualifying hours, in the snapshot next to
       model_vs_market. First live readout (n=139): positive at every gate,
       significant at none — the same longshot tail that carries the paper
@@ -189,7 +189,7 @@ need an account and time rather than code, kept at the top.
       +99% — settlement-honest, still longshot-flavoured, still not
       evidence. Buyability at the engine's gate: 55 qualifying hours of the
       100 needed — the report refuses, correctly. Protocol on pace (5 closed
-      of the 20 gate ② needs).
+      of the 20 the calibration gate needs).
 
 ### The remaining findings, closed — 2026-09-22/23
 

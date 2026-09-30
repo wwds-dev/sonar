@@ -56,6 +56,7 @@ STYLE = """
   h3{font-size:12.5px;margin:20px 0 4px;color:var(--up);letter-spacing:.04em;
     text-transform:uppercase}
   p{margin:8px 0} ul,ol{margin:8px 0;padding-left:22px}
+  del{color:var(--muted)}
 
   .callout{border:1px solid rgba(232,184,75,.35);background:rgba(232,184,75,.06);
     border-radius:8px;padding:12px 15px;margin:14px 0;color:#f0d99a}
@@ -176,6 +177,7 @@ def inline(text: str) -> str:
     out = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', out)
     out = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'<em>\1</em>', out)
     out = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', out)
+    out = re.sub(r'~~([^~]+)~~', r'<del>\1</del>', out)
     return out
 
 
@@ -219,8 +221,16 @@ def render(md: str) -> str:
         if line.startswith('- [ ] ') or line.startswith('- '):
             items = []
             while i < len(lines) and lines[i].startswith('- '):
-                items.append(re.sub(r'^- (\[ \] )?', '', lines[i]))
+                item = re.sub(r'^- (\[ \] )?', '', lines[i])
                 i += 1
+                # A bullet wrapped onto indented lines is still one bullet —
+                # GitHub joins them, so the page must too. Stopping at the
+                # indent used to close the list and emit the rest as a
+                # paragraph, cutting six of the exit criteria in half.
+                while i < len(lines) and lines[i].strip() and lines[i][0] in ' \t':
+                    item += ' ' + lines[i].strip()
+                    i += 1
+                items.append(item)
             body.append('<ul>' + ''.join(f'<li>{inline(x)}</li>' for x in items) + '</ul>')
             continue
 
