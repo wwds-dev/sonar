@@ -48,7 +48,8 @@ WATCHLIST: list[tuple[str, str, str, set[str]]] = [
     # year of daily closes before being added. Grown from 26 in Sep 2026: at
     # that size Index, Forex and Commodity held 3, 3 and 2 members, and a
     # cross-sectional statistic over two instruments is not a standardisation —
-    # which is what blocked z-scoring within class (SUGGESTIONS #11/#12).
+    # which is what blocked z-scoring within class (SUGGESTIONS.md, Done: the
+    # z-scoring and grow-the-watchlist rows).
     #
     # MATIC-USD is deliberately absent: it was rebranded and the ticker now
     # returns nothing, which is the failure mode this list is verified against.
