@@ -699,7 +699,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,428 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,429 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 
