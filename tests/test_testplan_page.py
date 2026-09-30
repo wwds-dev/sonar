@@ -166,3 +166,81 @@ def test_every_case_row_has_an_id_the_generator_recognises():
         f"case id(s) {bad} will be dropped from the generated page: the "
         r"generator only accepts ^\d+\.\d+$. Renumber the section instead of "
         "suffixing a letter.")
+
+
+# --------------------------------------------------------------------------- #
+# The generator's markdown, where it once disagreed with GitHub's
+# --------------------------------------------------------------------------- #
+def _generator():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "build_testplan", ROOT / "scripts" / "build_testplan.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_wrapped_bullet_stays_one_bullet():
+    """GitHub joins an indented continuation line into the bullet above it. The
+    generator used to close the list at the indent and emit the rest as a
+    paragraph, so six of the exit criteria reached the page cut in half — and
+    `--check` could not see it, because it compares the generator to its own
+    output."""
+    out = _generator().render(
+        "- [ ] first line\n      wrapped onto the next\n- [ ] second\n")
+    assert out == "<ul><li>first line wrapped onto the next</li><li>second</li></ul>"
+
+
+def test_strikethrough_reaches_the_page():
+    """`~~struck~~` is GitHub markdown; the page showed the tildes."""
+    assert _generator().inline("~~gone~~ **Fixed**") == "<del>gone</del> <b>Fixed</b>"
+
+
+# --------------------------------------------------------------------------- #
+# The suite's own size, as the documents state it
+# --------------------------------------------------------------------------- #
+COUNT_HOMES = {
+    "TESTPLAN.md": r"expect \*\*([\d,]+) tests\*\*",
+    "TESTING.md": r"^\*\*([\d,]+) tests\*\*",
+    "README.md": r"# ([\d,]+) tests, bounded by an external watchdog",
+}
+
+
+def documented_suite_sizes() -> dict[str, int]:
+    sizes = {}
+    for name, pattern in COUNT_HOMES.items():
+        found = re.findall(pattern, (ROOT / name).read_text(), re.M)
+        assert len(found) == 1, (
+            f"{name}: expected exactly one suite count matching {pattern!r}, "
+            f"found {found}")
+        sizes[name] = int(found[0].replace(",", ""))
+    return sizes
+
+
+def test_the_documented_suite_size_is_the_collected_one(request):
+    """TESTPLAN.md tells the tester how many tests to expect, and TESTING.md
+    and the README repeat the figure. All three were typed by hand and bumped
+    by hand — and left behind twice, once by a commit whose message said it had
+    caught the counts up. This compares them to what pytest actually collected,
+    so a test added anywhere fails here until the documents say so.
+
+    The comparison only means something on a whole-suite run; a partial
+    invocation (`-k`, one file, `--lf`, another `-m`) skips rather than lies.
+    """
+    config = request.config
+    targets = {(config.invocation_params.dir / a.split("::")[0]).resolve()
+               for a in config.args}
+    whole = targets <= {ROOT, ROOT / "tests"}
+    partial = (not whole
+               or config.getoption("keyword")
+               or config.getoption("markexpr") != "not network"
+               or config.getoption("lf")
+               or config.getoption("deselect"))
+    if partial:
+        pytest.skip("the suite size is only checked on a full run")
+    collected = len(request.session.items)
+    sizes = documented_suite_sizes()
+    assert set(sizes.values()) == {collected}, (
+        f"pytest collected {collected:,} tests, but the documents say {sizes}; "
+        "update TESTPLAN.md, TESTING.md and README.md together.")
