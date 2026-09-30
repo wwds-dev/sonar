@@ -227,8 +227,17 @@ def render(md: str) -> str:
                 # GitHub joins them, so the page must too. Stopping at the
                 # indent used to close the list and emit the rest as a
                 # paragraph, cutting six of the exit criteria in half.
+                # Only prose is joined: this generator renders flat bullets,
+                # and a nested list marker folded into its parent's text
+                # would be a silent loss, so it is refused instead.
                 while i < len(lines) and lines[i].strip() and lines[i][0] in ' \t':
-                    item += ' ' + lines[i].strip()
+                    cont = lines[i].strip()
+                    if re.match(r'([-*+]|\d+\.) ', cont):
+                        raise ValueError(
+                            f"TESTPLAN.md line {i + 1}: a nested list inside a "
+                            "bullet is not supported by the generator — "
+                            "flatten it into the bullet's own text")
+                    item += ' ' + cont
                     i += 1
                 items.append(item)
             body.append('<ul>' + ''.join(f'<li>{inline(x)}</li>' for x in items) + '</ul>')

@@ -197,6 +197,14 @@ def test_strikethrough_reaches_the_page():
     assert _generator().inline("~~gone~~ **Fixed**") == "<del>gone</del> <b>Fixed</b>"
 
 
+def test_a_nested_list_inside_a_bullet_is_refused_rather_than_flattened():
+    """The generator renders flat bullets. Folding `  - child` into its
+    parent's text would lose the structure without a word, which is the failure
+    mode this file exists to prevent — so the generator says so and stops."""
+    with pytest.raises(ValueError, match="nested list"):
+        _generator().render("- parent\n  - child\n")
+
+
 # --------------------------------------------------------------------------- #
 # The suite's own size, as the documents state it
 # --------------------------------------------------------------------------- #
@@ -218,28 +226,29 @@ def documented_suite_sizes() -> dict[str, int]:
     return sizes
 
 
-def test_the_documented_suite_size_is_the_collected_one(request):
+def test_the_documented_suite_size_is_the_collected_one():
     """TESTPLAN.md tells the tester how many tests to expect, and TESTING.md
     and the README repeat the figure. All three were typed by hand and bumped
     by hand — and left behind twice, once by a commit whose message said it had
-    caught the counts up. This compares them to what pytest actually collected,
-    so a test added anywhere fails here until the documents say so.
+    caught the counts up. This compares them to what pytest collects, so a test
+    added anywhere fails here until the documents say so.
 
-    The comparison only means something on a whole-suite run; a partial
-    invocation (`-k`, one file, `--lf`, another `-m`) skips rather than lies.
+    The suite is collected afresh in a subprocess rather than read off the
+    current session: a first version inspected the invocation for `-k`, `-m`,
+    `--lf` and `--deselect` and skipped on a partial run, but that list can
+    never be complete — `--ignore=` alone got past it — and a guard that fails
+    on the wrong invocation is a guard people learn to ignore. Counting the
+    whole tree here costs about a second and cannot be fooled by how this run
+    was started.
     """
-    config = request.config
-    targets = {(config.invocation_params.dir / a.split("::")[0]).resolve()
-               for a in config.args}
-    whole = targets <= {ROOT, ROOT / "tests"}
-    partial = (not whole
-               or config.getoption("keyword")
-               or config.getoption("markexpr") != "not network"
-               or config.getoption("lf")
-               or config.getoption("deselect"))
-    if partial:
-        pytest.skip("the suite size is only checked on a full run")
-    collected = len(request.session.items)
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q",
+         "-p", "no:cacheprovider", "-p", "no:warnings", str(ROOT / "tests")],
+        capture_output=True, text=True, cwd=ROOT, timeout=120)
+    assert result.returncode == 0, (result.stdout[-2000:] + result.stderr[-2000:])
+    # `--collect-only -q` prints one node id per selected item; the deselected
+    # network tests are not listed, matching what a run would execute.
+    collected = sum(1 for line in result.stdout.splitlines() if "::" in line)
     sizes = documented_suite_sizes()
     assert set(sizes.values()) == {collected}, (
         f"pytest collected {collected:,} tests, but the documents say {sizes}; "
