@@ -710,13 +710,24 @@ the hours they were priced for. So two things protect that.
 
 **The close button hides.** The window disappears, the engine keeps running, and the menu-bar
 item shows bankroll and open position. Quitting is a separate, deliberate menu action — and
-clicking the Dock icon brings the window back if the menu-bar item is hard to find.
+clicking the Dock icon brings the window back if the menu-bar item is hard to find. Clicking
+the menu-bar icon itself only opens its menu, the same as every other Mac menu-bar item; it
+used to also reveal the window, which dragged the whole app to the front over whatever was in
+it.
 
-Leaving full-screen and hiding are also untangled from each other: exiting a full-screen
-Space and clicking the close button both trigger the macOS activation event a real Dock click
-uses, so for about a second after either one the window ignores that event rather than
-reopening itself the moment it just hid. Everything that reopens the window goes through one
-method, because a reveal has to call off the hide a full-screen close leaves pending.
+Leaving full-screen and hiding are also untangled from each other, in both directions. Exiting
+a full-screen Space and clicking the close button both trigger the macOS activation event a
+real Dock click uses, so for just over a second after either one the window ignores that event
+rather than reopening itself the moment it just hid (`reopen_allowed`). And a close pressed
+while still in full screen waits for the Space to actually finish collapsing — not for
+`showNormal()` to be called, which Qt reports as done a full transition-length before it is —
+then confirms against the platform window's own exposure state that the hide landed, retrying
+if it did not: AppKit can drop a hide aimed at a window still mid-animation while Qt marks it
+hidden anyway, which is what once left the window on screen, blank, with a second press of the
+close button doing nothing because Qt believed there was nothing left to hide. A close arriving
+at a window Qt already thinks is hidden shows it before hiding it again, for the same reason.
+Everything that reopens the window goes through one method, because a reveal has to call off a
+hide a full-screen close leaves pending.
 
 **Nothing the window waits on may fetch**, which is a wider rule than it sounds. The UI
 thread reads the shared snapshot under a lock every second, so a background thread holding

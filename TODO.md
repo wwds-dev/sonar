@@ -190,6 +190,17 @@ need an account and time rather than code, kept at the top.
       evidence. Buyability at the engine's gate: 55 qualifying hours of the
       100 needed — the report refuses, correctly. Protocol on pace (5 closed
       of the 20 gate ② needs).
+- [x] `P1` `bug` `@ai` **The close button could go fully dead, and the
+      menu-bar icon dragged the whole app to the front.** Closing from full
+      screen left a blank window that a second press of the red X could not
+      touch — the deferred hide fired before the Space transition had
+      actually finished, and AppKit drops a hide aimed at a window still
+      mid-animation while Qt marks it hidden anyway. The hide now waits for
+      the transition to really end, confirms against the platform window's
+      own exposure state, and retries if it did not land; a close arriving
+      at a window Qt already thinks is hidden shows it before hiding it
+      again. The menu-bar icon now only opens its menu, like every other Mac
+      menu-bar item, instead of also revealing the window. CHANGELOG v2.118.
 
 ### The remaining findings, closed — 2026-09-22/23
 
