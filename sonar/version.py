@@ -18,7 +18,7 @@ It is monotonic on a linear history, which this repo has. A merge commit still
 increments it, so the number never goes backwards; it is an ordering, not a
 count of features.
 
-This is the lab-wide scheme, shared with `imprint` and `sentinel_fork`, and the
+This is the lab-wide scheme, shared with `imprint` and `sentinel`, and the
 Lab Project Monitor computes the same string from the same two inputs — the
 `VERSION` file and the commit count — so the dashboard and the running app
 cannot disagree. Keep them the same: a second scheme here would be a second
