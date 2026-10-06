@@ -24,9 +24,10 @@ any non-mouse `NSEvent` and asking it for `clickCount` aborts the interpreter.
 no shared package in this workspace to put it in, and the lab has already paid
 for vendoring something long-lived (`lab_hub/tools/convert`). This one is
 different in the way that matters: it exists only until Qt ships a fixed cocoa
-plugin, and then **both copies are deleted together**. Keep them identical —
-if you change one, change the other, and check `AGENTS.md` for which other apps
-have a tray menu and therefore need it too.
+plugin, and then **every copy is deleted together**. Keep them identical —
+if you change one, change the rest, and check `AGENTS.md` for which other apps
+have a tray menu and therefore need it too. Imprint became the third copy on
+2026-10-06, the day it got a menu bar item.
 
 ## The guard
 

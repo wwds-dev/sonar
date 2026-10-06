@@ -8,8 +8,9 @@ apps here produced byte-identical stacks.
 These run against the real Objective-C runtime, because a mock of AppKit would
 be a mock of the thing being tested. They are skipped off macOS.
 
-Ported from `lab_hub/tests/test_appkit_guard.py` along with the guard itself.
-Both copies go when Qt ships a fixed cocoa plugin; until then keep them in step.
+Ported from `lab_hub/tests/test_appkit_guard.py` along with the guard itself,
+as Imprint's was on 2026-10-06. Every copy goes when Qt ships a fixed cocoa
+plugin; until then keep them in step.
 
 SONAR needs this more than most: closing the window hides it to the menu bar, so
 that menu is the way back in, not a corner of the app.
