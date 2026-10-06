@@ -1,7 +1,7 @@
 # Versioning
 
 SONAR versions look like **`v2.100`**. This is the lab-wide scheme, shared with
-`imprint` and `sentinel_fork`; `sonar/version.py` implements it and
+`imprint` and `sentinel`; `sonar/version.py` implements it and
 `tests/test_version.py` enforces it.
 
 ## The number
