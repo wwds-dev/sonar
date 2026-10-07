@@ -17,7 +17,7 @@ import json
 import random
 import threading
 import time
-
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
 from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
@@ -38,6 +38,8 @@ MARKET_EVERY = 15.0         # seconds between Polymarket polls
 # EWMA x hour-of-day forecast measured in sonar/research/hourlyvol.py.)
 VOL_EVERY = 3600.0          # seconds between volatility refreshes
 SCAN_EVERY = 90.0           # seconds between asset-screen refreshes
+SEED_RETRY_EVERY = 300.0    # seconds between attempts to seed the account history
+SEED_MAX_TRIES = 6          # partial answers tolerated before giving up
 SPARK_MAX = 220             # price points kept for the sparkline
 
 # How long a volatility-scaled target/stop actually takes to resolve, measured
@@ -101,8 +103,11 @@ class Live:
         # file so the hourly BTC engine's bankroll stays a separate experiment.
         self.book = portfolio.Portfolio(paths.user_data_base() / "portfolio.json")
         self.assets: dict = {"status": "starting", "assets": []}
-        self.positions: dict = {"stats": self.book.stats(), "open": [], "closed": []}
+        self.positions: dict = {"stats": self.book.stats(), "open": [], "closed": [],
+                                "equity": list(self.book.equity_log)}
         self.calibration: dict = calibration.report(self.book.closed)
+        self._seed_tries = 0        # see _seed_account_history
+        self._seed_at = 0.0
         self._scan_at = 0.0
         self.macro = macro.MacroCache()
         # Scheduled institutional communication — central banks are the most
@@ -187,6 +192,7 @@ class Live:
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
             self._mark_book(ap)
+            self._seed_account_history()
             if self.protocol_on:
                 try:
                     self._protocol_scan(ap)
@@ -253,7 +259,7 @@ class Live:
         self._save_protocol()
 
     # -- the paper book ---------------------------------------------------- #
-    def _mark_book(self, asset_payload: dict) -> None:
+    def _mark_book(self, asset_payload: dict, force_point: bool = False) -> None:
         """Mark open positions against the new prices and close any that hit a
         barrier, then feed the resulting outcomes back into the score.
 
@@ -261,7 +267,8 @@ class Live:
         calibration measures whether high scores actually won, and the measured
         drift — and only that — is allowed to move P(profit) off its baseline.
         """
-        prices = {a["symbol"]: a["price"] for a in asset_payload.get("assets", [])}
+        rows = asset_payload.get("assets", [])
+        prices = {a["symbol"]: a["price"] for a in rows}
         if not prices:
             return
         # Turn accepted orders into real ones first. Marking a pending position
@@ -269,16 +276,65 @@ class Live:
         # the fill price it settles against would be the one we asked for
         # rather than the one we got. No-op for the internal paper book.
         self.book.poll_fills()
-        self.book.mark(prices)
+        closed_now = self.book.mark(prices)
+        # The account-value curve: a point an hour, plus one at every step —
+        # an entry, an exit, a barrier hit — so a step sits where it happened
+        # rather than up to an hour later.
+        self.book.log_equity(prices, force=force_point or bool(closed_now))
         report = calibration.report(self.book.closed)
         # Nothing is claimed below the sample threshold; report() enforces that.
         self.asset_scanner.edge_sigma = report["implied_edge_sigma"]
         self.asset_scanner.calibrated = report["calibrated"]
+        # Each open row carries its instrument's recent closes, so the landing
+        # page can draw the position without a request of its own.
+        sparks = {a["symbol"]: a.get("spark") or [] for a in rows}
+        open_rows = self.book.open_rows(prices)
+        for r in open_rows:
+            r["spark"] = sparks.get(r["symbol"], [])
         with self.lock:
             self.calibration = report
             self.positions = {"stats": self.book.stats(prices),
-                              "open": self.book.open_rows(prices),
-                              "closed": [asdict(p) for p in self.book.closed[-40:]][::-1]}
+                              "open": open_rows,
+                              "closed": [asdict(p) for p in self.book.closed[-40:]][::-1],
+                              "equity": list(self.book.equity_log)}
+
+    def _seed_account_history(self) -> None:
+        """Give the account-value curve its past, once.
+
+        The book ran for weeks before it logged its value, and a curve that
+        starts today would say "no history" for a month. `seed_equity_log`
+        rebuilds the daily history from the book's own records and real daily
+        closes; this fetches those closes, on the engine thread, after a scan.
+        It runs after `_mark_book`, which may already have written the first
+        live point; the seed fills the days *before* that point, never over it.
+
+        The history needs every instrument's closes: built on part of the
+        book it would value the missing ones at entry and draw a flatter past
+        than happened. So a short answer is not used, and the retry policy is
+        shaped by what actually happens to this request — it follows a scan
+        that just fetched 129 charts, and Yahoo throttles the burst. Attempts
+        are spaced `SEED_RETRY_EVERY` apart; a partial answer costs one of
+        `SEED_MAX_TRIES`, an empty one (no network at all) costs nothing.
+        """
+        book = self.book
+        now = time.time()
+        if (self._seed_tries >= SEED_MAX_TRIES or now - self._seed_at < SEED_RETRY_EVERY
+                or not book.history_wanted()):
+            return
+        self._seed_at = now
+        try:
+            symbols = sorted({p.symbol for p in book.open + book.closed})
+            with ThreadPoolExecutor(max_workers=assets.FETCH_WORKERS) as ex:
+                got = dict(zip(symbols, ex.map(assets.fetch_bars, symbols)))
+            bars = {s: b for s, b in got.items() if b}
+            if len(bars) < len(symbols):
+                self._seed_tries += 1 if bars else 0
+                return
+            if book.seed_equity_log(bars, now=now):
+                with self.lock:
+                    self.positions = {**self.positions, "equity": list(book.equity_log)}
+        except Exception:
+            pass               # the curve can wait; the scan it rides on cannot
 
     def suggestions(self, limit: int = 8) -> list[dict]:
         """What the news is pointing at right now, and what to do about it.
@@ -337,7 +393,7 @@ class Live:
         pos, msg = self.book.enter(
             asset, direction, self.horizon.momentum_days, self.horizon.name,
             risk_fraction=self.risk.max_stake_fraction / 8.0)
-        self._mark_book({"assets": rows})
+        self._mark_book({"assets": rows}, force_point=pos is not None)
         return {"ok": pos is not None, "message": msg,
                 "position": asdict(pos) if pos else None}
 
@@ -350,7 +406,7 @@ class Live:
             return {"ok": False, "message": "no such open position",
                     "position": None}
         closed = self.book.close(pos.id, prices.get(pos.symbol, pos.entry), "MANUAL")
-        self._mark_book({"assets": rows})
+        self._mark_book({"assets": rows}, force_point=True)
         return {"ok": True, "message": f"closed {closed.symbol}",
                 "position": asdict(closed)}
 

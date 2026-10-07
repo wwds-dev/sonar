@@ -8,6 +8,25 @@
 
 ## Open
 
+- [x] `P1` `design` `@ai` ~~The landing page is about one asset.~~ The app
+      opened on the hourly BTC model, captioned "practice cash" as if the
+      model's bankroll were the reader's. 2026-10-08: the first page is the
+      paper book as a picture (`_portfolio_tab`: P&L now as the biggest
+      figure, account value, invested split into cash spent and stock
+      borrowed, the cost of every stop hitting, the account's value over time,
+      risk-sized tiles, a card per position). The book logs its value hourly
+      (`Portfolio.log_equity`) and seeds the days before the log existed from
+      its own records and real closes (`seed_equity_log`). The hourly model's
+      readout moved, unchanged, to the foot of Practice. README §"The
+      portfolio landing page", CHANGELOG v2.127.
+- [ ] `P2` `bug` `@ai` **A window beside the running agent shows an empty
+      book.** When the launchd agent holds the engine lock the window is
+      read-only and never scans, so `Live.positions` stays at its empty
+      initial value — My trades, and now the landing page, show nothing while
+      the agent is the one trading. Pre-existing; the landing page makes it
+      visible. The fix is a read-only path that re-reads `portfolio.json`
+      and marks it at the agent's last prices (`/api/assets` on 8787, or the
+      scanner's cache), not a second engine.
 - [x] `P1` `testing` `@ai` ~~The probability model has no tests at all.~~
       `sonar/model.py` went 39% → **100%**. Writing the tests found a real bug:
       `prob_up` (closed form) and `lattice_distribution` (binomial approximation)

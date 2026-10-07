@@ -20,6 +20,9 @@ from PySide6.QtSvg import QSvgRenderer
 #: One drawing per destination, keyed by the tab's docs name (lowercased) —
 #: the stable identifier; plain names are the ones that get reworded.
 _BODIES = {
+    # A pie with one slice lifted: the holdings, and the share each one is.
+    "portfolio": ('<path d="M7 3.1A6 6 0 1 0 12.9 9H7V3.1z"/>'
+                  '<path d="M9.5 1.5A5 5 0 0 1 14.5 6.5H9.5V1.5z"/>'),
     "terminal": '<polyline points="1 9 4 9 6 4 9 12 11 8 15 8"/>',
     "assets": '<path d="M2 4h12M2 8h12M2 12h8"/>',
     "wire": ('<rect x="2" y="3" width="12" height="10" rx="1.5"/>'

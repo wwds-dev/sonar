@@ -179,3 +179,89 @@ def test_a_fuller_bar_is_longer():
     seg = theme.COMP["momentum"]
     assert coloured(shot(long, 80, 7), seg, tol=20) > \
         2 * coloured(shot(short, 80, 7), seg, tol=20)
+
+
+# --------------------------------------------------------------------------- #
+# The landing page's three pictures
+# --------------------------------------------------------------------------- #
+from ui.charts import AccountCurve, PositionChart, PositionTiles, squarify  # noqa: E402
+
+
+def test_an_empty_account_curve_says_so(app):
+    assert ink(AccountCurve()) > 0
+
+
+def test_a_populated_account_curve_draws_more_than_an_empty_one(app):
+    full = AccountCurve()
+    full.set_data([{"t": 1_700_000_000 + i * 86_400, "v": 10_000 + i * 20}
+                   for i in range(12)], 10_000.0)
+    assert ink(full) > ink(AccountCurve())
+
+
+def test_a_curve_below_its_start_is_drawn_in_the_loss_colour(app):
+    down = AccountCurve()
+    down.set_data([{"t": 1_700_000_000 + i * 3600, "v": 10_000 - i * 30}
+                   for i in range(30)], 10_000.0)
+    assert coloured(shot(down), theme.DOWN) > coloured(shot(down), theme.UP)
+
+
+def test_squarify_fills_the_box_without_overlap():
+    boxes = squarify([6, 6, 4, 3, 2, 2, 1], 0, 0, 100, 60)
+    assert len(boxes) == 7
+    assert sum(w * h for _x, _y, w, h in boxes) == pytest.approx(6000, rel=1e-6)
+    for x, y, w, h in boxes:
+        assert -1e-6 <= x and x + w <= 100 + 1e-6
+        assert -1e-6 <= y and y + h <= 60 + 1e-6
+    for i, (x, y, w, h) in enumerate(boxes):
+        for x2, y2, w2, h2 in boxes[i + 1:]:
+            overlap = (max(0.0, min(x + w, x2 + w2) - max(x, x2))
+                       * max(0.0, min(y + h, y2 + h2) - max(y, y2)))
+            assert overlap < 1e-6
+
+
+def test_squarify_survives_zero_and_empty_weights():
+    assert squarify([], 0, 0, 10, 10) == []
+    assert squarify([0, 0], 0, 0, 10, 10) == [(0, 0, 0.0, 0.0), (0, 0, 0.0, 0.0)]
+
+
+def _row(symbol, pnl, risk=25.0):
+    return {"symbol": symbol, "name": symbol, "direction": "LONG",
+            "unrealised": pnl, "cash_at_risk": risk, "stake": 500.0, "pct": 1.0}
+
+
+def test_empty_tiles_say_so(app):
+    assert ink(PositionTiles()) > 0
+
+
+def test_tiles_colour_profit_and_loss_apart(app):
+    winners, losers = PositionTiles(), PositionTiles()
+    winners.set_rows([_row("A", 20.0), _row("B", 10.0)])
+    losers.set_rows([_row("A", -20.0), _row("B", -10.0)])
+    assert coloured(shot(winners), theme.UP) > coloured(shot(losers), theme.UP)
+    assert coloured(shot(losers), theme.DOWN) > coloured(shot(winners), theme.DOWN)
+
+
+def test_a_tile_can_be_found_under_the_pointer(app):
+    from PySide6.QtCore import QPointF
+    t = PositionTiles()
+    t.set_rows([_row("ONLY", 5.0)])
+    shot(t)                                   # lays the tiles out
+    assert t.tile_at(QPointF(160, 60))["symbol"] == "ONLY"
+    assert t.tile_at(QPointF(1, 1)) is None   # the frame, not a tile
+    assert "ONLY" in t.tip(_row("ONLY", 5.0))
+
+
+def test_an_empty_position_chart_in_a_frame_says_so(app):
+    c = PositionChart()
+    c.frame = True
+    assert ink(c) > 0
+
+
+def test_a_position_chart_draws_its_three_levels(app):
+    c = PositionChart()
+    c.frame = True
+    c.set_position([100, 101, 103, 102, 104], entry=100.0, target=110.0,
+                   stop=95.0, price=104.0, up=True)
+    image = shot(c)
+    assert coloured(image, theme.GOLD) > 0 and coloured(image, theme.DOWN) > 0
+    assert ink(c) > ink(PositionChart())

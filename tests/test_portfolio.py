@@ -129,3 +129,148 @@ def test_the_broker_is_paper(tmp_path):
     p = book(tmp_path)
     assert p.stats()["live"] is False
     assert p.stats()["broker"] == "paper"
+
+
+# --------------------------------------------------------------------------- #
+# The landing page's figures and the account-value log
+# --------------------------------------------------------------------------- #
+def test_stats_split_invested_into_cash_spent_and_stock_borrowed(tmp_path):
+    """A long spends cash; a short borrows. Summed blindly on a $10k book the
+    two come to $40k+, which is why the landing page says which is which."""
+    p = book(tmp_path)
+    lp, _ = p.enter(ASSET, "LONG", 4, "week")
+    sp, _ = p.enter({**ASSET, "symbol": "OTHER"}, "SHORT", 4, "week")
+    st = p.stats({"TEST": 100.0, "OTHER": 100.0})
+    assert st["long_cash"] == pytest.approx(lp.units * lp.entry, rel=1e-6)
+    assert st["short_notional"] == pytest.approx(sp.units * sp.entry, rel=1e-6)
+    assert (st["n_long"], st["n_short"]) == (1, 1)
+    assert st["at_risk"] == pytest.approx(lp.cash_at_risk + sp.cash_at_risk, rel=1e-6)
+    assert st["realised"] == 0.0
+
+
+def test_realised_is_the_sum_of_what_closed(tmp_path):
+    p = book(tmp_path)
+    pos, _ = p.enter(ASSET, "LONG", 4, "week")
+    closed = p.mark({"TEST": pos.target})[0]
+    st = p.stats()
+    assert st["realised"] == pytest.approx(closed.pnl, abs=0.01)
+    assert st["at_risk"] == 0.0 and st["n_long"] == 0
+
+
+def test_open_rows_carry_the_stake_and_the_move_since_entry(tmp_path):
+    p = book(tmp_path)
+    pos, _ = p.enter(ASSET, "SHORT", 4, "week")
+    row = p.open_rows({"TEST": 95.0})[0]
+    assert row["stake"] == pytest.approx(pos.units * 100.0, rel=1e-6)
+    assert row["pct"] == pytest.approx(5.0)          # a short gains as price falls
+    assert row["age_s"] >= 0
+
+
+def test_the_account_value_is_logged_hourly_not_every_scan(tmp_path):
+    p = book(tmp_path)
+    p.enter(ASSET, "LONG", 4, "week")
+    assert p.log_equity({"TEST": 100.0}, now=1_000_000.0)
+    assert not p.log_equity({"TEST": 101.0}, now=1_000_000.0 + 600)
+    assert p.log_equity({"TEST": 101.0}, now=1_000_000.0 + 3600)
+    assert [q["t"] for q in p.equity_log] == [1_000_000, 1_003_600]
+
+
+def test_an_entry_or_an_exit_forces_a_point(tmp_path):
+    p = book(tmp_path)
+    p.enter(ASSET, "LONG", 4, "week")
+    p.log_equity({"TEST": 100.0}, now=1_000_000.0)
+    assert p.log_equity({"TEST": 100.0}, now=1_000_000.0 + 5, force=True)
+    assert len(p.equity_log) == 2
+
+
+def test_no_point_is_written_while_a_held_position_has_no_price(tmp_path):
+    """Marking the missing one at entry would draw a dip or a jump that never
+    happened; refusing is the honest shape of the curve."""
+    p = book(tmp_path)
+    p.enter(ASSET, "LONG", 4, "week")
+    assert not p.log_equity({}, now=1_000_000.0)
+    assert p.equity_log == []
+
+
+def test_the_log_survives_a_restart(tmp_path):
+    p = book(tmp_path)
+    p.enter(ASSET, "LONG", 4, "week")
+    p.log_equity({"TEST": 100.0}, now=1_000_000.0)
+    again = book(tmp_path)
+    assert again.equity_log == [{"t": 1_000_000, "v": pytest.approx(10_000.0, abs=0.01)}]
+
+
+def _local_day(year: int, month: int, day: int, hour: int = 0) -> float:
+    from datetime import datetime
+    return datetime(year, month, day, hour).timestamp()
+
+
+def test_the_seed_rebuilds_one_point_per_day_from_the_books_own_records(tmp_path):
+    """Ten units at 100, bought in the morning of day 0, sold at 115 on day 2.
+    Closes 100 / 110 / 120: the account is worth 10,000, 10,100 and — once
+    the sale has gone through — 10,150 at the end of those three days."""
+    p = book(tmp_path)
+    pos, _ = p.enter(ASSET, "LONG", 4, "week")
+    pos.units, pos.entry = 10.0, 100.0
+    p.cash = 10_000.0 - 1_000.0
+    pos.opened_at = _local_day(2026, 9, 1, 10)
+    p.close(pos.id, 115.0, "MANUAL")
+    p.closed[-1].closed_at = _local_day(2026, 9, 3, 12)
+    bars = {"TEST": [(_local_day(2026, 9, 1, 9), 100.0),
+                     (_local_day(2026, 9, 2, 9), 110.0),
+                     (_local_day(2026, 9, 3, 9), 120.0)]}
+    n = p.seed_equity_log(bars, now=_local_day(2026, 9, 4, 12))
+    assert n == 3
+    assert [q["v"] for q in p.equity_log] == [10_000.0, 10_100.0, 10_150.0]
+    assert [q["t"] for q in p.equity_log] == [
+        _local_day(2026, 9, 2) - 1, _local_day(2026, 9, 3) - 1, _local_day(2026, 9, 4) - 1]
+    assert book(tmp_path).equity_log == p.equity_log      # saved
+
+
+def test_the_seed_values_a_short_by_its_profit_not_its_notional(tmp_path):
+    """A short borrows, so cash never moved: the account is the cash plus the
+    short's running profit, not the cash plus a holding."""
+    p = book(tmp_path)
+    pos, _ = p.enter(ASSET, "SHORT", 4, "week")
+    pos.units, pos.entry = 10.0, 100.0
+    pos.opened_at = _local_day(2026, 9, 1, 10)
+    bars = {"TEST": [(_local_day(2026, 9, 1, 9), 100.0),
+                     (_local_day(2026, 9, 2, 9), 90.0)]}
+    p.seed_equity_log(bars, now=_local_day(2026, 9, 3, 12))
+    assert [q["v"] for q in p.equity_log] == [10_000.0, 10_100.0]
+
+
+def test_the_seed_refuses_to_overwrite_a_log_or_invent_one(tmp_path):
+    p = book(tmp_path)
+    assert not p.history_wanted()
+    assert p.seed_equity_log({"TEST": [(1, 1.0)]}) == 0          # never traded
+    pos, _ = p.enter(ASSET, "LONG", 4, "week")
+    assert p.history_wanted()
+    assert p.seed_equity_log({}) == 0                             # no bars
+    p.log_equity({"TEST": 100.0}, now=pos.opened_at + 1)
+    assert not p.history_wanted()                                 # logged from day one
+    assert p.seed_equity_log({"TEST": [(1, 1.0)]}) == 0
+    assert len(p.equity_log) == 1
+
+
+def test_the_seed_fills_in_before_a_live_point_and_never_over_it(tmp_path):
+    """The engine logs its first live point the moment every position has a
+    price — which is before the seed gets its turn. The seed prepends the
+    days before that point and leaves the measured one alone."""
+    p = book(tmp_path)
+    pos, _ = p.enter(ASSET, "LONG", 4, "week")
+    pos.units, pos.entry = 10.0, 100.0
+    p.cash = 9_000.0
+    pos.opened_at = _local_day(2026, 9, 1, 10)
+    live_at = _local_day(2026, 9, 3, 11)
+    p.log_equity({"TEST": 125.0}, now=live_at)             # 9,000 + 1,250
+    assert p.history_wanted()
+    bars = {"TEST": [(_local_day(2026, 9, 1, 9), 100.0),
+                     (_local_day(2026, 9, 2, 9), 110.0),
+                     (_local_day(2026, 9, 3, 9), 120.0)]}
+    assert p.seed_equity_log(bars, now=_local_day(2026, 9, 3, 12)) == 2
+    assert [(q["t"], q["v"]) for q in p.equity_log] == [
+        (_local_day(2026, 9, 2) - 1, 10_000.0), (_local_day(2026, 9, 3) - 1, 10_100.0),
+        (int(live_at), 10_250.0)]
+    assert not p.history_wanted()
+    assert p.seed_equity_log(bars) == 0                      # idempotent

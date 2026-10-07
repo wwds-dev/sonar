@@ -10,6 +10,32 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.127 — 2026-10-08
+
+**The app opens on your money, not on bitcoin.** The first screen had been
+the hourly BTC model since the app existed — one asset, traded by the model
+with its own practice cash, captioned "practice cash" as if it were yours. It
+never was. The landing page is now **My investments**: profit or loss now as
+the biggest figure, the account value, what is invested — split into cash
+spent on longs and stock borrowed for shorts, because summed blindly the real
+book read $46k on a $10k account — what every stop hitting would cost, and
+what has closed; the **account's value over time**; every open position as a
+tile sized by what it can lose and coloured by how it is doing; what resolved
+recently; and a card per position with its entry, target and stop drawn over
+sixty days of price. The whole page scrolls; a short screen sees the figures
+and the curve first.
+
+The account-value curve is new data, not just a new picture. The book now
+logs its value hourly and at every entry, exit or barrier hit
+(`equity_log` in `portfolio.json`), and on first run rebuilds the weeks
+before the log existed from its own records and real daily closes — the
+trades it made, valued at each day's close — so the curve starts where the
+book did. A point is only written when every held position has a price.
+
+The hourly model kept its readout and lost its page: it lives at the foot of
+Practice now, unchanged, with the LLM read panel. README §"The portfolio
+landing page".
+
 ## v2.118 — 2026-09-29
 
 **The close button, and the menu bar's manners.** Two reports from the same
