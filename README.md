@@ -23,12 +23,12 @@ line and clipped.
 
 | Tab | What it does | Asserts a direction? |
 |---|---|---|
-| **Live model**  \n<sub>TERMINAL</sub> | Hourly BTC up/down paper trade — the model prices each hour, compares to Polymarket, takes at most one simulated bet, and grades itself against the market on every hour, traded or not | **Yes** — the only independent model |
+| **My investments**  \n<sub>PORTFOLIO</sub> | The page the app opens on: your paper book as a picture — profit or loss now as the biggest figure, the account value, what is invested (split into cash spent on longs and stock borrowed for shorts), what every stop hitting would cost; the account's value over time; every open position as a tile sized by what it can lose and coloured by how it is doing; what resolved recently; and a card per position with its entry, target and stop drawn over sixty days of price | — |
 | **Screener**  \n<sub>ASSETS</sub> | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, **how old each row's price is**, and buy/short per row | **No** — direction is yours |
 | **News**  \n<sub>WIRE</sub> | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
 | **My trades**  \n<sub>BOOK</sub> | Open paper positions, the calibration table, and the backtest button | — |
 | **Big picture**  \n<sub>MACRO</sub> | Regime: curve, VIX, real rates, unemployment | No |
-| **Practice**  \n<sub>LAB</sub> | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups | — |
+| **Practice**  \n<sub>LAB</sub> | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups. At its foot, the **hourly BTC up/down model** — the model prices each hour, compares to Polymarket, takes at most one simulated bet with its own practice cash, and grades itself against the market on every hour, traded or not. It was the landing page until Oct 2026 | **Yes** — the hourly model is the only independent one |
 | **Sports**  \n<sub>PLAYMAKER</sub> | Sports prop pricing across **seven sports** (NFL, College Football, NBA, MMA/UFC, International Football, Golf, Cycling) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
 | **Learn** | The manual and the glossary **inside the app** — `static/docs.html` rendered by Qt, with a contents list and a search box that takes one unfamiliar word. Same file the browser serves, so the prose cannot drift; `ui/learn.py` does the translation | — |
 
@@ -465,12 +465,69 @@ structure, and the shell now has one:
   anchors the left; tau is drawn as a filling hour-bar (`ui/charts.HourBar`)
   as well as printed. The bankroll strip and the model-vs-market Brier line
   share one ledger panel under the equity curve. Same keys, same tooltips,
-  same `refresh()` — the arrangement changed, the readouts did not.
+  same `refresh()` — the arrangement changed, the readouts did not. (Since
+  Oct 2026 this whole panel lives at the foot of Practice; see the next
+  section.)
 
 The rail's icons are inline SVG strokes tinted per state (`ui/icons.py`) —
 not emoji, which bring their own colours and ignore the palette. The window
 now prefers 1440×850 and lets `_fit_to_screen` clamp it, so a big display
 opens with the names showing and a 13" laptop opens folded.
+
+## The portfolio landing page
+
+Chosen 2026-10-08, from a mockup drawn with the real book (31 open, 19 closed)
+and approved before any code moved. The app had opened on the hourly bitcoin
+model since the day it existed, and the person it is for asked the right
+question: why does the first screen show one asset the model trades, rather
+than what *I* hold? So:
+
+- **The first page is the paper book** (`_portfolio_tab`, "My investments /
+  PORTFOLIO"), built from `Live.positions` alone, so it renders while the
+  first poll is in flight. The strip is a hierarchy: the profit or loss now is
+  the biggest figure, in the one highlighted cell, because it is the
+  question; beside it the account value, what is invested, what every stop
+  hitting would cost, and what has closed. Under it the **account value over
+  time** (`ui/charts.AccountCurve` — time on the x-axis for real, so a gap in
+  the log is a gap on the chart), every open position as a **tile**
+  (`PositionTiles`, a squarified treemap) beside what resolved recently, and a
+  **card per position** (`PositionCard`, with `PositionChart` drawing the
+  entry, target and stop over sixty days of price). Cards update in place
+  and keep their order; a page you look at every day should not reshuffle.
+- **"Invested" is two numbers and the page says so.** A long spends cash; a
+  short borrows stock. Summed blindly on the real book they came to $46k on a
+  $10k account — which is not a bug, but a figure that looks like one. The
+  strip shows the sum with the split under it (`Portfolio.stats()` gained
+  `long_cash`, `short_notional`, `at_risk`, `realised`, `n_long`, `n_short`).
+- **Tiles are sized by what a position can lose, not by what it is worth.**
+  A currency short carries a notional thirty times an equity long's for the
+  same risk budget; sized by notional the picture would be about leverage
+  conventions. Sized by `cash_at_risk` it is about the bets, and under
+  protocol mode — every position the same risk — it is an honest equal grid.
+- **The account-value log** (`Portfolio.log_equity`, `equity_log` in
+  `portfolio.json`): a point an hour, plus one at every entry, exit or barrier
+  hit, written by whichever process marks the book — one, by the engine
+  lock. A point is only written when every held position has a price, because
+  marking a missing one at entry draws a dip that never happened. The weeks
+  before the log existed are rebuilt once by `seed_equity_log` from the
+  book's own records and real daily closes (`assets.fetch_bars`, on the
+  engine thread, three tries at most) — the trades it made, valued at each
+  day's close. Nothing invented; the curve starts where the book did.
+- **The hourly model kept its readout and lost its page.** It is an
+  experiment the engine runs, not something the reader holds, so
+  `_terminal_tab()` — unchanged — is hosted at the foot of Practice, with
+  the LLM read panel, which `_read()` now scrolls to. The engine keeps
+  settling hours whether or not anything shows them; the Brier line is the
+  only evidence that experiment produces, which is the argument for keeping
+  the readout and the whole argument against keeping a page for one asset.
+  Its ledger cells are captioned *model's practice cash* / *model's trades*
+  now, because "practice cash" on the old landing page read as the reader's
+  own account, and it never was.
+
+What stayed: the Cockpit shell, both names on every destination (the docs
+test still greps `PlainTabs.add`), the 1280×775 fold, and the rule that
+nothing outside the hourly model asserts a direction — the new page describes
+what you hold and never what to do with it.
 
 ## The Plain Language direction
 
@@ -699,7 +756,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,429 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,486 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 
@@ -752,14 +809,24 @@ as it happens rather than saving on exit.
 ./scripts/install_agent.sh --uninstall
 ```
 
-Running both is safe. `sonar/enginelock.py` enforces **one engine per state file**: whoever
-starts first drives, and the other opens read-only rather than settling the same hour twice —
-which would double-count the portfolio silently. A lock left behind by a killed process is
-reclaimed rather than blocking forever.
+Running both is safe, and since Oct 2026 it is also useful. `sonar/enginelock.py` enforces
+**one engine per state file**: whoever starts first drives, because two engines settling the
+same hour would double-count the portfolio silently. The other one **follows** rather than
+sitting there blank: the agent records its HTTP address in the lock, and a window that loses
+the race mirrors the agent's snapshot, board, book, alerts and knobs over localhost
+(`Live._wait_for_lock`, `/api/book`, `/api/wire`) — every figure on every page is the
+agent's, and every action that writes the book (buy, short, close, the knobs, protocol mode,
+an LLM read) is handed to the agent over `/api/trade`, `/api/close`, `/api/config`,
+`/api/read`, so there is still exactly one writer. The status line says *following the
+engine at 127.0.0.1:8787* while this is so. Whoever waits re-tries the lock every fifteen
+seconds and **takes over the moment it is free**: quit the agent and the window drives
+without a restart; quit the window and the agent — which was waiting, not idling — drives
+the night. A second window has no address to follow, so it waits with a plain message. A
+lock left behind by a killed process is reclaimed rather than blocking forever.
 
 **The run watches itself.** Over a weeks-long collection run, hours can go missing silently —
 feed down, machine asleep, agent dead — and the damage would only show at review time as a
-mysteriously small n. So the Terminal tab carries the run's vital signs (hours scored vs
+mysteriously small n. So the hourly model's panel carries the run's vital signs (hours scored vs
 elapsed, settlements voided, time since anything last settled), and because the BTC market
 resolves around the clock, **two silent hours always means a stall**: the menu-bar item posts
 a notification and flags STALLED rather than sitting there looking healthy. The state files
@@ -912,7 +979,7 @@ sonar/
   research/    the study apparatus — features, panel, stats, validate, regimes,
                and hourlyvol (the measured EWMA × hour-of-day σ the Terminal prices with)
 ui/
-  app.py       the window — Live model / Screener / News / My trades / Big picture / Practice / Sports / Learn
+  app.py       the window — My investments / Screener / News / My trades / Big picture / Practice (with the hourly model at its foot) / Sports / Learn
   tabs.py      the navigation rail and page header: plain name over the name
                the docs use, folding to icons on a narrow window
   icons.py     the rail's stroke-SVG glyphs, tinted per state

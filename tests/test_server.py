@@ -281,7 +281,7 @@ def test_main_wires_the_engine_to_the_handler_and_serves(monkeypatch, tmp_path):
             self.horizon = type("H", (), {"name": "week"})()
             self.read_only = False
 
-        def run(self, role):
+        def run(self, role, url=None):
             started.append(role)
 
     monkeypatch.setattr(server, "Live", StubLive)
@@ -314,7 +314,7 @@ def test_main_survives_a_keyboard_interrupt(monkeypatch, tmp_path):
             self.horizon = type("H", (), {"name": "week"})()
             self.read_only = False
 
-        def run(self, role):
+        def run(self, role, url=None):
             pass
 
     monkeypatch.setattr(server, "Live", StubLive)
@@ -326,7 +326,7 @@ def test_main_survives_a_keyboard_interrupt(monkeypatch, tmp_path):
 def test_a_second_daemon_reports_read_only_rather_than_double_counting(
         monkeypatch, tmp_path, capsys):
     """Two engines settling the same hour into one state file would double-count
-    the portfolio silently. The lock makes the second one read-only; this is the
+    the portfolio silently. The lock makes the second one wait; this is the
     line that tells the operator."""
     monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
 
@@ -344,14 +344,14 @@ def test_a_second_daemon_reports_read_only_rather_than_double_counting(
             self.read_only = True
             self.conflict = "another engine holds the lock"
 
-        def run(self, role):
+        def run(self, role, url=None):
             pass
 
     monkeypatch.setattr(server, "Live", StubLive)
     monkeypatch.setattr(server, "PaperServer", FakeServer)
     monkeypatch.setattr(server.time, "sleep", lambda s: None)
     server.main(port=0)
-    assert "READ-ONLY" in capsys.readouterr().out
+    assert "WAITING" in capsys.readouterr().out
 
 
 def test_the_static_dir_the_server_points_at_actually_exists():
@@ -360,3 +360,78 @@ def test_the_static_dir_the_server_points_at_actually_exists():
     assert server.STATIC.is_dir()
     assert (server.STATIC / "index.html").exists()
     assert (server.STATIC / "docs.html").exists()
+
+
+# --------------------------------------------------------------------------- #
+# What a following window reads and writes (core.Live._wait_for_lock)
+# --------------------------------------------------------------------------- #
+class FakeBookLive(FakeLive):
+    def __init__(self):
+        super().__init__()
+        self.positions = {"stats": {"n_open": 1}, "open": [{"id": "p1"}],
+                          "closed": [], "equity": []}
+        self.calibration = {"verdict": "unproven"}
+        self.protocol_on = True
+        self.alerts = [{"symbol": "AAA"}]
+        self.inst = {"n": 0}
+        self.trades, self.closes = [], []
+
+    def trade(self, symbol, direction):
+        self.trades.append((symbol, direction))
+        return {"ok": True, "message": f"opened {direction} {symbol}", "position": {}}
+
+    def close_position(self, pos_id):
+        self.closes.append(pos_id)
+        return {"ok": True, "message": "closed", "position": {}}
+
+
+@pytest.fixture
+def book_daemon(loopback, monkeypatch):
+    live = FakeBookLive()
+    monkeypatch.setattr(server.Handler, "live", live)
+    srv = server.PaperServer(("127.0.0.1", 0), server.Handler)
+    thread = threading.Thread(target=srv.serve_forever,
+                              kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    host, port = srv.server_address[:2]
+    try:
+        yield f"http://{host}:{port}", live
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        thread.join(timeout=5)
+
+
+def test_the_book_is_served_with_its_grading_and_switch(book_daemon):
+    base, live = book_daemon
+    got = json.loads(get(base, "/api/book")[2])
+    assert got == {"positions": live.positions, "calibration": live.calibration,
+                   "protocol_on": True}
+
+
+def test_the_wire_serves_alerts_and_institutions(book_daemon):
+    base, live = book_daemon
+    assert json.loads(get(base, "/api/wire")[2]) == {"alerts": live.alerts,
+                                                     "inst": live.inst}
+
+
+def test_a_trade_is_forwarded_to_the_book(book_daemon):
+    base, live = book_daemon
+    status, got = post(base, "/api/trade", {"symbol": "AAA", "direction": "long"})
+    assert status == 200 and got["ok"]
+    assert live.trades == [("AAA", "LONG")]
+
+
+def test_a_trade_with_no_direction_never_reaches_the_book(book_daemon):
+    base, live = book_daemon
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        post(base, "/api/trade", {"symbol": "AAA", "direction": "sideways"})
+    assert exc.value.code == 400
+    assert live.trades == []
+
+
+def test_a_close_is_forwarded_to_the_book(book_daemon):
+    base, live = book_daemon
+    status, got = post(base, "/api/close", {"id": "p1"})
+    assert status == 200 and got["ok"]
+    assert live.closes == ["p1"]

@@ -152,3 +152,14 @@ def test_closing_from_the_book_reports_success_and_redraws(window):
 def test_closing_something_that_is_not_open_warns(window):
     window._close_position("not-a-real-id")
     assert "\u26a0" in window.status.text()
+
+
+def test_refresh_while_following_the_agent(window):
+    """The launchd agent holds the lock and this window mirrors it: every
+    page renders from the mirrored snapshot, and the status line says whose
+    figures these are."""
+    window.live.snapshot = {"status": "live", "now": 1,
+                            "following": "http://127.0.0.1:8787"}
+    window.refresh()
+    assert window.status.text().startswith("following the engine at 127.0.0.1:8787")
+    assert window.read_btn.isEnabled()

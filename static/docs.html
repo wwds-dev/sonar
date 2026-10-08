@@ -259,7 +259,10 @@
     <tr><td>Check whether any of this actually works</td>
       <td><b>Lab</b> — and §11, which says it mostly does not</td></tr>
     <tr><td>Price a sports bet</td><td><b>Playmaker</b></td></tr>
-    <tr><td>Watch the hourly Bitcoin model</td><td><b>Terminal</b></td></tr>
+    <tr><td>See what your practice money is doing</td>
+      <td><b>Portfolio</b> — the page the app opens on</td></tr>
+    <tr><td>Watch the hourly Bitcoin model</td>
+      <td><b>Lab</b>, at the foot of the page</td></tr>
   </table>
 
   <h3>How you will know whether any of it works</h3>
@@ -267,7 +270,7 @@
     in three places, and each one is designed so it cannot flatter you:</p>
   <ul>
     <li><b>The hourly model grades itself against the market.</b> Every hour,
-      the Terminal notes down what the model said and what Polymarket said,
+      the hourly model notes down what it said and what Polymarket said,
       then checks both against what actually happened — including all the
       hours it chose <em>not</em> to bet, so it cannot show you only its best
       moments. After about a hundred hours (four days or so of running) it
@@ -277,7 +280,7 @@
       counts whether high scores actually won more often. <b>Protocol mode</b>
       (§6) fills that table for you with small, coin-flip-direction positions,
       so the answer measures the score and not your moods.</li>
-    <li><b>The run watches itself.</b> A health line on the Terminal shows how
+    <li><b>The run watches itself.</b> A health line under the hourly model shows how
       many hours have been collected versus how many have passed, and the
       menu-bar item raises an alarm if collection stalls — because a dead
       experiment looks exactly like a healthy one otherwise (§12).</li>
@@ -300,12 +303,16 @@
     for the names — and unfolds when the window is widened.</p>
   <table>
     <tr><th>Tab</th><th>What it does</th><th>Asserts a direction?</th></tr>
-    <tr><td>Live model<div class="muted">was <b>Terminal</b></div></td>
-      <td>The hourly BTC up/down paper trade. A probability model prices each
-        hour, compares itself to Polymarket, and takes at most one simulated
-        bet — then grades itself against the market on <em>every</em> hour,
-        traded or not (§4).</td>
-      <td><b class="up">Yes</b> — the only place with an independent model</td></tr>
+    <tr><td>My investments<div class="muted">was <b>Portfolio</b></div></td>
+      <td>The page the app opens on: your practice money as a picture. The
+        profit or loss right now is the biggest figure, with the account value,
+        what is invested (a long spends cash, a short borrows stock — the line
+        under says which is which), what every stop hitting would cost, and
+        what has closed. Below it the account's value over time, every open
+        position as a tile sized by what it can lose and coloured by how it is
+        doing, what resolved recently, and a card per position with its entry,
+        target and stop drawn over sixty days of price (§6).</td>
+      <td>—</td></tr>
     <tr><td>Screener<div class="muted">was <b>Assets</b></div></td>
       <td>129 instruments — 50 equities, 20 indices, 20 currency pairs,
         21 crypto, 18 commodities — with price, momentum, volatility, news
@@ -332,8 +339,13 @@
     <tr><td>Practice<div class="muted">was <b>Lab</b></div></td>
       <td>Replay the model over real history with the knobs exposed, see which
         components of the score earn their weight, and step through history
-        making your own calls. See <a href="#lab">§7</a>.</td>
-      <td>—</td></tr>
+        making your own calls. See <a href="#lab">§7</a>. At the foot of the
+        page, the <b>hourly BTC up/down model</b>: a probability model prices
+        each hour, compares itself to Polymarket, takes at most one simulated
+        bet with its own practice cash — separate from yours — and grades
+        itself against the market on <em>every</em> hour, traded or not (§4).
+        It was the page the app opened on, as <b>Terminal</b>, until Oct 2026.</td>
+      <td><b class="up">Yes</b> — the hourly model is the only independent one</td></tr>
     <tr><td>Sports<div class="muted">was <b>Playmaker</b></div></td>
       <td>Sports prop pricing across seven sports — NFL, College Football,
         NBA, MMA (UFC), International Football, Golf and Cycling. Paste what
@@ -410,7 +422,8 @@
   <p>Whether that edge exists at all is <b>measured, not assumed</b>. The engine
     snapshots the model's P(up) and the market's mid-hour for <em>every</em>
     hour — traded or not — settles both against the real candle, and compares
-    them by Brier score on the Terminal tab. The paper P&amp;L only grades the
+    them by Brier score under the hourly model, at the foot of the Lab tab.
+    The paper P&amp;L only grades the
     hours the model traded, which are its boldest claims; this grades all 24 a
     day, so it cannot be flattered by selection and says in weeks what the
     bankroll would take months to say. Each snapshot also records the book's
@@ -459,6 +472,29 @@
   <p>Exits are prices, not dates: the target and the stop. History says those
     resolve in a median of <b>6 trading days</b>, a quarter inside 3 and three
     quarters inside 10.</p>
+  <h3>Reading the Portfolio page</h3>
+  <p>The page the app opens on is this book as a picture. Three of its figures
+    need a word. <b>Invested</b> is two different things added together: a
+    long <em>spends</em> cash, a short <em>borrows</em> stock, and the line
+    under the figure says how much of each — summed blindly they come to
+    several times the account on a book full of shorts, which is not a bug but
+    is worth understanding. <b>If every stop hits</b> is what the open
+    positions would lose if all of them resolved the wrong way — the figure
+    the risk profile actually controls, and the one to watch. And the
+    <b>tiles</b> are sized by that same number, what each position can lose,
+    not by what it is worth: a currency short carries a notional thirty times
+    an equity long's for the same risk budget, and sizing by notional would
+    make the picture about leverage conventions instead of about the bets.
+    Colour is how each is doing right now; rest the pointer on a tile for its
+    figures.</p>
+  <p>The <b>account value over time</b> is written by the engine: a point an
+    hour, and one at every entry, exit or barrier hit, so a step sits where it
+    happened. The days before the log existed are rebuilt once from the book's
+    own records and real daily closes — the trades you made, valued at each
+    day's close — so the curve starts where the book did, not where the
+    feature did. A point is only written when every held position has a price
+    to be marked at; marking a missing one at its entry would draw a dip or a
+    jump that never happened.</p>
   <p><b>Protocol mode</b> (the checkbox in the Book header, off by default) is
     for filling the calibration table without discretion. Once a day it opens
     small fixed-risk paper positions on the five highest- and five lowest-
@@ -607,7 +643,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     because a wider bar makes a null <em>stronger</em>.</p>
 
   <h3>Reading the model-vs-market line</h3>
-  <p>The Terminal's self-grading line (§4) is the number to watch during a
+  <p>The hourly model's self-grading line (§4) is the number to watch during a
     collection run, and it reads differently from a hit rate:</p>
   <table>
     <tr><th>Part</th><th>What to do with it</th></tr>
@@ -694,7 +730,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     <li>At least one component surviving Benjamini-Hochberg, with a quintile
       spread whose error bar excludes zero.</li>
     <li>The same component surviving in more than one asset class.</li>
-    <li>The Terminal's model-vs-market verdict favouring the model beyond its
+    <li>The hourly model's model-vs-market verdict favouring the model beyond its
       error bar over hundreds of hours — <em>and</em> the recorded spreads
       showing the disagreements were wide enough to buy.</li>
     <li>And then the only one that counts: <b>calibration</b> on real closed
@@ -852,7 +888,7 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
   <p>The only resource is bandwidth, roughly <b>8MB an hour</b> since the
     Polymarket board was removed — down from about 60MB. Negligible on
     broadband, and worth knowing on a metered connection.</p>
-  <p><b>The run watches itself.</b> The Terminal tab's health line shows hours
+  <p><b>The run watches itself.</b> The hourly model's health line (Lab tab) shows hours
     scored against hours elapsed, settlements voided, and how long ago anything
     last settled. Because the BTC market resolves around the clock, two silent
     hours always means the run has stalled — the menu-bar item then posts a
@@ -885,7 +921,7 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     <li><b>A missed hour is voided, never guessed.</b> If the app was asleep
       when a position's hour ended and the real close cannot be recovered, the
       position is dropped as if never taken — a shorter record beats a
-      corrupted one. Voids are counted on the Terminal's health line, so the
+      corrupted one. Voids are counted on the hourly model's health line, so the
       loss of data is visible rather than silent.</li>
   </ul>
   <p>By design SONAR stops one step short of acting. It will take you up to a

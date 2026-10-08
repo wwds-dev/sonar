@@ -109,7 +109,7 @@ def test_conflict_message_names_the_holder(tmp_path):
     p = tmp_path / "engine.lock"
     p.write_text(json.dumps({"pid": 1, "role": "agent", "since": 0}))
     msg = describe_conflict(EngineLock(p, role="app"))
-    assert "agent" in msg and "read-only" in msg
+    assert "agent" in msg and "takes over" in msg
 
 
 def test_no_conflict_message_when_free(tmp_path):
@@ -132,3 +132,17 @@ def _dead_pid() -> int:
         except PermissionError:
             continue
     return 99999
+
+
+def test_the_holder_can_record_where_it_publishes(tmp_path):
+    """The daemon writes its URL into the lock so a window that loses the
+    race can follow it. A window writes none: there is nothing to follow."""
+    p = tmp_path / "engine.lock"
+    daemon = EngineLock(p, role="agent", url="http://127.0.0.1:8787")
+    assert daemon.acquire() is True
+    assert daemon.holder()["url"] == "http://127.0.0.1:8787"
+    daemon.release()
+    window = EngineLock(p, role="app")
+    assert window.acquire() is True
+    assert "url" not in window.holder()
+    window.release()

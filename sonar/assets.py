@@ -279,6 +279,23 @@ def _fetch(symbol: str, rng: str = SCAN_RANGE):
     return price, meta.get("currency", ""), closes
 
 
+def fetch_bars(symbol: str, rng: str = SCAN_RANGE) -> list[tuple[int, float]] | None:
+    """Daily ``(timestamp, close)`` pairs — the same request as :func:`_fetch`,
+    keeping the clock. The board never needed to know *when* a close was, so
+    ``_fetch`` drops the timestamps; the account-value seed in
+    :meth:`sonar.portfolio.Portfolio.seed_equity_log` cannot work without them.
+    """
+    d = _get(_CHART.format(sym=urllib.parse.quote(symbol), rng=rng))
+    try:
+        r = d["chart"]["result"][0]
+        stamps = r["timestamp"]
+        closes = r["indicators"]["quote"][0]["close"]
+    except (TypeError, KeyError, IndexError):
+        return None
+    bars = [(int(t), float(c)) for t, c in zip(stamps, closes) if c is not None]
+    return bars or None
+
+
 # Words that name an asset but are also ordinary English. Matching on these
 # alone produced real nonsense: XRP "matched" a story about diesel prices
 # because it contained the phrase *ripple effect*. They now only count when the

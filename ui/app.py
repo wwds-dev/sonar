@@ -53,8 +53,8 @@ from sonar.assets import _W as ASSET_W
 from . import learn as learn_mod
 from . import theme
 from . import words
-from .charts import (ComponentBar, DepthChart, EquityCurve, HourBar, Lattice,
-                     Sparkline)
+from .charts import (AccountCurve, ComponentBar, DepthChart, EquityCurve,
+                     HourBar, Lattice, PositionChart, PositionTiles, Sparkline)
 from .tabs import PlainTabs
 from .worker import (BacktestThread, ConfigThread, PollThread, PropThread,
                      ReadThread, SportsMeasureThread)
@@ -383,12 +383,37 @@ STAT_WORDS = {
     "market": "crowd's odds",
     "edge": "we disagree by",
     "tau": "hour remaining",
-    "bankroll": "practice cash",
-    "pnl": "profit / loss",
+    "bankroll": "model's practice cash",
+    "pnl": "model's profit / loss",
+    "trades": "model's trades",
     "total p/l": "profit / loss",
     "equity": "account value",
     "unrealised": "open profit / loss",
+    "p&l now": "profit / loss now",
+    "at risk": "if every stop hits",
+    "closed": "closed so far",
 }
+
+
+def _px(v: float | None) -> str:
+    """A price, to the precision its size wants: two places from 10 up, four
+    below it — a currency pair at 1.32 has nothing to say in two."""
+    if v is None:
+        return "—"
+    return f"{v:,.2f}" if abs(v) >= 10 else f"{v:,.4f}"
+
+
+def _day_text(ts: float | None) -> str:
+    return time.strftime("%-d %b", time.localtime(ts)) if ts else "—"
+
+
+def _money(v: float, signed: bool = False, places: int = 2) -> str:
+    """``$1,234.56``, or ``+$1,234.56`` / ``-$1,234.56`` when the sign is the
+    point — the sign goes before the currency, as a bank statement puts it."""
+    body = f"{abs(v):,.{places}f}"
+    if signed:
+        return ("+$" if v >= 0 else "-$") + body
+    return ("-$" if v < 0 else "$") + body
 
 
 class Stat(QWidget):
@@ -803,6 +828,124 @@ class PositionRow(QFrame):
         lay.addWidget(btn)
 
 
+class PositionCard(QFrame):
+    """One open position as a picture: its recent prices with the entry, the
+    target and the stop drawn in, the figures beside it, and where price sits
+    between the stop and the target underneath.
+
+    Updated in place rather than rebuilt: a card rebuilt every scan flickers,
+    and thirty of them flicker together.
+    """
+
+    def __init__(self, p: dict, on_close, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("panel")
+        self.pos_id = p["id"]
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(6)
+
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        name = label(p.get("name") or p["symbol"], font=theme.text(12, True))
+        head.addWidget(name)
+        head.addWidget(label(p["symbol"], "faint", theme.figure(9)))
+        side = label(p["direction"].lower(), font=theme.figure(8, True))
+        side.setStyleSheet(
+            f"color: {(theme.UP if p['direction'] == 'LONG' else theme.DOWN).name()};")
+        head.addWidget(side)
+        head.addStretch(1)
+        self.pnl = label("", font=theme.figure(14, True))
+        self.pnl.setToolTip("Mark-to-market profit or loss if closed now.")
+        head.addWidget(self.pnl)
+        lay.addLayout(head)
+
+        mid = QHBoxLayout()
+        mid.setSpacing(12)
+        self.chart = PositionChart(64)
+        self.chart.setToolTip("Recent daily closes. Gold is your entry, blue "
+                              "the target, orange the stop; the dot is now.")
+        mid.addWidget(self.chart, 1)
+        col = QVBoxLayout()
+        col.setSpacing(1)
+        self.stake = label("", "muted", theme.figure(9))
+        self.now = label("", "muted", theme.figure(9))
+        self.entry = label("", "muted", theme.figure(9))
+        self.target = label("", "muted", theme.figure(9))
+        self.stop = label("", "muted", theme.figure(9))
+        for lb in (self.stake, self.now, self.entry, self.target, self.stop):
+            col.addWidget(lb)
+        holder = QWidget()
+        holder.setObjectName("cell")
+        holder.setLayout(col)
+        holder.setFixedWidth(150)
+        mid.addWidget(holder)
+        lay.addLayout(mid)
+
+        foot = QHBoxLayout()
+        foot.setSpacing(8)
+        foot.addWidget(label("stop", "faint", theme.figure(8)))
+        self.prog = ComponentBar()
+        self.prog.setToolTip("How far price has travelled from the stop (left) "
+                             "toward the target (right).")
+        foot.addWidget(self.prog, 1)
+        foot.addWidget(label("target", "faint", theme.figure(8)))
+        btn = QPushButton("close")
+        btn.setFont(theme.figure(9))
+        btn.setToolTip("Close this paper position at the current price.")
+        btn.clicked.connect(lambda: on_close(p["id"]))
+        foot.addWidget(btn)
+        lay.addLayout(foot)
+        self.set_row(p)
+
+    def set_row(self, p: dict) -> None:
+        pnl = p.get("unrealised") or 0.0
+        self.pnl.setText(f"{pnl:+,.2f}")
+        self.pnl.setStyleSheet(f"color: {theme.pnl_color(pnl).name()};")
+        self.stake.setText(f'invested  ${p.get("stake", 0):,.0f}')
+        self.now.setText(f'now  {_px(p["price"])}  {p.get("pct", 0):+.2f}%')
+        self.entry.setText(f'entry  {_px(p["entry"])}')
+        self.target.setText(f'target  {_px(p["target"])}')
+        self.stop.setText(f'stop  {_px(p["stop"])}')
+        self.chart.set_position(p.get("spark") or [], p["entry"], p["target"],
+                                p["stop"], p["price"], pnl >= 0)
+        self.prog.set_parts({"done": p["progress"], "left": 1 - p["progress"]},
+                            {"done": 1.0, "left": 1.0})
+
+
+class ClosedRow(QWidget):
+    """One resolved position on the landing page: what it was, how it ended,
+    what it made. The grading of every closed trade stays on My trades."""
+
+    HOW = {"TARGET": "hit target", "STOP": "hit stop", "MANUAL": "closed by you"}
+
+    def __init__(self, p: dict, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("cell")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 3, 0, 3)
+        lay.setSpacing(10)
+        side = label(p["direction"].lower(), font=theme.figure(9, True))
+        side.setStyleSheet(
+            f"color: {(theme.UP if p['direction'] == 'LONG' else theme.DOWN).name()};")
+        side.setFixedWidth(38)
+        lay.addWidget(side)
+        lay.addWidget(label(p.get("name") or p["symbol"], font=theme.text(11)), 1)
+        outcome = p.get("outcome") or ""
+        lay.addWidget(label(self.HOW.get(outcome, outcome.lower()), "faint",
+                            theme.figure(9)))
+        pnl = p.get("pnl") or 0.0
+        amount = label(f"{pnl:+,.2f}", font=theme.figure(11, True),
+                       align=Qt.AlignRight | Qt.AlignVCenter)
+        amount.setStyleSheet(f"color: {theme.pnl_color(pnl).name()};")
+        amount.setFixedWidth(66)
+        lay.addWidget(amount)
+        when = label(_day_text(p.get("closed_at")), "faint", theme.figure(9),
+                     align=Qt.AlignRight | Qt.AlignVCenter)
+        when.setFixedWidth(44)
+        lay.addWidget(when)
+
+
 class ReadPanel(QFrame):
     """The narrative track — visually separate from every measured number.
 
@@ -916,9 +1059,12 @@ class MainWindow(QMainWindow):
         # last month of muscle memory use sits under it. See `ui/tabs.py`.
         self.tabs = PlainTabs()
         self.tabs.set_rail_header(self._rail_header())
-        self.tabs.add(self._terminal_tab(), "Live model", "Terminal",
-                      "The hourly bitcoin up/down model — the one place SONAR "
-                      "says which way it thinks something goes.")
+        # The landing page is the reader's own money. The hourly bitcoin
+        # model, which opened the app for two months, lives at the foot of
+        # Practice now — it is an experiment the engine runs, not a holding.
+        self.tabs.add(_scrolled(self._portfolio_tab()), "My investments", "Portfolio",
+                      "Everything you hold in practice money — what you put "
+                      "in, and what it is worth right now.")
         self._asset_rows: list[AssetRow] = []   # ticked by the Updated column
         self.tabs.add(self._assets_tab(), "Screener", "Assets",
                       "129 markets ranked by how notable they look right now. "
@@ -932,9 +1078,12 @@ class MainWindow(QMainWindow):
         self.tabs.add(self._macro_tab(), "Big picture", "Macro",
                       "The backdrop — rates, volatility, jobs — and what the "
                       "central banks have been saying.")
-        self.tabs.add(_scrolled(self._lab_tab()), "Practice", "Lab",
-                      "Test any claim this app makes against real history, and "
-                      "make your own calls on setups with the future hidden.")
+        self._lab_scroll = _scrolled(self._lab_tab())
+        self._lab_index = self.tabs.add(
+            self._lab_scroll, "Practice", "Lab",
+            "Test any claim this app makes against real history, make your "
+            "own calls with the future hidden — and watch the hourly bitcoin "
+            "model, the one place SONAR says which way something goes.")
         self.tabs.add(_scrolled(self._playmaker_tab()), "Sports", "Playmaker",
                       "Pricing a sports bet: what the bookmakers' margin is, "
                       "and where they disagree with each other.")
@@ -1708,6 +1857,217 @@ class MainWindow(QMainWindow):
                        for p in pos.get("open", [])],
                       "No open paper positions. Use buy or short on the Assets tab.")
 
+    # -- portfolio: the landing page --------------------------------------- #
+    CARD_COLUMNS = 3
+
+    def _portfolio_tab(self) -> QWidget:
+        """The landing page: the reader's own practice money, as a picture.
+
+        Built from `self.live.positions` alone — the paper book — which is
+        independent of the hourly engine, so it renders while the first poll
+        is in flight and when another SONAR holds the engine lock. Four
+        things, top to bottom: the figures as a hierarchy (the profit or loss
+        is the biggest, because it is the question), the account's value over
+        time, every position at a glance beside what already resolved, and a
+        card per position. The page scrolls; the strip and the curve are what
+        a short screen sees first.
+        """
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 8, 8, 8)
+        lay.setSpacing(10)
+
+        strip = panel()
+        g = QHBoxLayout(strip)
+        g.setContentsMargins(16, 12, 16, 12)
+        g.setSpacing(22)
+        self.pstats: dict[str, Stat] = {}
+        self.plines: dict[str, QLabel] = {}
+
+        def stat(key: str, tip: str, size: int) -> Stat:
+            s = Stat(key, tip)
+            s.val.setFont(theme.figure(size, True))
+            self.pstats[key] = s
+            return s
+
+        def cell(key: str, tip: str, size: int) -> QVBoxLayout:
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            col.addWidget(stat(key, tip, size))
+            line = label("", "faint", theme.figure(9), wrap=True)
+            self.plines[key] = line
+            col.addWidget(line)
+            return col
+
+        banner = QFrame()
+        banner.setObjectName("banner")
+        banner.setMinimumWidth(284)      # the line under the figure, unwrapped
+        bl = QVBoxLayout(banner)
+        bl.setContentsMargins(14, 8, 14, 8)
+        bl.addLayout(cell("p&l now", "Account value minus the cash you started "
+                          "with: what is open plus what has closed.", 24))
+        g.addWidget(banner)
+        g.addWidget(_vline())
+        g.addLayout(cell("equity", "Cash plus what the open positions are worth "
+                         "right now.", 18))
+        g.addLayout(cell("invested", "What the open positions committed at entry. "
+                         "A long spends cash; a short borrows stock — both are "
+                         "counted, and the line under says which is which.", 18))
+        g.addLayout(cell("at risk", "What the open positions would lose if every "
+                         "stop was hit — the figure the risk profile controls.", 18))
+        g.addLayout(cell("closed", "Positions that have resolved, and how many "
+                         "of them made money.", 18))
+        g.addStretch(1)
+        lay.addWidget(strip)
+
+        self.account_curve = AccountCurve()
+        self.account_curve.setToolTip(
+            "Cash plus what the open positions are worth, over time. The engine\n"
+            "logs a point an hour and one at every entry or exit; the days\n"
+            "before the log existed are rebuilt from the book's own records\n"
+            "and real daily closes. The dashed line is the cash you started with.")
+        lay.addWidget(self.account_curve)
+
+        mid = QHBoxLayout()
+        mid.setSpacing(10)
+        tiles = panel()
+        tl = QVBoxLayout(tiles)
+        tl.setContentsMargins(14, 10, 14, 10)
+        tl.setSpacing(4)
+        th = QHBoxLayout()
+        th.addWidget(label("ALL POSITIONS AT A GLANCE", "faint", theme.figure(8)))
+        th.addStretch(1)
+        self.tiles_line = label("", "faint", theme.figure(8))
+        th.addWidget(self.tiles_line)
+        tl.addLayout(th)
+        self.tiles = PositionTiles()
+        self.tiles.setMinimumHeight(186)
+        tl.addWidget(self.tiles, 1)
+        tl.addWidget(label("one tile per position · its size is what it can lose "
+                           "· its colour is how it is doing · rest the pointer "
+                           "on one", "faint", theme.figure(8), wrap=True))
+        mid.addWidget(tiles, 3)
+
+        closed = panel()
+        cl = QVBoxLayout(closed)
+        cl.setContentsMargins(14, 10, 14, 10)
+        cl.setSpacing(4)
+        ch = QHBoxLayout()
+        ch.addWidget(label("RECENTLY CLOSED", "faint", theme.figure(8)))
+        ch.addStretch(1)
+        self.closed_line = label("", "faint", theme.figure(8))
+        ch.addWidget(self.closed_line)
+        cl.addLayout(ch)
+        self._closed_lay = QVBoxLayout()
+        self._closed_lay.setSpacing(0)
+        cl.addLayout(self._closed_lay, 1)
+        cl.addWidget(label("the full list, and the grading of every closed "
+                           "trade, is on My trades", "faint", theme.figure(8),
+                           wrap=True))
+        mid.addWidget(closed, 2)
+        lay.addLayout(mid)
+
+        eh = QHBoxLayout()
+        eh.addWidget(label("EACH POSITION", "faint", theme.figure(8)))
+        eh.addStretch(1)
+        self.cards_line = label("", "faint", theme.figure(8))
+        eh.addWidget(self.cards_line)
+        lay.addLayout(eh)
+        host = QWidget()
+        host.setObjectName("cell")
+        self._cards_grid = QGridLayout(host)
+        self._cards_grid.setContentsMargins(0, 0, 0, 0)
+        self._cards_grid.setSpacing(10)
+        lay.addWidget(host)
+        self._cards: dict[str, PositionCard] = {}
+        self._cards_empty = label("No open positions. Use buy or short on the "
+                                  "Screener.", "muted", theme.figure(10))
+        lay.addWidget(self._cards_empty)
+        lay.addStretch(1)
+        self._portfolio_sig = None
+        self._curve_sig = None
+        return w
+
+    def _refresh_portfolio(self) -> None:
+        with self.live.lock:
+            pos = dict(self.live.positions)
+        st = pos.get("stats") or {}
+        if not st:
+            return
+        pnl = st.get("total_pnl", 0.0)
+        self.pstats["p&l now"].set(_money(pnl, signed=True), theme.pnl_color(pnl))
+        self.plines["p&l now"].setText(
+            f'{st.get("return_pct", 0):+.2f}%  ·  {st.get("unrealised", 0):+,.2f} open'
+            f'  ·  {st.get("realised", 0):+,.2f} closed')
+        self.pstats["equity"].set(f'${st.get("equity", 0):,.0f}')
+        self.plines["equity"].setText(
+            f'started with ${st.get("starting_cash", 0):,.0f} · '
+            f'${st.get("cash", 0):,.0f} cash free')
+        long_cash, short_notional = st.get("long_cash", 0), st.get("short_notional", 0)
+        self.pstats["invested"].set(f"${long_cash + short_notional:,.0f}")
+        self.plines["invested"].setText(
+            f'${long_cash:,.0f} of your cash in {st.get("n_long", 0)} longs · '
+            f'${short_notional:,.0f} borrowed for {st.get("n_short", 0)} shorts')
+        risk = st.get("at_risk", 0)
+        self.pstats["at risk"].set(_money(-risk, signed=True, places=0) if risk else "$0",
+                                   theme.DOWN if risk else theme.INK)
+        equity = st.get("equity") or 1.0
+        self.plines["at risk"].setText(
+            f'{risk / equity * 100:.1f}% of the account · {st.get("n_open", 0)} stops set')
+        n_closed, wins = st.get("n_closed", 0), st.get("n_wins", 0)
+        self.pstats["closed"].set(str(n_closed))
+        self.plines["closed"].setText(
+            f'{wins} won · {n_closed - wins} lost · {st.get("realised", 0):+,.2f}')
+
+        points = pos.get("equity") or []
+        curve_sig = (len(points), points[-1]["t"] if points else 0,
+                     points[-1]["v"] if points else 0)
+        if curve_sig != self._curve_sig:
+            self._curve_sig = curve_sig
+            self.account_curve.set_data(points, st.get("starting_cash"))
+
+        rows = pos.get("open", [])
+        sig = (tuple(p["id"] for p in rows),
+               tuple(round(p.get("unrealised") or 0.0, 2) for p in rows),
+               n_closed)
+        if sig == self._portfolio_sig:
+            return
+        self._portfolio_sig = sig
+        self.tiles.set_rows(rows)
+        self.tiles_line.setText(
+            f'{len(rows)} open · {st.get("n_long", 0)} long · {st.get("n_short", 0)} short')
+
+        # Cards update in place; the grid is only re-laid when the set of
+        # positions changes. Order is newest first and stays put — a page you
+        # look at every day should not reshuffle under your eyes.
+        ids = [p["id"] for p in rows]
+        for pid in list(self._cards):
+            if pid not in ids:
+                self._cards.pop(pid).deleteLater()
+        for p in rows:
+            card = self._cards.get(p["id"])
+            if card is None:
+                self._cards[p["id"]] = PositionCard(p, self._close_position)
+            else:
+                card.set_row(p)
+        if ids != getattr(self, "_card_order", None):
+            self._card_order = ids
+            while self._cards_grid.count():
+                self._cards_grid.takeAt(0)
+            order = sorted(rows, key=lambda p: -(p.get("opened_at") or 0))
+            for i, p in enumerate(order):
+                self._cards_grid.addWidget(self._cards[p["id"]],
+                                           i // self.CARD_COLUMNS, i % self.CARD_COLUMNS)
+        self._cards_empty.setVisible(not rows)
+        self.cards_line.setText(
+            f"{len(rows)} positions, newest first · gold ┄ entry · blue ┄ target "
+            f"· orange ┄ stop" if rows else "")
+
+        self._rebuild(self._closed_lay,
+                      [ClosedRow(c) for c in (pos.get("closed") or [])[:6]],
+                      "nothing has closed yet")
+        self.closed_line.setText(f"last {min(6, n_closed)} of {n_closed}" if n_closed else "")
+
     # -- lab ---------------------------------------------------------------- #
     def _lab_tab(self) -> QWidget:
         """Run the algorithm against history, with the knobs exposed.
@@ -1892,6 +2252,28 @@ class MainWindow(QMainWindow):
         self.sm_result = label("", "muted", theme.figure(10), wrap=True)
         sl.addWidget(self.sm_result)
         lay.addWidget(sports)
+
+        # -- the hourly bitcoin model: the live experiment ------------------- #
+        # It was the landing page until Oct 2026. It is an experiment the
+        # engine runs around the clock, not something the reader holds, so it
+        # sits with the other measurements — still the only place in the app
+        # with an independent model, still scored against the market on every
+        # hour. `_terminal_tab()` is unchanged; it is hosted here.
+        model = panel()
+        ml = QVBoxLayout(model)
+        ml.setContentsMargins(14, 12, 14, 12)
+        ml.setSpacing(6)
+        ml.addWidget(label("THE HOURLY BITCOIN MODEL — THE LIVE EXPERIMENT",
+                           "faint", theme.figure(8)))
+        ml.addWidget(label(
+            "The one place SONAR says which way it thinks something goes. A "
+            "probability model prices each hour of bitcoin, compares itself "
+            "to Polymarket, takes at most one simulated bet with its own "
+            "practice cash — separate from yours — and grades itself against "
+            "the market on every hour, traded or not.",
+            "faint", theme.figure(8), wrap=True))
+        ml.addWidget(self._terminal_tab())
+        lay.addWidget(model)
         return w
 
     # -- sports measurement -------------------------------------------------#
@@ -2718,19 +3100,23 @@ class MainWindow(QMainWindow):
                             + "  ·  paper money only")
         self._assets_sig = None          # force the board to redraw
         self._book_sig = None
+        self._portfolio_sig = None
 
     def _close_position(self, pos_id: str) -> None:
         result = self.live.close_position(pos_id)
         self.status.setText(("✓  " if result["ok"] else "⚠  ") + result["message"])
         self._book_sig = None
+        self._portfolio_sig = None
 
     def _read(self, kind: str, ident: str, subject: str) -> None:
-        # The read panel lives on the Terminal tab, so every path has to bring
-        # the user there. Reporting "unavailable" onto a tab they are not
-        # looking at is indistinguishable from the button being dead — which is
-        # exactly how the Assets tab's read button used to behave.
+        # The read panel lives with the hourly model at the foot of Practice,
+        # so every path has to bring the user there — and scroll to it.
+        # Reporting "unavailable" onto a page they are not looking at is
+        # indistinguishable from the button being dead, which is exactly how
+        # the Assets tab's read button used to behave.
         self.read_panel.show()
-        self.tabs.setCurrentIndex(0)
+        self.tabs.setCurrentIndex(self._lab_index)
+        self._lab_scroll.ensureWidgetVisible(self.read_panel)
 
         ok, why = llm.available()
         if not ok:
@@ -2762,17 +3148,21 @@ class MainWindow(QMainWindow):
         # even while the first BTC poll is still in flight, and even when
         # another SONAR holds the engine lock.
         self._refresh_book()
+        self._refresh_portfolio()
         self._refresh_wire()
 
         if snap.get("status") == "read-only":
-            # Another SONAR (usually the launchd agent) holds the engine lock.
-            # Say so plainly rather than showing a window that looks broken.
+            # Another SONAR holds the engine lock and cannot be followed (a
+            # second window), or the one being followed stopped answering.
+            # Say so plainly rather than showing a window that looks broken;
+            # the engine keeps trying for the lock behind this message.
             self.status.setText("⚠  " + snap.get("detail", "another engine is running"))
             self.read_btn.setEnabled(False)
             return
         if snap.get("status") != "live":
             self.status.setText(f'{snap.get("status", "…")} — first poll can take a moment')
             return
+        self.read_btn.setEnabled(True)
         self._refresh_terminal(snap)
         self._refresh_cards(assets)
         self._refresh_macro(snap)
@@ -2780,8 +3170,13 @@ class MainWindow(QMainWindow):
             self.tray.update_state(snap)
 
         hz = self.live.horizon
+        # Following: the launchd agent holds the lock and this window mirrors
+        # it — every figure is the agent's, every action is handed to it.
+        following = snap.get("following")
+        who = (f'following the engine at {following.split("//")[-1]} · '
+               if following else "")
         self.status.setText(
-            f'risk {self.live.risk.name} · horizon {hz.name} · '
+            f'{who}risk {self.live.risk.name} · horizon {hz.name} · '
             f'{assets.get("n", 0)} assets · paper money only')
 
     def _refresh_terminal(self, snap: dict) -> None:

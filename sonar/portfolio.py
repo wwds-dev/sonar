@@ -25,10 +25,12 @@ same direction real slippage would hurt them.
 
 from __future__ import annotations
 
+import bisect
 import json
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -38,6 +40,11 @@ STARTING_CASH = 10_000.0
 # Fraction of the book risked per position if the stop is hit. Overridden by the
 # active risk profile; this is the fallback.
 DEFAULT_RISK_FRACTION = 0.01
+#: How often the book writes a point of its account value. Hourly is enough
+#: resolution for a curve read over weeks and keeps a year to ~9k points; an
+#: entry or an exit writes a point regardless, so every step is on the curve.
+EQUITY_LOG_EVERY = 3600.0
+EQUITY_LOG_MAX = 20_000
 
 
 # A position's lifecycle. PENDING exists only for brokers whose fills are
@@ -172,6 +179,10 @@ class Portfolio:
         self.cash = starting_cash
         self.open: list[Position] = []
         self.closed: list[Position] = []
+        # The account's value over time: ``{"t": epoch, "v": equity}`` points,
+        # written by :meth:`log_equity`. Lives in the same file as the book so
+        # one backup carries both.
+        self.equity_log: list[dict] = []
         self._load()
 
     # -- persistence ------------------------------------------------------- #
@@ -184,6 +195,8 @@ class Portfolio:
         self.cash = d.get("cash", self.starting_cash)
         self.open = [Position(**p) for p in d.get("open", [])]
         self.closed = [Position(**p) for p in d.get("closed", [])]
+        self.equity_log = [q for q in d.get("equity_log", [])
+                           if isinstance(q, dict) and "t" in q and "v" in q]
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,7 +205,8 @@ class Portfolio:
         paths.daily_backup(self.path)
         payload = {"starting_cash": self.starting_cash, "cash": self.cash,
                    "open": [asdict(p) for p in self.open],
-                   "closed": [asdict(p) for p in self.closed]}
+                   "closed": [asdict(p) for p in self.closed],
+                   "equity_log": self.equity_log}
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload))
         tmp.replace(self.path)
@@ -380,6 +394,9 @@ class Portfolio:
         gross_win = sum(p.pnl for p in wins)
         gross_loss = -sum(p.pnl for p in settled if (p.pnl or 0) < 0)
         eq = self.equity(prices)
+        held = [p for p in self.open if not p.pending]
+        longs = [p for p in self.open if p.direction == "LONG"]
+        shorts = [p for p in self.open if p.direction == "SHORT"]
         return {
             "cash": round(self.cash, 2),
             "equity": round(eq, 2),
@@ -393,22 +410,151 @@ class Portfolio:
             "win_rate": round(len(wins) / len(settled) * 100, 1) if settled else 0.0,
             "profit_factor": round(gross_win / gross_loss, 2) if gross_loss else None,
             "unrealised": round(sum(p.unrealised(prices.get(p.symbol, p.entry))
-                                    for p in self.open if not p.pending), 2),
+                                    for p in held), 2),
+            "realised": round(sum(p.pnl for p in settled), 2),
+            # What the open positions would cost if every stop was hit — the
+            # figure the risk profile actually controls. Pending orders carry
+            # no exposure yet, exactly as `unrealised` treats them.
+            "at_risk": round(sum(p.cash_at_risk for p in held), 2),
+            # "Invested" is two different things and the landing page says
+            # both: a long spends this much cash, a short borrows this much
+            # stock. Summed blindly on a $10k book they come to $40k+.
+            "long_cash": round(sum(p.units * p.entry for p in longs), 2),
+            "short_notional": round(sum(p.units * p.entry for p in shorts), 2),
+            "n_long": len(longs),
+            "n_short": len(shorts),
             "broker": getattr(self.broker, "name", "paper"),
             "live": bool(getattr(self.broker, "live", False)),
         }
 
     def open_rows(self, prices: dict[str, float] | None = None) -> list[dict]:
         prices = prices or {}
+        now = time.time()
         rows = []
         for p in self.open:
             price = prices.get(p.symbol, p.entry)
             d = asdict(p)
             d["price"] = price
-            d["unrealised"] = round(p.unrealised(price), 2)
+            # `+ 0.0` turns a rounded -0.0 into 0.0, so a flat position does
+            # not print as "-0.00" and colour as a loss.
+            d["unrealised"] = round(p.unrealised(price), 2) + 0.0
             d["progress"] = _progress(p, price)
+            d["stake"] = round(p.units * p.entry, 2)
+            sign = 1.0 if p.direction == "LONG" else -1.0
+            d["pct"] = (round(sign * (price / p.entry - 1) * 100, 2) + 0.0
+                        if p.entry else 0.0)
+            d["age_s"] = round(max(0.0, now - p.opened_at))
             rows.append(d)
         return rows
+
+    # -- account history --------------------------------------------------- #
+    def log_equity(self, prices: dict[str, float] | None = None,
+                   now: float | None = None, force: bool = False) -> bool:
+        """Write one point of account value — at most hourly, unless forced.
+
+        Two refusals keep the curve honest. A point is only written when every
+        held position has a price to be marked at: marking the missing ones at
+        entry would draw a dip or a jump that never happened. And the regular
+        cadence is an hour, because a curve read over weeks gains nothing from
+        a point a minute and the file is rewritten on every write; an entry or
+        an exit forces a point so the step it causes is on the curve.
+        """
+        prices = prices or {}
+        now = time.time() if now is None else now
+        held = [p for p in self.open if not p.pending]
+        if not force:
+            if self.equity_log and now - self.equity_log[-1]["t"] < EQUITY_LOG_EVERY:
+                return False
+            if any(p.symbol not in prices for p in held):
+                return False
+        self.equity_log.append({"t": int(now), "v": round(self.equity(prices), 2)})
+        if len(self.equity_log) > EQUITY_LOG_MAX:
+            del self.equity_log[:len(self.equity_log) - EQUITY_LOG_MAX]
+        self.save()
+        return True
+
+    def _first_entry(self) -> float | None:
+        positions = self.open + self.closed
+        return min(p.opened_at for p in positions) if positions else None
+
+    def history_wanted(self) -> bool:
+        """Is there a stretch of this book's life the log does not cover?
+
+        True when the book has traded and the earliest logged point is later
+        than the end of the day of its first entry — which is the case for a
+        book that ran before the log existed, and also for one whose first
+        live point was written moments before the seed got its turn. False
+        once the seed has run, so the check is cheap to repeat.
+        """
+        first = self._first_entry()
+        if first is None:
+            return False
+        if not self.equity_log:
+            return True
+        day = datetime.fromtimestamp(first).replace(hour=0, minute=0,
+                                                    second=0, microsecond=0)
+        return self.equity_log[0]["t"] > (day + timedelta(days=1)).timestamp() - 1
+
+    def seed_equity_log(self, bars: dict[str, list[tuple[int, float]]],
+                        now: float | None = None) -> int:
+        """Reconstruct the account's daily history from the book's own records.
+
+        A book that ran for weeks before the log existed has nothing to draw,
+        and a curve that starts today would say "no history" for a month. The
+        history is not lost, though: every position carries when it opened and
+        closed and at what price, and the days' closes are one request away.
+        Replaying the cash flows over those closes gives one point per day
+        from the first entry up to the earliest point already logged (or the
+        last full day, on an empty log) — real prices, the book's own trades,
+        nothing invented — and prepends them. Returns how many points were
+        written; zero on a book that never traded, has no bars, or whose log
+        already reaches back to its first entry.
+        """
+        if not bars or not self.history_wanted():
+            return 0
+        positions = self.open + self.closed
+        now = time.time() if now is None else now
+        # Fill up to the first point the engine logged itself, never past it:
+        # a reconstructed day must not sit on top of a measured one.
+        cutoff = min(now, self.equity_log[0]["t"]) if self.equity_log else now
+        # Cash flows in time order. A long spends at entry and is repaid at
+        # exit; a short borrows, so only its P&L touches cash, at exit.
+        flows: list[tuple[float, float]] = []
+        for p in positions:
+            if p.direction == "LONG":
+                flows.append((p.opened_at, -p.units * p.entry))
+                if p.closed_at is not None and p.exit is not None:
+                    flows.append((p.closed_at, p.units * p.exit))
+            elif p.closed_at is not None and p.pnl is not None:
+                flows.append((p.closed_at, p.pnl))
+        stamps = {s: [t for t, _c in b] for s, b in bars.items()}
+        closes = {s: [c for _t, c in b] for s, b in bars.items()}
+
+        def close_at(symbol: str, t: float, fallback: float) -> float:
+            i = bisect.bisect_right(stamps.get(symbol, []), t) - 1
+            return closes[symbol][i] if i >= 0 else fallback
+
+        first = self._first_entry()
+        day = datetime.fromtimestamp(first).replace(hour=0, minute=0,
+                                                    second=0, microsecond=0)
+        points = []
+        while True:
+            end = (day + timedelta(days=1)).timestamp() - 1   # end of that day
+            if end >= cutoff:
+                break
+            value = self.starting_cash + sum(v for t, v in flows if t <= end)
+            for p in positions:
+                if p.opened_at > end or (p.closed_at is not None and p.closed_at <= end):
+                    continue
+                px = close_at(p.symbol, end, p.entry)
+                value += p.units * px if p.direction == "LONG" else p.unrealised(px)
+            points.append({"t": int(end), "v": round(value, 2)})
+            day += timedelta(days=1)
+        if not points:
+            return 0
+        self.equity_log = points + self.equity_log
+        self.save()
+        return len(points)
 
 
 def _progress(pos: Position, price: float) -> float:

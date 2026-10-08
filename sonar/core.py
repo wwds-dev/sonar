@@ -17,7 +17,8 @@ import json
 import random
 import threading
 import time
-
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
 from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
@@ -38,6 +39,15 @@ MARKET_EVERY = 15.0         # seconds between Polymarket polls
 # EWMA x hour-of-day forecast measured in sonar/research/hourlyvol.py.)
 VOL_EVERY = 3600.0          # seconds between volatility refreshes
 SCAN_EVERY = 90.0           # seconds between asset-screen refreshes
+SEED_RETRY_EVERY = 300.0    # seconds between attempts to seed the account history
+SEED_MAX_TRIES = 6          # partial answers tolerated before giving up
+# Following another engine (see Live._wait_for_lock): the holder's snapshot
+# is mirrored on the fast cadence, its board, book and alerts on the slow one,
+# and the lock is re-checked on the slowest — a `ps` per check, so not often.
+FOLLOW_EVERY = 2.0
+FOLLOW_SLOW_EVERY = 10.0
+LOCK_RETRY_EVERY = 15.0
+FOLLOW_TIMEOUT = 2.0        # seconds per request to the holder, on localhost
 SPARK_MAX = 220             # price points kept for the sparkline
 
 # How long a volatility-scaled target/stop actually takes to resolve, measured
@@ -77,6 +87,11 @@ class Live:
         self.engine_lock = None
         self.read_only = False
         self.conflict = ""
+        # The URL of the engine this one mirrors while it waits for the lock,
+        # or None while it drives. Every action that writes the book checks
+        # it and forwards instead: one writer, whoever holds the lock.
+        self.following: str | None = None
+        self._follow_failures = 0
         self.horizon = horizon.get(horizon_name)
         paths.ensure_dirs()
         self.engine = Engine(paths.state_file(), risk=risk.get(risk_name))
@@ -101,8 +116,11 @@ class Live:
         # file so the hourly BTC engine's bankroll stays a separate experiment.
         self.book = portfolio.Portfolio(paths.user_data_base() / "portfolio.json")
         self.assets: dict = {"status": "starting", "assets": []}
-        self.positions: dict = {"stats": self.book.stats(), "open": [], "closed": []}
+        self.positions: dict = {"stats": self.book.stats(), "open": [], "closed": [],
+                                "equity": list(self.book.equity_log)}
         self.calibration: dict = calibration.report(self.book.closed)
+        self._seed_tries = 0        # see _seed_account_history
+        self._seed_at = 0.0
         self._scan_at = 0.0
         self.macro = macro.MacroCache()
         # Scheduled institutional communication — central banks are the most
@@ -187,6 +205,7 @@ class Live:
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
             self._mark_book(ap)
+            self._seed_account_history()
             if self.protocol_on:
                 try:
                     self._protocol_scan(ap)
@@ -224,6 +243,10 @@ class Live:
         """Flip the protocol switch. Takes effect on the next rescan; turning
         it off leaves existing protocol positions to resolve on their own —
         closing them early would censor exactly the outcomes being measured."""
+        if self.following:
+            self.protocol_on = bool(on)          # what the window shows now
+            self._forward("/api/config", {"protocol": bool(on)})
+            return
         self.protocol_on = bool(on)
         self._save_protocol()
 
@@ -253,7 +276,7 @@ class Live:
         self._save_protocol()
 
     # -- the paper book ---------------------------------------------------- #
-    def _mark_book(self, asset_payload: dict) -> None:
+    def _mark_book(self, asset_payload: dict, force_point: bool = False) -> None:
         """Mark open positions against the new prices and close any that hit a
         barrier, then feed the resulting outcomes back into the score.
 
@@ -261,7 +284,8 @@ class Live:
         calibration measures whether high scores actually won, and the measured
         drift — and only that — is allowed to move P(profit) off its baseline.
         """
-        prices = {a["symbol"]: a["price"] for a in asset_payload.get("assets", [])}
+        rows = asset_payload.get("assets", [])
+        prices = {a["symbol"]: a["price"] for a in rows}
         if not prices:
             return
         # Turn accepted orders into real ones first. Marking a pending position
@@ -269,16 +293,65 @@ class Live:
         # the fill price it settles against would be the one we asked for
         # rather than the one we got. No-op for the internal paper book.
         self.book.poll_fills()
-        self.book.mark(prices)
+        closed_now = self.book.mark(prices)
+        # The account-value curve: a point an hour, plus one at every step —
+        # an entry, an exit, a barrier hit — so a step sits where it happened
+        # rather than up to an hour later.
+        self.book.log_equity(prices, force=force_point or bool(closed_now))
         report = calibration.report(self.book.closed)
         # Nothing is claimed below the sample threshold; report() enforces that.
         self.asset_scanner.edge_sigma = report["implied_edge_sigma"]
         self.asset_scanner.calibrated = report["calibrated"]
+        # Each open row carries its instrument's recent closes, so the landing
+        # page can draw the position without a request of its own.
+        sparks = {a["symbol"]: a.get("spark") or [] for a in rows}
+        open_rows = self.book.open_rows(prices)
+        for r in open_rows:
+            r["spark"] = sparks.get(r["symbol"], [])
         with self.lock:
             self.calibration = report
             self.positions = {"stats": self.book.stats(prices),
-                              "open": self.book.open_rows(prices),
-                              "closed": [asdict(p) for p in self.book.closed[-40:]][::-1]}
+                              "open": open_rows,
+                              "closed": [asdict(p) for p in self.book.closed[-40:]][::-1],
+                              "equity": list(self.book.equity_log)}
+
+    def _seed_account_history(self) -> None:
+        """Give the account-value curve its past, once.
+
+        The book ran for weeks before it logged its value, and a curve that
+        starts today would say "no history" for a month. `seed_equity_log`
+        rebuilds the daily history from the book's own records and real daily
+        closes; this fetches those closes, on the engine thread, after a scan.
+        It runs after `_mark_book`, which may already have written the first
+        live point; the seed fills the days *before* that point, never over it.
+
+        The history needs every instrument's closes: built on part of the
+        book it would value the missing ones at entry and draw a flatter past
+        than happened. So a short answer is not used, and the retry policy is
+        shaped by what actually happens to this request — it follows a scan
+        that just fetched 129 charts, and Yahoo throttles the burst. Attempts
+        are spaced `SEED_RETRY_EVERY` apart; a partial answer costs one of
+        `SEED_MAX_TRIES`, an empty one (no network at all) costs nothing.
+        """
+        book = self.book
+        now = time.time()
+        if (self._seed_tries >= SEED_MAX_TRIES or now - self._seed_at < SEED_RETRY_EVERY
+                or not book.history_wanted()):
+            return
+        self._seed_at = now
+        try:
+            symbols = sorted({p.symbol for p in book.open + book.closed})
+            with ThreadPoolExecutor(max_workers=assets.FETCH_WORKERS) as ex:
+                got = dict(zip(symbols, ex.map(assets.fetch_bars, symbols)))
+            bars = {s: b for s, b in got.items() if b}
+            if len(bars) < len(symbols):
+                self._seed_tries += 1 if bars else 0
+                return
+            if book.seed_equity_log(bars, now=now):
+                with self.lock:
+                    self.positions = {**self.positions, "equity": list(book.equity_log)}
+        except Exception:
+            pass               # the curve can wait; the scan it rides on cannot
 
     def suggestions(self, limit: int = 8) -> list[dict]:
         """What the news is pointing at right now, and what to do about it.
@@ -326,6 +399,9 @@ class Live:
 
     def trade(self, symbol: str, direction: str) -> dict:
         """Open a paper position on a screener row. Paper money only."""
+        if self.following:
+            return self._forward("/api/trade", {"symbol": symbol, "direction": direction},
+                                 refresh_book=True)
         with self.lock:
             rows = list(self.assets.get("assets", []))
         asset = next((a for a in rows if a["symbol"] == symbol), None)
@@ -337,11 +413,13 @@ class Live:
         pos, msg = self.book.enter(
             asset, direction, self.horizon.momentum_days, self.horizon.name,
             risk_fraction=self.risk.max_stake_fraction / 8.0)
-        self._mark_book({"assets": rows})
+        self._mark_book({"assets": rows}, force_point=pos is not None)
         return {"ok": pos is not None, "message": msg,
                 "position": asdict(pos) if pos else None}
 
     def close_position(self, pos_id: str) -> dict:
+        if self.following:
+            return self._forward("/api/close", {"id": pos_id}, refresh_book=True)
         with self.lock:
             rows = list(self.assets.get("assets", []))
         prices = {a["symbol"]: a["price"] for a in rows}
@@ -350,7 +428,7 @@ class Live:
             return {"ok": False, "message": "no such open position",
                     "position": None}
         closed = self.book.close(pos.id, prices.get(pos.symbol, pos.entry), "MANUAL")
-        self._mark_book({"assets": rows})
+        self._mark_book({"assets": rows}, force_point=True)
         return {"ok": True, "message": f"closed {closed.symbol}",
                 "position": asdict(closed)}
 
@@ -360,6 +438,20 @@ class Live:
         """Apply a risk profile, horizon and/or protocol switch, then rescan
         so the boards reflect the change immediately rather than after the
         next 90s tick."""
+        if self.following:
+            url = self.following
+            try:
+                self._post(url, "/api/config", {"risk": risk_name, "horizon": horizon_name,
+                                                "protocol": protocol})
+                self._mirror_config(url)
+                self._mirror_book(url)
+                board = self._fetch(url, "/api/assets")
+                if isinstance(board, dict):
+                    with self.lock:
+                        self.assets = board
+            except Exception:
+                pass                      # the next mirror round shows what took
+            return self.config()
         changed = False
         if risk_name and risk.get(risk_name).name != self.risk.name:
             self.risk = risk.get(risk_name)
@@ -401,6 +493,12 @@ class Live:
         board on every scan would cost real money for no benefit. The API call
         happens outside the lock so the polling thread is never blocked on it.
         """
+        if self.following:
+            # The holder runs it: it has the hour the read attaches to.
+            read = self._forward("/api/read", {"kind": kind, "id": ident})
+            with self.lock:
+                self.last_read = read
+            return read
         subject, numbers, heads, hour_key = self._read_subject(kind, ident)
         if subject is None:
             return {"error": f"unknown {kind}: {ident}"}
@@ -495,21 +593,20 @@ class Live:
                  "age_h": round(h.age_hours, 1) if h.dated else None}
                 for h in heads if h.category == category][:6]
 
-    def run(self, role: str = "app") -> None:
+    def run(self, role: str = "app", url: str | None = None) -> None:
         """Drive the engine until :meth:`stop` is called.
 
         Refuses to poll if another SONAR already holds the engine lock. Two
         engines settling the same hour into one state file would double-count
-        the portfolio, and it would do so silently — so this returns instead,
-        leaving the caller displaying whatever the real engine writes.
+        the portfolio, and it would do so silently. But it does not simply
+        return: it waits for the lock, following the holder meanwhile when
+        the holder can be followed, and drives the moment the lock is free.
+        ``url`` is where *this* engine publishes its state, if it does (the
+        daemon's HTTP port); it is written into the lock for the next one.
         """
-        self.engine_lock = enginelock.EngineLock(role=role)
-        if not self.engine_lock.acquire():
-            self.read_only = True
-            self.conflict = enginelock.describe_conflict(self.engine_lock)
-            with self.lock:
-                self.snapshot = {"status": "read-only", "detail": self.conflict}
-            return
+        self.engine_lock = enginelock.EngineLock(role=role, url=url)
+        if not self.engine_lock.acquire() and not self._wait_for_lock():
+            return                        # asked to stop while waiting
         try:
             self.warmup()
             while not self._stop.is_set():
@@ -530,6 +627,146 @@ class Live:
         """Ask :meth:`run` to finish. Safe to call from another thread, and
         safe to call when the loop was never started."""
         self._stop.set()
+
+    # -- following another engine ------------------------------------------ #
+    def _wait_for_lock(self) -> bool:
+        """Wait for the engine lock; follow its holder while waiting.
+
+        Two SONARs share one book: the window and the launchd agent. The lock
+        decides who drives, and whoever does not used to sit beside the
+        driver with nothing to show — a window with an empty book, or an
+        agent that never drove at all once the window quit. Now the one
+        without the lock *follows*: when the holder publishes its state (the
+        daemon records its URL in the lock) every page mirrors it, and the
+        actions that write the book are forwarded to it; when it does not (a
+        second window), this one simply waits. Either way the lock is
+        re-tried on `LOCK_RETRY_EVERY`, and the moment it is free — the agent
+        stopped, the window quit — this engine takes over without a restart.
+
+        Returns True once the lock is ours, False if :meth:`stop` came first.
+        """
+        next_check = 0.0
+        holder: dict | None = None
+        last_slow = 0.0
+        while not self._stop.is_set():
+            now = time.time()
+            if now >= next_check:
+                next_check = now + LOCK_RETRY_EVERY
+                holder = self.engine_lock.holder()
+                if holder is None and self.engine_lock.acquire():
+                    self.read_only = False
+                    self.conflict = ""
+                    self.following = None
+                    self._follow_failures = 0
+                    return True
+                self.read_only = True
+                self.conflict = enginelock.describe_conflict(self.engine_lock)
+            url = (holder or {}).get("url")
+            if url:
+                self.following = url
+                slow = now - last_slow >= FOLLOW_SLOW_EVERY
+                self._mirror(url, slow)
+                if slow:
+                    last_slow = now
+            else:
+                self.following = None
+                with self.lock:
+                    self.snapshot = {"status": "read-only", "detail": self.conflict}
+            self._stop.wait(FOLLOW_EVERY)
+        return False
+
+    def _mirror(self, url: str, slow: bool) -> None:
+        """One round of following: the holder's snapshot every time, the
+        heavier payloads on the slow cadence. A failure leaves the last good
+        copy in place; three in a row say so in the snapshot, and keep trying."""
+        try:
+            snap = self._fetch(url, "/api/state")
+            snap = dict(snap) if isinstance(snap, dict) else {"status": "starting"}
+            snap["following"] = url
+            with self.lock:
+                self.snapshot = snap
+            if slow:
+                board = self._fetch(url, "/api/assets")
+                wire = self._fetch(url, "/api/wire")
+                with self.lock:
+                    if isinstance(board, dict):
+                        self.assets = board
+                    if isinstance(wire, dict):
+                        self.alerts = list(wire.get("alerts") or [])
+                        self.inst = wire.get("inst") or self.inst
+                self._mirror_book(url)
+                self._mirror_config(url)
+                # The Wire renders from these caches and never fetches on the
+                # UI thread; while following, this thread keeps them warm.
+                try:
+                    self.news.headlines()
+                    self.events.payload()
+                except Exception:
+                    pass
+            self._follow_failures = 0
+        except Exception as exc:
+            self._follow_failures += 1
+            if self._follow_failures >= 3:
+                with self.lock:
+                    self.snapshot = {
+                        "status": "read-only", "following": url,
+                        "detail": f"{self.conflict} It is not answering at "
+                                  f"{url} ({type(exc).__name__}: {exc})."}
+
+    def _mirror_book(self, url: str) -> None:
+        book = self._fetch(url, "/api/book")
+        if not isinstance(book, dict):
+            return
+        with self.lock:
+            if isinstance(book.get("positions"), dict):
+                self.positions = book["positions"]
+            if isinstance(book.get("calibration"), dict):
+                self.calibration = book["calibration"]
+            if "protocol_on" in book:
+                self.protocol_on = bool(book["protocol_on"])
+
+    def _mirror_config(self, url: str) -> None:
+        cfg = self._fetch(url, "/api/config")
+        if not isinstance(cfg, dict):
+            return
+        name = (cfg.get("risk") or {}).get("name")
+        if name and name != self.risk.name:
+            self.risk = risk.get(name)
+        name = (cfg.get("horizon") or {}).get("name")
+        if name and name != self.horizon.name:
+            self.horizon = horizon.get(name)
+        if "on" in (cfg.get("protocol") or {}):
+            self.protocol_on = bool(cfg["protocol"]["on"])
+
+    @staticmethod
+    def _fetch(url: str, path: str):
+        with urllib.request.urlopen(url.rstrip("/") + path, timeout=FOLLOW_TIMEOUT) as r:
+            return json.loads(r.read())
+
+    @staticmethod
+    def _post(url: str, path: str, payload: dict):
+        req = urllib.request.Request(
+            url.rstrip("/") + path, data=json.dumps(payload).encode(),
+            method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=FOLLOW_TIMEOUT) as r:
+            return json.loads(r.read())
+
+    def _forward(self, path: str, payload: dict, refresh_book: bool = False) -> dict:
+        """Hand an action to the engine being followed: it holds the book.
+
+        A refusal from the network is reported in the same shape as a refusal
+        from the book, so the window shows a sentence rather than a traceback.
+        """
+        url = self.following
+        try:
+            result = self._post(url, path, payload)
+            if refresh_book:
+                self._mirror_book(url)
+            return result
+        except Exception as exc:
+            return {"ok": False, "position": None,
+                    "message": f"the engine at {url} did not take it "
+                               f"({type(exc).__name__}: {exc})"}
 
     def _sigma(self) -> float:
         """The per-hour volatility the model prices with.
