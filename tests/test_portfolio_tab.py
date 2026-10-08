@@ -127,3 +127,38 @@ def test_an_llm_read_brings_the_reader_to_the_model(window, monkeypatch):
     window._read("btc", "", "BTC/USD hourly up-or-down")
     assert window.tabs.currentIndex() == window._lab_index
     assert window.read_panel.isVisibleTo(window)
+
+
+# --------------------------------------------------------------------------- #
+# Is the score right? — the question the app exists to answer, on its first page
+# --------------------------------------------------------------------------- #
+def test_the_first_screen_grades_the_score(window):
+    from ui.app import HelpHeading
+    heads = [h for h in window.findChildren(HelpHeading) if h._anchor == "grading"]
+    assert heads, "no heading links the grading section of the manual"
+    assert window.grade_verdict.text().startswith("Not enough resolved positions yet")
+    assert "of the 20 closed positions a verdict needs" in window.grade_next.text()
+    assert "scores " in window.grade_rows.text() and "the plan promised" in window.grade_rows.text()
+    assert "graded" in window.grade_count.text()
+
+
+def test_the_grade_never_reads_as_a_forecast(window):
+    """Measurement, in words that describe the past. The one rule."""
+    text = " ".join(lb.text().lower() for lb in
+                    (window.grade_verdict, window.grade_rows, window.grade_next))
+    for forecast in ("will", "should", "buy", "sell", "expect", "likely",
+                     "going to", "bullish", "bearish"):
+        assert forecast not in text, f"{forecast!r} in the grade panel"
+
+
+def test_the_grade_names_protocol_mode_either_way(window):
+    on = window.live.protocol_on
+    try:
+        window.live.protocol_on = True
+        window._refresh_grade(window.live.calibration, window.live.positions["closed"])
+        assert "protocol mode is on" in window.grade_next.text()
+        window.live.protocol_on = False
+        window._refresh_grade(window.live.calibration, window.live.positions["closed"])
+        assert "protocol mode is off" in window.grade_next.text()
+    finally:
+        window.live.protocol_on = on

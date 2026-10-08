@@ -23,7 +23,7 @@ line and clipped.
 
 | Tab | What it does | Asserts a direction? |
 |---|---|---|
-| **My investments**  \n<sub>PORTFOLIO</sub> | The page the app opens on: your paper book as a picture — profit or loss now as the biggest figure, the account value, what is invested (split into cash spent on longs and stock borrowed for shorts), what every stop hitting would cost; the account's value over time; every open position as a tile sized by what it can lose and coloured by how it is doing; what resolved recently; and a card per position with its entry, target and stop drawn over sixty days of price | — |
+| **My investments**  \n<sub>PORTFOLIO</sub> | The page the app opens on: your paper book as a picture — profit or loss now as the biggest figure, the account value, what is invested (split into cash spent on longs and stock borrowed for shorts), what every stop hitting would cost; then **Is the score right?**, the calibration verdict and its score bands, because that is the question the app exists to answer; the account's value over time; every open position as a tile sized by what it can lose and coloured by how it is doing; what resolved recently; and a card per position with its entry, target and stop drawn over sixty days of price | — |
 | **Screener**  \n<sub>ASSETS</sub> | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, **how old each row's price is**, and buy/short per row | **No** — direction is yours |
 | **News**  \n<sub>WIRE</sub> | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
 | **My trades**  \n<sub>BOOK</sub> | Open paper positions, the calibration table, and the backtest button | — |
@@ -524,6 +524,19 @@ than what *I* hold? So:
   now, because "practice cash" on the old landing page read as the reader's
   own account, and it never was.
 
+- **"Is the score right?" sits under the figures** (added the same day, when
+  the person this app is for pointed out that answering it is the whole
+  purpose of the app). It is `calibration.report()` in the manual's words:
+  the verdict sentence verbatim, one line per score band — closed, won, the
+  rate the plan promised, and whether the band has the twenty it needs to
+  count — and what the verdict still lacks: how many of the twenty closed
+  positions exist, how many were protocol (coin-flip) entries so the table
+  grades the score and not a picker, and whether protocol mode is on. The
+  profit figures above it cannot answer the question, and the panel says so:
+  a coin-flip position's profit is luck, and the score claims that something
+  is happening, never which way. The same report My trades shows; the first
+  screen now carries the conclusion, the Book tab keeps the full table.
+
 What stayed: the Cockpit shell, both names on every destination (the docs
 test still greps `PlainTabs.add`), the 1280×775 fold, and the rule that
 nothing outside the hourly model asserts a direction — the new page describes
@@ -756,7 +769,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,491 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,494 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 

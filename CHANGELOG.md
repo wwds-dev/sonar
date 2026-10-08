@@ -10,6 +10,21 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.131 — 2026-10-08
+
+**"Is the score right?" on the first screen.** The question the app exists
+to answer was two clicks away, in a table on My trades. The landing page now
+carries the calibration verdict directly under the figures — the sentence
+`calibration.report()` reaches, verbatim; one line per score band with how
+many closed, how many won, the rate the plan promised, and whether the band
+has the twenty it needs to count; and what the verdict still lacks: how many
+of the twenty closed positions exist, how many were coin-flip protocol
+entries so the table grades the score and not a picker, and whether protocol
+mode is on. It also says why the profit figures above it cannot answer the
+question: a coin-flip position's profit is luck, and the score claims that
+something is happening, never which way. The heading links to the manual's
+grading section.
+
 ## v2.130 — 2026-10-08
 
 **The agent and the installed app share one book — they never had.** A frozen

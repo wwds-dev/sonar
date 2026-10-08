@@ -1920,6 +1920,35 @@ class MainWindow(QMainWindow):
         g.addStretch(1)
         lay.addWidget(strip)
 
+        # -- is the score right? ------------------------------------------- #
+        # The question the app exists to answer, on the page it opens on.
+        # Everything in it is measurement: the verdict `calibration.report`
+        # reaches, the score bands it reaches it from, and what is still
+        # missing before it may claim anything. The profit figures above
+        # cannot answer it — a coin-flip position's profit is luck — and no
+        # direction is ever in it.
+        grade = panel()
+        gl = QVBoxLayout(grade)
+        gl.setContentsMargins(14, 10, 14, 10)
+        gl.setSpacing(4)
+        gh = QHBoxLayout()
+        gh.addWidget(HelpHeading(
+            ("IS THE SCORE RIGHT?", "CALIBRATION"), "grading",
+            "Does a high confidence score hit its target more often than the "
+            "plan promised? Graded on positions that resolved, never on opinion.",
+            self._show_learn))
+        gh.addStretch(1)
+        self.grade_count = label("", "faint", theme.figure(8))
+        gh.addWidget(self.grade_count)
+        gl.addLayout(gh)
+        self.grade_verdict = label("—", font=theme.text(12), wrap=True)
+        gl.addWidget(self.grade_verdict)
+        self.grade_rows = label("", "muted", theme.figure(10))
+        gl.addWidget(self.grade_rows)
+        self.grade_next = label("", "faint", theme.figure(9), wrap=True)
+        gl.addWidget(self.grade_next)
+        lay.addWidget(grade)
+
         self.account_curve = AccountCurve()
         self.account_curve.setToolTip(
             "Cash plus what the open positions are worth, over time. The engine\n"
@@ -1988,12 +2017,58 @@ class MainWindow(QMainWindow):
         self._curve_sig = None
         return w
 
+    def _refresh_grade(self, cal: dict, closed: list) -> None:
+        """The calibration verdict in the words the manual uses (§10), plus
+        what the verdict still lacks. Reads the same report My trades does."""
+        n = cal.get("n_settled", 0)
+        need = cal.get("min_sample", 20)
+        self.grade_verdict.setText(cal.get("verdict") or "—")
+        rows = []
+        for b in cal.get("buckets", []):
+            if not b.get("n"):
+                continue
+            wins = round(b["hit_rate"] * b["n"])
+            note = "" if b.get("enough") else f"   (a band needs {need} to count)"
+            rows.append(f'scores {b["lo"]}–{b["hi"]}:  {b["n"]} closed · {wins} won '
+                        f'({b["hit_rate"]*100:.0f}%) · the plan promised '
+                        f'{b["expected"]*100:.0f}%{note}')
+        if cal.get("calibrated") and cal.get("overall_hit_rate") is not None:
+            line = (f'all {n}:  {cal["overall_hit_rate"]*100:.0f}% won against '
+                    f'{(cal.get("advertised_rate") or 0)*100:.0f}% promised')
+            if cal.get("score_ic") is not None:
+                line += f' · rank correlation {cal["score_ic"]:+.2f}'
+            rows.append(line)
+        self.grade_rows.setText("\n".join(rows) or
+                                "no closed positions yet — nothing to grade")
+        self.grade_count.setText(f"{n} graded" if n else "")
+
+        parts = []
+        if n < need:
+            parts.append(f"{n} of the {need} closed positions a verdict needs — "
+                         f"{need - n} to go")
+        by_protocol = sum(1 for c in closed if c.get("protocol"))
+        if by_protocol and n <= len(closed):
+            parts.append(f"{by_protocol} of the {n} opened by protocol mode, direction "
+                         f"by coin flip, so this grades the score and not a picker")
+        if self.live.protocol_on:
+            parts.append("protocol mode is on: up to 10 a day, resolving in a median "
+                         "of 6 trading days")
+        else:
+            parts.append("protocol mode is off (My trades) — on, it fills this without "
+                         "your own picks, which would grade you rather than the score")
+        parts.append("the score claims that something is happening, never which way; "
+                     "profit cannot grade it, because a coin-flip position's profit "
+                     "is luck")
+        self.grade_next.setText(" · ".join(parts))
+
     def _refresh_portfolio(self) -> None:
         with self.live.lock:
             pos = dict(self.live.positions)
+            cal = dict(self.live.calibration)
         st = pos.get("stats") or {}
         if not st:
             return
+        self._refresh_grade(cal, pos.get("closed") or [])
         pnl = st.get("total_pnl", 0.0)
         self.pstats["p&l now"].set(_money(pnl, signed=True), theme.pnl_color(pnl))
         self.plines["p&l now"].setText(
