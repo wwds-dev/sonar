@@ -15,6 +15,7 @@ never does.
 from __future__ import annotations
 
 import datetime as _dt
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -77,8 +78,24 @@ def resource_base() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+#: Overrides where the writable state lives, frozen or not. The launchd agent
+#: runs from the checkout, whose default is ``data/``, while the installed app
+#: is frozen and defaults to Application Support — two directories, two locks,
+#: two books, and for weeks the "agent that keeps the run going" was running a
+#: second run nobody looked at. The agent's plist sets this to the app's
+#: directory (`scripts/install_agent.sh`), so the two meet in one book.
+DATA_ENV = "SONAR_DATA"
+
+
 def user_data_base() -> Path:
-    """Writable state. Never inside the bundle."""
+    """Writable state. Never inside the bundle.
+
+    ``$SONAR_DATA`` wins when set (``~`` expanded); otherwise a frozen app
+    uses Application Support and a checkout uses its own ``data/``.
+    """
+    override = os.environ.get(DATA_ENV, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
     if is_frozen():
         return Path.home() / "Library" / "Application Support" / APP_NAME
     return Path(__file__).resolve().parent.parent / "data"

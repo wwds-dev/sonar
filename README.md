@@ -756,7 +756,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,486 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,491 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 
@@ -808,6 +808,15 @@ as it happens rather than saving on exit.
 ./scripts/install_agent.sh --status
 ./scripts/install_agent.sh --uninstall
 ```
+
+**One directory, or they never meet.** A frozen app keeps its state in
+`~/Library/Application Support/SONAR`; a checkout keeps it in its own `data/`. The agent runs
+`main.py` from the checkout, so without help it runs a *second* experiment beside the
+installed app's — which is exactly what happened for weeks until the build's self-test line
+"state file: …/Application Support/SONAR/state.json" gave it away. `SONAR_DATA` overrides the
+directory (`paths.user_data_base`, `~` expanded, frozen or not), and `install_agent.sh` writes
+it into the agent's plist pointing at the app's directory. A checkout run from source without
+the variable still uses `data/` — a development book, separate on purpose.
 
 Running both is safe, and since Oct 2026 it is also useful. `sonar/enginelock.py` enforces
 **one engine per state file**: whoever starts first drives, because two engines settling the

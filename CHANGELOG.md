@@ -10,6 +10,20 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.130 — 2026-10-08
+
+**The agent and the installed app share one book — they never had.** A frozen
+app keeps its state in `~/Library/Application Support/SONAR`; the launchd
+agent runs `main.py` from the checkout, whose default is `data/`. Two
+directories, two locks, two experiments: for weeks the "agent that keeps the
+run going while the window is closed" was running a second run nobody looked
+at, and the follow mode of v2.128 had nothing to connect. `SONAR_DATA` now
+overrides the state directory (`paths.user_data_base`), the agent's launchd
+plist sets it to the app's directory, and `install_agent.sh` no longer
+refuses to reinstall over the agent it manages. The app's run (the one on
+screen) is the one that continues; the agent's `data/` run stays on disk,
+untouched, for a checkout run from source.
+
 ## v2.128 — 2026-10-08
 
 **A window beside the agent follows it instead of going blank.** The launchd

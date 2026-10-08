@@ -7,8 +7,12 @@
   uptime: a position priced at 14:05 has to settle against the 15:00 candle, and
   an app you quit at 14:30 loses that hour permanently.
 
-  Installed by scripts/install_agent.sh — it rewrites PROJECT_DIR and
-  PYTHON_BIN, since launchd does not expand variables or ~ in these fields.
+  Installed by scripts/install_agent.sh — it rewrites PROJECT_DIR, PYTHON_BIN
+  and DATA_DIR, since launchd does not expand variables or ~ in these fields.
+
+  DATA_DIR is the installed app's state directory (Application Support). The
+  agent runs from the checkout, whose default is the checkout's own data/, and
+  without this it keeps a second book beside the app's instead of the app's.
 -->
 <plist version="1.0">
 <dict>
@@ -28,6 +32,13 @@
 
     <key>WorkingDirectory</key>
     <string>__PROJECT_DIR__</string>
+
+    <!-- One book with the installed app: see sonar/paths.py (SONAR_DATA). -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SONAR_DATA</key>
+        <string>__DATA_DIR__</string>
+    </dict>
 
     <key>RunAtLoad</key>
     <true/>

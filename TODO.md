@@ -19,6 +19,14 @@
       its own records and real closes (`seed_equity_log`). The hourly model's
       readout moved, unchanged, to the foot of Practice. README §"The
       portfolio landing page", CHANGELOG v2.127.
+- [x] `P1` `bug` `@ai` ~~The installed app and the launchd agent keep two
+      separate books.~~ Found 2026-10-08 by the build's self-test line "state
+      file: ~/Library/Application Support/SONAR/state.json": a frozen app
+      lives there, the agent runs from the checkout and lived in `data/`. Two
+      experiments ran side by side for weeks; follow mode (v2.128) had nothing
+      to connect. `SONAR_DATA` overrides the directory (`paths.user_data_base`)
+      and the agent's plist sets it to the app's; the agent's `data/` run is
+      archived in place. CHANGELOG v2.130.
 - [x] `P2` `bug` `@ai` ~~A window beside the running agent shows an empty
       book.~~ When the launchd agent held the engine lock the window was
       read-only and never scanned, so `Live.positions` stayed empty — My
