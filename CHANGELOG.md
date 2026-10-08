@@ -10,6 +10,21 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.128 — 2026-10-08
+
+**A window beside the agent follows it instead of going blank.** The launchd
+agent and the window share one book, and the engine lock lets only one of
+them drive. The one without the lock used to sit there read-only: a window
+with an empty book, an agent that never drove once the window quit. Now it
+follows. The agent writes its address into the lock; a window that loses the
+race mirrors the agent's snapshot, board, book, alerts and knobs over
+localhost, and hands it every action that writes the book — buy, short,
+close, the knobs, protocol mode, an LLM read — so there is still exactly one
+writer. The status line says *following the engine at 127.0.0.1:8787*. Whoever
+waits re-tries the lock every fifteen seconds and takes over the moment it is
+free, in either direction, without a restart. New routes on the daemon:
+`/api/book`, `/api/wire`, `/api/trade`, `/api/close`.
+
 ## v2.127 — 2026-10-08
 
 **The app opens on your money, not on bitcoin.** The first screen had been

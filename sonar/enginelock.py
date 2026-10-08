@@ -45,9 +45,14 @@ def _is_zombie(pid: int) -> bool:
 class EngineLock:
     """Advisory single-writer lock around the paper engine."""
 
-    def __init__(self, path: Path | None = None, role: str = "app") -> None:
+    def __init__(self, path: Path | None = None, role: str = "app",
+                 url: str | None = None) -> None:
         self.path = path or (paths.user_data_base() / "engine.lock")
         self.role = role
+        # Where the holder publishes its state, when it does (the daemon's
+        # HTTP port). Recorded in the lock so whoever loses the race can
+        # follow the winner instead of sitting beside it with nothing to show.
+        self.url = url
         self.held = False
 
     # -- inspection -------------------------------------------------------- #
@@ -110,8 +115,10 @@ class EngineLock:
                 return True
             return False
 
-        payload = json.dumps({"pid": os.getpid(), "role": self.role,
-                              "since": time.time()})
+        record = {"pid": os.getpid(), "role": self.role, "since": time.time()}
+        if self.url:
+            record["url"] = self.url
+        payload = json.dumps(record)
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             # O_EXCL so two starts racing cannot both believe they won.
@@ -160,5 +167,6 @@ def describe_conflict(lock: EngineLock) -> str:
     pid = d.get("pid", "?")
     mins = (time.time() - float(d.get("since", time.time()))) / 60.0
     return (f"Another SONAR engine is already running ({role}, pid {pid}, "
-            f"up {mins:.0f} min). This window is showing its state read-only — "
-            f"two engines settling the same hour would corrupt the portfolio.")
+            f"up {mins:.0f} min). Two engines settling the same hour would "
+            f"corrupt the portfolio, so this one waits for it to stop and "
+            f"takes over then.")

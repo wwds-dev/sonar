@@ -19,14 +19,17 @@
       its own records and real closes (`seed_equity_log`). The hourly model's
       readout moved, unchanged, to the foot of Practice. README §"The
       portfolio landing page", CHANGELOG v2.127.
-- [ ] `P2` `bug` `@ai` **A window beside the running agent shows an empty
-      book.** When the launchd agent holds the engine lock the window is
-      read-only and never scans, so `Live.positions` stays at its empty
-      initial value — My trades, and now the landing page, show nothing while
-      the agent is the one trading. Pre-existing; the landing page makes it
-      visible. The fix is a read-only path that re-reads `portfolio.json`
-      and marks it at the agent's last prices (`/api/assets` on 8787, or the
-      scanner's cache), not a second engine.
+- [x] `P2` `bug` `@ai` ~~A window beside the running agent shows an empty
+      book.~~ When the launchd agent held the engine lock the window was
+      read-only and never scanned, so `Live.positions` stayed empty — My
+      trades, and then the landing page, showed nothing while the agent was
+      the one trading. Fixed 2026-10-08 by **following**, not by a second
+      engine: the agent writes its address into the lock, the window mirrors
+      its state over localhost and forwards every book-writing action to it
+      (`Live._wait_for_lock`, `/api/book`, `/api/wire`, `/api/trade`,
+      `/api/close`), and whoever waits takes the lock over the moment it is
+      free — so the agent started beside a window drives once the window
+      quits, which it never did before. README §"Run it", CHANGELOG v2.128.
 - [x] `P1` `testing` `@ai` ~~The probability model has no tests at all.~~
       `sonar/model.py` went 39% → **100%**. Writing the tests found a real bug:
       `prob_up` (closed form) and `lattice_distribution` (binomial approximation)

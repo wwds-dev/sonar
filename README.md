@@ -756,7 +756,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,467 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,486 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 
@@ -809,10 +809,20 @@ as it happens rather than saving on exit.
 ./scripts/install_agent.sh --uninstall
 ```
 
-Running both is safe. `sonar/enginelock.py` enforces **one engine per state file**: whoever
-starts first drives, and the other opens read-only rather than settling the same hour twice —
-which would double-count the portfolio silently. A lock left behind by a killed process is
-reclaimed rather than blocking forever.
+Running both is safe, and since Oct 2026 it is also useful. `sonar/enginelock.py` enforces
+**one engine per state file**: whoever starts first drives, because two engines settling the
+same hour would double-count the portfolio silently. The other one **follows** rather than
+sitting there blank: the agent records its HTTP address in the lock, and a window that loses
+the race mirrors the agent's snapshot, board, book, alerts and knobs over localhost
+(`Live._wait_for_lock`, `/api/book`, `/api/wire`) — every figure on every page is the
+agent's, and every action that writes the book (buy, short, close, the knobs, protocol mode,
+an LLM read) is handed to the agent over `/api/trade`, `/api/close`, `/api/config`,
+`/api/read`, so there is still exactly one writer. The status line says *following the
+engine at 127.0.0.1:8787* while this is so. Whoever waits re-tries the lock every fifteen
+seconds and **takes over the moment it is free**: quit the agent and the window drives
+without a restart; quit the window and the agent — which was waiting, not idling — drives
+the night. A second window has no address to follow, so it waits with a plain message. A
+lock left behind by a killed process is reclaimed rather than blocking forever.
 
 **The run watches itself.** Over a weeks-long collection run, hours can go missing silently —
 feed down, machine asleep, agent dead — and the damage would only show at review time as a

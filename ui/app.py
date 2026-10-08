@@ -3152,14 +3152,17 @@ class MainWindow(QMainWindow):
         self._refresh_wire()
 
         if snap.get("status") == "read-only":
-            # Another SONAR (usually the launchd agent) holds the engine lock.
-            # Say so plainly rather than showing a window that looks broken.
+            # Another SONAR holds the engine lock and cannot be followed (a
+            # second window), or the one being followed stopped answering.
+            # Say so plainly rather than showing a window that looks broken;
+            # the engine keeps trying for the lock behind this message.
             self.status.setText("⚠  " + snap.get("detail", "another engine is running"))
             self.read_btn.setEnabled(False)
             return
         if snap.get("status") != "live":
             self.status.setText(f'{snap.get("status", "…")} — first poll can take a moment')
             return
+        self.read_btn.setEnabled(True)
         self._refresh_terminal(snap)
         self._refresh_cards(assets)
         self._refresh_macro(snap)
@@ -3167,8 +3170,13 @@ class MainWindow(QMainWindow):
             self.tray.update_state(snap)
 
         hz = self.live.horizon
+        # Following: the launchd agent holds the lock and this window mirrors
+        # it — every figure is the agent's, every action is handed to it.
+        following = snap.get("following")
+        who = (f'following the engine at {following.split("//")[-1]} · '
+               if following else "")
         self.status.setText(
-            f'risk {self.live.risk.name} · horizon {hz.name} · '
+            f'{who}risk {self.live.risk.name} · horizon {hz.name} · '
             f'{assets.get("n", 0)} assets · paper money only')
 
     def _refresh_terminal(self, snap: dict) -> None:
