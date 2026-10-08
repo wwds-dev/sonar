@@ -36,3 +36,5 @@ _build_info.json
 # Coverage database — a generated cache, and it churns on every measured run.
 .coverage
 .coverage.*
+# A note left in a data/ that stopped being driven (see README §"Run it").
+data/ARCHIVED-*.txt
