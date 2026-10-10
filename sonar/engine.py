@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import functools
 import json
+import sys
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -125,6 +126,9 @@ class Engine:
         self.n_voided = 0
         self.score_started: float | None = None
         self.last_settled_at: float | None = None
+        # How much a state file written before the warm-up was kept out of the
+        # bankroll is corrected by on load; the next save keeps a copy first.
+        self._warmup_correction = 0.0
         self._load()
 
     @_locked
@@ -169,6 +173,52 @@ class Engine:
         self.last_settled_at = d.get("last_settled_at")
         if d.get("risk_profile"):
             self.risk = _risk.get(d["risk_profile"])
+        self._take_the_warmup_out_of_the_bankroll()
+
+    def _take_the_warmup_out_of_the_bankroll(self) -> None:
+        """Correct a state file whose bankroll still carries the warm-up.
+
+        The fair-odds warm-up used to be booked into the bankroll, so the
+        headline P&L, the return and every Kelly stake carried the result of 36
+        bets nobody took. Its rows stay as chart history; their sum comes off
+        the bankroll and off every live equity point, once. In memory only —
+        the next save, by whichever process holds the lock, persists it.
+
+        Decided from the numbers, not a flag: the bankroll is the start plus
+        every settled live bet, so it carries the warm-up exactly when it is off
+        from that by the warm-up's sum. An older build sharing this book (the
+        installed app beside the agent) saves without any flag, and a flag test
+        would then take the warm-up out a second time.
+        """
+        seeded = round(sum(t.pnl or 0.0 for t in self.trades if t.kind == "backtest"), 2)
+        live = sum(t.pnl or 0.0 for t in self.trades if t.kind == "live")
+        carried = round(self.bankroll - (self.starting_bankroll + live), 2)
+        # Both tests: a warm-up netting within the tolerance of zero would
+        # otherwise read as "carried" on a book that has already been corrected.
+        if not seeded or abs(carried) <= 0.05 or abs(carried - seeded) > 0.05:
+            return
+        self.bankroll = round(self.bankroll - seeded, 2)
+        for q in self.equity:
+            if q.get("kind") == "live":
+                q["v"] = round(q["v"] - seeded, 2)
+        self._redraw_warmup(self.starting_bankroll)
+        self._warmup_correction = seeded
+
+    def _redraw_warmup(self, end_at: float) -> None:
+        """Draw the warm-up's equity points as variance that ends at ``end_at``
+        (the bankroll the live record starts from): its shape, never its sum.
+        The curve's first point moves with it, so the line is continuous —
+        the chart plots by index, and a start left at the bankroll put a jump
+        the size of the warm-up's sum at its left edge."""
+        pnls = [t.pnl or 0.0 for t in self.trades if t.kind == "backtest"]
+        points = [q for q in self.equity if q.get("kind") == "backtest"]
+        total, cum = sum(pnls), 0.0
+        for q in self.equity:
+            if q.get("kind") == "start":
+                q["v"] = round(end_at - total, 2)
+        for q, pnl in zip(points, pnls):
+            cum += pnl
+            q["v"] = round(end_at + cum - total, 2)
 
     @_locked
     def save(self) -> None:
@@ -177,6 +227,17 @@ class Engine:
         # first overwrite — the record is the product, and it lives nowhere
         # else. See paths.daily_backup.
         _paths.daily_backup(self.path)
+        if self._warmup_correction and self.path.exists():
+            # The one-time warm-up correction changes the record's bankroll;
+            # the file as it was before stays beside it, never overwritten.
+            keep = self.path.with_name(self.path.name + ".before-warmup-fix")
+            if not keep.exists():
+                try:
+                    _paths.write_atomically(keep, self.path.read_text())
+                except OSError as exc:      # the copy must not cost the save
+                    print(f"SONAR: could not keep {keep.name} ({exc})",
+                          file=sys.stderr, flush=True)
+        self._warmup_correction = 0.0
         d = {
             "starting_bankroll": self.starting_bankroll,
             "bankroll": self.bankroll,
@@ -410,6 +471,10 @@ class Engine:
         expected value is ~0 by construction. This fills the chart with genuine
         BTC outcomes without inventing any counterparty odds or fake profit — it
         shows variance, not edge. Runs only once, on a fresh bankroll.
+
+        It never touches the bankroll: its points are drawn to end where the
+        live record starts, so the curve shows the warm-up's variance while the
+        bankroll, the headline P&L and every Kelly stake count live bets only.
         """
         if self.trades or len(self.equity) > 1:
             return
@@ -423,7 +488,6 @@ class Engine:
             won = (result == side)
             shares = stake / price
             pnl = round(shares * (1.0 - price) if won else -stake, 2)
-            self.bankroll = round(self.bankroll + pnl, 2)
             self.trades.append(Trade(
                 hour_key=r["open_time"], title=r.get("title", "backtest"),
                 side=side, entry_price=round(price, 4), shares=round(shares, 4),
@@ -433,6 +497,7 @@ class Engine:
                 open_price=r["open"], close_price=r["close"]))
             self.equity.append({"t": r["open_time"] + 3600, "v": self.bankroll,
                                 "kind": "backtest"})
+        self._redraw_warmup(self.bankroll)
         self.save()
 
     # ---- reporting ------------------------------------------------------- #

@@ -288,7 +288,7 @@ function render(s){
     ["Paper Bankroll", fmtUSD(st.bankroll||0), "",
       "Simulated cash on hand. Starts at 10,000 pretend dollars and moves as paper bets settle each hour. No real money is involved."],
     ["Total P&L", (pnl>=0?"+":"")+fmtUSD(pnl), pnl>=0?"up":"down",
-      "Total simulated profit or loss versus the 10,000 starting stake — the backtest seed plus live paper trades combined."],
+      "Total simulated profit or loss versus the 10,000 starting stake — live paper trades only; the fair-odds warm-up on the chart is excluded."],
     ["Return", fmtPct(st.return_pct||0), (st.return_pct||0)>=0?"up":"down",
       "Total P/L as a percent of the starting bankroll. Big returns here are usually small-sample luck, not proof the model works."],
     ["Win Rate", (st.win_rate||0).toFixed(1)+"%", "",

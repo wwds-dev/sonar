@@ -500,6 +500,95 @@ def test_a_stake_too_small_to_matter_is_not_taken(engine, clock):
     assert engine.open_position is None
 
 
+def test_the_warm_up_never_touches_the_bankroll(engine):
+    """Its 36 bets were booked into the bankroll: a fresh install opened with a
+    profit or loss from trades nobody took, and sized live stakes off it."""
+    start = engine.bankroll
+    engine.seed_backtest(_rows(20))
+    assert sum(t.pnl for t in engine.trades) != 0, "the fixture must move something"
+    assert engine.bankroll == start
+    s = engine.stats()
+    assert s["total_pnl"] == 0.0 and s["return_pct"] == 0.0
+    curve = [q["v"] for q in engine.equity if q["kind"] == "backtest"]
+    assert curve[-1] == start, "the warm-up's curve must end where live begins"
+    assert len(set(curve)) > 1, "its variance is still drawn"
+
+
+def _old_state(path):
+    """A state file from before the fix: the warm-up's -6.00 inside the bankroll."""
+    row = {"hour_key": HOUR, "side": "UP", "entry_price": 0.4, "shares": 10.0,
+           "stake": 4.0, "model_up": 0.6, "market_up": 0.4, "edge": 0.0,
+           "entered_at": 1.0, "won": True}
+    path.write_text(json.dumps({
+        "starting_bankroll": 10_000.0, "bankroll": 10_044.0, "open_position": None,
+        "trades": [dict(row, title="backtest", kind="backtest", pnl=-10.0),
+                   dict(row, title="backtest", kind="backtest", pnl=4.0),
+                   dict(row, title="Bitcoin Up or Down", kind="live", pnl=50.0)],
+        "equity": [{"t": 0, "v": 10_000.0, "kind": "start"},
+                   {"t": 1, "v": 9_990.0, "kind": "backtest"},
+                   {"t": 2, "v": 9_994.0, "kind": "backtest"},
+                   {"t": 3, "v": 10_044.0, "kind": "live"}]}))
+
+
+def test_an_old_state_file_has_the_warm_up_taken_out_once(tmp_path):
+    path = tmp_path / "state.json"
+    _old_state(path)
+    e = eng.Engine(path)
+    assert e.bankroll == 10_050.0, "10,000 + the one live bet's 50"
+    assert e.stats()["total_pnl"] == 50.0
+    assert [q["v"] for q in e.equity] == [10_006.0, 9_996.0, 10_000.0, 10_050.0]
+    e.save()
+    assert json.loads(path.read_text())["bankroll"] == 10_050.0
+    kept = json.loads((tmp_path / "state.json.before-warmup-fix").read_text())
+    assert kept["bankroll"] == 10_044.0, "the record as it was is kept"
+    again = eng.Engine(path)
+    assert again.bankroll == 10_050.0, "corrected twice"
+    again.bankroll = 1.0
+    again.save()
+    kept = json.loads((tmp_path / "state.json.before-warmup-fix").read_text())
+    assert kept["bankroll"] == 10_044.0, "the kept copy was overwritten"
+
+
+def test_an_older_build_saving_the_corrected_book_does_not_get_it_corrected_twice(tmp_path):
+    """The installed app can be an older build than the agent and shares the
+    book: it saves the corrected bankroll without the flag the new code writes."""
+    path = tmp_path / "state.json"
+    _old_state(path)
+    eng.Engine(path).save()
+    # The older build loads it, books nothing new, and saves it as it is.
+    assert eng.Engine(path).bankroll == 10_050.0
+
+
+def test_a_warm_up_netting_near_zero_is_not_taken_out_of_a_corrected_book(tmp_path):
+    path = tmp_path / "state.json"
+    _old_state(path)
+    d = json.loads(path.read_text())
+    d["trades"][1]["pnl"] = 10.03                 # the warm-up nets +0.03
+    d["bankroll"] = 10_050.0                      # and is already outside it
+    path.write_text(json.dumps(d))
+    assert eng.Engine(path).bankroll == 10_050.0
+
+
+def test_the_warm_up_curve_is_continuous(engine):
+    """The chart plots by index: the start point must lead into the warm-up,
+    not sit a warm-up's sum away from it."""
+    engine.seed_backtest(_rows(20))
+    pnls = [t.pnl for t in engine.trades]
+    vals = [q["v"] for q in engine.equity]
+    assert vals[1] - vals[0] == pytest.approx(pnls[0], abs=0.02)
+    assert vals[-1] == engine.bankroll
+
+
+def test_loading_an_old_file_writes_nothing_until_saved(tmp_path):
+    """The correction happens in memory; only the lock holder's save writes it."""
+    path = tmp_path / "state.json"
+    _old_state(path)
+    before = path.read_text()
+    eng.Engine(path)
+    assert path.read_text() == before
+    assert not (tmp_path / "state.json.before-warmup-fix").exists()
+
+
 # --------------------------------------------------------------------------- #
 # Live stats stay live
 # --------------------------------------------------------------------------- #
