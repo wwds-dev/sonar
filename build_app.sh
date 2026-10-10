@@ -78,6 +78,14 @@ PLIST="$DIST/$APP_NAME.app/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
 plutil -replace CFBundleVersion -string "$VERSION" "$PLIST"
 
+# The plist edits above break PyInstaller's ad-hoc signature ("invalid
+# Info.plist"), so the bundle's seal no longer detects tampering. Re-seal it,
+# ad hoc — this Mac only, no Developer ID (owner decision 2026-10-10) — and
+# refuse to go on if the seal does not verify.
+codesign --force --deep --sign - "$DIST/$APP_NAME.app"
+codesign --verify --deep --strict "$DIST/$APP_NAME.app"
+echo "Sealed (ad hoc): $DIST/$APP_NAME.app"
+
 echo
 echo "Built: $DIST/$APP_NAME.app v$VERSION ($(du -sh "$DIST/$APP_NAME.app" | cut -f1))"
 
