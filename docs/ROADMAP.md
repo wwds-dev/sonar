@@ -12,7 +12,7 @@ Exit: owner has read the process and changed what they disagree with.
 Run `/audit all`. Exit: `docs/audit/SUMMARY.md` approved; P0/P1 findings become `TODO.md`
 items.
 
-## Phase 2 — Define the product
+## Phase 2 — Define the product *(done 2026-10-10: `docs/specs/v1-product.md`)*
 Through `product-manager`: who SONAR is for, the one question each tab answers, the success
 measures for v1.0 (e.g. "a new user understands their book in 30 s", "calibration published
 with intervals"), explicit non-goals, and what to cut or merge from the 8 tabs.
@@ -26,6 +26,9 @@ Exit: no open P0/P1; suite green native + offscreen.
 ## Phase 4 — UX and onboarding
 First-run experience, empty/stale/error states, plain-language pass, accessibility.
 Exit: `ux-designer` re-audit has no P0/P1.
+
+> Phases 5–6 are unscheduled: the owner chose "me now, others later". Phase 5's notarization,
+> legal text and restore drill apply if and when that changes; the restore drill is wanted anyway.
 
 ## Phase 5 — Release readiness
 Signed and notarized build, update path, state backup/restore, monitoring plus runbook
