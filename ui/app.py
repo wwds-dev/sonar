@@ -3403,7 +3403,9 @@ class MainWindow(QMainWindow):
             self.regime_lb.setText("—")
             self.regime_lb.setStyleSheet(f"color: {theme.MUTED.name()};")
             self.regime_sub.setText("")
+            on_long = (snap.get("horizon") or {}).get("macro")
             self.macro_note.setText(
+                "Loading the macro regime…" if on_long else
                 "The macro regime is only material at long horizons. "
                 "Switch to “This quarter” or “This year” to load it.")
             return

@@ -53,6 +53,7 @@ CHILD = textwrap.dedent("""
 
     core.Live.warmup = warmup
     core.Live._poll = lambda self: None
+    core.Live._background_step = lambda self, now=None: None
     core.LOCK_RETRY_EVERY = 0.1
     core.FOLLOW_EVERY = 0.05
     core.FOLLOW_SLOW_EVERY = 0.0

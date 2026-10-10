@@ -32,6 +32,7 @@ _REAL_URLOPEN = urllib.request.urlopen
 # test. A test that drives one poll against stubbed feeds asks for `real_poll`.
 from sonar import core as _core  # noqa: E402
 _REAL_POLL = _core.Live._poll
+_REAL_BACKGROUND_STEP = _core.Live._background_step
 
 
 @pytest.fixture
@@ -83,6 +84,7 @@ def session_guards(tmp_path_factory):
     mp.setattr("ui.worker.PollThread.run", lambda self: None, raising=False)
     mp.setattr("sonar.core.Live.warmup", lambda self: None)
     mp.setattr("sonar.core.Live._poll", lambda self: None)
+    mp.setattr("sonar.core.Live._background_step", lambda self, now=None: None)
 
     def blocked(*args, **kwargs):
         raise NetworkUsedInTest(
@@ -166,6 +168,7 @@ def idle_engine(monkeypatch):
     monkeypatch.setattr("ui.worker.PollThread.run", lambda self: None, raising=False)
     monkeypatch.setattr("sonar.core.Live.warmup", lambda self: None)
     monkeypatch.setattr("sonar.core.Live._poll", lambda self: None)
+    monkeypatch.setattr("sonar.core.Live._background_step", lambda self, now=None: None)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -278,3 +281,9 @@ def real_poll():
     """`Live._poll` as written — every test otherwise gets a no-op. Call it as
     ``real_poll(live)``; the feeds it reads must be stubbed by the test."""
     return _REAL_POLL
+
+
+@pytest.fixture
+def real_background_step():
+    """`Live._background_step` as written — a no-op for every other test."""
+    return _REAL_BACKGROUND_STEP

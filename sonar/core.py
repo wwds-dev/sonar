@@ -40,6 +40,8 @@ MARKET_EVERY = 15.0         # seconds between Polymarket polls
 # EWMA x hour-of-day forecast measured in sonar/research/hourlyvol.py.)
 VOL_EVERY = 3600.0          # seconds between volatility refreshes
 SCAN_EVERY = 90.0           # seconds between asset-screen refreshes
+BACKGROUND_TICK = 1.0       # how often the background thread looks for due work
+BACKGROUND_JOIN = 20.0      # how long a quit waits for a rescan in flight
 SEED_RETRY_EVERY = 300.0    # seconds between attempts to seed the account history
 SEED_MAX_TRIES = 6          # partial answers tolerated before giving up
 # Following another engine (see Live._wait_for_lock): the holder's snapshot
@@ -102,6 +104,14 @@ class Live:
         # network errors into None, so a full outage raised nothing and every
         # poll looked successful while no price had arrived for hours.
         self._poll_fresh = True
+        # The slow work — the asset scan (26+ charts, 24 feeds, calendars), the
+        # hourly σ fetch and the macro series — runs on its own thread. Inline,
+        # it stalled the price poll for seconds to minutes: the engine then
+        # ticked a stale candle against a fresh market and saw "edges" that
+        # were only age. The macro snapshot is read from here by _build, which
+        # runs under self.lock; fetching FRED there froze the window.
+        self._macro_snap = None
+        self._background_thread: threading.Thread | None = None
         # Single-writer guard around the paper engine (see enginelock.py).
         self.engine_lock = None
         self.read_only = False
@@ -177,6 +187,11 @@ class Live:
             pass
         self.sigma = self._sigma()
         self._vol_at = time.time()
+        if self.horizon.macro:          # usually the disk cache: the first page has it
+            try:
+                self._macro_snap = self.macro.get()
+            except Exception:
+                pass
         # Publish a snapshot *before* the asset screen refreshes. The Terminal
         # tab needs only the candle and the hourly market — two fast calls —
         # while _rescan() fetches 26 charts and 14 news feeds. Doing the heavy
@@ -201,6 +216,13 @@ class Live:
         book twice and raced each other's alerts."""
         with self._rescan_lock:
             self._rescan_once()
+
+    def _rescan_if_due(self) -> None:
+        """The background's scan: decided inside the lock, so one queued behind
+        a settings change's scan does not run a second full scan straight after."""
+        with self._rescan_lock:
+            if time.time() - self._scan_at > SCAN_EVERY and not self._stop.is_set():
+                self._rescan_once()
 
     def _rescan_once(self) -> None:
         try:
@@ -238,9 +260,12 @@ class Live:
                 self.inst = inst
         try:
             ap = self.asset_scanner.payload(heads, hz=hz, profile=profile)
+            if self._stop.is_set():
+                return     # quitting: the lock may already be someone else's
             self._mark_book(ap)
-            self._seed_account_history()
-            if self.protocol_on:
+            if not self._stop.is_set():
+                self._seed_account_history()
+            if self.protocol_on and not self._stop.is_set():
                 try:
                     self._protocol_scan(ap)
                 except Exception:
@@ -354,12 +379,13 @@ class Live:
         instrument the risk filter hides. A held position used to fall back to
         its entry when its row was hidden — a 30% loss closed as zero, its
         barriers no longer watched, its equity marked flat."""
-        return {**self.asset_scanner.last_prices, **board}
+        # .copy() runs in C under the GIL: the scan inserts into this dict.
+        return {**self.asset_scanner.last_prices.copy(), **board}
 
     def _book_sparks(self, rows: list[dict]) -> dict[str, list[float]]:
         """Recent closes per instrument for the open-position cards, hidden
         rows included — a hidden position was drawn without its history."""
-        return {**self.asset_scanner.last_sparks,
+        return {**self.asset_scanner.last_sparks.copy(),
                 **{a["symbol"]: a.get("spark") or [] for a in rows}}
 
     def _mark_book_locked(self, book, rows: list[dict], prices: dict,
@@ -683,9 +709,9 @@ class Live:
         would leave the model to invent the regime, which is exactly what the
         old Oracle agent had to do.
         """
-        if not self.horizon.macro:
+        if not self.horizon.macro or self._macro_snap is None:
             return {}
-        m = self.macro.get()
+        m = self._macro_snap
         return {
             "macro_regime": m.regime,
             "macro_10y_yield_pct": m.ten_year,
@@ -743,15 +769,48 @@ class Live:
                         return
             self._driving_since = time.time()
             self.warmup()
+            self._background_thread = threading.Thread(
+                target=self._background, name="sonar-background", daemon=True)
+            self._background_thread.start()
             while not self._stop.is_set():
                 self._poll_once()
                 # wait(), not sleep(): a quit lands immediately instead of
                 # blocking shutdown for the rest of the poll interval.
                 self._stop.wait(PRICE_EVERY)
         finally:
+            # The background thread writes the book (its scan marks positions):
+            # it must be done before the lock goes to someone else.
+            bg = self._background_thread
+            if bg is not None:
+                bg.join(BACKGROUND_JOIN)
             # Hand the lock back on the way out. A crash could never do this,
             # which left a stale holder and sent the next launch to read-only.
             self.engine_lock.release()
+
+    def _background(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self._background_step()
+            except Exception as exc:       # the thread must outlive a bad step
+                print(f"SONAR {time.strftime('%H:%M:%S')}: background step failed: "
+                      f"{' '.join(str(exc).split())}", file=sys.stderr, flush=True)
+            self._stop.wait(BACKGROUND_TICK)
+
+    def _background_step(self, now: float | None = None) -> None:
+        """Whatever slow work is due: σ hourly, the scan every SCAN_EVERY, the
+        macro snapshot whenever the horizon uses it (the cache decides when to
+        fetch). Nothing here holds self.lock while it fetches."""
+        now = time.time() if now is None else now
+        if now - self._vol_at > VOL_EVERY:
+            self.sigma = self._sigma()
+            self._vol_at = now
+        if self.horizon.macro:
+            try:
+                self._macro_snap = self.macro.get()
+            except Exception:
+                pass
+        if now - self._scan_at > SCAN_EVERY and not self._stop.is_set():
+            self._rescan_if_due()
 
     def _poll_once(self) -> None:
         """One poll, with its outcome recorded for health(). Never raises: the
@@ -809,6 +868,12 @@ class Live:
                 why = f" (last error: {self.last_poll_error})" if self.last_poll_error else ""
                 problems.append({"kind": "poll", "text": "no successful price poll for "
                                  f"{int((now - since) // 60)} min{why}"})
+            bg = self._background_thread
+            if bg is not None and not bg.is_alive() and not self._stop.is_set():
+                problems.append({"kind": "scan", "text": "the background scan has stopped"})
+            elif self._scan_at and now - self._scan_at > 3 * SCAN_EVERY:
+                problems.append({"kind": "scan", "text": "the board has not been rescanned "
+                                 f"for {int((now - self._scan_at) // 60)} min"})
             run = self.engine.run_health(now)
             if run.get("stale"):
                 problems.append({"kind": "settle", "text": "no hour has settled for "
@@ -1039,6 +1104,13 @@ class Live:
         return model.hourly_sigma(feeds.recent_hourly_returns())
 
     def _poll(self) -> None:
+        # Market first, candle last: the price the engine ticks on is the
+        # freshest thing fetched. The slow work runs on the background thread.
+        if time.time() - self._market_at > MARKET_EVERY or self._last_market is None:
+            m = feeds.current_market()
+            if m is not None:
+                self._last_market = m
+                self._market_at = time.time()
         now = time.time()
         candle = feeds.hourly_candle()
         self._poll_fresh = candle is not None
@@ -1050,18 +1122,6 @@ class Live:
             # signal, and an old price on the spark line.
             candle = None
 
-        if now - self._vol_at > VOL_EVERY:
-            self.sigma = self._sigma()
-            self._vol_at = now
-
-        if now - self._scan_at > SCAN_EVERY:
-            self._rescan()
-
-        if now - self._market_at > MARKET_EVERY or self._last_market is None:
-            m = feeds.current_market()
-            if m is not None:
-                self._last_market = m
-                self._market_at = now
         market = self._last_market
         if (market is not None and candle is not None
                 and market.end_time != candle.open_time + 3600):
@@ -1091,17 +1151,18 @@ class Live:
                 gap_close[last_hour] = close
 
         with self.lock:
-            sig = self.engine.tick(candle, market, self.sigma,
+            sigma = self.sigma              # one value for the signal and the page
+            sig = self.engine.tick(candle, market, sigma,
                                    close_lookup=gap_close.get)
-            self.snapshot = self._build(candle, market, sig, now)
+            self.snapshot = self._build(candle, market, sig, now, sigma)
 
     # -- snapshot builder -------------------------------------------------- #
-    def _build(self, candle, market, sig, now) -> dict:
+    def _build(self, candle, market, sig, now, sigma: float | None = None) -> dict:
         eng = self.engine
         snap: dict = {
             "status": "live",
             "now": int(now),
-            "sigma": round(self.sigma, 6),
+            "sigma": round(self.sigma if sigma is None else sigma, 6),
         }
         if candle is not None:
             snap["candle"] = {
@@ -1155,8 +1216,8 @@ class Live:
         }
         # The macro regime is noise on an hourly view and the dominant term
         # on a yearly one, so it rides along only at horizons where it matters.
-        if self.horizon.macro:
-            snap["macro"] = self.macro.get().as_dict()
+        if self.horizon.macro and self._macro_snap is not None:
+            snap["macro"] = self._macro_snap.as_dict()
         snap["risk"] = self.risk.as_dict()
         snap["horizon"] = self.horizon.as_dict()
         snap["llm_read"] = self.last_read

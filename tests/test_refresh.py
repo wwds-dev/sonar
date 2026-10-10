@@ -181,3 +181,12 @@ def test_a_refused_setting_does_not_stay_shown(window):
     window.refresh()
     assert live.protocol_on is False and window.protocol_box.isChecked() is False
     assert window.risk_box.currentData() == live.risk.name
+
+
+def test_the_macro_panel_says_loading_on_a_long_horizon(window):
+    """Before the first macro fetch it told a user already on "This quarter"
+    to switch to "This quarter"."""
+    window._refresh_macro({"horizon": {"macro": True}})
+    assert "Loading" in window.macro_note.text()
+    window._refresh_macro({"horizon": {"macro": False}})
+    assert "Switch to" in window.macro_note.text()
