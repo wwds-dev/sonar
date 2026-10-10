@@ -96,14 +96,18 @@ def parse_binance_klines(rows, symbol: str = "BTCUSDT") -> Candle | None:
 def parse_coinbase_candles(rows, now: float | None = None) -> Candle | None:
     """Coinbase `/candles`: [time_s, low, high, open, close, volume].
 
-    Picks the row for the hour in progress, falling back to the newest — which
-    is what Coinbase returns first.
+    The row for the hour in progress, or ``None``. It used to fall back to the
+    newest row, which is the previous hour whenever Coinbase lags the turn of
+    the hour or is the source only because Binance is down — and a past hour
+    passed off as the current one voided a live position downstream.
     """
     if not rows:
         return None
     now_hr = int(now if now is not None else time.time()) // 3600 * 3600
     try:
-        row = next((r for r in rows if int(r[0]) == now_hr), rows[0])
+        row = next((r for r in rows if int(r[0]) == now_hr), None)
+        if row is None:
+            return None
         return Candle(open=float(row[3]), price=float(row[4]), high=float(row[2]),
                       low=float(row[1]), open_time=int(row[0]),
                       source="Coinbase BTC-USD")
@@ -144,7 +148,10 @@ def hourly_candle(symbol: str = "BTCUSDT") -> Candle | None:
     c = _binance_hour(symbol)
     if c is not None and not is_stale(c):
         return c
-    return _coinbase_hour() if symbol == "BTCUSDT" else None
+    if symbol != "BTCUSDT":
+        return None
+    c = _coinbase_hour()
+    return c if c is not None and not is_stale(c) else None
 
 
 def recent_hourly_returns(symbol: str = "BTCUSDT", limit: int = 72) -> list[float]:

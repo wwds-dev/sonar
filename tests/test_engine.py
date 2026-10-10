@@ -302,6 +302,25 @@ def _open_one(engine, clock, price=100.5, implied=0.30):
     return engine.open_position
 
 
+def test_a_candle_from_an_earlier_hour_does_not_void_the_open_position(engine, clock):
+    """Binance drops out and Coinbase still serves the previous hour. Read as a
+    rollover, the backward step looked the current hour up (not closed yet),
+    voided the real position and dropped the hour's score snapshot."""
+    pos = _open_one(engine, clock)
+    assert pos is not None
+    pending = engine.pending_score
+    sig = engine.last_signal
+    out = engine.tick(Candle(HOUR - 3600, 99.0, 99.5),
+                      market_at(clock, 0.4), 0.0045,
+                      close_lookup=lambda t: None)
+    assert out is sig
+    assert engine.open_position is pos and engine.n_voided == 0
+    assert engine.current_hour == HOUR
+    assert engine.pending_score == pending
+    settled = engine.finalize(HOUR, close_price=101.0)     # the hour still settles
+    assert settled is not None and settled.won is True
+
+
 def test_a_winning_position_pays_out_and_lifts_the_bankroll(engine, clock):
     pos = _open_one(engine, clock)
     before = engine.bankroll

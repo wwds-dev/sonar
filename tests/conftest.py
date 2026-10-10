@@ -28,6 +28,11 @@ _REAL_CONNECT = socket.socket.connect
 _REAL_CONNECT_EX = socket.socket.connect_ex
 _REAL_URLOPEN = urllib.request.urlopen
 
+# The real poll body, kept before the fixtures below stub it out for every
+# test. A test that drives one poll against stubbed feeds asks for `real_poll`.
+from sonar import core as _core  # noqa: E402
+_REAL_POLL = _core.Live._poll
+
 
 @pytest.fixture
 def loopback(monkeypatch):
@@ -266,3 +271,10 @@ def pytest_unconfigure(config):
     except ImportError:
         pass
     app.shutdown()
+
+
+@pytest.fixture
+def real_poll():
+    """`Live._poll` as written — every test otherwise gets a no-op. Call it as
+    ``real_poll(live)``; the feeds it reads must be stubbed by the test."""
+    return _REAL_POLL

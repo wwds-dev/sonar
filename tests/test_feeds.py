@@ -100,10 +100,12 @@ def test_coinbase_picks_the_hour_in_progress():
     assert feeds.parse_coinbase_candles(rows, now=HOUR + 60).price == 102.0
 
 
-def test_coinbase_falls_back_to_the_newest_row():
-    """Coinbase returns newest-first, and a gap is normal rather than fatal."""
-    rows = [coinbase_row(t=HOUR - 7200, close=50.0)]
-    assert feeds.parse_coinbase_candles(rows, now=HOUR + 60).price == 50.0
+def test_coinbase_without_the_hour_in_progress_is_no_candle():
+    """It used to fall back to the newest row — a past hour passed off as the
+    current one, which voided a live position downstream. No candle is a gap
+    the engine waits out; a wrong hour is not."""
+    rows = [coinbase_row(t=HOUR - 3600, close=50.0)]
+    assert feeds.parse_coinbase_candles(rows, now=HOUR + 60) is None
 
 
 @pytest.mark.parametrize("rows", [None, [], [[]], [["a", "b", "c", "d", "e", "f"]]])
@@ -517,3 +519,14 @@ def test_a_zero_close_in_the_window_does_not_break_sigma():
 def test_asking_for_more_hours_than_exist_is_not_an_error():
     hourly = _hourly(4)
     assert len(feeds.assemble_decision_points(hourly, _minutes(hourly), hours=50)) == 4
+
+
+def test_a_stale_coinbase_candle_is_no_candle_either(api, monkeypatch):
+    """The fallback gets the same staleness test as the primary."""
+    old = int(time.time()) - 3 * 3600
+    api["coinbase"] = [[old // 3600 * 3600, 95.0, 105.0, 100.0, 102.0, 1.0]]
+    monkeypatch.setattr(feeds, "parse_coinbase_candles",
+                        lambda rows, now=None: feeds.Candle(
+                            open=100.0, price=102.0, high=105.0, low=95.0,
+                            open_time=old // 3600 * 3600, source="Coinbase BTC-USD"))
+    assert feeds.hourly_candle() is None

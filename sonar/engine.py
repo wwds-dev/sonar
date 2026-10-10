@@ -267,6 +267,12 @@ class Engine:
         feed — see :meth:`_settle_rollover`."""
         if candle is None:
             return self.last_signal
+        # A candle from before the hour in progress is a stale source, not a
+        # new hour. Read as a rollover it voided the open position (its hour
+        # cannot be closed yet) and dropped the hour's score snapshot: the
+        # backup feed still serving the previous hour deleted a real trade.
+        if self.current_hour is not None and candle.open_time < self.current_hour:
+            return self.last_signal
 
         # rollover: a new hour started, so last hour's candle is final.
         if self.current_hour is not None and candle.open_time != self.current_hour:

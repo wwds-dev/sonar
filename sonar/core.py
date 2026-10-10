@@ -935,6 +935,13 @@ class Live:
     def _poll(self) -> None:
         now = time.time()
         candle = feeds.hourly_candle()
+        hour = self.engine.current_hour          # only this thread writes it
+        if candle is not None and hour is not None and candle.open_time < hour:
+            # An earlier hour than the engine is on (a lagging fallback feed, a
+            # clock a few seconds behind the exchange): the engine ignores it,
+            # and so must the screen — last hour's price beside this hour's
+            # signal, and an old price on the spark line.
+            candle = None
 
         if now - self._vol_at > VOL_EVERY:
             self.sigma = self._sigma()
