@@ -29,6 +29,43 @@ APP_NAME = "SONAR"
 BACKUP_KEEP = 7
 
 
+BACKUP_DIR_ENV = "SONAR_BACKUP_DIR"
+OFFSITE_KEEP = 30
+
+
+def offsite_dir() -> Path | None:
+    """Where the daily copies also go, off this folder — or None.
+
+    The daily ``.bak`` files sit beside the state on the same disk, so they
+    survive a corrupt write but not a lost disk or a deleted folder. Set
+    ``$SONAR_BACKUP_DIR``, or put a path in ``<data>/backup-to`` (what
+    ``scripts/install_agent.sh`` writes, so the window and the agent, whichever
+    is driving, both copy): somewhere a backup job already covers.
+    """
+    raw = os.environ.get(BACKUP_DIR_ENV, "").strip()
+    if not raw:
+        try:
+            raw = (user_data_base() / "backup-to").read_text().strip().splitlines()[0]
+        except (OSError, IndexError):
+            return None
+    return Path(raw).expanduser() if raw else None
+
+
+def _copy_offsite(bak: Path) -> None:
+    dest = offsite_dir()
+    if dest is None:
+        return
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(bak, dest / bak.name)
+        stem = bak.name.rsplit(".bak.", 1)[0]
+        for old in sorted(dest.glob(f"{stem}.bak.*"))[:-OFFSITE_KEEP]:
+            old.unlink()
+    except OSError as exc:            # must never block the save it protects
+        print(f"SONAR: could not copy {bak.name} to {dest} ({exc})",
+              file=sys.stderr, flush=True)
+
+
 def daily_backup(path: Path, keep: int = BACKUP_KEEP,
                  today: str | None = None) -> Path | None:
     """Copy ``path`` aside once per day, before its first overwrite.
@@ -59,6 +96,7 @@ def daily_backup(path: Path, keep: int = BACKUP_KEEP,
             old.unlink()
         except OSError:
             pass
+    _copy_offsite(bak)
     return bak
 
 

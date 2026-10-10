@@ -27,14 +27,19 @@ jobs:
       # sonar/macro and sonar/playmaker are their own git repos, gitignored in
       # this one (repo-per-module; see the lab's AGENTS.md) — so a fresh clone
       # has no such packages and half the suite cannot even import. Check each
-      # module repo out into the place the working tree keeps it.
+      # module repo out into the place the working tree keeps it, at the commit
+      # this one was tested with: the default branch moves on its own, which
+      # made a past run unreproducible from this repo's history.
+      # tests/test_ci_pins.py fails when these drift from the local checkouts.
       - uses: actions/checkout@v4
         with:
-          repository: Netrunner3000/sonar_macro
+          repository: wwds-dev/sonar_macro
+          ref: b3fa3e21af616e03ebbcb9b2813111fb5856a022
           path: sonar/macro
       - uses: actions/checkout@v4
         with:
-          repository: Netrunner3000/sonar_playmaker
+          repository: wwds-dev/sonar_playmaker
+          ref: 1162ba5e46c737cebf1edc21c7f74beacb825d5c
           path: sonar/playmaker
       - uses: actions/setup-python@v5
         with:
@@ -48,7 +53,7 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r requirements.txt pytest
+          .venv/bin/pip install --require-hashes -r requirements.lock
       - name: Run the suite
         env:
           QT_QPA_PLATFORM: offscreen

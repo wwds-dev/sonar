@@ -62,3 +62,45 @@ def test_the_engine_saves_leave_a_daily_backup_behind(tmp_path):
     baks = list(tmp_path.glob("state.json.bak.*"))
     assert len(baks) == 1
     assert json.loads(baks[0].read_text())["bankroll"] == e.bankroll
+
+
+# --------------------------------------------------------------------------- #
+# A copy off the data folder (the .bak files share its disk)
+# --------------------------------------------------------------------------- #
+def test_the_daily_copy_also_goes_where_backup_to_points(tmp_path, monkeypatch):
+    data, off = tmp_path / "data", tmp_path / "offsite"
+    data.mkdir()
+    monkeypatch.delenv(paths.BACKUP_DIR_ENV, raising=False)
+    monkeypatch.setattr(paths, "user_data_base", lambda: data)
+    (data / "backup-to").write_text(str(off) + "\n")
+    f = data / "state.json"
+    f.write_text('{"bankroll": 1}')
+    paths.daily_backup(f, today="2026-10-10")
+    assert (off / "state.json.bak.2026-10-10").read_text() == '{"bankroll": 1}'
+
+
+def test_the_environment_wins_and_old_copies_are_pruned(tmp_path, monkeypatch):
+    data, off = tmp_path / "data", tmp_path / "env-offsite"
+    data.mkdir()
+    monkeypatch.setattr(paths, "user_data_base", lambda: data)
+    monkeypatch.setenv(paths.BACKUP_DIR_ENV, str(off))
+    f = data / "portfolio.json"
+    for day in range(1, paths.OFFSITE_KEEP + 6):
+        f.write_text(str(day))
+        paths.daily_backup(f, today=f"2026-08-{day:02d}" if day <= 31 else f"2026-09-{day-31:02d}")
+    assert len(list(off.glob("portfolio.json.bak.*"))) == paths.OFFSITE_KEEP
+
+
+def test_no_destination_means_no_copy_and_an_unwritable_one_never_blocks(tmp_path, monkeypatch, capsys):
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(paths, "user_data_base", lambda: data)
+    monkeypatch.delenv(paths.BACKUP_DIR_ENV, raising=False)
+    assert paths.offsite_dir() is None
+    blocker = tmp_path / "a-file"
+    blocker.write_text("x")
+    monkeypatch.setenv(paths.BACKUP_DIR_ENV, str(blocker / "sub"))
+    f = data / "state.json"
+    f.write_text("{}")
+    assert paths.daily_backup(f, today="2026-10-10") is not None
+    assert "could not copy" in capsys.readouterr().err

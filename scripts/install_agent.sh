@@ -82,6 +82,14 @@ fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$PROJECT_DIR/data/logs" "$DATA_DIR"
 
+# The daily copies of the book also go somewhere a backup job covers — the
+# .bak files beside it share its disk (sonar/paths.py, offsite_dir). Written
+# once; edit "$DATA_DIR/backup-to" to change it, empty it to stop.
+BACKUP_DIR="${SONAR_BACKUP_DIR:-$HOME/Documents/lab/backups/sonar-data}"
+if [[ ! -f "$DATA_DIR/backup-to" ]]; then
+  echo "$BACKUP_DIR" > "$DATA_DIR/backup-to"
+fi
+
 # launchd does not expand ~ or environment variables inside these keys, so the
 # absolute paths are substituted in here rather than referenced.
 sed -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
