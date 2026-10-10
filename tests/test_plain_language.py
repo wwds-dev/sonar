@@ -165,3 +165,111 @@ def test_the_model_vs_market_line_has_no_jargon_in_plain_wording(window, monkeyp
     monkeypatch.setattr(words, "plain", lambda: False)
     window._refresh_terminal(snap)
     assert "Brier" in window.mvm.text() and "STALLED" in window.mvm.text()
+
+
+# --------------------------------------------------------------------------- #
+# UX U-7 remainder: Practice, Sports and Macro
+# --------------------------------------------------------------------------- #
+def _set_wording(window, monkeypatch, plain: bool) -> None:
+    from ui import words
+    monkeypatch.setattr(words, "plain", lambda: plain)
+    window._apply_wording()
+
+
+_SPORTS_JARGON = ["margin", "fair", "book spread", "best edge", "EV / unit", "stake"]
+_MACRO_JARGON = ["10y", "curve", "fed funds", "VIX", "real 10y", "CPI y/y"]
+
+
+@pytest.mark.parametrize("key", _SPORTS_JARGON)
+def test_sports_captions_are_words_in_plain_and_keep_the_term_in_expert(
+        window, monkeypatch, key):
+    stat = window.playmaker_stats[key]
+    _set_wording(window, monkeypatch, True)
+    assert stat.cap.text() != key.upper()
+    assert stat.cap.text() == ui_app.STAT_WORDS[key].upper()
+    _set_wording(window, monkeypatch, False)
+    assert stat.cap.text() == key.upper()
+
+
+@pytest.mark.parametrize("key", _MACRO_JARGON)
+def test_macro_captions_are_words_in_plain_and_keep_the_term_in_expert(
+        window, monkeypatch, key):
+    stat = window.macro_stats[key]
+    _set_wording(window, monkeypatch, True)
+    assert stat.cap.text() != key.upper()
+    assert stat.cap.text() == ui_app.STAT_WORDS[key].upper()
+    _set_wording(window, monkeypatch, False)
+    assert stat.cap.text() == key.upper()
+
+
+def test_the_new_plain_captions_claim_no_advantage():
+    """A gap between two bookmakers is a disagreement, not an edge."""
+    import re
+    for key in _SPORTS_JARGON + _MACRO_JARGON:
+        caption = ui_app.STAT_WORDS[key]
+        assert not re.search(r"\b(edge|advantage|beat|profit|win)", caption), caption
+
+
+def test_practice_controls_say_what_they_do_in_plain_wording(window, monkeypatch):
+    _set_wording(window, monkeypatch, True)
+    assert window.lab_news.text().startswith("also count how much attention")
+    assert "EDGAR" not in window.lab_catalyst.text()
+    for cap in window.lab_captions.values():
+        assert not cap.isHidden() and cap.text()
+    assert "days" in window.lab_captions["horizon"].text()
+    assert "bars" in window.lab_captions["step"].text()
+    _set_wording(window, monkeypatch, False)
+    assert window.lab_news.text() == "include attention (one extra request per symbol)"
+    assert "EDGAR" in window.lab_catalyst.text()
+    for cap in window.lab_captions.values():
+        assert cap.isHidden()
+
+
+_RUN = {"n": 120, "symbols": 3, "hit_rate": 0.41, "predicted": 0.40,
+        "std_error": 0.03, "delta": 0.01, "expectancy_r": 0.0,
+        "implied_edge_sigma": 0.001, "avg_bars_held": 4.0, "verdict": "within noise",
+        "attribution": {
+            "n": 120, "blend_ic": -0.02, "fdr_q": 0.1,
+            "components": [
+                {"component": "momentum", "weight": 0.3, "ic": -0.09,
+                 "spread": {"spread": -0.05, "se": 0.01},
+                 "blend_ic_without": 0.01, "verdict": "INVERTED", "why": "w"},
+                {"component": "news", "weight": 0.2, "ic": 0.0,
+                 "spread": {"spread": 0.0, "se": 0.02},
+                 "blend_ic_without": -0.02, "verdict": "WEAK", "why": "w"}]}}
+
+
+def test_the_attribution_table_is_in_words_for_plain_readers(monkeypatch):
+    from ui import words
+    monkeypatch.setattr(words, "plain", lambda: True)
+    html = ui_app.MainWindow._lab_html(_RUN)
+    head = html[html.index("<th"):html.index("</tr>", html.index("<th"))]
+    for jargon in ("IC", "top−bottom", "blend without it"):
+        assert jargon not in head.replace("ranking skill (IC)", ""), jargon
+    assert "ranking skill (IC)" in head and "best fifth − worst fifth" in head
+    assert "score without it" in head
+    assert "backwards</b>" in html and "INVERTED" not in html
+    assert "Average drift" in html and "Implied drift" not in html
+    # it explains the terms it had to keep, once, under the table
+    assert "leave-one-out" in html and "quintile spread" in html
+    assert "does not mean the piece makes money" in html
+    assert "judged together" in html and "Benjamini" not in html
+
+
+def test_the_attribution_table_keeps_every_term_for_expert_readers(monkeypatch):
+    from ui import words
+    monkeypatch.setattr(words, "plain", lambda: False)
+    html = ui_app.MainWindow._lab_html(_RUN)
+    for term in ("IC", "top−bottom", "blend without it", "INVERTED", "WEAK",
+                 "Implied drift", "Benjamini-Hochberg"):
+        assert term in html, term
+    assert "How to read it" not in html
+
+
+def test_switching_wording_redraws_the_last_practice_result(window, monkeypatch):
+    window._lab_done(_RUN)
+    _set_wording(window, monkeypatch, True)
+    assert "backwards" in window.lab_out.toPlainText()
+    _set_wording(window, monkeypatch, False)
+    assert "INVERTED" in window.lab_out.toPlainText()
+    window._lab_result = None

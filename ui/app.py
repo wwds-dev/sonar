@@ -395,6 +395,22 @@ STAT_WORDS = {
     "closed": "closed so far",
     "win rate": "how often it won",
     "profile": "risk setting",
+    # Sports (Playmaker). "edge" is deliberately not used: a gap between two
+    # bookmakers is a disagreement, not an advantage (UX U-13).
+    "margin": "bookmaker's cut",
+    "fair": "chance without the cut",
+    "book spread": "how much books disagree",
+    "best edge": "biggest price gap",
+    "EV / unit": "expected per 1 staked",
+    "stake": "bet size the formula allows",
+    # Macro.
+    "10y": "US 10-year borrowing rate",
+    "curve": "long rate minus short rate",
+    "fed funds": "US central-bank rate",
+    "VIX": "expected market swings",
+    "real 10y": "10-year rate after inflation",
+    "CPI y/y": "prices vs a year ago",
+    "unemployment": "people out of work",
 }
 
 #: Control labels with jargon in them, as (plain, expert). The expert wording
@@ -402,6 +418,33 @@ STAT_WORDS = {
 CONTROL_WORDS = {
     "read_btn": ("AI commentary on this hour", "LLM read on this hour"),
     "protocol_box": ("test the score automatically", "protocol mode"),
+    "lab_news": ("also count how much attention each name gets "
+                 "(one extra request per symbol)",
+                 "include attention (one extra request per symbol)"),
+    "lab_catalyst": ("also count earnings dates (US shares, from SEC filings)",
+                     "include earnings history (US equities, via EDGAR)"),
+}
+
+#: One line under each Practice control, plain wording only: the expert reader
+#: has the control's own name, the plain reader needs to be told what it does.
+PRACTICE_CAPTIONS = {
+    "horizon": "How many days a trade is given to reach its target or stop.",
+    "step": "Start a new test trade every this many daily bars. Bigger is "
+            "faster, with fewer trades.",
+}
+
+#: The attribution table, as (plain, expert) for each heading and verdict.
+ATTRIBUTION_HEADS = {
+    "component": ("component", "component"),
+    "weight": ("weight", "weight"),
+    "ic": ("ranking skill (IC)", "IC"),
+    "spread": ("best fifth − worst fifth", "top−bottom"),
+    "blend": ("score without it", "blend without it"),
+    "verdict": ("verdict", "verdict"),
+}
+ATTRIBUTION_VERDICTS = {
+    "KEEP": "keep", "WEAK": "weak", "DROP": "drop", "INVERTED": "backwards",
+    "UNCLEAR": "unclear",
 }
 
 
@@ -2295,6 +2338,7 @@ class MainWindow(QMainWindow):
         self.lab_universe.addItem("Whole watchlist", "all")
         for cls in ("Equity", "Index", "Forex", "Crypto", "Commodity"):
             self.lab_universe.addItem(cls, cls)
+        self._lab_result = None          # the last run, re-rendered on a wording switch
         self.lab_range = QComboBox()
         for r in ("1y", "2y", "5y", "10y"):
             self.lab_range.addItem(r, r)
@@ -2320,6 +2364,11 @@ class MainWindow(QMainWindow):
         form.addWidget(self.lab_range, 1, 1)
         form.addWidget(self.lab_horizon, 1, 2)
         form.addWidget(self.lab_step, 1, 3)
+        self.lab_captions = {}
+        for key, col in (("horizon", 2), ("step", 3)):
+            cap = label(PRACTICE_CAPTIONS[key], "faint", theme.figure(8), wrap=True)
+            self.lab_captions[key] = cap
+            form.addWidget(cap, 2, col)
         hl.addLayout(form)
         hl.addWidget(self.lab_news)
         hl.addWidget(self.lab_catalyst)
@@ -2617,6 +2666,7 @@ class MainWindow(QMainWindow):
         self.lab_btn.setEnabled(True)
         n = r.get("n", 0)
         self.lab_status.setText(f"{n:,} resolved setups" if n else "no result")
+        self._lab_result = r
         self.lab_out.setHtml(self._lab_html(r))
 
     @staticmethod
@@ -2634,7 +2684,8 @@ class MainWindow(QMainWindow):
             ("Predicted by the barrier maths", f"{pred * 100:.2f}%"),
             ("Difference", f"{delta * 100:+.2f} pts  (±{2 * se * 100:.2f} at 2 s.e.)"),
             ("Expectancy", f"{r['expectancy_r']:+.3f} R per setup"),
-            ("Implied drift", f"{r['implied_edge_sigma']:+.4f} σ"),
+            (words.pick(("Average drift, in normal-move units", "Implied drift")),
+             f"{r['implied_edge_sigma']:+.4f} σ"),
             ("Average hold", f"{r['avg_bars_held']:.1f} bars"),
         ]
         body = "".join(
@@ -2677,6 +2728,15 @@ class MainWindow(QMainWindow):
                        "UNCLEAR": "#7c8798", "not measured": "#5c6370"}
 
     @staticmethod
+    def _verdict_word(verdict: str | None) -> str:
+        """The component verdict as the reader's wording shows it. The colour
+        lookup keeps the raw key; only the displayed word changes."""
+        if verdict is None:
+            return "—"
+        return ATTRIBUTION_VERDICTS.get(verdict, verdict) if words.plain() \
+            else verdict
+
+    @staticmethod
     def _attribution_html(a: dict) -> str:
         """Which components earned their weight — the part you act on.
 
@@ -2690,9 +2750,9 @@ class MainWindow(QMainWindow):
                     f"<p style='color:#7c8798'>{a.get('note', 'not enough setups')}"
                     "</p>")
 
-        head = "".join(f"<th style='text-align:left;padding-right:14px'>{h}</th>"
-                       for h in ("component", "weight", "IC", "top−bottom",
-                                 "blend without it", "verdict"))
+        head = "".join(
+            f"<th style='text-align:left;padding-right:14px'>{words.pick(h)}</th>"
+            for h in ATTRIBUTION_HEADS.values())
         body = []
         for c in rows:
             sp = c.get("spread") or {}
@@ -2707,20 +2767,39 @@ class MainWindow(QMainWindow):
                  if spread is not None and se else "—"),
                 (f"{c['blend_ic_without']:+.3f}"
                  if c.get("blend_ic_without") is not None else "—"),
-                f"<b style='color:{colour}'>{c.get('verdict', '—')}</b>",
+                f"<b style='color:{colour}'>{MainWindow._verdict_word(c.get('verdict'))}</b>",
             )
             body.append("<tr>" + "".join(
                 f"<td style='padding:2px 14px 2px 0'>{x}</td>" for x in cells) + "</tr>")
 
         out = ["<h4 style='margin:16px 0 4px'>Component attribution</h4>",
                f"<table>{head}{''.join(body)}</table>"]
+        if words.plain():
+            out.append(
+                "<p style='color:#7c8798'>How to read it. <b>Ranking skill</b> "
+                "(IC) is how closely a component's order of setups matches the "
+                "order of what happened: 0 means its order says nothing, a "
+                "negative number means it ranks backwards. <b>Best fifth − worst "
+                "fifth</b> (the quintile spread) is the hit-rate gap between "
+                "the setups it scored highest and lowest, in points. <b>Score "
+                "without it</b> (leave-one-out) re-computes the blended score "
+                "with that one component removed: if that number is higher, the "
+                "component was dragging the score down. <b>Keep</b> means its "
+                "ranking skill and its best-vs-worst gap are both bigger than "
+                "chance would give; <b>weak</b> that both are small; <b>drop</b> "
+                "that removing it does not lower the score's ranking skill; "
+                "<b>backwards</b> that it is clearly negative; <b>unclear</b> "
+                "that the readings disagree. Keep grades a piece of the score "
+                "against past setups. It does not mean the piece makes money.</p>")
 
         blend = a.get("blend_ic")
         if blend is not None:
             note = ("" if blend > 0 else
-                    " — a negative blend IC means the score as a whole is ranking "
-                    "the wrong way round, not merely failing to rank")
-            out.append(f"<p style='color:#7c8798'>Blended score IC "
+                    f" — a negative blend {words.pick(('ranking skill', 'IC'))} "
+                    "means the score as a whole is ranking the wrong way round, "
+                    "not merely failing to rank")
+            out.append(f"<p style='color:#7c8798'>Blended score "
+                       f"{words.pick(('ranking skill (IC)', 'IC'))} "
                        f"<b>{blend:+.3f}</b> over {a.get('n', 0):,} resolved "
                        f"setups{note}.</p>")
 
@@ -2732,9 +2811,14 @@ class MainWindow(QMainWindow):
 
         if a.get("catalyst"):
             out.append(f"<p style='color:#5c6370'>catalyst — {a['catalyst']}</p>")
-        out.append("<p style='color:#5c6370'>p-values go through Benjamini-Hochberg "
-                   f"together at q={a.get('fdr_q', 0.1)}: testing four components and "
-                   "reporting the best one is how noise gets published.</p>")
+        judged = ("the four components are judged together, with a stricter bar "
+                  "for each than if it stood alone"
+                  if words.plain() else
+                  "p-values go through Benjamini-Hochberg together at "
+                  f"q={a.get('fdr_q', 0.1)}")
+        out.append(f"<p style='color:#5c6370'>{judged[0].upper() + judged[1:]}: "
+                   "testing four components and reporting the best one is how "
+                   "noise gets published.</p>")
         return "".join(out)
 
     # -- playmaker ------------------------------------------------------------ #
@@ -3228,6 +3312,10 @@ class MainWindow(QMainWindow):
         self.tabs.set_wording(plain)
         self.asset_header.retitle()
         self.assets_banner.setVisible(plain)
+        for cap in self.lab_captions.values():
+            cap.setVisible(plain)
+        if self._lab_result is not None:
+            self.lab_out.setHtml(self._lab_html(self._lab_result))
         for stat in self.findChildren(Stat):
             stat.retitle()
         for attr, (easy, expert) in CONTROL_WORDS.items():
