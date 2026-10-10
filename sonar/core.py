@@ -313,7 +313,10 @@ class Live:
         drift — and only that — is allowed to move P(profit) off its baseline.
         """
         rows = asset_payload.get("assets", [])
-        prices = {a["symbol"]: a["price"] for a in rows}
+        # Merged before the empty test: a board the filter emptied (every row
+        # too volatile for the profile, as in a crash) still has prices for the
+        # book, and its stops must still be watched.
+        prices = self._book_prices({a["symbol"]: a["price"] for a in rows})
         if not prices:
             return
         book = book or self.book
@@ -327,6 +330,19 @@ class Live:
             payload = self._mark_book_locked(book, rows, prices, force_point)
             with self.lock:
                 self.calibration, self.positions = payload
+
+    def _book_prices(self, board: dict[str, float]) -> dict[str, float]:
+        """Prices for the book: the board's, plus the last known price of every
+        instrument the risk filter hides. A held position used to fall back to
+        its entry when its row was hidden — a 30% loss closed as zero, its
+        barriers no longer watched, its equity marked flat."""
+        return {**self.asset_scanner.last_prices, **board}
+
+    def _book_sparks(self, rows: list[dict]) -> dict[str, list[float]]:
+        """Recent closes per instrument for the open-position cards, hidden
+        rows included — a hidden position was drawn without its history."""
+        return {**self.asset_scanner.last_sparks,
+                **{a["symbol"]: a.get("spark") or [] for a in rows}}
 
     def _mark_book_locked(self, book, rows: list[dict], prices: dict,
                           force_point: bool) -> tuple[dict, dict]:
@@ -346,7 +362,7 @@ class Live:
         self.asset_scanner.calibrated = report["calibrated"]
         # Each open row carries its instrument's recent closes, so the landing
         # page can draw the position without a request of its own.
-        sparks = {a["symbol"]: a.get("spark") or [] for a in rows}
+        sparks = self._book_sparks(rows)
         open_rows = book.open_rows(prices)
         for r in open_rows:
             r["spark"] = sparks.get(r["symbol"], [])
@@ -469,7 +485,7 @@ class Live:
             return {"ok": False, "message": self._READ_ONLY, "position": None}
         with self.lock:
             rows = list(self.assets.get("assets", []))
-        prices = {a["symbol"]: a["price"] for a in rows}
+        prices = self._book_prices({a["symbol"]: a["price"] for a in rows})
         book = self.book
         with book.lock:
             # Found and closed under one lock: a barrier hit on the engine
@@ -478,7 +494,13 @@ class Live:
             if pos is None:
                 return {"ok": False, "message": "no such open position",
                         "position": None}
-            closed = book.close(pos.id, prices.get(pos.symbol, pos.entry), "MANUAL")
+            price = prices.get(pos.symbol)
+            if not price:
+                # Never at the entry price: that books whatever happened as zero.
+                return {"ok": False, "position": None,
+                        "message": f"no price for {pos.symbol} yet — try again "
+                                   "after the next scan"}
+            closed = book.close(pos.id, price, "MANUAL")
             self._mark_book({"assets": rows}, force_point=True, book=book)
         return {"ok": True, "message": f"closed {closed.symbol}",
                 "position": asdict(closed)}
@@ -738,8 +760,8 @@ class Live:
         # engine last saw (the holder's, while it followed), never written.
         with self.lock:
             rows = list(self.assets.get("assets", []))
-        prices = {a["symbol"]: a["price"] for a in rows if a.get("price")}
-        sparks = {a["symbol"]: a.get("spark") or [] for a in rows}
+        prices = self._book_prices({a["symbol"]: a["price"] for a in rows if a.get("price")})
+        sparks = self._book_sparks(rows)
         open_rows = self.book.open_rows(prices)
         for r in open_rows:
             r["spark"] = sparks.get(r["symbol"], [])

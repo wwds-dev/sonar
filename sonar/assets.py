@@ -338,6 +338,12 @@ class AssetScanner:
         # positions. Zero until enough have resolved — never a guess.
         self.edge_sigma = 0.0
         self.calibrated = False
+        # The last price seen for every instrument fetched, shown or not. The
+        # risk filter hides rows from the board, never from the book: a held
+        # position whose instrument the profile hides must still be marked,
+        # watched for its barriers and closed at its own price.
+        self.last_prices: dict[str, float] = {}
+        self.last_sparks: dict[str, list[float]] = {}
         self._at = 0.0
         self._key: tuple = ()
         self._payload: dict = {"status": "starting", "assets": []}
@@ -404,6 +410,10 @@ class AssetScanner:
             fetched_at, got = entry
             age = now - fetched_at
             price, currency, closes = got
+            if price:
+                self.last_prices[symbol] = price
+                self.last_sparks[symbol] = [
+                    round(c, 4) for c in closes[-(60 if hz.long_horizon else 20):]]
             prev = closes[-2]                        # yesterday's daily close
             day = price / prev - 1 if prev else 0.0
             # Momentum over the horizon's window. `hz.chart_range` is sized to
