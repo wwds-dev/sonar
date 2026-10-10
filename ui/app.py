@@ -1085,6 +1085,11 @@ class MainWindow(QMainWindow):
         self.tabs.add(self._macro_tab(), "Big picture", "Macro",
                       "The backdrop — rates, volatility, jobs — and what the "
                       "central banks have been saying.")
+        # The manual stays on the main path; the two experiments come after it,
+        # under their own heading (docs/specs/v1-product.md).
+        self.tabs.add(self._learn_tab(), "Learn", "",
+                      "The manual and the glossary. It assumes no finance "
+                      "background — start at §1.")
         self._lab_scroll = _scrolled(self._lab_tab())
         self._lab_index = self.tabs.add(
             self._lab_scroll, "Practice", "Lab",
@@ -1094,9 +1099,7 @@ class MainWindow(QMainWindow):
         self.tabs.add(_scrolled(self._playmaker_tab()), "Sports", "Playmaker",
                       "Pricing a sports bet: what the bookmakers' margin is, "
                       "and where they disagree with each other.")
-        self.tabs.add(self._learn_tab(), "Learn", "",
-                      "The manual and the glossary. It assumes no finance "
-                      "background — start at §1.")
+        self.tabs.set_group(self._lab_index, "Lab")
         # ⌘1…⌘8 reach every page in rail order: the rail was mouse-only.
         for i in range(min(self.tabs.count(), 9)):
             QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self,

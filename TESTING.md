@@ -10,7 +10,7 @@ what it was measured on.
 
 ## 0. Where we are
 
-**1,724 tests**, 80% of statements and branches across `sonar/` and `ui/`
+**1,726 tests**, 80% of statements and branches across `sonar/` and `ui/`
 (2026-10-10; 71% on 2026-09-22, 66% of `sonar/` alone on 2026-09-16), plus 30
 opt-in `-m network` checks of every live source. Run the suite **twice** before
 a push — natively and under `QT_QPA_PLATFORM=offscreen`, which is how CI runs

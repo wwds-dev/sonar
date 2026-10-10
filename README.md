@@ -25,6 +25,8 @@ financial advice.
 
 ## Eight tabs
 
+Six on the main path, then the manual, then two experiments under a **Lab** heading at the foot of the rail (Practice, with the hourly BTC model, and Sports).
+
 A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no web view.
 
 Each tab carries **two names**: the plain one it is called by, and — under it in
@@ -41,9 +43,9 @@ line and clipped.
 | **News**  \n<sub>WIRE</sub> | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
 | **My trades**  \n<sub>BOOK</sub> | Open paper positions, the calibration table, and the backtest button | — |
 | **Big picture**  \n<sub>MACRO</sub> | Regime: curve, VIX, real rates, unemployment | No |
+| **Learn** | The manual and the glossary **inside the app** — `static/docs.html` rendered by Qt, with a contents list and a search box that takes one unfamiliar word. Same file the browser serves, so the prose cannot drift; `ui/learn.py` does the translation | — |
 | **Practice**  \n<sub>LAB</sub> | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups. At its foot, the **hourly BTC up/down model** — the model prices each hour, compares to Polymarket, takes at most one simulated bet with its own practice cash, and grades itself against the market on every hour, traded or not. It was the landing page until Oct 2026 | **Yes** — the hourly model is the only independent one |
 | **Sports**  \n<sub>PLAYMAKER</sub> | Sports prop pricing across **seven sports** (NFL, College Football, NBA, MMA/UFC, International Football, Golf, Cycling) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
-| **Learn** | The manual and the glossary **inside the app** — `static/docs.html` rendered by Qt, with a contents list and a search box that takes one unfamiliar word. Same file the browser serves, so the prose cannot drift; `ui/learn.py` does the translation | — |
 
 Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
 Sentinel's NFL agent early on but was never a standalone project, and the scaffold
@@ -788,7 +790,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,724 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,726 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 

@@ -44,6 +44,7 @@ ITEM_GAP = 2
 PAD_X = 10          # inside an item
 TEXT_X = 40         # icon at 12, text after it
 ACCENT_W = 3        # the selected item's left bar
+GROUP_GAP = 26      # the room a group label takes between two groups
 
 
 class PlainTabBar(QWidget):
@@ -67,6 +68,8 @@ class PlainTabBar(QWidget):
         self._current = 0
         self._hover = -1
         self._collapsed = False
+        self._group_at: int | None = None       # first item of the trailing group
+        self._group_name = ""
 
     # -- model ------------------------------------------------------------- #
     def append(self, title: str, icon_key: str) -> int:
@@ -78,6 +81,17 @@ class PlainTabBar(QWidget):
 
     def count(self) -> int:
         return len(self._titles)
+
+    def set_group(self, first_index: int, name: str) -> None:
+        """Items from ``first_index`` on form a labelled group: the experiments,
+        kept off the main path by a gap and a small heading, never hidden."""
+        self._group_at, self._group_name = first_index, name.upper()
+        self.updateGeometry()
+        self.update()
+
+    def _top(self, index: int) -> int:
+        gap = GROUP_GAP if self._group_at is not None and index >= self._group_at else 0
+        return index * (ITEM_H + ITEM_GAP) + gap
 
     def setTabText(self, index: int, text: str) -> None:
         self._titles[index] = text
@@ -107,19 +121,21 @@ class PlainTabBar(QWidget):
 
     # -- geometry ---------------------------------------------------------- #
     def tabRect(self, index: int) -> QRect:
-        return QRect(0, index * (ITEM_H + ITEM_GAP), self.width(), ITEM_H)
+        return QRect(0, self._top(index), self.width(), ITEM_H)
 
     def sizeHint(self) -> QSize:
         rows = max(1, self.count())
-        return QSize(50, rows * ITEM_H + (rows - 1) * ITEM_GAP)
+        gap = GROUP_GAP if self._group_at is not None and self._group_at < rows else 0
+        return QSize(50, rows * ITEM_H + (rows - 1) * ITEM_GAP + gap)
 
     def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
 
     def _index_at(self, pos) -> int:
-        row = pos.y() // (ITEM_H + ITEM_GAP)
-        return row if 0 <= row < self.count() and \
-            self.tabRect(row).contains(pos) else -1
+        for row in range(self.count()):
+            if self.tabRect(row).contains(pos):
+                return row
+        return -1
 
     # -- interaction ------------------------------------------------------- #
     def mousePressEvent(self, e) -> None:
@@ -164,6 +180,16 @@ class PlainTabBar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.TextAntialiasing, True)
         ratio = self.devicePixelRatioF() or 2.0
+        if self._group_at is not None and self._group_at < self.count():
+            top = self._top(self._group_at) - GROUP_GAP
+            if self._collapsed:
+                p.setPen(theme.GRID)
+                p.drawLine(10, top + GROUP_GAP // 2, self.width() - 10, top + GROUP_GAP // 2)
+            else:
+                p.setFont(theme.text(8))
+                p.setPen(theme.FAINT)
+                p.drawText(QRect(PAD_X + 4, top, self.width() - 2 * PAD_X, GROUP_GAP),
+                           Qt.AlignLeft | Qt.AlignBottom, self._group_name)
         for i in range(self.count()):
             rect = self.tabRect(i)
             selected = i == self._current
@@ -316,6 +342,9 @@ class PlainTabs(QWidget):
         self._header_lay.addWidget(widget, 0, Qt.AlignTop)
 
     # -- QTabWidget surface -------------------------------------------------- #
+    def set_group(self, first_index: int, name: str) -> None:
+        self._bar.set_group(first_index, name)
+
     def add(self, widget, name: str, was: str = "", tip: str = "") -> int:
         index = self._stack.addWidget(widget)
         self._names[index] = (name, was)

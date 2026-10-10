@@ -181,3 +181,27 @@ def test_every_page_has_a_keyboard_shortcut(window):
     from PySide6.QtGui import QShortcut
     keys = {s.key().toString() for s in window.findChildren(QShortcut)}
     assert {f"Ctrl+{i}" for i in range(1, window.tabs.count() + 1)} <= keys
+
+
+# --------------------------------------------------------------------------- #
+# The Lab group (docs/specs/v1-product.md)
+# --------------------------------------------------------------------------- #
+def test_the_experiments_come_last_under_a_lab_heading(window):
+    bar = window.tabs._bar
+    names = [bar.tabText(i) for i in range(bar.count())]
+    assert names[:6] == ["My investments", "Screener", "News", "My trades",
+                         "Big picture", "Learn"]
+    assert names[6:] == ["Practice", "Sports"]
+    assert bar._group_at == 6 and bar._group_name == "LAB"
+
+
+def test_a_click_lands_on_the_right_row_across_the_group_gap(window):
+    from PySide6.QtCore import QPoint
+    bar = window.tabs._bar
+    window.resize(1500, 900)
+    for i in range(bar.count()):
+        c = bar.tabRect(i).center()
+        assert bar._index_at(QPoint(c.x(), c.y())) == i
+    gap = bar.tabRect(5).bottom() + 6        # inside the gap above the Lab group
+    assert bar._index_at(QPoint(20, gap)) == -1
+    assert bar.tabRect(6).top() - bar.tabRect(5).bottom() > 20
