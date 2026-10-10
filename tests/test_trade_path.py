@@ -194,19 +194,30 @@ def test_hitting_the_stop_closes_it_too(live):
     assert live.book.closed[0].outcome == "STOP"
 
 
-def test_an_unproven_book_claims_no_edge(live):
-    """`P(profit)` stays on its driftless baseline until calibration has enough
-    closed positions to say otherwise. One trade is not enough."""
-    pos = live.trade("BTC-USD", "LONG")["position"]
-    live._mark_book({"assets": [row(price=pos["target"] * 1.01)]})
-    assert live.calibration["calibrated"] is False
-    assert live.asset_scanner.edge_sigma == 0.0
+def test_a_winning_book_never_moves_p_profit(live, monkeypatch):
+    """The grade is a report, never an input. A book that hit its target
+    every time used to raise every row's P(profit) once twenty had closed."""
+    from sonar import assets, horizon, risk
+    from sonar.portfolio import Position
+    for i in range(40):
+        live.book.closed.append(Position(
+            id=f"w{i}", symbol="T", name="T", direction="LONG", units=1.0, entry=100.0,
+            target=101.5, stop=99.0, opened_at=0.0, cash_at_risk=1.0, confidence=50.0,
+            rr=1.5, p_profit=0.4, horizon="week", closed_at=1.0, exit=101.5,
+            pnl=1.5, outcome="TARGET"))
+    live._mark_book({"assets": [row(price=101.0)]})
+    assert live.calibration["beyond_noise"] is True
+    monkeypatch.setattr(assets, "_fetch", lambda s, rng: (
+        100.0, "USD", [100.0 + (i % 3) * 0.2 for i in range(300)]))
+    board = live.asset_scanner.payload([], horizon.HORIZONS["week"], risk.get("moderate"))
+    assert board["assets"]
+    assert all(a["plan"]["p_profit"] == pytest.approx(0.4) for a in board["assets"])
 
 
 def test_marking_republishes_the_calibration_report(live):
     live.trade("BTC-USD", "LONG")
     live._mark_book({"assets": [row(price=101.0)]})
-    assert "calibrated" in live.calibration
+    assert "beyond_noise" in live.calibration
 
 
 @pytest.mark.parametrize("call", [

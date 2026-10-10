@@ -336,8 +336,6 @@ class AssetScanner:
         self.events = events
         # Drift, in horizon-sigmas, measured by sonar.calibration from closed
         # positions. Zero until enough have resolved — never a guess.
-        self.edge_sigma = 0.0
-        self.calibrated = False
         # The last price seen for every instrument fetched, shown or not. The
         # risk filter hides rows from the board, never from the book: a held
         # position whose instrument the profile hides must still be marked,
@@ -465,9 +463,7 @@ class AssetScanner:
             # long and a short with symmetric barriers, so the row can show the
             # setup honestly without asserting a side — the buy and short
             # buttons build the actual plan.
-            plan = scoring.build_plan(
-                price, vol, days, "LONG",
-                edge_sigma=self.edge_sigma, calibrated=self.calibrated)
+            plan = scoring.build_plan(price, vol, days, "LONG")
             s = AssetSuggestion(
                 symbol=symbol, name=name, cls=cls, price=round(price, 4),
                 currency=currency, day_change=round(day, 4),

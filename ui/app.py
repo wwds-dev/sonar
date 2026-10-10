@@ -575,7 +575,6 @@ class AssetRow(QFrame):
         plan = a.get("plan") or {}
         rr = plan.get("rr", 0)
         pp = plan.get("p_profit", 0) * 100
-        proven = plan.get("calibrated")
         traded = cell("plan",
                       f"win {rr:.2g}× the risk" if plain
                       else f"{rr:.2f}  ·  {pp:.0f}%",
@@ -586,11 +585,9 @@ class AssetRow(QFrame):
             f"Target {rr:.2g} times as far away as the stop, both scaled to how\n"
             f"much this market moves. The chance of reaching the target first\n"
             f"is {pp:.0f}%.\n\n"
-            + ("Shifted by an edge measured from positions that actually closed."
-               if proven else
-               "That is 1/(1+reward:risk) exactly — the no-edge baseline, where\n"
-               "expected value is zero. It moves only when the Book tab has\n"
-               "measured a real edge, and it has not yet."))
+            "That is 1/(1+reward:risk) exactly — the no-edge baseline, where\n"
+            "expected value is zero. My trades grades whether closed positions\n"
+            "kept to these odds; that grade never changes this number.")
         lay.addWidget(traded)
 
         # -- worth a look --------------------------------------------------- #
@@ -2039,7 +2036,7 @@ class MainWindow(QMainWindow):
             rows.append(f'scores {b["lo"]}–{_band_top(b)}:  {b["n"]} closed · {wins} won '
                         f'({b["hit_rate"]*100:.0f}%) · the plan promised '
                         f'{b["expected"]*100:.0f}%{note}')
-        if cal.get("calibrated") and cal.get("overall_hit_rate") is not None:
+        if cal.get("enough") and cal.get("overall_hit_rate") is not None:
             line = (f'all {n}:  {cal["overall_hit_rate"]*100:.0f}% won against '
                     f'{(cal.get("advertised_rate") or 0)*100:.0f}% promised')
             if cal.get("score_ic") is not None:
@@ -2048,6 +2045,11 @@ class MainWindow(QMainWindow):
         self.grade_rows.setText("\n".join(rows) or
                                 "no closed positions yet — nothing to grade")
         self.grade_count.setText(f"{n} graded" if n else "")
+        manual = cal.get("n_manual", 0)
+        if manual:
+            rows.append(f"{manual} closed by hand — not graded: the odds are about "
+                        "reaching the target or the stop")
+            self.grade_rows.setText("\n".join(rows))
 
         parts = []
         if n < need:

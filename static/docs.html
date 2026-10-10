@@ -461,7 +461,8 @@
     only <em>drift</em> does, and drift has to be measured before it is used.</div>
   <p>That is why P(PROF) reads a flat <b>40%</b> across the board and is drawn in
     grey: with R:R fixed at 1.5 and no measured edge, that is the honest number.
-    It moves only when <a href="#grading">calibration</a> finds real drift.</p>
+    <a href="#grading">Calibration</a> grades whether closed positions kept to
+    these odds; it never moves them.</p>
   <p>There is deliberately <b>no Bullish/Bearish lean</b>. There used to be; the
     research below found the momentum behind it was worth nothing, so it was
     deleted rather than tuned. The NEWS column shows how unusual today's coverage
@@ -804,11 +805,21 @@ APCA_API_SECRET_KEY=...</code></pre>
     position's score and whether it won, across all of them, with an error bar.
     (It used to demand a strictly rising hit rate across every bucket, which
     one noisy bucket always breaks even when a real gradient exists; the
-    correlation sees through the wobble and refuses claims inside two standard
-    errors.)</p>
+    correlation sees through the wobble and refuses claims inside three standard
+    errors — three, because the question is asked again after every close.)</p>
   <p>Below <b>20</b> closed positions it reports nothing at all. A five-win
     streak is not an edge, and a young install showing an empty table is the
-    honest state rather than a bug.</p>
+    honest state rather than a bug. Twenty is enough to describe the book; at
+    twenty the hit rate's 95% range is still about ±21 points.</p>
+  <p>The grade is a <b>report, never an input</b>. It used to turn a hit rate
+    above the promised odds into a "drift" and raise every row's P(profit) with
+    it. That was removed: protocol entries take a coin-flip direction, so a
+    higher hit rate there comes from how prices jump past barriers, not from a
+    direction anyone could trade — and a test repeated after every close finds
+    an "edge" in pure noise a quarter to a third of the time.</p>
+  <p>Only positions that reached their <b>target</b> or <b>stop</b> are graded,
+    because that is what P(profit) predicts. One you closed by hand while in
+    profit never touched its target; it is counted separately, not as a win.</p>
   <p>Two things keep the record clean. The warm-up rows that seed the equity
     chart with real BTC variance are <b>excluded from the stats</b> — they are
     synthetic bets at the model's own fair price, and counting them would give

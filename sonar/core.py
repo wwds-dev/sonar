@@ -327,8 +327,8 @@ class Live:
         barrier, then feed the resulting outcomes back into the score.
 
         This is the loop that makes the screener falsifiable: positions resolve,
-        calibration measures whether high scores actually won, and the measured
-        drift — and only that — is allowed to move P(profit) off its baseline.
+        and calibration measures whether high scores actually won. It reports;
+        it never moves P(profit) off its baseline.
         """
         rows = asset_payload.get("assets", [])
         # Merged before the empty test: a board the filter emptied (every row
@@ -374,10 +374,10 @@ class Live:
         # an entry, an exit, a barrier hit — so a step sits where it happened
         # rather than up to an hour later.
         book.log_equity(prices, force=force_point or bool(closed_now))
+        # A report, never an input: P(profit) stays on its 1/(1+R:R) baseline
+        # whatever the book's hit rate (owner decision 2026-10-10; see
+        # sonar/calibration.py for why a closed book cannot measure drift).
         report = calibration.report(book.closed)
-        # Nothing is claimed below the sample threshold; report() enforces that.
-        self.asset_scanner.edge_sigma = report["implied_edge_sigma"]
-        self.asset_scanner.calibrated = report["calibrated"]
         # Each open row carries its instrument's recent closes, so the landing
         # page can draw the position without a request of its own.
         sparks = self._book_sparks(rows)
@@ -840,8 +840,6 @@ class Live:
             self._asked_risk = None
         self.risk = self.engine.risk
         report = calibration.report(self.book.closed)
-        self.asset_scanner.edge_sigma = report["implied_edge_sigma"]
-        self.asset_scanner.calibrated = report["calibrated"]
         # Shown until the first scan marks the book: priced off the board this
         # engine last saw (the holder's, while it followed), never written.
         with self.lock:

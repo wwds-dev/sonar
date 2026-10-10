@@ -23,7 +23,7 @@ def pos(confidence, won, p_profit=0.4, rr=1.5):
 
 def test_no_trades_makes_no_claim():
     r = calibration.report([])
-    assert r["calibrated"] is False
+    assert r["beyond_noise"] is False
     assert r["n_settled"] == 0
     assert "Not enough" in r["verdict"]
 
@@ -31,16 +31,61 @@ def test_no_trades_makes_no_claim():
 def test_a_lucky_streak_is_not_an_edge():
     """Five wins in a row must not be reported as skill."""
     r = calibration.report([pos(90, True) for _ in range(5)])
-    assert r["calibrated"] is False
+    assert r["beyond_noise"] is False
     assert r["overall_hit_rate"] == 1.0        # observed...
     assert "Not enough" in r["verdict"]        # ...but not claimed
 
 
-def test_calibration_starts_at_the_threshold():
+def test_twenty_trades_describe_the_book_but_do_not_move_p_profit():
+    """At the threshold the book is described — and 50% against 40% promised
+    is well inside its ±21-point range."""
     r = calibration.report([pos(50, i % 2 == 0)
                             for i in range(calibration.MIN_SAMPLE)])
-    assert r["calibrated"] is True
-    assert r["n_settled"] == calibration.MIN_SAMPLE
+    assert r["enough"] is True and r["n_settled"] == calibration.MIN_SAMPLE
+    assert r["beyond_noise"] is False
+    lo, hi = r["hit_rate_ci"]
+    assert lo < 0.40 < hi
+    assert "within noise" in r["verdict"]
+
+
+def test_beating_the_odds_is_claimed_only_beyond_three_standard_errors():
+    """Asked again after every close: at two standard errors a book with no
+    edge eventually 'beats its odds' a quarter to a third of the time."""
+    r = calibration.report([pos(50, i < 70) for i in range(100)])   # 70% vs 40%
+    assert r["beyond_noise"] is True and "outside the noise" in r["verdict"]
+    # 52% of 100: outside a 95% range around 40%, inside a three-sigma one.
+    r = calibration.report([pos(50, i < 52) for i in range(100)])
+    assert r["hit_rate_ci"][0] > 0.40, "the shown 95% range excludes 40%"
+    assert r["beyond_noise"] is False, "but no claim is made at two sigma"
+
+
+def test_the_report_never_carries_a_drift():
+    """The grade is a report, never an input (owner decision 2026-10-10)."""
+    r = calibration.report([pos(50, i < 90) for i in range(100)])
+    assert "implied_edge_sigma" not in r and "calibrated" not in r
+
+
+def test_a_manual_close_in_profit_is_not_a_target_hit():
+    """The audit's case: 15 hand-closed positions each +$1, 5 stops. Graded on
+    the P&L sign that read 75% and switched the drift on for every row."""
+    manual = []
+    for _ in range(15):
+        p = pos(50, True)
+        p.outcome, p.pnl = "MANUAL", 1.0
+        manual.append(p)
+    r = calibration.report(manual + [pos(50, False) for _ in range(5)])
+    assert r["n_settled"] == 5 and r["n_manual"] == 15
+    assert r["overall_hit_rate"] == 0.0
+    assert r["beyond_noise"] is False
+    assert all(b["n"] == 0 for b in r["buckets"] if not (40 <= b["lo"] < 60))
+
+
+def test_the_wilson_interval_behaves_at_the_edges():
+    assert calibration.wilson(0, 0) is None
+    lo, hi = calibration.wilson(0, 20)
+    assert lo == 0.0 and 0.1 < hi < 0.2
+    lo, hi = calibration.wilson(10, 20)
+    assert lo == pytest.approx(0.299, abs=0.002) and hi == pytest.approx(0.701, abs=0.002)
 
 
 def test_results_matching_the_odds_read_as_no_edge():
@@ -48,7 +93,7 @@ def test_results_matching_the_odds_read_as_no_edge():
     trades = [pos(50, i < 40, p_profit=0.4) for i in range(100)]
     r = calibration.report(trades)
     assert r["overall_hit_rate"] == pytest.approx(0.4)
-    assert abs(r["implied_edge_sigma"]) < 0.05
+    assert r["beyond_noise"] is False
     assert "no edge" in r["verdict"].lower()
 
 

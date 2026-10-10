@@ -123,6 +123,7 @@ class _Closed:
     def __init__(self, confidence: float, won: bool, p_profit: float = 0.4):
         self.confidence = confidence
         self.pnl = 10.0 if won else -10.0
+        self.outcome = "TARGET" if won else "STOP"
         self.p_profit = p_profit
 
 
@@ -143,10 +144,10 @@ def test_the_grade_speaks_exactly_at_its_threshold(n):
     by one, either way, is the easiest regression here to miss."""
     r = calibration.report(_closed(n, 0.4))
     assert r["n_settled"] == n
-    assert r["calibrated"] is (n >= calibration.MIN_SAMPLE)
+    assert r["enough"] is (n >= calibration.MIN_SAMPLE)
+    assert r["beyond_noise"] is False, "40% against 40% promised is no claim"
     if n < calibration.MIN_SAMPLE:
         assert r["verdict"].startswith("Not enough resolved positions yet")
-        assert r["implied_edge_sigma"] == 0.0
 
 
 @pytest.mark.parametrize("closed", [
