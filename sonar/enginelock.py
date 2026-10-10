@@ -42,6 +42,27 @@ def _is_zombie(pid: int) -> bool:
     return out.stdout.strip().startswith("Z")
 
 
+def _started_at(pid: int) -> float | None:
+    """When ``pid`` started (epoch seconds), or None if it cannot be told."""
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=2)
+        text = out.stdout.strip()
+        return time.mktime(time.strptime(text)) if text else None
+    except (OSError, subprocess.SubprocessError, ValueError, OverflowError):
+        return None
+
+
+def _pid_of(record) -> int:
+    """The record's pid, or -1 for anything that is not a lock record: a
+    non-object file or ``{"pid": null}`` used to raise out of every caller
+    and crash-loop the agent at start-up."""
+    try:
+        return int(record.get("pid", -1))
+    except (AttributeError, TypeError, ValueError):
+        return -1
+
+
 class EngineLock:
     """Advisory single-writer lock around the paper engine."""
 
@@ -82,23 +103,62 @@ class EngineLock:
             return True          # exists, owned by someone else
         return not _is_zombie(pid)
 
+    @classmethod
+    def _holds(cls, record: dict) -> bool:
+        """Is the process the record names the one that wrote it? A pid is
+        reused after a reboot: a stale lock naming a pid some unrelated
+        process now has looked alive forever. A process that started after the
+        lock was written cannot be its writer."""
+        pid = _pid_of(record)
+        if not cls._alive(pid):
+            return False
+        since, started = record.get("since"), _started_at(pid)
+        if isinstance(since, (int, float)) and since > 0 and started is not None \
+                and started > since + 5.0:       # clock and ps resolution slack
+            return False
+        return True
+
     def holder(self) -> dict | None:
         """The live holder, or ``None``. Clears a stale lock as a side effect."""
         d = self.read()
-        if not d:
-            return None
-        pid = int(d.get("pid", -1))
+        if not isinstance(d, dict):
+            # Missing is "no holder"; a file that is there but is not a lock
+            # record (garbage, `null`, a list) is stale, or acquire() would
+            # fail on it forever.
+            if not self.path.exists():
+                return None
+            d = {}
+        pid = _pid_of(d)
         if pid == os.getpid():
             return d
-        if not self._alive(pid):
-            # Stale: the holder died without releasing. Reclaim it rather than
-            # blocking the engine forever.
-            try:
-                self.path.unlink()
-            except OSError:
-                pass
+        if not self._holds(d):
+            self._reclaim(d)
             return None
         return d
+
+    def _reclaim(self, stale: dict) -> None:
+        """Clear a stale lock — and only that lock. Check-then-unlink let two
+        starters both see the same stale file, one create a fresh lock, and the
+        other unlink *that*: two drivers. The file is first renamed away (one
+        rename wins), and what was moved is checked to be the record that was
+        judged stale; if it was a live lock someone just wrote, it goes back."""
+        side = self.path.with_name(f"{self.path.name}.stale.{os.getpid()}")
+        try:
+            os.rename(self.path, side)
+        except OSError:
+            return                       # someone else cleared it first
+        try:
+            moved = json.loads(side.read_text())
+        except (OSError, ValueError):
+            moved = {}
+        if moved == stale or not isinstance(moved, dict) or not self._holds(moved):
+            side.unlink(missing_ok=True)
+            return
+        try:                             # a live holder's: put it back, unless taken
+            os.link(side, self.path)
+        except OSError:
+            pass
+        side.unlink(missing_ok=True)
 
     # -- lifecycle --------------------------------------------------------- #
     def acquire(self) -> bool:
@@ -110,7 +170,7 @@ class EngineLock:
         """
         existing = self.holder()
         if existing:
-            if int(existing.get("pid", -1)) == os.getpid():
+            if _pid_of(existing) == os.getpid():
                 self.held = True          # already ours
                 return True
             return False
@@ -142,7 +202,7 @@ class EngineLock:
         if not self.held:
             return
         d = self.read()
-        if d and int(d.get("pid", -1)) == os.getpid():
+        if d and _pid_of(d) == os.getpid():
             try:
                 self.path.unlink()
             except OSError:

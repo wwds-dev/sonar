@@ -12,6 +12,8 @@ import subprocess
 import sys
 import time
 
+import pytest
+
 from sonar.enginelock import EngineLock, _is_zombie, describe_conflict
 
 
@@ -146,3 +148,53 @@ def test_the_holder_can_record_where_it_publishes(tmp_path):
     assert window.acquire() is True
     assert "url" not in window.holder()
     window.release()
+
+
+# --------------------------------------------------------------------------- #
+# The races and bad files the audit found (code-review P3-8, architecture P1-3)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("content", ['[]', '"x"', '{"pid": null}', '{"pid": "abc"}', '{}', 'null'])
+def test_a_malformed_lock_file_is_stale_not_a_crash(tmp_path, content):
+    """int(None) raised out of holder() and acquire(), outside any try: the
+    agent crash-looped at start-up on such a file."""
+    p = tmp_path / "engine.lock"
+    p.write_text(content)
+    lock = EngineLock(p, role="agent")
+    assert lock.holder() is None
+    assert lock.acquire() is True
+    lock.release()
+
+
+def test_a_reused_pid_does_not_hold_a_lock_forever(tmp_path):
+    """After a reboot the pid in a stale lock belongs to some unrelated process;
+    one that started after the lock was written cannot be its writer."""
+    p = tmp_path / "engine.lock"
+    p.write_text(json.dumps({"pid": os.getppid(), "role": "app",
+                             "since": time.time() - 10 * 86400}))
+    assert EngineLock(p, role="agent").acquire() is True
+
+
+def test_a_genuine_holder_with_a_real_timestamp_still_blocks(tmp_path):
+    p = tmp_path / "engine.lock"
+    p.write_text(json.dumps({"pid": 1, "role": "agent", "since": time.time()}))
+    assert EngineLock(p, role="app").acquire() is False
+
+
+def test_reclaiming_never_removes_a_live_lock_written_meanwhile(tmp_path):
+    """Two starters judge the same stale file; one wins and writes a live lock;
+    the other must not unlink that one."""
+    p = tmp_path / "engine.lock"
+    stale = {"pid": _dead_pid(), "role": "app", "since": 1.0}
+    live = {"pid": 1, "role": "agent", "since": time.time()}
+    p.write_text(json.dumps(live))               # the winner's fresh lock is on disk
+    EngineLock(p, role="app")._reclaim(stale)    # the loser acts on its old judgement
+    assert json.loads(p.read_text()) == live
+    assert not list(tmp_path.glob("engine.lock.stale.*"))
+
+
+def test_reclaiming_a_truly_stale_lock_clears_it(tmp_path):
+    p = tmp_path / "engine.lock"
+    stale = {"pid": _dead_pid(), "role": "app", "since": 1.0}
+    p.write_text(json.dumps(stale))
+    EngineLock(p, role="app")._reclaim(stale)
+    assert not p.exists() and not list(tmp_path.glob("engine.lock.stale.*"))
