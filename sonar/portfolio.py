@@ -308,6 +308,57 @@ class Portfolio:
         self.save()
         return pos
 
+    def _undoable(self, pos: Position | None) -> bool:
+        return (pos is not None and not pos.protocol and not pos.pending
+                and bool(getattr(self.broker, "synchronous", True)))
+
+    @_locked
+    def cancel(self, pos_id: str, price: float | None,
+               within: float = 30.0) -> Position | None:
+        """Take back a position opened moments ago, as if it never was: the
+        cash a long spent comes back and nothing reaches the closed record, so
+        a misclick cannot become a graded trade. Only within ``within``
+        seconds, only while the price is still the entry price — once it has
+        moved, cancelling would let a trade that started badly vanish from the
+        record — never a coin-flip protocol entry, and only for fills the
+        internal paper book made itself."""
+        pos = next((p for p in self.open if p.id == pos_id), None)
+        if (not self._undoable(pos) or time.time() - pos.opened_at > within
+                or price is None or abs(price - pos.entry) > 1e-9):
+            return None
+        if pos.direction == "LONG":
+            self.cash += pos.units * pos.entry
+        self.open.remove(pos)
+        self.save()
+        return pos
+
+    @_locked
+    def reopen(self, pos_id: str, price: float | None,
+               within: float = 30.0) -> Position | None:
+        """Undo a manual close made moments ago: the position goes back to the
+        open book at its original entry, the close's cash is reversed, and it
+        leaves the closed record. Never a barrier exit — those are outcomes —
+        and only while the price is still the one it closed at: reopened after
+        a move past a barrier, the next mark would grade it with hindsight.
+        A long needs the cash its close returned still to be there."""
+        pos = next((p for p in self.closed if p.id == pos_id), None)
+        if (not self._undoable(pos) or pos.outcome != "MANUAL" or pos.closed_at is None
+                or time.time() - pos.closed_at > within
+                or self.position_for(pos.symbol) is not None
+                or price is None or abs(price - (pos.exit or 0.0)) > 1e-9):
+            return None
+        if pos.direction == "LONG" and self.cash < pos.units * (pos.exit or 0.0) - 1e-9:
+            return None
+        if pos.direction == "LONG":
+            self.cash -= pos.units * (pos.exit or 0.0)
+        else:
+            self.cash -= pos.pnl or 0.0
+        pos.exit = pos.pnl = pos.closed_at = pos.outcome = None
+        self.closed.remove(pos)
+        self.open.append(pos)
+        self.save()
+        return pos
+
     @_locked
     def poll_fills(self) -> list[Position]:
         """Ask the broker which accepted orders have reached a terminal state.

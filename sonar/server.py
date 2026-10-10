@@ -140,6 +140,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._json(self.live.trade(str(body.get("symbol", "")), direction))
             return
+        if self.path.startswith("/api/undo"):
+            self._json(self.live.undo(str(body.get("id", "")), str(body.get("kind", ""))))
+            return
         if self.path.startswith("/api/close"):
             self._json(self.live.close_position(str(body.get("id", ""))))
             return

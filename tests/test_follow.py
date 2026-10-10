@@ -49,6 +49,7 @@ class FakeAgent:
         self.inst = {"n": 1, "recent": [], "pressure": {"level": "Light"}}
         self.risk_name, self.hz_name = "moderate", "week"
         self.trades, self.closes, self.configured, self.reads = [], [], [], []
+        self.undos = []
         self.llm = {"available": False,
                     "detail": "anthropic SDK not installed (pip install anthropic)"}
 
@@ -75,6 +76,10 @@ class FakeAgent:
     def close_position(self, pos_id):
         self.closes.append(pos_id)
         return {"ok": True, "message": "closed", "position": {}}
+
+    def undo(self, pos_id, kind):
+        self.undos.append((pos_id, kind))
+        return {"ok": True, "message": "cancelled", "position": {}}
 
 
 @pytest.fixture
@@ -199,6 +204,12 @@ def test_a_close_is_handed_to_the_holder(following):
     live, fake, _ = following
     assert live.close_position("p1")["ok"]
     assert fake.closes == ["p1"]
+
+
+def test_an_undo_is_handed_to_the_holder(following):
+    live, fake, _ = following
+    assert live.undo("p1", "trade")["ok"]
+    assert fake.undos == [("p1", "trade")]
 
 
 def test_the_knobs_are_handed_to_the_holder_and_mirrored_back(following):

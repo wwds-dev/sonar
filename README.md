@@ -788,7 +788,7 @@ markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
 drift apart.
 
 ```bash
-./run-tests.sh tests/ -q          # 1,706 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,723 tests, bounded by an external watchdog
 ./build_app.sh --install          # then the installed binary's --selftest
 ```
 
@@ -1056,6 +1056,7 @@ CONFIDENCE.md  research notes on the score; GOING_LIVE.md  a plan only, nothing 
 | `POST /api/read` | `{"kind": "btc\|asset", "id": "..."}` — one LLM read |
 | `GET /api/health` | is the engine doing its job — 200, or 503 with the problems listed |
 | `GET /api/book`, `/api/wire`, `/api/macro` | the paper book, the alerts and central-bank calendar, the macro regime |
+| `POST /api/undo` | `{"id": "...", "kind": "trade\|close"}` — take back a trade or a manual close made in the last 30 s (the window's Undo); it never reaches the graded record |
 | `POST /api/trade`, `/api/close` | `{"symbol": "...", "direction": "LONG\|SHORT"}`, `{"id": "..."}` — paper trades; how a second window hands its actions to the engine that holds the book |
 | `GET /`, `/docs`, `/testplan` | the BTC terminal page, the manual, the acceptance plan |
 

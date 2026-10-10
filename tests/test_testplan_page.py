@@ -87,7 +87,7 @@ def test_the_button_reports_a_missing_page_rather_than_doing_nothing():
     app = (ROOT / "ui" / "app.py").read_text()
     body = app[app.index("def _open_page"):app.index("def _open_docs")]
     assert "not exists()" in body.replace("not page.exists()", "not exists()")
-    assert "status.setText" in body
+    assert "_set_status(" in body, "reported on the status line (and the folded window's status bar)"
 
 
 @pytest.mark.parametrize("route", ["/testplan", "/testplan/", "/testplan.html"])

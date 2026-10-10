@@ -549,6 +549,41 @@ class Live:
         return {"ok": True, "message": f"closed {closed.symbol}",
                 "position": asdict(closed)}
 
+    UNDO_WINDOW = 30.0          # the toast offers it for 8 s; slack for a slow click
+
+    def undo(self, pos_id: str, kind: str) -> dict:
+        """Take back a trade ("trade") or a manual close ("close") made moments
+        ago — the toast's Undo. Neither reaches the graded record."""
+        url = self.following
+        if url:
+            return self._forward(url, "/api/undo", {"id": pos_id, "kind": kind},
+                                 refresh_book=True)
+        if self._waiting_without_a_holder_to_follow():
+            return {"ok": False, "message": self._READ_ONLY, "position": None}
+        if kind not in ("trade", "close"):
+            return {"ok": False, "message": f"nothing to undo for {kind!r}", "position": None}
+        with self.lock:
+            rows = list(self.assets.get("assets", []))
+        prices = self._book_prices({a["symbol"]: a["price"] for a in rows})
+        book = self.book
+        with book.lock:
+            mine = book.open if kind == "trade" else book.closed
+            target = next((p for p in mine if p.id == pos_id), None)
+            price = prices.get(target.symbol) if target else None
+            pos = (book.cancel(pos_id, price, self.UNDO_WINDOW) if kind == "trade"
+                   else book.reopen(pos_id, price, self.UNDO_WINDOW))
+            if pos is None:
+                done = next((p for p in book.closed if p.id == pos_id
+                             and p.outcome in ("TARGET", "STOP")), None)
+                why = (f"it already closed at its {done.outcome.lower()}" if done
+                       else "the price has moved since, or the time is up"
+                       if target else "nothing to undo")
+                return {"ok": False, "position": None,
+                        "message": f"can't undo — {why}; it stays as it is"}
+            self._mark_book({"assets": rows}, force_point=True, book=book)
+        what = "cancelled" if kind == "trade" else "reopened"
+        return {"ok": True, "message": f"{what} {pos.symbol}", "position": asdict(pos)}
+
     # -- configuration ----------------------------------------------------- #
     def configure(self, risk_name: str | None, horizon_name: str | None,
                   protocol: bool | None = None) -> dict:

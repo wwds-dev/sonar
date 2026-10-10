@@ -32,7 +32,7 @@ import sys
 import time
 
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget,
@@ -1097,6 +1097,10 @@ class MainWindow(QMainWindow):
         self.tabs.add(self._learn_tab(), "Learn", "",
                       "The manual and the glossary. It assumes no finance "
                       "background — start at §1.")
+        # ⌘1…⌘8 reach every page in rail order: the rail was mouse-only.
+        for i in range(min(self.tabs.count(), 9)):
+            QShortcut(QKeySequence(f"Ctrl+{i + 1}"), self,
+                      activated=lambda i=i: self.tabs.setCurrentIndex(i))
         outer.addWidget(self.tabs, 1)
 
         self.tabs.set_header_widget(self._knobs())
@@ -1418,7 +1422,7 @@ class MainWindow(QMainWindow):
         """
         page = paths.resource_base() / "static" / filename
         if not page.exists():
-            self.status.setText(f"⚠  {what} not found at {page}")
+            self._set_status(f"⚠  {what} not found at {page}")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(page)))
 
@@ -1925,6 +1929,8 @@ class MainWindow(QMainWindow):
         g.addLayout(cell("closed", "Positions that have resolved, and how many "
                          "of them made money.", 18))
         g.addStretch(1)
+        self.start_card = self._start_card()
+        lay.addWidget(self.start_card)
         lay.addWidget(strip)
 
         # -- is the score right? ------------------------------------------- #
@@ -2073,10 +2079,60 @@ class MainWindow(QMainWindow):
                      "is luck")
         self.grade_next.setText(" · ".join(parts))
 
+    def _start_card(self) -> QWidget:
+        """Start here — on an empty book, until the first trade or "Got it".
+        A first launch used to open on a page of zeros with nothing saying
+        what any of it was or what to do."""
+        card = panel()
+        v = QVBoxLayout(card)
+        v.setContentsMargins(16, 12, 16, 12)
+        v.setSpacing(6)
+        v.addWidget(label("START HERE", "muted", theme.figure(9, True)))
+        body = label(
+            "This is a paper book: practice money, never a real account.\n"
+            "1.  Open the Screener and pick a row marked “worth a look” — the score "
+            "says something is happening, never which way.\n"
+            "2.  Press Buy or Short. The app sets the target and the stop; the "
+            "position closes itself when it reaches one of them.\n"
+            "3.  Come back here: this page shows how the book is doing and whether "
+            "the score kept to its odds. The Learn tab explains every number.",
+            "", theme.text(11), wrap=True)
+        body.setTextFormat(Qt.PlainText)
+        v.addWidget(body)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        ok = QPushButton("Got it")
+        ok.setFont(theme.text(10))
+        ok.clicked.connect(self._dismiss_start_card)
+        row.addWidget(ok)
+        v.addLayout(row)
+        card.setVisible(False)
+        return card
+
+    def _onboarding_file(self):
+        return paths.user_data_base() / "onboarding.json"
+
+    def _dismiss_start_card(self) -> None:
+        self._start_dismissed = True       # sticks for this run even if the file can't be written
+        try:
+            paths.write_atomically(self._onboarding_file(), '{"start_card_dismissed": true}')
+        except OSError:
+            pass
+        self.start_card.setVisible(False)
+
+    def _sync_start_card(self, pos: dict) -> None:
+        if getattr(self, "_start_dismissed", None) is None:     # read once
+            self._start_dismissed = bool(paths.read_preferences(
+                self._onboarding_file()).get("start_card_dismissed"))
+        empty = not pos.get("open") and not pos.get("closed") \
+            and not (pos.get("stats") or {}).get("n_closed")
+        self.start_card.setVisible(empty and not self._start_dismissed)
+
     def _refresh_portfolio(self) -> None:
         with self.live.lock:
             pos = dict(self.live.positions)
             cal = dict(self.live.calibration)
+        self._sync_start_card(pos)
         st = pos.get("stats") or {}
         if not st:
             return
@@ -3139,7 +3195,7 @@ class MainWindow(QMainWindow):
             return
         self.risk_box.setEnabled(False)
         self.hz_box.setEnabled(False)
-        self.status.setText("applying — rescanning…")
+        self._set_status("applying — rescanning…")
         self._cfg_thread = ConfigThread(
             self.live, self.risk_box.currentData(), self.hz_box.currentData(), self)
         self._cfg_thread.done.connect(self._config_done)
@@ -3210,15 +3266,20 @@ class MainWindow(QMainWindow):
         a broker that goes to the network would make that a real wait, and
         this would then belong on a thread."""
         result = self.live.trade(symbol, direction)
-        self.status.setText(("✓  " if result["ok"] else "⚠  ") + result["message"]
-                            + "  ·  paper money only")
+        self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"]
+                         + "  ·  paper money only")
+        pos = result.get("position") or {}
+        if result["ok"] and pos.get("id"):
+            self._toast(f"{result['message']} — paper money only", pos["id"], "trade")
         self._assets_sig = None          # force the board to redraw
         self._book_sig = None
         self._portfolio_sig = None
 
     def _close_position(self, pos_id: str) -> None:
         result = self.live.close_position(pos_id)
-        self.status.setText(("✓  " if result["ok"] else "⚠  ") + result["message"])
+        self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"])
+        if result["ok"]:
+            self._toast(result["message"], pos_id, "close")
         self._book_sig = None
         self._portfolio_sig = None
 
@@ -3271,11 +3332,11 @@ class MainWindow(QMainWindow):
             # second window), or the one being followed stopped answering.
             # Say so plainly rather than showing a window that looks broken;
             # the engine keeps trying for the lock behind this message.
-            self.status.setText("⚠  " + snap.get("detail", "another engine is running"))
+            self._set_status("⚠  " + snap.get("detail", "another engine is running"))
             self.read_btn.setEnabled(False)
             return
         if snap.get("status") != "live":
-            self.status.setText(f'{snap.get("status", "…")} — first poll can take a moment')
+            self._set_status(f'{snap.get("status", "…")} — first poll can take a moment')
             return
         self.read_btn.setEnabled(True)
         self._refresh_terminal(snap)
@@ -3290,13 +3351,13 @@ class MainWindow(QMainWindow):
         following = snap.get("following")
         who = (f'following the engine at {following.split("//")[-1]} · '
                if following else "")
-        self.status.setText(
+        self._set_status(
             f'{who}risk {self.live.risk.name} · horizon {hz.name} · '
             f'{assets.get("n", 0)} assets · paper money only')
         # A dead loop leaves its last snapshot looking live; say so instead.
         problems = self.live.health()["problems"]
         if problems:
-            self.status.setText("⚠  " + "; ".join(p["text"] for p in problems))
+            self._set_status("⚠  " + "; ".join(p["text"] for p in problems))
 
     def _refresh_terminal(self, snap: dict) -> None:
         c, sig = snap.get("candle"), snap.get("signal")
@@ -3685,6 +3746,74 @@ class MainWindow(QMainWindow):
             want_h = min(want_h, avail.height() - SCREEN_MARGIN)
         self.resize(want_w, want_h)
 
+    # -- the status line, the window status bar, the undo toast ------------- #
+    TOAST_MS = 8000
+
+    def _status_bar_parts(self):
+        """Built on first use: the window's status bar carries the status line
+        while the rail is folded to icons (it used to vanish with the rail's
+        foot below 1420px — trade results, errors, read-only notices and all),
+        and the undo toast at any width."""
+        if getattr(self, "_bar_status", None) is None:
+            bar = self.statusBar()
+            bar.setSizeGripEnabled(False)
+            self._bar_status = label("", "faint", theme.figure(9))
+            self._toast_label = label("", "", theme.text(10))
+            self._toast_undo = QPushButton("Undo")
+            self._toast_undo.setFont(theme.text(10))
+            self._toast_undo.clicked.connect(self._undo_clicked)
+            bar.addWidget(self._bar_status, 1)
+            bar.addPermanentWidget(self._toast_label)
+            bar.addPermanentWidget(self._toast_undo)
+            self._toast_label.hide()
+            self._toast_undo.hide()
+            self._toast_timer = QTimer(self)
+            self._toast_timer.setSingleShot(True)
+            self._toast_timer.timeout.connect(self._toast_done)
+            self._toast_target: tuple[str, str] | None = None
+            bar.setVisible(self.tabs.is_collapsed())
+            self._bar_status.setVisible(self.tabs.is_collapsed())
+        return self._bar_status
+
+    def _set_status(self, text: str) -> None:
+        self.status.setText(text)
+        self._status_bar_parts().setText(text)
+
+    def _sync_status_bar(self) -> None:
+        self._status_bar_parts()
+        toast = self._toast_target is not None
+        self._bar_status.setVisible(self.tabs.is_collapsed())
+        self.statusBar().setVisible(self.tabs.is_collapsed() or toast)
+
+    def _toast(self, text: str, pos_id: str, kind: str) -> None:
+        """Did it — and here is the way back, for a few seconds. A one-click
+        trade with its result in a line the user may not be looking at was
+        the misclick trap; Undo takes it back before it can count."""
+        self._status_bar_parts()
+        self._toast_target = (pos_id, kind)
+        self._toast_label.setText(f"✓  {text}")
+        self._toast_label.show()
+        self._toast_undo.show()
+        self._toast_undo.setEnabled(True)
+        self._toast_timer.start(self.TOAST_MS)
+        self._sync_status_bar()
+
+    def _toast_done(self) -> None:
+        self._toast_target = None
+        self._toast_label.hide()
+        self._toast_undo.hide()
+        self._sync_status_bar()
+
+    def _undo_clicked(self) -> None:
+        if self._toast_target is None:
+            return
+        pos_id, kind = self._toast_target
+        result = self.live.undo(pos_id, kind)
+        self._toast_timer.stop()
+        self._toast_done()
+        self._set_status(("↶  " if result["ok"] else "⚠  ") + result["message"])
+        self._assets_sig = self._book_sig = self._portfolio_sig = None
+
     def _sync_rail(self) -> None:
         """Fold or unfold the rail to match the window's width.
 
@@ -3694,6 +3823,7 @@ class MainWindow(QMainWindow):
         without the event, so the tests call this directly.
         """
         self.tabs.set_collapsed(self.width() < RAIL_COLLAPSE_BELOW)
+        self._sync_status_bar()
 
     def resizeEvent(self, e) -> None:
         """Give the board its width back on a small screen.
