@@ -42,6 +42,12 @@ _IPO = "https://api.nasdaq.com/api/ipo/calendar?date={month}"
 # Trading days to walk forward when building the earnings map.
 LOOKAHEAD_DAYS = 14
 
+# After a refresh that got nothing at all — offline, or Nasdaq down — try again
+# this soon rather than a whole TTL later. The cache used to stamp a failed
+# refresh as a fresh one, so an app started offline showed no calendar for six
+# hours after the network came back.
+RETRY_AFTER_FAILURE_S = 600.0
+
 
 def _get(url: str, timeout: float = 12.0):
     try:
@@ -92,7 +98,8 @@ class EventsCache:
 
     def __init__(self, ttl: float = 6 * 3600.0) -> None:
         self.ttl = ttl
-        self._at = 0.0
+        self._at = 0.0            # when the cache next counts as fresh, less ttl
+        self._fetched_at = 0.0    # when a refresh last actually got something
         self._earnings: dict[str, Earnings] = {}
         self._listings: list[Listing] = []
 
@@ -133,7 +140,12 @@ class EventsCache:
                     exchange=(r.get("proposedExchange") or "").strip()))
         if listings:
             self._listings = listings
-        self._at = time.time()
+        now = time.time()
+        if found or listings:
+            self._at = self._fetched_at = now
+        else:
+            # Nothing came back. Keep whatever was held, but ask again soon.
+            self._at = now - self.ttl + RETRY_AFTER_FAILURE_S
 
     def _ensure(self) -> None:
         if time.time() - self._at > self.ttl or not self._at:
@@ -163,7 +175,7 @@ class EventsCache:
 
     def _build(self) -> dict:
         return {
-            "generated": int(self._at),
+            "generated": int(self._fetched_at),
             "n_earnings": len(self._earnings),
             "listings": [vars(x) for x in self._listings],
             "earnings": [vars(e) for e in
