@@ -106,24 +106,19 @@ def _config_path():
 
 
 def _load_config() -> dict:
-    try:
-        return json.loads(_config_path().read_text())
-    except (OSError, ValueError):
-        return {}
+    return paths.read_preferences(_config_path())
 
 
 def set_enabled(name: str, on: bool) -> dict:
     cfg = _load_config()
     cfg[name] = bool(on)
-    p = _config_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(cfg, indent=1))
+    paths.write_atomically(_config_path(), json.dumps(cfg, indent=1))
     return cfg
 
 
 def is_enabled(name: str) -> bool:
     """Providers are on unless explicitly switched off."""
-    return _load_config().get(name, True)
+    return bool(_load_config().get(name, True))
 
 
 # --------------------------------------------------------------------------- #

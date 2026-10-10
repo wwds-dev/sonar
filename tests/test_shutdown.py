@@ -300,3 +300,34 @@ def test_quitting_during_a_fetch_does_not_freeze_the_process(tmp_path):
     assert "still in flight" in done.stderr, (
         "the hard exit should say what it gave up on, so the next report of "
         f"this has something to go on. stderr was: {done.stderr!r}")
+
+
+def test_every_thread_the_window_starts_is_on_the_shutdown_list():
+    """A census, rather than one test per feature. Every `self.<name> =
+    <Something>Thread(...)` in the window must appear in `_owned_threads`, or
+    quitting while that feature runs aborts the process — which has shipped
+    twice (the backtest, then the Playmaker read), each time found by a user.
+    Read from the source, so a thread added next month is held to it the day
+    it is written."""
+    import ast
+    import inspect
+
+    from ui import app as app_mod
+
+    tree = ast.parse(inspect.getsource(app_mod))
+    started = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)
+                and node.value.func.id.endswith("Thread")):
+            for target in node.targets:
+                if (isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "self"):
+                    started.add(target.attr)
+    assert {"poll", "_read_thread", "playmaker_thread"} <= started, \
+        "the census found too little to be reading the window"
+    listed = inspect.getsource(app_mod.MainWindow._owned_threads)
+    missing = sorted(a for a in started
+                     if f"self.{a}" not in listed and f'"{a}"' not in listed)
+    assert not missing, f"started but never stopped on quit: {missing}"

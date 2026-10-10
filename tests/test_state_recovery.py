@@ -103,3 +103,44 @@ def test_a_position_written_by_a_newer_build_still_loads(tmp_path):
     again = Portfolio(tmp_path / "portfolio.json")
     assert [p.symbol for p in again.open] == ["AAA"]
     assert not list(tmp_path.glob("*.unreadable.*")), "a readable file is not quarantined"
+
+
+# --------------------------------------------------------------------------- #
+# the small preference files a person may open in an editor
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("junk", ["[]", "null", "7", '"on"', "{truncated", ""],
+                         ids=["list", "null", "number", "string", "truncated", "empty"])
+def test_a_junk_protocol_file_opens_with_protocol_off(tmp_path, monkeypatch, junk):
+    """A JSON list here reached .get on a list and Live() raised — the app
+    did not start."""
+    from sonar.core import Live
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
+    _write(tmp_path / "protocol.json", junk)
+    assert Live().protocol_on is False
+
+
+@pytest.mark.parametrize("junk", ["[]", "null", "7", "{truncated"],
+                         ids=["list", "null", "number", "truncated"])
+def test_a_junk_providers_file_leaves_every_provider_on(tmp_path, monkeypatch, junk):
+    from sonar import providers
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
+    _write(tmp_path / "providers.json", junk)
+    assert all(providers.is_enabled(p) for p in ("binance", "yahoo", "anything"))
+    providers.set_enabled("yahoo", False)
+    assert providers.is_enabled("yahoo") is False
+
+
+def test_the_protocol_switch_is_written_in_one_step(tmp_path, monkeypatch):
+    """It keeps the calibration sample filling; a write cut short used to read
+    back as "off" with nothing on screen to say so."""
+    from sonar.core import Live
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
+    writes = []
+    real = paths.write_atomically
+    monkeypatch.setattr(paths, "write_atomically",
+                        lambda p, text: (writes.append(p), real(p, text)))
+    live = Live()
+    live.set_protocol(True)
+    assert writes and writes[-1].name == "protocol.json"
+    assert Live().protocol_on is True
+    assert not list(tmp_path.glob("*.tmp")), "the temporary file is renamed, not left"

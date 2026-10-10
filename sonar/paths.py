@@ -61,6 +61,32 @@ def daily_backup(path: Path, keep: int = BACKUP_KEEP,
     return bak
 
 
+def write_atomically(path: Path, text: str) -> None:
+    """Replace a file's contents in one step: a crash mid-write leaves the old
+    file, never half of the new one."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(p)
+
+
+def read_preferences(path: Path) -> dict:
+    """A small preference file as a dict, or ``{}`` for anything else.
+
+    These are files a person may open in an editor. A missing file, a
+    truncated one, and one holding valid JSON that is not an object (``[]``,
+    ``null``, ``7``) all mean "use the defaults" — the last of those used to
+    reach ``.get`` on a list and stop the app starting (protocol.json) or
+    every provider lookup (providers.json).
+    """
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def read_state(path: Path) -> dict | None:
     """A state file's contents, recovering from a file that cannot be read.
 

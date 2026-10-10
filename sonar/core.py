@@ -229,16 +229,17 @@ class Live:
         return paths.user_data_base() / "protocol.json"
 
     def _load_protocol(self) -> None:
-        try:
-            d = json.loads(self._protocol_file().read_text())
-        except (OSError, ValueError):
+        d = paths.read_preferences(self._protocol_file())
+        if not d:
             return
         self.protocol_on = bool(d.get("on"))
         self._protocol_last_day = str(d.get("last_day") or "")
 
     def _save_protocol(self) -> None:
+        # Atomic: this switch is what keeps the calibration sample filling, and
+        # a write cut short used to read back as "off" with nothing to say so.
         try:
-            self._protocol_file().write_text(json.dumps(
+            paths.write_atomically(self._protocol_file(), json.dumps(
                 {"on": self.protocol_on, "last_day": self._protocol_last_day}))
         except OSError:
             pass
