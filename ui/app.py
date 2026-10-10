@@ -1207,6 +1207,12 @@ class MainWindow(QMainWindow):
             "Changes which window 'Recent move' measures and how far the\n"
             "target and stop sit from the price. Long horizons also bring in\n"
             "the big-picture backdrop."))
+        # Always on screen, whatever the rail does: it used to live only in the
+        # rail's header and went with it when the rail folded.
+        chip = label("Practice money only", "muted", theme.text(10))
+        chip.setToolTip("Every position here is simulated. Nothing in SONAR can "
+                        "place a real order or touch a real account.")
+        bar.addWidget(chip, 0, Qt.AlignBottom)
         return holder
 
     def _rail_footer(self) -> QWidget:
@@ -1528,7 +1534,9 @@ class MainWindow(QMainWindow):
         # Model vs market, scored on every hour watched — traded or not.
         # The direct test of the realised-vs-implied thesis, and it converges
         # at 24 observations a day instead of a few trades a week.
-        self.mvm = label("", "muted", theme.figure(10), wrap=True)
+        # The line that says whether to trust the figures above, at their size
+        # class rather than in small grey print below them.
+        self.mvm = label("", "", theme.text(11), wrap=True)
         self.mvm.setToolTip(
             "Brier score (lower is better) of the model's P(up) against the\n"
             "market's, snapshotted mid-hour for every hour and settled on the\n"
@@ -1550,6 +1558,9 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         return w
 
+    ASSETS_LOADING = ("Fetching prices for 129 markets — the first scan takes about "
+                      "a minute.")
+
     def _scroll_tab(self, which: str, header: QWidget | None = None) -> QWidget:
         area = QScrollArea()
         area.setWidgetResizable(True)
@@ -1557,6 +1568,10 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(host)
         lay.setContentsMargins(2, 8, 8, 8)
         lay.setSpacing(8)
+        if which == "assets":
+            # Before the first scan the board was an empty box under its column
+            # headings — indistinguishable from a broken one.
+            lay.addWidget(label(self.ASSETS_LOADING, "muted", theme.figure(10)))
         lay.addStretch(1)
         area.setWidget(host)
         setattr(self, f"_{which}_host", host)
@@ -3373,8 +3388,14 @@ class MainWindow(QMainWindow):
         if sig:
             self.stats["model"].set(f'{sig["model_up"]*100:.1f}%')
             self.stats["market"].set(f'{sig["market_up"]*100:.1f}%')
+            # Coloured by side only once the model has beaten the market's
+            # calibration; until then a bold, signed, coloured cents figure
+            # read as "worth 3.2¢" when it is only a disagreement.
+            proven = ((snap.get("portfolio") or {}).get("model_vs_market")
+                      or {}).get("model_better")
             self.stats["edge"].set(f'{sig["edge"]*100:+.1f}¢',
-                                   theme.side_color(sig["side"]))
+                                   theme.side_color(sig["side"]) if proven
+                                   else theme.MUTED)
             self.stats["tau"].set(f'{sig["tau"]*100:.0f}%')
             self.hour_bar.set_fraction(sig["tau"])
         self.lattice.set_data(snap.get("lattice", {}))
@@ -3429,7 +3450,8 @@ class MainWindow(QMainWindow):
             self._asset_rows = [AssetRow(a, self._read, self._trade, generated)
                                 for a in assets.get("assets", [])]
             self._rebuild(self._assets_lay, list(self._asset_rows),
-                          "No instruments pass this risk profile's volatility filter.")
+                          "No instruments pass this risk profile's volatility filter."
+                          if assets.get("generated") else self.ASSETS_LOADING)
         else:
             now = time.time()
             for row in self._asset_rows:

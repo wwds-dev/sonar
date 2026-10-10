@@ -576,6 +576,10 @@ class Engine:
             "brier_diff": round(mean_d, 4),      # negative = model better
             "diff_se": round(se, 4),
         }
+        # The one test the window may colour a disagreement by: anything less
+        # and the "edge" figure is a disagreement, not a measured advantage.
+        out["model_better"] = bool(n >= self.SCORE_MIN_SAMPLE
+                                   and mean_d < -2 * se and mean_d < 0)
         if n < self.SCORE_MIN_SAMPLE:
             out["verdict"] = (f"{n} of {self.SCORE_MIN_SAMPLE} hours scored — "
                               "too few to compare the model to the market.")

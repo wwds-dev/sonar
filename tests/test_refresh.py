@@ -190,3 +190,43 @@ def test_the_macro_panel_says_loading_on_a_long_horizon(window):
     assert "Loading" in window.macro_note.text()
     window._refresh_macro({"horizon": {"macro": False}})
     assert "Switch to" in window.macro_note.text()
+
+
+# --------------------------------------------------------------------------- #
+# UX U-2 and U-5
+# --------------------------------------------------------------------------- #
+def _texts(layout):
+    out = []
+    for i in range(layout.count()):
+        w = layout.itemAt(i).widget()
+        if w is not None and hasattr(w, "text"):
+            out.append(w.text())
+    return out
+
+
+def test_the_screener_says_it_is_loading_before_the_first_scan(window):
+    assert any("first scan takes about a minute" in t for t in _texts(window._assets_lay))
+    window._refresh_cards({"status": "starting", "assets": []})
+    assert any("first scan" in t for t in _texts(window._assets_lay))
+    window._refresh_cards({"generated": 1.0, "n": 0, "assets": []})
+    assert any("volatility filter" in t for t in _texts(window._assets_lay)), \
+        "after a scan, empty means filtered"
+
+
+def test_practice_money_is_always_said_in_the_header(window):
+    from PySide6.QtWidgets import QLabel
+    assert any(l.text() == "Practice money only" for l in window.findChildren(QLabel))
+
+
+def test_the_edge_figure_is_neutral_until_the_model_beats_the_market(window):
+    from ui import theme
+    sig = {"model_up": 0.6, "market_up": 0.5, "edge": 0.1, "side": "UP", "tau": 0.5}
+    snap = {"status": "live", "signal": sig, "lattice": {}, "market": {},
+            "portfolio": {"model_vs_market": {"model_better": False}}}
+    window._refresh_terminal(snap)
+    assert window.stats["edge"].val.palette().color(
+        window.stats["edge"].val.foregroundRole()).name() == theme.MUTED.name() \
+        or theme.MUTED.name() in window.stats["edge"].val.styleSheet()
+    snap["portfolio"]["model_vs_market"]["model_better"] = True
+    window._refresh_terminal(snap)
+    assert theme.MUTED.name() not in window.stats["edge"].val.styleSheet()

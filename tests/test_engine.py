@@ -1044,3 +1044,8 @@ def test_buyability_counts_every_scored_hour_exactly_once(engine):
     r = engine.buyability()
     assert (r["n_priced"] + r["n_unpriced"] + r["n_out_of_window"]
             + r["n_bad_book"]) == len(rows)
+
+
+def test_model_better_needs_the_sample_and_two_standard_errors(engine):
+    mvm = engine.model_vs_market()
+    assert mvm.get("model_better", False) is False
