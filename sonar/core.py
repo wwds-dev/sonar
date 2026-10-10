@@ -99,11 +99,14 @@ class Live:
         self.horizon = horizon.get(horizon_name)
         paths.ensure_dirs()
         self.engine = Engine(paths.state_file(), risk=risk.get(risk_name))
-        if risk_name:
-            # Explicitly asked for on the command line — that wins, and is
-            # persisted so the bankroll records what it is now being sized under.
-            self.risk = risk.get(risk_name)
-            self.engine.set_risk(self.risk)
+        # A profile asked for on the command line wins, and is persisted so the
+        # bankroll records what it is being sized under — but only once this
+        # engine holds the lock (see _take_the_book). Saving here wrote the
+        # state file from a process that might never drive it.
+        self._asked_risk = risk.get(risk_name) if risk_name else None
+        if self._asked_risk:
+            self.risk = self._asked_risk
+            self.engine.risk = self.risk
         else:
             # Nothing asked for: keep whatever the bankroll was built under.
             self.risk = self.engine.risk
@@ -248,9 +251,12 @@ class Live:
         """Flip the protocol switch. Takes effect on the next rescan; turning
         it off leaves existing protocol positions to resolve on their own —
         closing them early would censor exactly the outcomes being measured."""
-        if self.following:
+        url = self.following                    # read once: a takeover clears it
+        if url:
             self.protocol_on = bool(on)          # what the window shows now
-            self._forward("/api/config", {"protocol": bool(on)})
+            self._forward(url, "/api/config", {"protocol": bool(on)})
+            return
+        if self._waiting_without_a_holder_to_follow():
             return
         self.protocol_on = bool(on)
         self._save_protocol()
@@ -404,9 +410,12 @@ class Live:
 
     def trade(self, symbol: str, direction: str) -> dict:
         """Open a paper position on a screener row. Paper money only."""
-        if self.following:
-            return self._forward("/api/trade", {"symbol": symbol, "direction": direction},
+        url = self.following
+        if url:
+            return self._forward(url, "/api/trade", {"symbol": symbol, "direction": direction},
                                  refresh_book=True)
+        if self._waiting_without_a_holder_to_follow():
+            return {"ok": False, "message": self._READ_ONLY, "position": None}
         with self.lock:
             rows = list(self.assets.get("assets", []))
         asset = next((a for a in rows if a["symbol"] == symbol), None)
@@ -423,8 +432,11 @@ class Live:
                 "position": asdict(pos) if pos else None}
 
     def close_position(self, pos_id: str) -> dict:
-        if self.following:
-            return self._forward("/api/close", {"id": pos_id}, refresh_book=True)
+        url = self.following
+        if url:
+            return self._forward(url, "/api/close", {"id": pos_id}, refresh_book=True)
+        if self._waiting_without_a_holder_to_follow():
+            return {"ok": False, "message": self._READ_ONLY, "position": None}
         with self.lock:
             rows = list(self.assets.get("assets", []))
         prices = {a["symbol"]: a["price"] for a in rows}
@@ -456,6 +468,10 @@ class Live:
                         self.assets = board
             except Exception:
                 pass                      # the next mirror round shows what took
+            return self.config()
+        if self._waiting_without_a_holder_to_follow():
+            # A risk change saves the state file and the rescan marks the book;
+            # neither is this window's to write while another engine drives.
             return self.config()
         changed = False
         if risk_name and risk.get(risk_name).name != self.risk.name:
@@ -515,9 +531,10 @@ class Live:
         board on every scan would cost real money for no benefit. The API call
         happens outside the lock so the polling thread is never blocked on it.
         """
-        if self.following:
+        url = self.following
+        if url:
             # The holder runs it: it has the hour the read attaches to.
-            read = self._forward("/api/read", {"kind": kind, "id": ident})
+            read = self._forward(url, "/api/read", {"kind": kind, "id": ident})
             with self.lock:
                 self.last_read = read
             return read
@@ -630,6 +647,19 @@ class Live:
         if not self.engine_lock.acquire() and not self._wait_for_lock():
             return                        # asked to stop while waiting
         try:
+            while True:
+                try:
+                    self._take_the_book()
+                    break
+                except Exception as exc:
+                    # Read-only stays on, so nothing writes a half-read book;
+                    # say why on screen and try again rather than exit silently.
+                    with self.lock:
+                        self.snapshot = {"status": "read-only", "detail":
+                                         f"could not read the book ({type(exc).__name__}: "
+                                         f"{exc}); trying again"}
+                    if self._stop.wait(LOCK_RETRY_EVERY):
+                        return
             self.warmup()
             while not self._stop.is_set():
                 try:
@@ -649,6 +679,58 @@ class Live:
         """Ask :meth:`run` to finish. Safe to call from another thread, and
         safe to call when the loop was never started."""
         self._stop.set()
+
+    def _take_the_book(self) -> None:
+        """Re-read the book from disk now that this engine holds the lock.
+
+        The engine and the paper book were loaded in ``__init__``, before the
+        lock. A window that followed the agent for hours still held that
+        launch-time copy when it took over, and its first save — a settle, a
+        scored hour, a mark — wrote it over every trade the agent had made in
+        the meantime. Whatever is on disk at the moment the lock is ours is the
+        record; nothing loaded before that moment may be saved over it.
+        """
+        self.engine = Engine(paths.state_file(), risk=self.risk)
+        self.book = portfolio.Portfolio(paths.user_data_base() / "portfolio.json")
+        self._load_protocol()
+        if self._asked_risk:
+            self.engine.set_risk(self._asked_risk)      # persisted, now ours to write
+            self._asked_risk = None
+        self.risk = self.engine.risk
+        report = calibration.report(self.book.closed)
+        self.asset_scanner.edge_sigma = report["implied_edge_sigma"]
+        self.asset_scanner.calibrated = report["calibrated"]
+        # Shown until the first scan marks the book: priced off the board this
+        # engine last saw (the holder's, while it followed), never written.
+        with self.lock:
+            rows = list(self.assets.get("assets", []))
+        prices = {a["symbol"]: a["price"] for a in rows if a.get("price")}
+        sparks = {a["symbol"]: a.get("spark") or [] for a in rows}
+        open_rows = self.book.open_rows(prices)
+        for r in open_rows:
+            r["spark"] = sparks.get(r["symbol"], [])
+        with self.lock:
+            self.calibration = report
+            self.positions = {"stats": self.book.stats(prices), "open": open_rows,
+                              "closed": [asdict(p) for p in self.book.closed[-40:]][::-1],
+                              "equity": list(self.book.equity_log)}
+            # The dead holder's mirror, or the "waits for it to stop" notice,
+            # must not stay on screen until warmup's first poll — which comes
+            # after two history fetches and can take many seconds offline.
+            self.snapshot = {"status": "starting"}
+        # Only now may actions write: the book they would write is the one on disk.
+        self.read_only = False
+        self.conflict = ""
+
+    def _waiting_without_a_holder_to_follow(self) -> bool:
+        """Read-only with nobody to forward to: a second window, or the moment
+        between taking the lock and re-reading the book. Nothing written then
+        would survive — the holder is writing the book, or it is about to be
+        re-read — so actions refuse instead."""
+        return self.read_only and not self.following
+
+    _READ_ONLY = ("another SONAR is driving this book, so this one is read-only "
+                  "until it stops")
 
     # -- following another engine ------------------------------------------ #
     def _wait_for_lock(self) -> bool:
@@ -676,8 +758,9 @@ class Live:
                 next_check = now + LOCK_RETRY_EVERY
                 holder = self.engine_lock.holder()
                 if holder is None and self.engine_lock.acquire():
-                    self.read_only = False
-                    self.conflict = ""
+                    # Still read-only: an action taken now would write the
+                    # launch-time book. _take_the_book lifts it once the
+                    # record on disk has been re-read.
                     self.following = None
                     self._follow_failures = 0
                     return True
@@ -777,13 +860,15 @@ class Live:
         with urllib.request.urlopen(req, timeout=FOLLOW_TIMEOUT) as r:
             return json.loads(r.read())
 
-    def _forward(self, path: str, payload: dict, refresh_book: bool = False) -> dict:
+    def _forward(self, url: str, path: str, payload: dict,
+                 refresh_book: bool = False) -> dict:
         """Hand an action to the engine being followed: it holds the book.
 
         A refusal from the network is reported in the same shape as a refusal
         from the book, so the window shows a sentence rather than a traceback.
+        ``url`` is the one the caller saw; read again here, a takeover in
+        between left None and an AttributeError in the message.
         """
-        url = self.following
         try:
             result = self._post(url, path, payload)
             if refresh_book:

@@ -23,7 +23,10 @@ import time
 import pytest
 
 from sonar import core, server
+from sonar import risk as risk_mod
 from sonar.core import Live
+from sonar.engine import Engine
+from sonar.portfolio import Portfolio
 
 
 class FakeAgent:
@@ -233,7 +236,8 @@ def test_a_refused_action_reads_as_a_sentence_not_a_traceback(following, monkeyp
 def test_the_follower_takes_over_when_the_holder_dies(following):
     live, _fake, _ = following
     _lock_held_by(live.engine_lock.path.parent, _dead_pid())   # the agent is gone
-    assert _wait(lambda: live.engine_lock.held)
+    # Holding the lock is not yet driving: read-only lifts once the book is re-read.
+    assert _wait(lambda: live.engine_lock.held and not live.read_only)
     assert live.following is None and live.read_only is False and live.conflict == ""
     assert json.loads(live.engine_lock.path.read_text())["pid"] == os.getpid()
 
@@ -250,8 +254,174 @@ def test_a_holder_without_an_address_is_waited_for_then_replaced(quick, tmp_path
         assert "waits for it to stop" in live.snapshot["detail"]
         assert live.following is None
         (tmp_path / "engine.lock").unlink()           # the window quit
-        assert _wait(lambda: live.engine_lock.held)
-        assert live.read_only is False
+        assert _wait(lambda: live.engine_lock.held and not live.read_only)
+    finally:
+        live.stop()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+
+def _holder_writes(data_dir, *, bankroll, scored, cash, risk_name="moderate"):
+    """What the agent leaves on disk after hours of driving, written through
+    the real classes so the follower reads it exactly as it would in use."""
+    eng = Engine(data_dir / "state.json", risk=risk_mod.get(risk_name))
+    eng.bankroll = bankroll
+    eng.n_scored_total = scored
+    eng.scorelog = [{"hour": h} for h in range(scored)]
+    eng.save()
+    book = Portfolio(data_dir / "portfolio.json")
+    book.cash = cash
+    book.equity_log = [{"t": 1, "v": 10_000.0}, {"t": 2, "v": cash}]
+    book.save()
+
+
+def test_a_takeover_keeps_what_the_holder_wrote(following):
+    """The window loaded the book at launch, followed the agent for hours, and
+    took over when it stopped. Its first save used to write that launch-time
+    copy over everything the agent had done since: trades, scored hours, cash."""
+    live, _fake, _ = following
+    data = live.engine_lock.path.parent
+    assert live.engine.n_scored_total == 0 and live.book.equity_log == []
+    _holder_writes(data, bankroll=9_876.5, scored=7, cash=4_321.0)
+    _lock_held_by(data, _dead_pid())                            # the agent stops
+    assert _wait(lambda: live.engine_lock.held and not live.read_only)
+    assert live.engine.bankroll == 9_876.5 and live.engine.n_scored_total == 7
+    assert live.book.cash == 4_321.0 and len(live.book.equity_log) == 2
+    assert live.positions["stats"]["cash"] == 4_321.0
+    live.engine.save()                       # the first settle / scored hour / mark
+    live.book.save()
+    state = json.loads((data / "state.json").read_text())
+    book = json.loads((data / "portfolio.json").read_text())
+    assert state["bankroll"] == 9_876.5 and state["n_scored_total"] == 7
+    assert len(state["scorelog"]) == 7
+    assert book["cash"] == 4_321.0 and len(book["equity_log"]) == 2
+
+
+def test_nothing_is_written_between_taking_the_lock_and_re_reading_the_book(
+        following, monkeypatch):
+    """The lock is ours a moment before the book on disk has been re-read. A
+    trade taken in that moment would write the launch-time book, so it refuses."""
+    live, fake, _ = following
+    entered, release = threading.Event(), threading.Event()
+    take = Live._take_the_book
+
+    def slow_take(self):
+        entered.set()
+        release.wait(5)
+        take(self)
+
+    monkeypatch.setattr(Live, "_take_the_book", slow_take)
+    _lock_held_by(live.engine_lock.path.parent, _dead_pid())
+    try:
+        assert entered.wait(5), "never took the lock"
+        result = live.trade("AAA", "LONG")
+        assert result["ok"] is False and "read-only" in result["message"]
+        assert fake.trades == [], "forwarded to a holder that is gone"
+    finally:
+        release.set()
+    assert _wait(lambda: not live.read_only)
+
+
+def test_a_takeover_keeps_the_protocols_day_stamp(following):
+    """The follower mirrors whether protocol mode is on, never the day it last
+    ran. Without the re-read, the agent's batch for today and the window's
+    launch-time stamp ("") would put a second day's entries in the same day."""
+    live, _fake, _ = following
+    data = live.engine_lock.path.parent
+    today = time.strftime("%Y-%m-%d")
+    assert live._protocol_last_day == ""
+    (data / "protocol.json").write_text(json.dumps({"on": True, "last_day": today}))
+    _lock_held_by(data, _dead_pid())
+    assert _wait(lambda: live.engine_lock.held and not live.read_only)
+    assert live._protocol_last_day == today and live.protocol_on is True
+
+
+def test_a_takeover_clears_the_dead_holders_mirror_from_the_screen(following):
+    live, _fake, url = following
+    assert live.snapshot.get("following") == url
+    _lock_held_by(live.engine_lock.path.parent, _dead_pid())
+    assert _wait(lambda: live.engine_lock.held and not live.read_only)
+    assert live.snapshot == {"status": "starting"}, "still showing the gone holder"
+
+
+def test_a_book_that_cannot_be_read_is_said_and_retried(following, monkeypatch):
+    """Re-reading the book can fail (a disk error saving --risk). The engine
+    used to vanish with the window stuck read-only and silent."""
+    live, _fake, _ = following
+    take, calls = Live._take_the_book, []
+
+    def flaky(self):
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("disk full")
+        take(self)
+
+    monkeypatch.setattr(Live, "_take_the_book", flaky)
+    _lock_held_by(live.engine_lock.path.parent, _dead_pid())
+    assert _wait(lambda: "could not read the book" in str(live.snapshot.get("detail")))
+    assert live.read_only is True
+    assert _wait(lambda: not live.read_only), "never retried"
+    assert len(calls) == 2
+
+
+def test_a_risk_asked_for_at_launch_is_saved_only_once_the_lock_is_ours(
+        quick, tmp_path, monkeypatch):
+    """`--risk` is persisted so the bankroll records what it is sized under —
+    but a process waiting on the lock wrote the state file from __init__,
+    over the book the holder was writing."""
+    _holder_writes(tmp_path, bankroll=9_500.0, scored=3, cash=5_000.0,
+                   risk_name="conservative")
+    before = (tmp_path / "state.json").read_text()
+    _lock_held_by(tmp_path, 1)
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
+    live = Live(risk_name="aggressive")
+    assert (tmp_path / "state.json").read_text() == before, "wrote before holding the lock"
+    assert live.risk.name == "aggressive"
+    live.warmup = lambda: None
+    live._poll = lambda: None
+    thread = threading.Thread(target=live.run, args=("agent",), daemon=True)
+    thread.start()
+    try:
+        assert _wait(lambda: live.snapshot.get("status") == "read-only")
+        assert (tmp_path / "state.json").read_text() == before
+        (tmp_path / "engine.lock").unlink()                     # the holder quit
+        assert _wait(lambda: live.engine_lock.held and not live.read_only)
+        state = json.loads((tmp_path / "state.json").read_text())
+        assert state["risk_profile"] == "aggressive"
+        assert state["bankroll"] == 9_500.0 and state["n_scored_total"] == 3
+        assert live.risk.name == "aggressive" and live.engine.risk.name == "aggressive"
+    finally:
+        live.stop()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+
+def test_a_window_with_no_holder_to_follow_does_not_write_the_book(
+        quick, tmp_path, monkeypatch):
+    """A second window: another engine drives and publishes nowhere this one
+    can follow. Its trades, closes and knobs used to land in the shared files
+    beside the holder's writes; now they refuse and say why."""
+    _holder_writes(tmp_path, bankroll=9_500.0, scored=3, cash=5_000.0)
+    files = {n: (tmp_path / n).read_text() for n in ("state.json", "portfolio.json")}
+    _lock_held_by(tmp_path, 1)                                  # no url: a window
+    live = _follower(tmp_path, monkeypatch)
+    live.assets = {"assets": [{"symbol": "AAA", "price": 101.0}]}
+    thread = threading.Thread(target=live.run, args=("app",), daemon=True)
+    thread.start()
+    try:
+        assert _wait(lambda: live.snapshot.get("status") == "read-only")
+        traded = live.trade("AAA", "LONG")
+        assert traded["ok"] is False and "read-only" in traded["message"]
+        assert traded["position"] is None
+        closed = live.close_position("anything")
+        assert closed["ok"] is False and "read-only" in closed["message"]
+        live.configure("aggressive", None)
+        assert live.risk.name == "moderate"
+        live.set_protocol(True)
+        assert live.protocol_on is False
+        assert not (tmp_path / "protocol.json").exists()
+        for name, text in files.items():
+            assert (tmp_path / name).read_text() == text, f"{name} was written"
     finally:
         live.stop()
         thread.join(timeout=5)

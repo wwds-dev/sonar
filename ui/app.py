@@ -3137,6 +3137,25 @@ class MainWindow(QMainWindow):
         self._cfg_thread.done.connect(self._config_done)
         self._cfg_thread.start()
 
+    def _sync_knobs(self) -> None:
+        """Show the settings the engine is actually running.
+
+        A window that may not write the book (another engine drives and
+        cannot be followed) refuses a risk change or the protocol switch, and
+        a takeover re-reads both from disk; either way the widget the user
+        touched can disagree with the engine. Synced quietly, so setting the
+        widget does not fire the action again."""
+        if not (self._cfg_thread and self._cfg_thread.isRunning()):
+            i = self.risk_box.findData(self.live.risk.name)
+            if i >= 0 and i != self.risk_box.currentIndex():
+                self.risk_box.blockSignals(True)
+                self.risk_box.setCurrentIndex(i)
+                self.risk_box.blockSignals(False)
+        if self.protocol_box.isChecked() != self.live.protocol_on:
+            self.protocol_box.blockSignals(True)
+            self.protocol_box.setChecked(self.live.protocol_on)
+            self.protocol_box.blockSignals(False)
+
     def _config_done(self, _cfg: dict) -> None:
         self.risk_box.setEnabled(True)
         self.hz_box.setEnabled(True)
@@ -3235,6 +3254,7 @@ class MainWindow(QMainWindow):
         self._refresh_book()
         self._refresh_portfolio()
         self._refresh_wire()
+        self._sync_knobs()
 
         if snap.get("status") == "read-only":
             # Another SONAR holds the engine lock and cannot be followed (a

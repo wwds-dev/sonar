@@ -163,3 +163,21 @@ def test_refresh_while_following_the_agent(window):
     window.refresh()
     assert window.status.text().startswith("following the engine at 127.0.0.1:8787")
     assert window.read_btn.isEnabled()
+
+
+def test_a_refused_setting_does_not_stay_shown(window):
+    """A window that may not write the book (another engine drives, nothing to
+    follow) refuses the protocol switch and a risk change. The widgets the user
+    touched must go back to what the engine runs, not keep claiming the change."""
+    live = window.live
+    live.read_only, live.following = True, None
+    live.snapshot = {"status": "read-only", "detail": "another engine"}
+    window.protocol_box.setChecked(True)            # refused by set_protocol
+    other = next(i for i in range(window.risk_box.count())
+                 if window.risk_box.itemData(i) != live.risk.name)
+    window.risk_box.blockSignals(True)              # as if a refused ConfigThread ran
+    window.risk_box.setCurrentIndex(other)
+    window.risk_box.blockSignals(False)
+    window.refresh()
+    assert live.protocol_on is False and window.protocol_box.isChecked() is False
+    assert window.risk_box.currentData() == live.risk.name
