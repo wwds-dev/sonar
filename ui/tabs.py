@@ -221,6 +221,15 @@ class PlainTabs(QWidget):
     # plus this must stay under RAIL_COLLAPSE_BELOW, or a user dragging the
     # window narrower hits the layout minimum before the fold can trigger and
     # the rail can never collapse interactively. test_layout holds the line.
+    #
+    # It is a floor, not the width. The budget is in the Mac's 72-dpi points,
+    # and "My investments" fits it there with room to spare — but a 96-dpi
+    # platform (CI's offscreen Ubuntu, DejaVu Sans) needs 143px for the same
+    # bold-12 label and clipped it, which is how CI went red for two days
+    # after the landing page landed. So `add` measures each name in the font
+    # the rail paints it with and widens the rail when the font asks for it;
+    # on this Mac nothing changes, and test_layout still says whether the
+    # result fits under the fold.
     RAIL_W = 188
     RAIL_COLLAPSED_W = 56
 
@@ -231,13 +240,14 @@ class PlainTabs(QWidget):
         self._plain = True
         self._collapsed = False
         self._rail_chrome: list[QWidget] = []
+        self._rail_w = self.RAIL_W
 
         self._bar = PlainTabBar(self)
         self._bar.clicked.connect(self.setCurrentIndex)
 
         self._rail = QFrame()
         self._rail.setObjectName("rail")
-        self._rail.setFixedWidth(self.RAIL_W)
+        self._rail.setFixedWidth(self._rail_w)
         rail_lay = QVBoxLayout(self._rail)
         rail_lay.setContentsMargins(10, 14, 10, 12)
         rail_lay.setSpacing(12)
@@ -317,7 +327,23 @@ class PlainTabs(QWidget):
             self._bar.set_tip(index, tip)
         if index == 0:
             self._retitle_header()
+        self._fit_rail_to(name)
         return index
+
+    def _fit_rail_to(self, name: str) -> None:
+        """Widen the rail if this platform's font needs more than the budget
+        for the name — measured in the selected weight, which is the wider."""
+        needed = (QFontMetrics(theme.text(12, True)).horizontalAdvance(name)
+                  + TEXT_X + PAD_X + self._rail_lay.contentsMargins().left()
+                  + self._rail_lay.contentsMargins().right())
+        if needed > self._rail_w:
+            self._rail_w = needed
+            if not self._collapsed:
+                self._rail.setFixedWidth(self._rail_w)
+
+    def rail_width(self) -> int:
+        """The expanded rail's width: the budget, or what the font needed."""
+        return self._rail_w
 
     def count(self) -> int:
         return self._stack.count()
@@ -361,7 +387,7 @@ class PlainTabs(QWidget):
             return
         self._collapsed = collapsed
         self._rail.setFixedWidth(
-            self.RAIL_COLLAPSED_W if collapsed else self.RAIL_W)
+            self.RAIL_COLLAPSED_W if collapsed else self._rail_w)
         for widget in self._rail_chrome:
             widget.setVisible(not collapsed)
         self._bar.set_collapsed(collapsed)
@@ -374,7 +400,7 @@ class PlainTabs(QWidget):
         the padding. Computed from the fixed widths rather than measured,
         because an unshown window has not run its layouts yet."""
         m = self._rail_lay.contentsMargins()
-        return self.RAIL_W - m.left() - m.right() - TEXT_X - PAD_X
+        return self._rail_w - m.left() - m.right() - TEXT_X - PAD_X
 
     def _retitle_header(self) -> None:
         index = self.currentIndex()

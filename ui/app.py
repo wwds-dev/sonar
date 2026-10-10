@@ -1237,7 +1237,7 @@ class MainWindow(QMainWindow):
         # under-reports, and the label then paints past the window's bottom
         # edge rather than asking for the height it needs.
         self.status = label("starting…", "faint", theme.figure(9), wrap=True)
-        self.status.setFixedWidth(PlainTabs.RAIL_W - 32)
+        self.status.setFixedWidth(self.tabs.rail_width() - 32)
         col.addWidget(self.status)
         return holder
 
