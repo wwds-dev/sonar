@@ -3285,6 +3285,10 @@ class MainWindow(QMainWindow):
         self.status.setText(
             f'{who}risk {self.live.risk.name} · horizon {hz.name} · '
             f'{assets.get("n", 0)} assets · paper money only')
+        # A dead loop leaves its last snapshot looking live; say so instead.
+        problems = self.live.health()["problems"]
+        if problems:
+            self.status.setText("⚠  " + "; ".join(p["text"] for p in problems))
 
     def _refresh_terminal(self, snap: dict) -> None:
         c, sig = snap.get("candle"), snap.get("signal")

@@ -13,12 +13,15 @@ LLM read, which is the one path that needs a key.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import horizon, llm, risk
+from . import horizon, llm, paths, risk
 from .core import Live
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -82,6 +85,12 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, b"not found", "text/plain")
 
     def do_GET(self):
+        if self.path.startswith("/api/health"):
+            # Judged now, not when the last snapshot was built: 503 when the
+            # engine is not doing its job, so a check needs no JSON to tell.
+            h = self.live.health()
+            self._json(h, 200 if h["ok"] else 503)
+            return
         if self.path.startswith("/api/config"):
             self._json(self.live.config())
             return
@@ -137,14 +146,125 @@ class PaperServer(ThreadingHTTPServer):
     request_queue_size = 64
 
 
+# How long a problem must last before it becomes a notification. A stalled
+# poll is worth knowing about in minutes; "no hour settled" needs over an hour,
+# because after the Mac wakes from a night's sleep it stays true until the next
+# hour settles, and that is not a fault.
+ALARM_AFTER_S = {"loop": 0.0, "poll": 600.0, "settle": 75 * 60.0}
+WATCH_EVERY = 15.0
+
+
+NOTIFY_SCRIPT = ("on run argv", "display notification (item 1 of argv) "
+                 "with title (item 2 of argv)", "end run")
+
+
+def _plain(text: str, limit: int = 200) -> str:
+    """One line of printable text: the body can carry exception text from the
+    network, and a control character made AppleScript reject the whole call."""
+    flat = "".join(c if c.isprintable() else " " for c in text)
+    return " ".join(flat.split())[:limit]
+
+
+def notify_macos(title: str, body: str) -> None:
+    """A macOS notification from the agent itself, which has no window to show
+    anything in. The text goes in as arguments, never into the script's source.
+    Best effort: a failure is logged, never raised."""
+    if sys.platform != "darwin":
+        return
+    args = ["osascript"]
+    for line in NOTIFY_SCRIPT:
+        args += ["-e", line]
+    args += ["--", _plain(body), _plain(title, 60)]
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=10)
+        if getattr(r, "returncode", 0):
+            print(f"SONAR: notification refused ({r.returncode}): "
+                  f"{_plain(r.stderr or '')}", file=sys.stderr, flush=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"SONAR: could not post a notification ({exc})", file=sys.stderr, flush=True)
+
+
+STOPPED_NOTICE_EVERY = 3600.0      # a crash loop restarts every minute; say it once an hour
+
+
+def _stopped_notice_due(now: float) -> bool:
+    """Has an hour passed since the last "SONAR stopped" notice, across
+    restarts? Kept beside the book, since each restart is a new process."""
+    path = paths.user_data_base() / "alarm.json"
+    last = paths.read_preferences(path).get("stopped_at")
+    if isinstance(last, (int, float)) and 0 <= now - last < STOPPED_NOTICE_EVERY:
+        return False
+    try:
+        paths.write_atomically(path, json.dumps({"stopped_at": now}))
+    except OSError:
+        pass
+    return True
+
+
+class Watchdog:
+    """Keeps the agent honest about whether it is working.
+
+    * The engine runs on a daemon thread; if that thread ends, the HTTP server
+      kept the process alive, launchd saw nothing wrong, and nothing traded or
+      scored again. Now the process exits non-zero, which launchd's KeepAlive
+      restarts (packaging/com.netrunner3000.sonar.plist).
+    * A problem from ``Live.health()`` that lasts past its ALARM_AFTER_S posts
+      one notification; recovery posts one more. Nothing repeats in between.
+    """
+
+    def __init__(self, live, engine_thread, notify=notify_macos, exit_fn=os._exit,
+                 log=None):
+        self.live, self.engine_thread = live, engine_thread
+        self.notify, self.exit_fn = notify, exit_fn
+        self.log = log or (lambda msg: print(msg, file=sys.stderr, flush=True))
+        self.bad_since: dict[str, float] = {}
+        self.alarmed: set[str] = set()     # kinds already told, until they clear
+        self._was_alarmed = False
+
+    def step(self, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        if not self.engine_thread.is_alive() and not self.live._stop.is_set():
+            self.log("SONAR: the engine thread ended; exiting so launchd restarts the agent")
+            if _stopped_notice_due(now):
+                self.notify("SONAR stopped", "The engine loop ended. The agent is restarting.")
+            self.exit_fn(3)
+            return
+        h = self.live.health(now)
+        kinds = {p["kind"]: p["text"] for p in h["problems"]}
+        self.bad_since = {k: self.bad_since.get(k, now) for k in kinds}
+        self.alarmed &= set(kinds)            # a cleared kind may alarm again later
+        due = {k: text for k, text in kinds.items()
+               if k not in self.alarmed
+               and now - self.bad_since[k] >= ALARM_AFTER_S.get(k, 600.0)}
+        if due:
+            self._was_alarmed = True
+            self.alarmed |= set(due)
+            self.log("SONAR: needs attention: " + "; ".join(due.values()))
+            self.notify("SONAR needs attention", "; ".join(due.values()))
+        elif not kinds and self._was_alarmed:
+            self._was_alarmed = False
+            self.log("SONAR: working again")
+            self.notify("SONAR is working again", "Prices are polling and hours are settling.")
+
+    def run(self, stop: threading.Event | None = None) -> None:
+        stop = stop or threading.Event()
+        while not stop.wait(WATCH_EVERY):
+            try:
+                self.step()
+            except Exception as exc:          # the watchdog must outlive its own bugs
+                self.log(f"SONAR: watchdog step failed ({type(exc).__name__}: {exc})")
+
+
 def main(host: str = "127.0.0.1", port: int = 8787,
          risk_name: str | None = None, horizon_name: str | None = None,
          role: str = "daemon") -> None:
     live = Live(risk_name=risk_name, horizon_name=horizon_name)
     # The address goes into the engine lock, so a window that loses the race
     # for it can follow this engine here rather than open with nothing.
-    threading.Thread(target=live.run, args=(role,),
-                     kwargs={"url": f"http://{host}:{port}"}, daemon=True).start()
+    engine = threading.Thread(target=live.run, args=(role,),
+                              kwargs={"url": f"http://{host}:{port}"}, daemon=True)
+    engine.start()
+    threading.Thread(target=Watchdog(live, engine).run, daemon=True).start()
     Handler.live = live
     srv = PaperServer((host, port), Handler)
     ok, why = llm.available()

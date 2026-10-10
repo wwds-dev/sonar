@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import random
+import sys
 import threading
 import time
 import urllib.request
@@ -47,6 +48,11 @@ SEED_MAX_TRIES = 6          # partial answers tolerated before giving up
 FOLLOW_EVERY = 2.0
 FOLLOW_SLOW_EVERY = 10.0
 LOCK_RETRY_EVERY = 15.0
+# Health (see Live.health): a driving engine with no successful poll for this
+# long is in trouble — a poll runs every PRICE_EVERY seconds.
+HEALTH_MAX_POLL_AGE = 120.0
+HEALTH_START_GRACE = 180.0     # the first poll follows two history fetches
+POLL_ERROR_LOG_EVERY = 15      # log the 1st failed poll, then every 15th (~1/min)
 FOLLOW_TIMEOUT = 2.0        # seconds per request to the holder, on localhost
 SPARK_MAX = 220             # price points kept for the sparkline
 
@@ -84,6 +90,18 @@ class Live:
         # QThread is still running when it is destroyed, so the loop this drives
         # must be able to finish on request — see ui/app.py's shutdown().
         self._stop = threading.Event()
+        # Health bookkeeping for Live.health() and /api/health. A dead loop used
+        # to leave the last snapshot on screen saying all was well, and every
+        # failed poll was swallowed without a line in any log.
+        self._running = False
+        self._driving_since: float | None = None
+        self.last_poll_ok_at: float | None = None
+        self.last_poll_error = ""
+        self._poll_failures = 0
+        # Set by _poll: did this poll get a fresh price? The feed fetchers turn
+        # network errors into None, so a full outage raised nothing and every
+        # poll looked successful while no price had arrived for hours.
+        self._poll_fresh = True
         # Single-writer guard around the paper engine (see enginelock.py).
         self.engine_lock = None
         self.read_only = False
@@ -700,6 +718,13 @@ class Live:
         daemon's HTTP port); it is written into the lock for the next one.
         """
         self.engine_lock = enginelock.EngineLock(role=role, url=url)
+        self._running = True
+        try:
+            self._run_locked()
+        finally:
+            self._running = False
+
+    def _run_locked(self) -> None:
         if not self.engine_lock.acquire() and not self._wait_for_lock():
             return                        # asked to stop while waiting
         try:
@@ -716,13 +741,10 @@ class Live:
                                          f"{exc}); trying again"}
                     if self._stop.wait(LOCK_RETRY_EVERY):
                         return
+            self._driving_since = time.time()
             self.warmup()
             while not self._stop.is_set():
-                try:
-                    self._poll()
-                except Exception as exc:           # keep the loop alive
-                    with self.lock:
-                        self.snapshot = {"status": "error", "detail": str(exc)}
+                self._poll_once()
                 # wait(), not sleep(): a quit lands immediately instead of
                 # blocking shutdown for the rest of the poll interval.
                 self._stop.wait(PRICE_EVERY)
@@ -730,6 +752,70 @@ class Live:
             # Hand the lock back on the way out. A crash could never do this,
             # which left a stale holder and sent the next launch to read-only.
             self.engine_lock.release()
+
+    def _poll_once(self) -> None:
+        """One poll, with its outcome recorded for health(). Never raises: the
+        loop must outlive a bad poll."""
+        try:
+            self._poll()
+        except Exception as exc:
+            self._poll_failed(exc)
+            with self.lock:
+                self.snapshot = {"status": "error", "detail": str(exc)}
+            return
+        if self._poll_fresh:
+            self.last_poll_ok_at = time.time()
+            self._poll_failures = 0
+        else:
+            self._poll_failed(RuntimeError("no fresh BTC price from Binance or Coinbase"))
+
+    def _poll_failed(self, exc: Exception) -> None:
+        self._poll_failures += 1
+        self.last_poll_error = " ".join(f"{type(exc).__name__}: {exc}".split())
+        if self._poll_failures % POLL_ERROR_LOG_EVERY == 1:
+            print(f"SONAR {time.strftime('%Y-%m-%d %H:%M:%S')}: poll failed "
+                  f"({self._poll_failures} in a row): {self.last_poll_error}",
+                  file=sys.stderr, flush=True)
+
+    def health(self, now: float | None = None) -> dict:
+        """Is this engine doing its job, judged now — not when a snapshot was
+        built? ``problems`` lists what is wrong, each with a ``kind``: ``loop``
+        (the engine loop ended), ``poll`` (driving, but no successful poll for
+        HEALTH_MAX_POLL_AGE) or ``settle`` (polling, but no hour settled for
+        engine.STALE_AFTER_S). Waiting for or following another engine is not
+        a problem here: that engine answers for itself."""
+        now = time.time() if now is None else now
+        problems: list[dict] = []
+        if self.following:
+            mode = "following"
+        elif self.read_only:
+            mode = "waiting"
+        elif self._running and self._driving_since is not None:
+            mode = "driving"
+        elif self._running:
+            mode = "starting"
+        elif self.engine_lock is None:
+            mode = "not started"
+        else:
+            mode = "stopped"
+            if not self._stop.is_set():
+                problems.append({"kind": "loop", "text": "the engine loop has stopped"})
+        age = None if self.last_poll_ok_at is None else round(now - self.last_poll_ok_at)
+        run = None
+        if mode == "driving":
+            since = self.last_poll_ok_at or self._driving_since
+            limit = HEALTH_MAX_POLL_AGE if self.last_poll_ok_at else HEALTH_START_GRACE
+            if now - since > limit:
+                why = f" (last error: {self.last_poll_error})" if self.last_poll_error else ""
+                problems.append({"kind": "poll", "text": "no successful price poll for "
+                                 f"{int((now - since) // 60)} min{why}"})
+            run = self.engine.run_health(now)
+            if run.get("stale"):
+                problems.append({"kind": "settle", "text": "no hour has settled for "
+                                 f"{int(run.get('last_settled_age_s', 0) // 3600)} h"})
+        return {"ok": not problems, "mode": mode, "problems": problems,
+                "last_poll_age_s": age, "last_error": self.last_poll_error,
+                "run": run}
 
     def stop(self) -> None:
         """Ask :meth:`run` to finish. Safe to call from another thread, and
@@ -957,6 +1043,7 @@ class Live:
     def _poll(self) -> None:
         now = time.time()
         candle = feeds.hourly_candle()
+        self._poll_fresh = candle is not None
         hour = self.engine.current_hour          # only this thread writes it
         if candle is not None and hour is not None and candle.open_time < hour:
             # An earlier hour than the engine is on (a lagging fallback feed, a
