@@ -232,3 +232,37 @@ def no_thread_termination(monkeypatch):
 #: timer set that way is disarmed the first time anything raises. It fired
 #: correctly on a one-test reproduction and then failed to fire on the full
 #: suite, which is exactly the shape of bug a guard must not have.
+
+
+def pytest_unconfigure(config):
+    """Take Qt down in order before the interpreter does it in any order.
+
+    Every window fixture calls `shutdown()`, but the QApplication itself and
+    any top-level widget still referenced somewhere were left for interpreter
+    finalisation — which destroys Python-subclassed widgets (the rail's
+    painter, the cards) and the application in no particular order. On Linux
+    that ended every CI run since v2.131, after every test had passed, with
+    SIGSEGV and then, once the icon pixmaps were freed first, SIGABRT: "pure
+    virtual method called". Nothing on macOS shows it. So: close and delete
+    what is left, flush the deletions, and shut the application down while
+    Python is still whole.
+    """
+    try:
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        return
+    app = QApplication.instance()
+    if app is None:
+        return
+    for widget in app.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()
+    try:
+        from ui import icons
+        icons._cache.clear()
+    except ImportError:
+        pass
+    app.shutdown()
