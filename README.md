@@ -757,9 +757,9 @@ happened here and each naming what caught it.
 ### Testing
 
 `TESTING.md` is the automated side — what is covered, what is not, and the order
-to fix it in. **`TESTPLAN.md` is the manual side**: 117 acceptance cases for
+to fix it in. **`TESTPLAN.md` is the manual side**: 144 acceptance cases for
 signing off v2, run against the installed bundle rather than the checkout,
-because several of the failures only exist in a build. Seventeen of them are marked
+because several of the failures only exist in a build. Eighteen of them are marked
 as regressions, which makes the list double as this project's bug history.
 
 The app's **Test plan** button (next to *Docs*) opens it as a page that remembers

@@ -13,6 +13,8 @@ mark everywhere and takes whatever colour the state says.
 
 from __future__ import annotations
 
+import atexit
+
 from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -45,6 +47,13 @@ _TEMPLATE = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" '
              'stroke-linecap="round" stroke-linejoin="round">{body}</svg>')
 
 _cache: dict[tuple, QPixmap] = {}
+
+# A QPixmap that outlives the QApplication is destroyed during interpreter
+# shutdown, after Qt has torn down the platform it was made on, and on Linux
+# that is a segfault with no Python frame — every CI run since v2.131 passed
+# every test and then died with signal 11. atexit runs while the application
+# object still exists, so the pixmaps go first.
+atexit.register(_cache.clear)
 
 
 def has(key: str) -> bool:

@@ -8,6 +8,12 @@ failures below only exist in a packaged build — a module PyInstaller could not
 see, a resource path that moves when frozen, a Qt plugin inherited from a parent
 process. A green suite says nothing about any of them.
 
+**Run it in the state it is used in: the app open on top of the launchd agent**
+(`./scripts/install_agent.sh --status` says *installed and loaded*). Since v2.128
+the window *follows* the agent — every figure is the agent's, every action that
+writes the book is handed to it — so a case passed with the agent stopped has
+tested a different program. §10.4–10.5 and the handovers in §12 say when to stop it.
+
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
@@ -17,7 +23,7 @@ process. A green suite says nothing about any of them.
 
 **Run it from inside the app.** The **Test plan** button, next to *Learn*, opens
 this as a page that remembers which cases you have passed or failed — a hundred
-and seventeen of them is more than one sitting. The daemon serves it at `/testplan` too.
+and forty-four of them is more than one sitting. The daemon serves it at `/testplan` too.
 
 That page is *generated* from this file by `scripts/build_testplan.py`, which
 `build_app.sh` runs before packaging. Edit the markdown, never the HTML.
@@ -35,6 +41,9 @@ running even when short of time — the list doubles as this project's bug histo
 | 0.2 | `./build_app.sh --install` | Ends with `All checks passed.` then `Installed:` |
 | 0.3 | `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` | `All checks passed.` Reports 7 sports, 5 rated, cycling with no feed. |
 | 0.4 | Note the bankroll before you start | You will compare against it in 5.x |
+| 0.5 | `QT_QPA_PLATFORM=offscreen ./run-tests.sh -q` | Also no failures. This is how CI runs the suite, and the two disagree on font metrics: CI was red for two days in Oct 2026 while the native run above was green. |
+| 0.6 | `gh run list --limit 1` | `completed success` on the commit being signed off |
+| 0.7 | Hover the version in the installed app; then `git cat-file -e <commit>` with the commit it names | The commit exists in the repository and the tooltip does not say *uncommitted changes*. *The v2.132 bundle of 2026-10-08 named a commit that had been amended away — and the badge called it up to date.* |
 
 ---
 
@@ -43,7 +52,7 @@ running even when short of time — the list doubles as this project's bug histo
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
 | 1.1 | ⚠ | Launch from `/Applications`. Time it. | First paint in **under 3s**. *Once took 11s of sequential fetches.* |
-| 1.2 | | Count the tabs, and read both lines on each | Eight, each showing a plain name over the name the docs use: Live model/TERMINAL · Screener/ASSETS · News/WIRE · My trades/BOOK · Big picture/MACRO · Practice/LAB · Sports/PLAYMAKER · Learn |
+| 1.2 | | Count the tabs, and read both lines on each | Eight, each showing a plain name over the name the docs use: My investments/PORTFOLIO · Screener/ASSETS · News/WIRE · My trades/BOOK · Big picture/MACRO · Practice/LAB · Sports/PLAYMAKER · Learn |
 | 1.3 | | Wait 30s, visit each tab | No tab shows "—" in every field |
 | 1.4 | ⚠ | Resize the display to 1280×800 (or check on a laptop screen) | Nothing clipped, no horizontal scroll. *Once opened 4,540pt wide on a 1,280pt display.* |
 | 1.5 | ⚠ | Click the **red close button** | Window disappears; menu-bar icon stays; app still running. *Reported broken five times, five different causes.* |
@@ -55,11 +64,14 @@ running even when short of time — the list doubles as this project's bug histo
 | 1.11 | ⚠ | Launch, and quit **within 5 seconds** — while the tabs are still filling — by ⌘Q. Repeat three times. | Gone each time, in about a second. *This is the one that produced the blank white window: a quit landing on an in-flight fetch terminated the poll thread, which never gave the GIL back, and the whole process froze with the window unpainted. Watch for a window that turns white and stops responding rather than closing.* |
 | 1.12 | ⚠ | Relaunch. Leave it running **20 minutes**, clicking between tabs throughout, and close the window at the end | Stays responsive the whole time, and closes on the first click. *Two freezes hid here. The Wire's news TTL is 8 minutes and a UI-thread fetch froze the window white. The central-bank feed's is 15, and it was fetched while holding the lock the UI thread takes every second — no UI-thread fetch at all, and the same dead event loop: blank window, close button ignored, alive again a few seconds later.* |
 | 1.13 | | Read the version beside the wordmark, and the window title | Both show the same `v2.NNN`. It matches `./build_app.sh` output and `python main.py --selftest` |
-| 1.14 | ⚠ | Hover the version | Reports commit, date, packaged-vs-checkout, and whether a newer build exists. *It must never say "up to date" when it cannot know — a guessed answer here gets believed.* |
+| 1.14 | ⚠ | Hover the version | Reports commit, date, packaged-vs-checkout, and whether a newer build exists. *It must never say "up to date" when it cannot know — a guessed answer here gets believed.* The same build number with a different commit says so and names both. |
 
 ---
 
-## 2. Terminal
+## 2. The hourly model (foot of Practice)
+
+The BTC up/down model was the landing page, "Terminal", until v2.127. It lives,
+unchanged, at the foot of **Practice** now — open that page and scroll down.
 
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
@@ -70,7 +82,7 @@ running even when short of time — the list doubles as this project's bug histo
 | 2.5 | | Read the equity curve | Renders; a gold **LIVE** marker separates the warm-up from real trades |
 | 2.6 | | Press **LLM read on this hour** | Either a read appears, or it says why not. With no API key, "off — no key" is the correct answer, not an error. |
 | 2.7 | | Hover every number in the stat row | Each has a tooltip explaining it in plain words |
-| 2.8 | | Read the **model vs market** line under the portfolio strip | States how many hours are scored and refuses a verdict below **100** — below the threshold it must not favour either side. |
+| 2.8 | | Read the **model vs market** line in the ledger panel under the equity curve | States how many hours are scored and refuses a verdict below **100** — below the threshold it must not favour either side. |
 | 2.9 | | Read the same line's health tail after a few hours of running | `coverage`, `voided` and `last settle` are present; coverage sits near 100% on an uninterrupted run; no ⚠ STALLED while hours are settling. |
 
 ---
@@ -103,7 +115,7 @@ and is silently dropped from the count.
 |---|---|---|---|
 | 3.16 | | Press **Wording: plain** | Becomes *Wording: expert*. Headings become `TREND · PRICE · 1D · MOM · VOL · NEWS · R:R · P(PROF) · CONF · AGE`, the ticker replaces the sentence under each name, the banner disappears, and the tab bar drops to one line of original names. |
 | 3.17 | ⚠ | Compare the two boards side by side | **Same columns, same order, same widths.** Only the words and the row height change. *A mode that rearranged the board would be a second interface to keep true.* |
-| 3.18 | | Check a stat strip on **Live model** | `TAU` in expert, `HOUR REMAINING` in plain — the captions follow the switch without a relaunch |
+| 3.18 | | Check the stat strip of the hourly model at the foot of **Practice** | `TAU` in expert, `HOUR REMAINING` in plain — the captions follow the switch without a relaunch |
 | 3.19 | | Switch to expert, quit, relaunch | Still expert. The choice is remembered in `wording.json` beside the other user data. |
 | 3.20 | | Put junk in `wording.json` and relaunch | Opens in plain wording. A preference file a person can edit must not be able to break the app. |
 | 3.21 | | Switch back to plain | Everything returns; no relaunch needed |
@@ -234,7 +246,7 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 | 9.6 | | Type a word that is not there | Says so, rather than doing nothing |
 | 9.7 | | Check §14 | Documents Playmaker, including Kaunitz's account-limiting caveat next to the profit figure |
 | 9.8 | | Press **Open in browser** | The same page in a real browser, with the styling Qt cannot draw |
-| 9.9 | | Check §2's table | Eight rows, each naming the plain tab name and the original underneath |
+| 9.9 | | Check §2's table | Eight rows, the first *My investments*, each naming the plain tab name and the original underneath |
 
 ---
 
@@ -247,7 +259,7 @@ The cases most likely to be skipped, and the ones that produced the worst bugs.
 | 10.1 | | Turn Wi-Fi **off**. Relaunch. | Starts. Shows stale/empty values with a visible reason. **Does not hang, does not crash.** |
 | 10.2 | ⚠ | With Wi-Fi off, click every tab | All render. *A stale feed must read as missing, never as a price — Binance served a delisted pair's last candle for years without erroring.* |
 | 10.3 | | Turn Wi-Fi back on | Recovers within one poll cycle without a restart |
-| 10.4 | | Launch a **second** SONAR while the first runs | Second says **READ-ONLY** and names the conflict. Two engines settling the same hour would double-count the book. |
+| 10.4 | | With the agent stopped, launch a **second** SONAR while the first runs | Second says **READ-ONLY** and names the conflict. Two engines settling the same hour would double-count the book. |
 | 10.5 | | Quit both. Relaunch. | Starts normally — the stale lock is reclaimed |
 | 10.6 | | Leave Wi-Fi **off for over two hours** with the app running | The menu-bar tooltip gains **⚠ STALLED** and a notification is posted once — a dead run must not look identical to a healthy one. |
 | 10.7 | | Turn Wi-Fi back on and let an hour settle | The STALLED flag clears on its own; coverage resumes counting. |
@@ -255,7 +267,56 @@ The cases most likely to be skipped, and the ones that produced the worst bugs.
 
 ---
 
-## 11. Exit criteria
+## 11. My investments — the first screen
+
+The landing page since v2.127. Every figure on it is the book's, and several are
+the same quantity reached two ways, so most of these cases compare one number
+with another rather than with a value written here. `curl -s
+http://127.0.0.1:8787/api/book` is the agent's own account of the book.
+
+| # | ⚠ | Steps | Expected |
+|---|---|---|---|
+| 11.1 | | Launch the app | It opens on **My investments**: P&L now (the largest figure), account value, invested, at risk, closed. |
+| 11.2 | | Compare the strip with `curl -s http://127.0.0.1:8787/api/book` (`positions.stats`) | Equity, P&L, invested and at-risk match to the dollar. |
+| 11.3 | | Read the line under **invested** | Two figures — *your cash in N longs* and *borrowed for M shorts* — that add up to the big one. N + M is the number of open positions. Never one figure called cash. |
+| 11.4 | | Read the line under **at risk** | A percentage of the account and *N stops set*, N equal to the open count. |
+| 11.5 | | Check: account value − starting cash = P&L now, and P&L now = open + closed on its own line | Both hold to the dollar. |
+| 11.6 | | Read the account-value curve | Starts on or before the day of the first entry; its last point is within the hour of the account value in the strip; no step without an entry or exit near it. |
+| 11.7 | | Count the tiles, then the cards | One of each per open position. The biggest tile is the position with the most to lose; a tile's colour follows the sign of its P&L. |
+| 11.8 | | Close a position from its card | Asks first; then it leaves the cards, appears under recently closed, and **My trades** agrees. |
+| 11.9 | | Read **Is the score right?** and compare its first sentence with the calibration verdict on **My trades** | Word for word the same. |
+| 11.10 | | Read the band lines | Bands print as 0–20 … 80–100 — never *101*. Each band under 20 closed says it needs 20 to count. |
+| 11.11 | | Read the whole grade panel for forecast words | None of *will, should, buy, sell, expect, likely, going to, bullish, bearish*. It describes what happened. |
+| 11.12 | | Toggle protocol mode on **My trades**, come back | The panel's last line follows: *protocol mode is on* / *is off*, and how many of the closed positions protocol opened. |
+| 11.13 | | Narrow the window to 1280×775 | The figures and the curve are on screen first; the page scrolls; nothing clips. |
+
+---
+
+## 12. Follow mode — the app on top of the agent
+
+Two processes, one book (v2.128, v2.130): the agent holds the engine lock, the
+window mirrors it and hands it every action that writes the book. **12.6–12.10
+stop and restart the live run** — do them just after an hour has settled, and
+finish with `./scripts/install_agent.sh --status` showing it loaded again. Note
+the model-vs-market *n* and the closed count before 12.6; 12.10 compares.
+
+| # | ⚠ | Steps | Expected |
+|---|---|---|---|
+| 12.1 | | With the agent running, launch the app | The status line at the foot of the rail says *following the engine at 127.0.0.1:8787*. |
+| 12.2 | | `cat ~/Library/Application\ Support/SONAR/engine.lock` | Names the agent's pid, role `agent`, and its URL. The app is not the holder. |
+| 12.3 | | Buy a row on **Screener** | The position appears in `curl -s http://127.0.0.1:8787/api/book` and on the window within a few seconds — the agent booked it. |
+| 12.4 | | Close it from **My trades** | Gone from the agent's book too. |
+| 12.5 | | Change the risk knob | `curl -s http://127.0.0.1:8787/api/config` reports the new profile, and the window's knob stays on it. |
+| 12.6 | | Press **LLM read on this hour** | It runs on the agent. If the agent's environment has no `anthropic`, the reply says so **and says it is the agent's**, not just "off". |
+| 12.7 | | Stop the agent: `launchctl bootout gui/$(id -u)/com.netrunner3000.sonar` | Within about 15 seconds the status line stops saying *following*, the lock names the app, and the price keeps moving — no restart. |
+| 12.8 | | Reinstall the agent with the window still open: `./scripts/install_agent.sh` | The agent starts and **waits** (the window holds the lock and publishes no address); the window keeps driving. |
+| 12.9 | | Quit the window from the menu bar | Within about 15 seconds the lock names the agent and `curl -s http://127.0.0.1:8787/api/state` reports `"status": "live"`. |
+| 12.10 | | Compare the model-vs-market *n* and the closed count with the note from before 12.7 | *n* has grown by at most one per hour elapsed; no closed position appears twice. Two engines settling the same hour would show here. |
+| 12.11 | | `kill -9` the agent's pid while the window follows it | launchd restarts it; the window either keeps following or takes over — either way, within a minute one of them drives and the lock is not left stale. |
+
+---
+
+## 13. Exit criteria
 
 v2 signs off when:
 
@@ -265,9 +326,12 @@ v2 signs off when:
       quit has been reported twice and is the most visible class of defect here.
 - [ ] §10 passes. An app that misbehaves offline is worse than one that says it
       is offline.
+- [ ] §11 and §12 pass — the first screen and the two-process book are the two
+      newest parts of the app, and §12 is the only check that the run's sample
+      survives a handover.
 - [ ] Any failure is either fixed, or written into `TODO.md` with its evidence.
 
-## 12. Known, and not blocking
+## 14. Known, and not blocking
 
 - ~~The Qt window tests wedge about one run in three.~~ **Fixed 2026-09-19**:
   the conftest guards were function-scoped below a module-scoped window fixture,
