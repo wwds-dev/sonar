@@ -29,7 +29,7 @@ import bisect
 import json
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
@@ -187,14 +187,13 @@ class Portfolio:
 
     # -- persistence ------------------------------------------------------- #
     def _load(self) -> None:
-        try:
-            d = json.loads(self.path.read_text())
-        except (OSError, ValueError):
+        d = paths.read_state(self.path)
+        if d is None:
             return
         self.starting_cash = d.get("starting_cash", self.starting_cash)
         self.cash = d.get("cash", self.starting_cash)
-        self.open = [Position(**p) for p in d.get("open", [])]
-        self.closed = [Position(**p) for p in d.get("closed", [])]
+        self.open = [_position_from(p) for p in d.get("open", [])]
+        self.closed = [_position_from(p) for p in d.get("closed", [])]
         self.equity_log = [q for q in d.get("equity_log", [])
                            if isinstance(q, dict) and "t" in q and "v" in q]
 
@@ -555,6 +554,19 @@ class Portfolio:
         self.equity_log = points + self.equity_log
         self.save()
         return len(points)
+
+
+def _position_from(d: dict) -> Position:
+    """A Position from a saved record, ignoring fields this build does not know.
+
+    A book written by a newer build — read by an older bundle after a rollback,
+    or by the agent's checkout a commit behind the app — carried a field
+    ``Position(**d)`` refused with a TypeError, which nothing caught: the app
+    did not start. The engine's trades have tolerated this since September
+    (``_trade_from``); positions now do too.
+    """
+    known = {f.name for f in fields(Position)}
+    return Position(**{k: v for k, v in d.items() if k in known})
 
 
 def _progress(pos: Position, price: float) -> float:

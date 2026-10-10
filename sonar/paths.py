@@ -15,9 +15,11 @@ never does.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 APP_NAME = "SONAR"
@@ -57,6 +59,47 @@ def daily_backup(path: Path, keep: int = BACKUP_KEEP,
         except OSError:
             pass
     return bak
+
+
+def read_state(path: Path) -> dict | None:
+    """A state file's contents, recovering from a file that cannot be read.
+
+    ``None`` means *no file*: a first run, start clean. A file that exists but
+    does not parse to an object — a truncated write, a disk error, a hand edit
+    gone wrong — used to mean the same thing, and that is the worst answer
+    available: the engine started on a blank $10,000, and its first save
+    overwrote the only copy of weeks of record with it. So the unreadable file
+    is moved aside (``<name>.unreadable.<unix time>``, never overwritten or
+    rotated away) and the newest daily backup that does parse is loaded in its
+    place, with a line on stderr saying so. Only when no backup parses either
+    does this start clean — and even then the original bytes are kept.
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text())
+        if isinstance(data, dict):
+            return data
+    except (OSError, ValueError):
+        pass
+    aside = p.with_name(f"{p.name}.unreadable.{int(time.time())}")
+    try:
+        p.replace(aside)
+    except OSError:
+        aside = p
+    for bak in sorted(p.parent.glob(f"{p.name}.bak.*"), reverse=True):
+        try:
+            data = json.loads(bak.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            print(f"SONAR: {p.name} could not be read; kept it as {aside.name} "
+                  f"and loaded {bak.name} instead.", file=sys.stderr, flush=True)
+            return data
+    print(f"SONAR: {p.name} could not be read and no backup parses; kept it as "
+          f"{aside.name} and started clean.", file=sys.stderr, flush=True)
+    return None
 
 
 def is_frozen() -> bool:

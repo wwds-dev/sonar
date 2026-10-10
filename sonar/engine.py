@@ -132,11 +132,8 @@ class Engine:
 
     # ---- persistence ----------------------------------------------------- #
     def _load(self) -> None:
-        if not self.path.exists():
-            return
-        try:
-            d = json.loads(self.path.read_text())
-        except (ValueError, OSError):
+        d = _paths.read_state(self.path)
+        if d is None:
             return
         self.bankroll = d.get("bankroll", self.starting_bankroll)
         self.starting_bankroll = d.get("starting_bankroll", self.starting_bankroll)
