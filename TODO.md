@@ -11,6 +11,35 @@
 Only unfinished items live here. Finished work is under **Done** at the foot; v3 and the
 not-planned list sit between the two.
 
+### Handing SONAR to other people — only if "others later" happens
+
+Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading tool until the
+30 clean days to 2026-11-09 are done. Do these in order; 1 and 2 take days, so start them first.
+
+- [ ] `P2` `infra` `@me` **1. Notarization.** Enrol in the Apple Developer Program (99 USD/yr), create a
+      *Developer ID Application* certificate (Xcode → Settings → Accounts → Manage Certificates; name via
+      `security find-identity -v -p codesigning`), store notary credentials once
+      (`xcrun notarytool store-credentials sonar-notary --apple-id … --team-id …`, app-specific password
+      from appleid.apple.com). Then tell Claude the certificate name.
+- [ ] `P2` `infra` `@ai` **1b. Signed, notarized build** — after 1: `build_app.sh` signs with the Developer ID
+      (hardened runtime plus an entitlements file; expect rounds of library-validation fixes), zips,
+      `notarytool submit --wait`, `stapler staple`; check `spctl --assess --type execute -vv` says
+      "Notarized Developer ID". Add a macOS CI job and pin the Actions by SHA at the same time.
+- [ ] `P2` `docs` `@me` **2. Legal and disclaimer text — a lawyer, not Claude.** Whether public "worth a look"
+      scores and paper trades count as regulated investment information in your jurisdiction; formal terms
+      of use, no-warranty and liability text, a privacy statement; the terms of every data source (Yahoo, ESPN,
+      Polymarket, Binance, Coinbase, Nasdaq, EDGAR, the news RSS feeds, Wikipedia pageviews) — several forbid
+      redistribution or commercial use. Hand over `docs/audit/SUMMARY.md`, the README and the source list.
+- [ ] `P2` `testing` `@me` **3. Clean install on a second Mac** (or a fresh macOS user): copy the notarized
+      `SONAR.app` over, open it with no Gatekeeper warning, empty book and the Start here card appear, the
+      Screener loads in about a minute, a paper trade survives quit and relaunch, nothing points at the
+      owner's folders. Report failures; the headless agent is installed from the checkout today, so a second
+      Mac has none until an installer exists (`@ai` once reported).
+- [ ] `P3` `docs` `@me` **4. Support and updates.** Decide the support channel (an email or GitHub issues, and
+      how fast you answer — or that you will not), and how people hear about a new build (there is no
+      auto-update). Say in the app and README that results come from free public sources and can be stale or
+      wrong. (The licence is settled: MIT, see Done.)
+
 - [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. No code needed — `providers.py` already registers Finnhub at preference 5, ahead of Yahoo, and picks the key up from `FINNHUB_API_KEY` in a git-ignored `.env`. Also removes the ~15-minute quote delay during market hours.
 - [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
       it is the one that decides whether anything here is true. Three parts:
