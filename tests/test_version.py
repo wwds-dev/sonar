@@ -434,3 +434,24 @@ class TestAModifiedTreeIsSaidSo:
         app_version.info.cache_clear()
         assert app_version.info()["dirty"] is False
         assert "uncommitted" not in app_version.tooltip()
+
+
+def test_a_failed_status_check_is_not_read_as_clean(monkeypatch, tmp_path):
+    """A build whose git status call failed was stamped clean (v2.166)."""
+    import subprocess
+    from sonar import version as v
+
+    class R:
+        returncode, stdout = 128, ""
+    monkeypatch.setattr(v.subprocess, "run", lambda *a, **k: R())
+    assert v._dirty(tmp_path) is True
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired("git", 5)
+    monkeypatch.setattr(v.subprocess, "run", boom)
+    assert v._dirty(tmp_path) is True
+
+    class Clean:
+        returncode, stdout = 0, ""
+    monkeypatch.setattr(v.subprocess, "run", lambda *a, **k: Clean())
+    assert v._dirty(tmp_path) is False

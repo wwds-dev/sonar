@@ -133,9 +133,24 @@ def _git_build(cwd: Path | None = None, *, required: bool = False) -> dict | Non
         # modified tree contains code its commit does not, and a checkout
         # running with edits is not the build its number names. Untracked
         # files are ignored: a scratch file beside the code is not the code.
-        "dirty": bool(_git("status", "--porcelain", "--untracked-files=no",
-                           cwd=root)),
+        "dirty": _dirty(root),
     }
+
+
+def _dirty(root: Path) -> bool:
+    """Tracked changes since HEAD — and True when that cannot be determined.
+
+    `_git` answers None both for "no output" and for "git failed", and the
+    stamp used to read either as clean: a v2.166 built from a modified tree
+    was stamped clean when the status call failed inside the build. Unknown
+    is not clean."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=str(root), capture_output=True, text=True, timeout=GIT_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return result.returncode != 0 or bool(result.stdout.strip())
 
 
 def _checkout_root() -> Path | None:
