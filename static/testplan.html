@@ -93,7 +93,7 @@
   <h1>v2 acceptance test plan</h1>
 
   <div class="bar">
-    <span class="count"><b id="done">0</b> / <b id="total">144</b> checked
+    <span class="count"><b id="done">0</b> / <b id="total">145</b> checked
       &middot; <span class="ok"><b id="passed">0</b> passed</span>
       &middot; <span class="bad"><b id="failed">0</b> failed</span></span>
     <span class="track"><i class="p" id="pbar"></i><i class="f" id="fbar"></i></span>
@@ -111,7 +111,7 @@
 <tr><td>Time to run this plan</td><td>~30 minutes</td></tr>
 <tr><td>Prerequisite</td><td>A working internet connection. Two cases deliberately need it off.</td></tr>
 </table>
-<p><b>Run it from inside the app.</b> The <b>Test plan</b> button, next to <em>Learn</em>, opens this as a page that remembers which cases you have passed or failed — a hundred and forty-four of them is more than one sitting. The daemon serves it at <code>/testplan</code> too.</p>
+<p><b>Run it from inside the app.</b> The <b>Test plan</b> button, next to <em>Learn</em>, opens this as a page that remembers which cases you have passed or failed — a hundred and forty-five of them is more than one sitting. The daemon serves it at <code>/testplan</code> too.</p>
 <p>That page is <em>generated</em> from this file by <code>scripts/build_testplan.py</code>, which <code>build_app.sh</code> runs before packaging. Edit the markdown, never the HTML.</p>
 <p><b>⚠ marks a case that has caught a real regression.</b> Those are the ones worth running even when short of time — the list doubles as this project's bug history.</p>
 <h2><span class="n">0</span>Before starting</h2>
@@ -123,6 +123,7 @@
 <tr data-case="0.5"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.5</td><td><code>QT_QPA_PLATFORM=offscreen ./run-tests.sh -q</code></td><td>Also no failures. This is how CI runs the suite, and the two disagree on font metrics: CI was red for two days in Oct 2026 while the native run above was green.</td></tr>
 <tr data-case="0.6"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.6</td><td><code>gh run list --limit 1</code></td><td><code>completed success</code> on the commit being signed off</td></tr>
 <tr data-case="0.7"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.7</td><td>Hover the version in the installed app; then <code>git cat-file -e &lt;commit&gt;</code> with the commit it names</td><td>The commit exists in the repository and the tooltip does not say <em>uncommitted changes</em>. <em>The v2.132 bundle of 2026-10-08 named a commit that had been amended away — and the badge called it up to date.</em></td></tr>
+<tr data-case="0.8"><td class="mark"><button class="mark-pass" title="pass">&#10003;</button><button class="mark-fail" title="fail">&#10007;</button></td><td class="id">0.8</td><td><code>./run-tests.sh -m network -q</code></td><td>Every live source answers in the shape SONAR parses: Binance, Coinbase's fallback, Polymarket's hourly market and book, Yahoo, FRED, Nasdaq, the newswires, the central banks, and each ESPN league. Opt-in because it needs the internet — and therefore the one run nobody makes unless it is on this list: the ESPN checks had been broken for a month when it was first run.</td></tr>
 </table>
 <h2><span class="n">1</span>Launch and window</h2>
 <table><tr><th>Result</th><th>#</th><th>⚠</th><th>Steps</th><th>Expected</th></tr>

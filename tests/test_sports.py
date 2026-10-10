@@ -180,17 +180,21 @@ def test_a_prompt_can_be_built_for_every_sport(sport):
 # Checked live, but only when asked
 # --------------------------------------------------------------------------- #
 @pytest.mark.network
-@pytest.mark.parametrize("sport", SPORTS, ids=lambda sp: sp.key)
-def test_the_results_league_exists(sport):
+@pytest.mark.parametrize("path", [p for sp in SPORTS for p in sp.espn_paths])
+def test_the_results_league_exists(path):
     """Run with `-m network` to confirm ESPN still serves each league.
 
     Kept off the default run — a registry constant should not need the internet
     to be trusted, and the suite must never depend on someone else's uptime.
+    Parametrised over every path, since a sport can read several (golf reads
+    three tours); it read `sport.espn_path` for a month after that field became
+    `espn_paths`, which nobody saw because nobody ran it — the opt-in run is
+    in TESTPLAN §0 now.
     """
     import json
     import urllib.request
     url = ("https://site.api.espn.com/apis/site/v2/sports/"
-           f"{sport.espn_path}/scoreboard")
+           f"{path}/scoreboard")
     with urllib.request.urlopen(url, timeout=20) as resp:
         assert resp.status == 200
         assert "events" in json.load(resp)

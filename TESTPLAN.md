@@ -23,7 +23,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 
 **Run it from inside the app.** The **Test plan** button, next to *Learn*, opens
 this as a page that remembers which cases you have passed or failed — a hundred
-and forty-four of them is more than one sitting. The daemon serves it at `/testplan` too.
+and forty-five of them is more than one sitting. The daemon serves it at `/testplan` too.
 
 That page is *generated* from this file by `scripts/build_testplan.py`, which
 `build_app.sh` runs before packaging. Edit the markdown, never the HTML.
@@ -44,6 +44,7 @@ running even when short of time — the list doubles as this project's bug histo
 | 0.5 | `QT_QPA_PLATFORM=offscreen ./run-tests.sh -q` | Also no failures. This is how CI runs the suite, and the two disagree on font metrics: CI was red for two days in Oct 2026 while the native run above was green. |
 | 0.6 | `gh run list --limit 1` | `completed success` on the commit being signed off |
 | 0.7 | Hover the version in the installed app; then `git cat-file -e <commit>` with the commit it names | The commit exists in the repository and the tooltip does not say *uncommitted changes*. *The v2.132 bundle of 2026-10-08 named a commit that had been amended away — and the badge called it up to date.* |
+| 0.8 | `./run-tests.sh -m network -q` | Every live source answers in the shape SONAR parses: Binance, Coinbase's fallback, Polymarket's hourly market and book, Yahoo, FRED, Nasdaq, the newswires, the central banks, and each ESPN league. Opt-in because it needs the internet — and therefore the one run nobody makes unless it is on this list: the ESPN checks had been broken for a month when it was first run. |
 
 ---
 
