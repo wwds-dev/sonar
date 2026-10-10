@@ -79,6 +79,7 @@ class Live:
     def __init__(self, risk_name: str | None = None,
                  horizon_name: str | None = None) -> None:
         self.lock = threading.Lock()
+        self._rescan_lock = threading.Lock()
         # Set by stop() to end run()'s loop. Qt aborts the whole process if a
         # QThread is still running when it is destroyed, so the loop this drives
         # must be able to finish on request — see ui/app.py's shutdown().
@@ -175,7 +176,15 @@ class Live:
 
     def _rescan(self) -> None:
         """Refresh the real-asset screen (heavier, so it runs rarely).
-        Headlines are fetched once here and shared with the screen."""
+        Headlines are fetched once here and shared with the screen.
+
+        One at a time: the engine thread rescans on its cadence and a
+        settings change rescans on its own thread, and two at once marked the
+        book twice and raced each other's alerts."""
+        with self._rescan_lock:
+            self._rescan_once()
+
+    def _rescan_once(self) -> None:
         try:
             heads = self.news.headlines()
         except Exception:
@@ -261,6 +270,11 @@ class Live:
         self.protocol_on = bool(on)
         self._save_protocol()
 
+    def _protocol_open(self) -> int:
+        book = self.book
+        with book.lock:
+            return sum(1 for p in book.open if p.protocol)
+
     def _protocol_scan(self, asset_payload: dict) -> None:
         """One day's systematic entries: top and bottom of the ranking, coin-
         flip direction, fixed small risk. Runs at most once per calendar day,
@@ -272,22 +286,25 @@ class Live:
                 if a.get("price") and a.get("volatility")]
         if len(rows) < PROTOCOL_MIN_ROWS:
             return                # thin screen — try again next rescan
-        n_open = sum(1 for p in self.book.open if p.protocol)
-        ranked = sorted(rows, key=lambda a: -a.get("confidence", 0.0))
-        for a in ranked[:PROTOCOL_TOP] + ranked[-PROTOCOL_BOTTOM:]:
-            if n_open >= PROTOCOL_MAX_OPEN:
-                break
-            direction = self._protocol_rng.choice(("LONG", "SHORT"))
-            pos, _msg = self.book.enter(
-                a, direction, self.horizon.momentum_days, self.horizon.name,
-                risk_fraction=PROTOCOL_RISK, protocol=True)
-            if pos is not None:
-                n_open += 1
+        book = self.book
+        with book.lock:             # the cap is counted and filled in one step
+            n_open = sum(1 for p in book.open if p.protocol)
+            ranked = sorted(rows, key=lambda a: -a.get("confidence", 0.0))
+            for a in ranked[:PROTOCOL_TOP] + ranked[-PROTOCOL_BOTTOM:]:
+                if n_open >= PROTOCOL_MAX_OPEN:
+                    break
+                direction = self._protocol_rng.choice(("LONG", "SHORT"))
+                pos, _msg = book.enter(
+                    a, direction, self.horizon.momentum_days, self.horizon.name,
+                    risk_fraction=PROTOCOL_RISK, protocol=True)
+                if pos is not None:
+                    n_open += 1
         self._protocol_last_day = today
         self._save_protocol()
 
     # -- the paper book ---------------------------------------------------- #
-    def _mark_book(self, asset_payload: dict, force_point: bool = False) -> None:
+    def _mark_book(self, asset_payload: dict, force_point: bool = False,
+                   book: portfolio.Portfolio | None = None) -> None:
         """Mark open positions against the new prices and close any that hit a
         barrier, then feed the resulting outcomes back into the score.
 
@@ -299,32 +316,43 @@ class Live:
         prices = {a["symbol"]: a["price"] for a in rows}
         if not prices:
             return
+        book = book or self.book
+        # The whole pass — publishing included — under the book's lock, so a
+        # trade or close on another thread lands before or after it, never
+        # inside. Publishing after the lock let an older pass overwrite a newer
+        # trade's view: the window showed no position while the book held one.
+        # Lock order is book → self.lock (here, trade, close_position) and
+        # self.lock → engine; nothing may take the book's lock under self.lock.
+        with book.lock:
+            payload = self._mark_book_locked(book, rows, prices, force_point)
+            with self.lock:
+                self.calibration, self.positions = payload
+
+    def _mark_book_locked(self, book, rows: list[dict], prices: dict,
+                          force_point: bool) -> tuple[dict, dict]:
         # Turn accepted orders into real ones first. Marking a pending position
         # against a barrier would settle a holding that does not exist yet, and
         # the fill price it settles against would be the one we asked for
         # rather than the one we got. No-op for the internal paper book.
-        self.book.poll_fills()
-        closed_now = self.book.mark(prices)
+        book.poll_fills()
+        closed_now = book.mark(prices)
         # The account-value curve: a point an hour, plus one at every step —
         # an entry, an exit, a barrier hit — so a step sits where it happened
         # rather than up to an hour later.
-        self.book.log_equity(prices, force=force_point or bool(closed_now))
-        report = calibration.report(self.book.closed)
+        book.log_equity(prices, force=force_point or bool(closed_now))
+        report = calibration.report(book.closed)
         # Nothing is claimed below the sample threshold; report() enforces that.
         self.asset_scanner.edge_sigma = report["implied_edge_sigma"]
         self.asset_scanner.calibrated = report["calibrated"]
         # Each open row carries its instrument's recent closes, so the landing
         # page can draw the position without a request of its own.
         sparks = {a["symbol"]: a.get("spark") or [] for a in rows}
-        open_rows = self.book.open_rows(prices)
+        open_rows = book.open_rows(prices)
         for r in open_rows:
             r["spark"] = sparks.get(r["symbol"], [])
-        with self.lock:
-            self.calibration = report
-            self.positions = {"stats": self.book.stats(prices),
-                              "open": open_rows,
-                              "closed": [asdict(p) for p in self.book.closed[-40:]][::-1],
-                              "equity": list(self.book.equity_log)}
+        return report, {"stats": book.stats(prices), "open": open_rows,
+                        "closed": [asdict(p) for p in book.closed[-40:]][::-1],
+                        "equity": list(book.equity_log)}
 
     def _seed_account_history(self) -> None:
         """Give the account-value curve its past, once.
@@ -424,10 +452,12 @@ class Live:
             # result["position"] should not have to know which failure it hit.
             return {"ok": False, "message": f"unknown symbol {symbol}",
                     "position": None}
-        pos, msg = self.book.enter(
-            asset, direction, self.horizon.momentum_days, self.horizon.name,
-            risk_fraction=self.risk.max_stake_fraction / 8.0)
-        self._mark_book({"assets": rows}, force_point=pos is not None)
+        book = self.book
+        with book.lock:
+            pos, msg = book.enter(
+                asset, direction, self.horizon.momentum_days, self.horizon.name,
+                risk_fraction=self.risk.max_stake_fraction / 8.0)
+            self._mark_book({"assets": rows}, force_point=pos is not None, book=book)
         return {"ok": pos is not None, "message": msg,
                 "position": asdict(pos) if pos else None}
 
@@ -440,12 +470,16 @@ class Live:
         with self.lock:
             rows = list(self.assets.get("assets", []))
         prices = {a["symbol"]: a["price"] for a in rows}
-        pos = next((p for p in self.book.open if p.id == pos_id), None)
-        if pos is None:
-            return {"ok": False, "message": "no such open position",
-                    "position": None}
-        closed = self.book.close(pos.id, prices.get(pos.symbol, pos.entry), "MANUAL")
-        self._mark_book({"assets": rows}, force_point=True)
+        book = self.book
+        with book.lock:
+            # Found and closed under one lock: a barrier hit on the engine
+            # thread between the two used to close it twice and credit twice.
+            pos = next((p for p in book.open if p.id == pos_id), None)
+            if pos is None:
+                return {"ok": False, "message": "no such open position",
+                        "position": None}
+            closed = book.close(pos.id, prices.get(pos.symbol, pos.entry), "MANUAL")
+            self._mark_book({"assets": rows}, force_point=True, book=book)
         return {"ok": True, "message": f"closed {closed.symbol}",
                 "position": asdict(closed)}
 
@@ -516,7 +550,7 @@ class Live:
             "protocol": {
                 "on": self.protocol_on,
                 "last_day": self._protocol_last_day,
-                "open": sum(1 for p in self.book.open if p.protocol),
+                "open": self._protocol_open(),
                 "risk_fraction": PROTOCOL_RISK,
                 "per_day": PROTOCOL_TOP + PROTOCOL_BOTTOM,
                 "max_open": PROTOCOL_MAX_OPEN,
@@ -709,11 +743,12 @@ class Live:
         open_rows = self.book.open_rows(prices)
         for r in open_rows:
             r["spark"] = sparks.get(r["symbol"], [])
+        positions = {"stats": self.book.stats(prices), "open": open_rows,
+                     "closed": [asdict(p) for p in self.book.closed[-40:]][::-1],
+                     "equity": list(self.book.equity_log)}
         with self.lock:
             self.calibration = report
-            self.positions = {"stats": self.book.stats(prices), "open": open_rows,
-                              "closed": [asdict(p) for p in self.book.closed[-40:]][::-1],
-                              "equity": list(self.book.equity_log)}
+            self.positions = positions
             # The dead holder's mirror, or the "waits for it to stop" notice,
             # must not stay on screen until warmup's first poll — which comes
             # after two history fetches and can take many seconds offline.

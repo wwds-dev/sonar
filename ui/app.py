@@ -3197,8 +3197,10 @@ class MainWindow(QMainWindow):
 
     def _trade(self, symbol: str, direction: str) -> None:
         """Open a paper position. Deliberately synchronous — it is local
-        bookkeeping against an already-fetched price, so there is nothing to
-        wait on and a spinner would be theatre."""
+        bookkeeping against an already-fetched price. It can wait the few
+        milliseconds of an engine-thread mark pass holding the book's lock;
+        a broker that goes to the network would make that a real wait, and
+        this would then belong on a thread."""
         result = self.live.trade(symbol, direction)
         self.status.setText(("✓  " if result["ok"] else "⚠  ") + result["message"]
                             + "  ·  paper money only")

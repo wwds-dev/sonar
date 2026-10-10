@@ -26,7 +26,9 @@ same direction real slippage would hurt them.
 from __future__ import annotations
 
 import bisect
+import functools
 import json
+import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, field, fields
@@ -168,12 +170,26 @@ class PaperBroker:
                 "price": price, "at": time.time(), "broker": self.name}
 
 
+def _locked(method):
+    """Run a method under its object's lock. The book is written from the
+    engine thread (marks, barrier closes, the protocol), the window's thread
+    and the HTTP handlers (trades, closes), and a settings change's own
+    thread; unlocked, a manual close racing a barrier hit credited the cash
+    twice. Re-entrant, so a locked method may call another."""
+    @functools.wraps(method)
+    def run_locked(self, *args, **kwargs):
+        with self.lock:
+            return method(self, *args, **kwargs)
+    return run_locked
+
+
 class Portfolio:
     """The paper book: cash, open positions, and everything already resolved."""
 
     def __init__(self, path: Path, broker: Broker | None = None,
                  starting_cash: float = STARTING_CASH) -> None:
         self.path = Path(path)
+        self.lock = threading.RLock()
         self.broker = broker or PaperBroker()
         self.starting_cash = starting_cash
         self.cash = starting_cash
@@ -197,6 +213,7 @@ class Portfolio:
         self.equity_log = [q for q in d.get("equity_log", [])
                            if isinstance(q, dict) and "t" in q and "v" in q]
 
+    @_locked
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # Daily known-good copy before the first overwrite of the day — this
@@ -206,14 +223,14 @@ class Portfolio:
                    "open": [asdict(p) for p in self.open],
                    "closed": [asdict(p) for p in self.closed],
                    "equity_log": self.equity_log}
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload))
-        tmp.replace(self.path)
+        paths.write_atomically(self.path, json.dumps(payload))
 
     # -- trading ----------------------------------------------------------- #
+    @_locked
     def position_for(self, symbol: str) -> Position | None:
         return next((p for p in self.open if p.symbol == symbol), None)
 
+    @_locked
     def enter(self, asset: dict, direction: str, horizon_days: int,
               horizon_name: str, risk_fraction: float = DEFAULT_RISK_FRACTION,
               protocol: bool = False) -> tuple[Position | None, str]:
@@ -269,6 +286,7 @@ class Portfolio:
         self.save()
         return pos, f"opened {pos.direction} {symbol}"
 
+    @_locked
     def close(self, pos_id: str, price: float, outcome: str = "MANUAL",
               ) -> Position | None:
         pos = next((p for p in self.open if p.id == pos_id), None)
@@ -290,6 +308,7 @@ class Portfolio:
         self.save()
         return pos
 
+    @_locked
     def poll_fills(self) -> list[Position]:
         """Ask the broker which accepted orders have reached a terminal state.
 
@@ -308,6 +327,7 @@ class Portfolio:
             return []                     # a venue being unreachable is not an error here
         return self.settle_fills(records or [])
 
+    @_locked
     def settle_fills(self, records: list[dict]) -> list[Position]:
         """Reconcile pending positions against what the venue actually did.
 
@@ -353,6 +373,7 @@ class Portfolio:
             self.save()
         return changed
 
+    @_locked
     def mark(self, prices: dict[str, float]) -> list[Position]:
         """Mark open positions and close any whose barrier was touched.
 
@@ -374,6 +395,7 @@ class Portfolio:
         return done
 
     # -- reporting --------------------------------------------------------- #
+    @_locked
     def equity(self, prices: dict[str, float]) -> float:
         total = self.cash
         for pos in self.open:
@@ -386,6 +408,7 @@ class Portfolio:
                 total += pos.unrealised(price)
         return total
 
+    @_locked
     def stats(self, prices: dict[str, float] | None = None) -> dict:
         prices = prices or {}
         settled = [p for p in self.closed if p.pnl is not None]
@@ -426,6 +449,7 @@ class Portfolio:
             "live": bool(getattr(self.broker, "live", False)),
         }
 
+    @_locked
     def open_rows(self, prices: dict[str, float] | None = None) -> list[dict]:
         prices = prices or {}
         now = time.time()
@@ -447,6 +471,7 @@ class Portfolio:
         return rows
 
     # -- account history --------------------------------------------------- #
+    @_locked
     def log_equity(self, prices: dict[str, float] | None = None,
                    now: float | None = None, force: bool = False) -> bool:
         """Write one point of account value — at most hourly, unless forced.
@@ -476,6 +501,7 @@ class Portfolio:
         positions = self.open + self.closed
         return min(p.opened_at for p in positions) if positions else None
 
+    @_locked
     def history_wanted(self) -> bool:
         """Is there a stretch of this book's life the log does not cover?
 
@@ -494,6 +520,7 @@ class Portfolio:
                                                     second=0, microsecond=0)
         return self.equity_log[0]["t"] > (day + timedelta(days=1)).timestamp() - 1
 
+    @_locked
     def seed_equity_log(self, bars: dict[str, list[tuple[int, float]]],
                         now: float | None = None) -> int:
         """Reconstruct the account's daily history from the book's own records.

@@ -19,6 +19,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -66,9 +67,41 @@ def write_atomically(path: Path, text: str) -> None:
     file, never half of the new one."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(text)
-    tmp.replace(p)
+    # One temporary name per writer. A shared `<name>.tmp` let two threads
+    # saving the same file at once rename each other's file away, and the
+    # second `replace` raised FileNotFoundError mid-save.
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(text)
+        tmp.replace(p)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+TEMP_FILE_MAX_AGE = 600.0     # seconds; no save takes anywhere near this long
+
+
+def sweep_temp_files(path: Path, now: float | None = None) -> int:
+    """Remove temporary files a killed save left beside ``path``.
+
+    Each writer has its own temporary name (see :func:`write_atomically`), so
+    a save cut off between write and rename leaves a new orphan every time
+    rather than reusing one. Only files older than ``TEMP_FILE_MAX_AGE`` go:
+    a younger one may be another process's save in flight. Older single
+    names (``state.tmp``, ``protocol.json.tmp``) are swept the same way.
+    Returns how many were removed."""
+    p = Path(path)
+    now = time.time() if now is None else now
+    removed = 0
+    for tmp in {*p.parent.glob(f"{p.name}.*tmp"), p.with_suffix(".tmp")}:
+        try:
+            if tmp.is_file() and now - tmp.stat().st_mtime > TEMP_FILE_MAX_AGE:
+                tmp.unlink()
+                removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def read_preferences(path: Path) -> dict:
@@ -101,6 +134,7 @@ def read_state(path: Path) -> dict | None:
     does this start clean — and even then the original bytes are kept.
     """
     p = Path(path)
+    sweep_temp_files(p)
     if not p.exists():
         return None
     try:

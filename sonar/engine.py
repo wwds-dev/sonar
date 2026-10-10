@@ -19,7 +19,9 @@ Trade lifecycle
 
 from __future__ import annotations
 
+import functools
 import json
+import threading
 import time
 from dataclasses import asdict, dataclass
 from dataclasses import fields as dataclass_fields
@@ -82,11 +84,25 @@ class Trade:
     close_price: float | None = None
 
 
+def _locked(method):
+    """Run a method under its object's lock. The book is written from the
+    engine thread (marks, barrier closes, the protocol), the window's thread
+    and the HTTP handlers (trades, closes), and a settings change's own
+    thread; unlocked, a manual close racing a barrier hit credited the cash
+    twice. Re-entrant, so a locked method may call another."""
+    @functools.wraps(method)
+    def run_locked(self, *args, **kwargs):
+        with self.lock:
+            return method(self, *args, **kwargs)
+    return run_locked
+
+
 class Engine:
     def __init__(self, state_path: str | Path,
                  starting_bankroll: float = STARTING_BANKROLL,
                  risk: _risk.RiskProfile | None = None):
         self.path = Path(state_path)
+        self.lock = threading.RLock()
         self.risk = risk or _risk.DEFAULT
         self.starting_bankroll = starting_bankroll
         self.bankroll = starting_bankroll
@@ -111,12 +127,14 @@ class Engine:
         self.last_settled_at: float | None = None
         self._load()
 
+    @_locked
     def set_risk(self, profile: _risk.RiskProfile) -> None:
         """Switch risk profile. Takes effect on the next entry decision; an
         already-open position keeps the profile it was sized under."""
         self.risk = profile
         self.save()
 
+    @_locked
     def attach_llm_read(self, hour_key: int, read: dict) -> None:
         """Record an LLM read for the hour in progress so that, if a position is
         opened, the stated conviction rides along on the Trade and can later be
@@ -152,6 +170,7 @@ class Engine:
         if d.get("risk_profile"):
             self.risk = _risk.get(d["risk_profile"])
 
+    @_locked
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # Once a day, yesterday's last good file is kept aside before the
@@ -173,11 +192,10 @@ class Engine:
             "score_started": self.score_started,
             "last_settled_at": self.last_settled_at,
         }
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(d))
-        tmp.replace(self.path)
+        _paths.write_atomically(self.path, json.dumps(d))
 
     # ---- core loop ------------------------------------------------------- #
+    @_locked
     def tick(self, candle, market, sigma: float,
              close_lookup=None) -> _model.Signal | None:
         """Process one observation. Returns the current model signal (or None
@@ -356,6 +374,7 @@ class Engine:
         )
         self.save()
 
+    @_locked
     def finalize(self, hour_key: int, close_price: float,
                  open_price: float | None = None) -> Trade | None:
         """Settle the open position for ``hour_key`` against the real result."""
@@ -381,6 +400,7 @@ class Engine:
         return pos
 
     # ---- honest historical warm-up -------------------------------------- #
+    @_locked
     def seed_backtest(self, rows: list[dict]) -> None:
         """Populate the equity curve from real past hours at *fair* odds.
 
@@ -416,6 +436,7 @@ class Engine:
         self.save()
 
     # ---- reporting ------------------------------------------------------- #
+    @_locked
     def stats(self) -> dict:
         # Live trades only. The fair-odds warm-up seeds the *chart* with real
         # BTC variance, but its rows are synthetic bets at the model's own
@@ -449,6 +470,7 @@ class Engine:
     # says more about that week than about the model.
     SCORE_MIN_SAMPLE = 100
 
+    @_locked
     def model_vs_market(self) -> dict:
         """Brier score of the model against the market, over every hour watched.
 
@@ -508,6 +530,7 @@ class Engine:
     #: believable quotes would otherwise dominate the mean.
     BUYABILITY_PRICE_BAND = (0.02, 0.98)
 
+    @_locked
     def buyability(self) -> dict:
         """Was the model's disagreement ever worth buying — at the touch?
 
@@ -637,6 +660,7 @@ class Engine:
                                   "edge demonstrated either way.")
         return out
 
+    @_locked
     def run_health(self, now: float | None = None) -> dict:
         """The experiment's own vital signs.
 
@@ -671,6 +695,7 @@ class Engine:
         out["stale"] = bool(reference and now - reference > STALE_AFTER_S)
         return out
 
+    @_locked
     def llm_calibration(self) -> dict:
         """Score the LLM's stated convictions against what actually happened.
 

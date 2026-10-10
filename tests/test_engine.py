@@ -429,7 +429,7 @@ def test_saving_is_atomic(engine, tmp_path, clock):
     half-written book behind."""
     _open_one(engine, clock)
     assert (tmp_path / "state.json").exists()
-    assert not (tmp_path / "state.tmp").exists()
+    assert not list(tmp_path.glob("*.tmp")), "the temporary file is renamed, not left"
 
 
 # --------------------------------------------------------------------------- #
