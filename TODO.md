@@ -35,10 +35,6 @@ not-planned list sit between the two.
       Everywhere the app refuses to claim something, say what would change it
       and how far along it is: "unproven — needs ~20 closed positions, you have
       3". The Book tab has the count already.
-- [ ] `P3` `docs` `@me` **Choose a licence (or none).** There is no `LICENSE` file and `pyproject.toml`
-      declares none, so by default all rights are reserved. The product spec (`docs/specs/v1-product.md`)
-      says "the owner now; others later", so this can wait, but it must be decided before anyone else
-      receives the code. Say which one (MIT, Apache-2.0, proprietary, none) and `@ai` adds the file.
 
 ## v3 — only if the research is resumed
 
@@ -468,3 +464,6 @@ need an account and time rather than code are under **Open** above.
 - [x] `P3` `docs` `@ai` ~~Fold the cost floor into the README.~~ With the measured €1.05 per round trip and the note that the earlier estimate was optimistic.
 - [x] `P2` `docs` `@ai` ~~`CONFIDENCE.md`~~ — how the institutional process builds a score versus how this one does: cross-sectional standardisation, benchmark-relative momentum, levels versus surprises, a daily GPR-style political index from the newswire already being read, and the argument that the thing worth forecasting here is volatility rather than direction.
 - [x] `P2` `docs` `@ai` ~~In-app docs rewritten for seven tabs~~, adding the Lab, alerts and venue sections. The previous version described five tabs and knew nothing about half the app.
+- [x] `P3` `docs` `@me` ~~Choose a licence.~~ MIT, copyright holder `wwds-dev` (the repository owner's GitHub account),
+      chosen 2026-10-10 on the owner's instruction. `LICENSE`, `pyproject.toml` and the README say so; change all three
+      together if the choice changes.

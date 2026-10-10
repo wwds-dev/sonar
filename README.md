@@ -225,11 +225,10 @@ shapes the asset screener only (momentum window 1d / 5d / 20d, and the exit plan
 
 ## The LLM read (optional, off by default)
 
-A second, **separate** track: an on-demand narrative read of one selected opportunity. `model.prob_up()` is a
-*calibrated* probability; an LLM's stated conviction is fluent, not calibrated, so the two are never averaged.
-Every stated conviction is **logged onto the trade record**, and `engine.llm_calibration()` buckets them and
-reports the realised hit rate per bucket, so you can see whether the model's confidence ever tracked reality.
-Headlines go to the model as **titles only**, inside a delimited block, marked untrusted.
+A second, **separate** track: an on-demand narrative read of one selected opportunity. An LLM's stated conviction
+is fluent, not calibrated, so it is never averaged into `model.prob_up()`. Every conviction is **logged onto the
+trade record** and `engine.llm_calibration()` reports the realised hit rate per bucket. Headlines go to the model
+as **titles only**, inside a delimited block, marked untrusted.
 
 ```bash
 pip install anthropic          # only needed for this feature
@@ -346,20 +345,9 @@ research_results/, docs_attention_study.json     outputs of the studies, kept as
 
 ### API
 
-| | |
-|---|---|
-| `GET /api/state` | live snapshot: candle, market, signal, portfolio, model-vs-market, run health, calibration |
-| `GET /api/assets` | the real-asset screen |
-| `GET /api/config` | current risk/horizon/protocol, available options, LLM availability |
-| `POST /api/config` | `{"risk": "...", "horizon": "...", "protocol": true}` — switches and rescans |
-| `POST /api/read` | `{"kind": "btc\|asset", "id": "..."}` — one LLM read |
-| `GET /api/health` | is the engine doing its job — 200, or 503 with the problems listed |
-| `GET /api/book`, `/api/wire`, `/api/macro` | the paper book, the alerts and central-bank calendar, the macro regime |
-| `POST /api/undo` | `{"id": "...", "kind": "trade\|close"}` — take back a trade or a manual close made in the last 30 s (the window's Undo); it never reaches the graded record |
-| `POST /api/trade`, `/api/close` | `{"symbol": "...", "direction": "LONG\|SHORT"}`, `{"id": "..."}` — paper trades; how a second window hands its actions to the engine that holds the book |
-| `GET /`, `/docs`, `/testplan` | the BTC terminal page, the manual, the acceptance plan |
-
-Every route answers only requests that name this machine in their `Host` header; writes must be JSON from no foreign `Origin` (see `docs/specs/t0-7-api-origin.md`).
+The agent and `--headless` serve a loopback-only HTTP API (state, assets, book, wire, macro, health, config, paper
+trades). Routes and payloads are in [docs/api.md](docs/api.md); every route checks the `Host` header, and writes
+must be JSON from no foreign `Origin`.
 
 ## What is left
 
@@ -376,6 +364,10 @@ The build backlog is finished; what remains is not more code (`TODO.md` has the 
 
 **Not planned: real-money execution.** SONAR will not place live orders, connect a funded broker, or move real
 money. **Investigated and closed: Revolut** — no public retail-investment API; reopen only as a deliberate project.
+
+## Licence
+
+[MIT](LICENSE). The software is provided as is, without warranty; see **Not advice** below.
 
 ## Not advice
 

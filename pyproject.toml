@@ -3,6 +3,8 @@ name = "sonar"
 version = "0.1.0"
 description = "SONAR — a live, honest BTC hourly up/down paper-trading terminal"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = []          # stdlib only — no pip install needed
 
