@@ -867,3 +867,54 @@ def test_the_active_profiles_gate_always_has_a_row(engine):
     r = engine.buyability()
     assert any(abs(g["gate"] - 0.025) < 1e-9 for g in r["gates"])
     assert "2.5c gate" in r["verdict"]
+
+
+# --------------------------------------------------------------------------- #
+# Both verdicts speak at exactly their sample, and not one hour before
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("n", [eng.Engine.SCORE_MIN_SAMPLE - 1,
+                               eng.Engine.SCORE_MIN_SAMPLE])
+def test_model_vs_market_speaks_at_exactly_its_threshold(engine, n):
+    """A clear win, one hour short and then exactly at the gate. The live run
+    crossed 100 on its sixth day; a threshold that slipped by one either way
+    would have read the same at 190 and been wrong at 99 or 100."""
+    win = {"model_up": 0.9, "market_up": 0.5, "outcome": 1.0}
+    lose = {"model_up": 0.2, "market_up": 0.5, "outcome": 0.0}
+    engine.scorelog = ([win, lose] * n)[:n]
+    r = engine.model_vs_market()
+    assert r["n"] == n
+    if n < eng.Engine.SCORE_MIN_SAMPLE:
+        assert "too few" in r["verdict"] and "beats" not in r["verdict"]
+    else:
+        assert "beats the market" in r["verdict"]
+
+
+@pytest.mark.parametrize("n", [eng.Engine.SCORE_MIN_SAMPLE - 1,
+                               eng.Engine.SCORE_MIN_SAMPLE])
+def test_buyability_speaks_at_exactly_its_threshold(engine, n):
+    """Counted at the active profile's own gate — the one the engine trades.
+    The live run sat at 95 of 100 there on 2026-10-10."""
+    engine.scorelog = [_priced(0.70, 0.49, 0.50, 1.0)] * (n - 1) \
+        + [_priced(0.70, 0.49, 0.50, 0.0)]
+    r = engine.buyability()
+    at_gate = next(g for g in r["gates"]
+                   if abs(g["gate"] - engine.risk.edge_threshold) < 1e-9)
+    assert at_gate["n"] == n
+    if n < eng.Engine.SCORE_MIN_SAMPLE:
+        assert f"{n} of {eng.Engine.SCORE_MIN_SAMPLE} qualifying hours" in r["verdict"]
+    else:
+        assert "too few" not in r["verdict"]
+
+
+def test_buyability_counts_every_scored_hour_exactly_once(engine):
+    """priced + unpriced + out-of-window + bad-book is the whole log. The live
+    run's 178 + 1 + 8 + 3 = 190 held on 2026-10-10; an hour dropped from every
+    bucket would shrink the sample without a word."""
+    rows = [_priced(0.70, 0.49, 0.50, 1.0)] * 7                     # priced
+    rows += [{**_priced(0.70, 0.49, 0.50, 1.0), "bid": None, "ask": None}] * 3
+    rows += [{**_priced(0.70, 0.49, 0.50, 1.0), "tau": 0.95}] * 2   # outside the window
+    rows += [_priced(0.995, 0.989, 0.99, 1.0)] * 4                  # settlement-state book
+    engine.scorelog = rows
+    r = engine.buyability()
+    assert (r["n_priced"] + r["n_unpriced"] + r["n_out_of_window"]
+            + r["n_bad_book"]) == len(rows)
