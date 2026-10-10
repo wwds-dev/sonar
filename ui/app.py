@@ -2156,9 +2156,12 @@ class MainWindow(QMainWindow):
 
         The Book tab's backtest button answers one fixed question. This answers
         whichever one you ask, and the point is falsification rather than
-        reassurance: change the reward:risk and watch the realised hit rate move
-        to meet `1/(1+R:R)`, because that identity is the claim the whole app
-        rests on. If it ever stops holding, something here is wrong.
+        reassurance: on a market with nothing to find, the realised hit rate
+        must meet `1/(1+R:R)` — 40% at the shipped 1.5:1 — because that
+        identity is the claim the whole app rests on, and tests/test_backtest.py
+        holds the backtest to it. There is no reward:risk control here: at 2:1
+        and wider the backtest drops enough timed-out trials to bias its own
+        baseline (QA plan, 2026-10-10), so adding one starts with fixing that.
 
         Everything runs on real bars through `sonar.backtest` — the same replay
         the research used, not a separate toy.

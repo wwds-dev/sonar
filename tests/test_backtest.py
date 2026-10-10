@@ -144,3 +144,51 @@ def test_the_correction_never_narrows_the_bar():
     s = backtest.summarise(trials, step=3)
     naive = (0.5 * 0.5 / len(trials)) ** 0.5
     assert s["std_error"] == pytest.approx(naive, abs=5e-5)  # report rounds to 4dp
+
+
+def _driftless_walk(n: int, seed: int, sub: int = 24, vol: float = 0.01) -> backtest.Bars:
+    """Daily bars cut from a finely stepped driftless walk, so each bar's high
+    and low are where the path really went — `synthetic` above gives every bar
+    the same ±vol range, which is fine for detecting drift and wrong for
+    measuring first-passage odds."""
+    import random
+    rng = random.Random(seed)
+    bars = backtest.Bars(symbol="RW")
+    price = 100.0
+    for i in range(n):
+        o = hi = lo = price
+        for _ in range(sub):
+            price *= math.exp(rng.gauss(0.0, vol / math.sqrt(sub)))
+            hi, lo = max(hi, price), min(lo, price)
+        bars.time.append(i * 86400)
+        bars.open.append(o)
+        bars.high.append(hi)
+        bars.low.append(lo)
+        bars.close.append(price)
+    return bars
+
+
+@pytest.mark.parametrize("k_target", [1.0, scoring.K_TARGET], ids=["1:1", "1.5:1"])
+def test_with_no_drift_the_hit_rate_is_one_over_one_plus_rr(k_target):
+    """The identity the app rests on (TESTPLAN 7.5): with nothing to find, a
+    target k_t and a stop k_s away are hit first k_s/(k_t+k_s) of the time —
+    40% at the shipped 1.5:1 — and the backtest must reproduce it, or every
+    'edge' it reports is partly its own bias.
+
+    Measured on 2026-10-10 at wider ratios it does *not* hold: trials that
+    reach neither barrier inside the hold window are dropped, and those are
+    disproportionately the ones a far target had not yet reached, so 2:1 reads
+    30.7% against 33.3% and 3:1 reads 14.4% against 25%. Nothing in the app
+    runs those ratios today; anyone who adds an R:R control to the Lab needs
+    to account for timeouts first."""
+    trials = []
+    for seed in range(4):
+        trials += backtest.run_symbol(_driftless_walk(1500, seed), horizon_days=5,
+                                      step=5, k_target=k_target)
+    n = len(trials)
+    hit = sum(1 for t in trials if t["outcome"] == "TARGET") / n
+    expected = scoring.barrier_probability(k_target, scoring.K_STOP)
+    assert expected == pytest.approx(scoring.K_STOP / (k_target + scoring.K_STOP))
+    se = math.sqrt(expected * (1 - expected) / n)
+    assert n > 800
+    assert abs(hit - expected) < 3 * se, f"{hit:.3f} vs {expected:.3f} (±{3*se:.3f})"

@@ -17,7 +17,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **1,580 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **1,582 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -209,7 +209,7 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 | 7.2 | | Narrow the universe to one class, re-run | Fewer trials, still completes |
 | 7.3 | | Read component attribution | Each component gets **KEEP / WEAK / DROP / INVERTED** |
 | 7.4 | | Find the catalyst component | Says it is **not measured** — the replay has no historical earnings calendar — rather than implying it passed |
-| 7.5 | | Change R:R and re-run | Realised hit rate moves toward `1/(1+R:R)`. *This identity is the claim the whole app rests on.* |
+| 7.5 | | Read the run's **predicted** hit rate against the realised one | Predicted reads 40% — `1/(1+R:R)` at the shipped 1.5:1, the identity the app rests on — and realised sits within its error bar of it unless the verdict names a cause. *There is no R:R control in the Lab, whatever its description once said; the identity is pinned by `tests/test_backtest.py` at 1:1 and 1.5:1. At 2:1 and wider the backtest's own baseline is biased by the trials it drops as timeouts (14% realised against 25% at 3:1 on a walk with no drift), so a control must not be added without fixing that first.* |
 | 7.6 | | Press **Start replay** | A setup appears |
 | 7.7 | ⚠ | Read the setup line | It does **not** reveal the model's call before you commit |
 | 7.8 | | Press Buy, then Short, then **Skip** on successive setups | All three advance |
