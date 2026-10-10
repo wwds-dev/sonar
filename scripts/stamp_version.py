@@ -30,11 +30,21 @@ def main() -> int:
         return 0
 
     major = _read_major()
+    if found.get("dirty"):
+        # Not refused: the build regenerates static/testplan.html before this
+        # runs, so a legitimately edited TESTPLAN.md shows up here too. But
+        # said loudly, and carried in the stamp, because a bundle stamped from
+        # a modified tree names a commit it does not match — the v2.132 of
+        # 2026-10-08 could not be traced to any commit afterwards.
+        print("stamp_version: the checkout has uncommitted changes — this "
+              "bundle will not match the commit it is stamped with.",
+              file=sys.stderr)
     payload = {
         "major": major,
         "build": found["build"],
         "commit": found["commit"],
         "date": found["date"],
+        "dirty": bool(found.get("dirty")),
         "source": "baked",
         # Where to look for the checkout later. A bundle has no .git, so this is
         # the only way staleness() can compare against anything. Git-ignored

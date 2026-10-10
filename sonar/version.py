@@ -129,6 +129,12 @@ def _git_build(cwd: Path | None = None, *, required: bool = False) -> dict | Non
         "commit": _git("rev-parse", "--short", "HEAD", cwd=root) or "",
         "date": _git("log", "-1", "--format=%cI", cwd=root) or "",
         "source": "git",
+        # Tracked files changed since that commit. A bundle stamped from a
+        # modified tree contains code its commit does not, and a checkout
+        # running with edits is not the build its number names. Untracked
+        # files are ignored: a scratch file beside the code is not the code.
+        "dirty": bool(_git("status", "--porcelain", "--untracked-files=no",
+                           cwd=root)),
     }
 
 
@@ -193,6 +199,7 @@ def info() -> dict:
         "commit": found.get("commit", ""),
         "date": found.get("date", ""),
         "source": found.get("source", "unknown"),
+        "dirty": bool(found.get("dirty", False)),
     }
 
 
@@ -224,7 +231,29 @@ def staleness() -> dict:
                           "build exists cannot be known from here."}
 
     behind = latest["build"] - running["build"]
-    if behind <= 0:
+    if behind < 0:
+        # Possible after a checkout is rolled back. Not behind, and not a
+        # fault in the app — but not "up to date" either, which would read
+        # as a claim about the checkout.
+        return {"known": True, "behind": 0, "current": True,
+                "detail": (f"Ahead of the checkout (v{running['major']}."
+                           f"{latest['build']:0{BUILD_DIGITS}d}), which was "
+                           "rolled back after this build.")}
+    if behind == 0:
+        # The same count is not the same code. The installed v2.132 of
+        # 2026-10-08 was stamped from a commit that was amended that night:
+        # same number, different tree, no such commit left in the repository
+        # — and this said "up to date" about it. A commit that is known on
+        # both sides and differs is the one thing the count cannot see.
+        theirs, ours = latest.get("commit", ""), running.get("commit", "")
+        if theirs and ours and theirs != ours:
+            return {
+                "known": True, "behind": 0, "current": False,
+                "detail": (f"Same build number as the checkout but a different "
+                           f"commit ({ours} here, {theirs} there): the commit "
+                           "was amended or rebased after this build was made. "
+                           "Re-run ./build_app.sh --install to match it."),
+            }
         return {"known": True, "behind": 0, "current": True,
                 "detail": "Up to date with the checkout."}
     return {
@@ -247,5 +276,11 @@ def tooltip() -> str:
     lines.append({"git": "running from the checkout",
                   "baked": "packaged build",
                   "unknown": "no version stamp"}[running["source"]])
+    if running["dirty"]:
+        lines.append({"git": "with uncommitted changes — not exactly "
+                             f"{running['version']}",
+                      "baked": "built from a checkout with uncommitted "
+                               f"changes — not exactly {running['version']}",
+                      "unknown": ""}[running["source"]])
     lines.append(staleness()["detail"])
-    return "\n".join(lines)
+    return "\n".join(line for line in lines if line)

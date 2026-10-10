@@ -321,3 +321,107 @@ class TestTheChangelogTracksRealBuilds:
         declared = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
         assert major == declared.lstrip("vV").split(".")[0], (
             "the newest changelog entry is on a different arc than VERSION")
+
+
+class TestTheCountIsNotTheCode:
+    """Build 132 of 2026-10-08 was stamped from a commit that was amended that
+    night: same count, different tree, and no commit left in the repository
+    that the bundle could be traced to. `staleness()` compared counts alone
+    and called it up to date."""
+
+    def test_same_count_different_commit_is_not_current(self, monkeypatch):
+        monkeypatch.setattr(app_version, "_baked",
+                            lambda: {"build": 132, "commit": "ae3c296",
+                                     "date": "", "source": "baked"})
+        monkeypatch.setattr(app_version, "_git_build",
+                            lambda *a, **k: {"build": 132, "commit": "d7da1bb",
+                                             "date": "", "source": "git"})
+        monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
+        app_version.info.cache_clear()
+        verdict = app_version.staleness()
+        assert verdict["known"] is True
+        assert verdict["current"] is False
+        assert verdict["behind"] == 0, "not behind — different"
+        assert "ae3c296" in verdict["detail"] and "d7da1bb" in verdict["detail"]
+        assert "amended or rebased" in verdict["detail"]
+        assert "Up to date" not in verdict["detail"]
+
+    def test_an_old_stamp_without_a_commit_still_compares_by_count(self, monkeypatch):
+        """Bundles stamped before the commit was recorded have only a number.
+        That number is all there is to compare, and "up to date" is the honest
+        reading of an equal one — the stricter check needs both sides."""
+        monkeypatch.setattr(app_version, "_baked",
+                            lambda: {"build": 132, "commit": "",
+                                     "date": "", "source": "baked"})
+        monkeypatch.setattr(app_version, "_git_build",
+                            lambda *a, **k: {"build": 132, "commit": "d7da1bb",
+                                             "date": "", "source": "git"})
+        monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
+        app_version.info.cache_clear()
+        assert app_version.staleness()["current"] is True
+
+    def test_a_bundle_ahead_of_the_checkout_does_not_say_up_to_date(self, monkeypatch):
+        """Current, and not a fault — but "up to date with the checkout" is a
+        claim about the checkout, which was rolled back."""
+        monkeypatch.setattr(app_version, "_baked",
+                            lambda: {"build": 103, "commit": "c",
+                                     "date": "", "source": "baked"})
+        monkeypatch.setattr(app_version, "_git_build",
+                            lambda *a, **k: {"build": 100, "commit": "o",
+                                             "date": "", "source": "git"})
+        monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
+        app_version.info.cache_clear()
+        verdict = app_version.staleness()
+        assert verdict["current"] is True
+        assert "Ahead" in verdict["detail"] and "Up to date" not in verdict["detail"]
+
+
+class TestAModifiedTreeIsSaidSo:
+    """A bundle built from a checkout with uncommitted edits names a commit it
+    does not match. The stamp carries the fact, and the badge shows it."""
+
+    @staticmethod
+    def _repo(path: Path) -> None:
+        run = lambda *a: subprocess.run(["git", *a], cwd=path, check=True,
+                                        capture_output=True,
+                                        env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+                                             "HOME": str(path), "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"})
+        run("init", "-q")
+        (path / "f").write_text("one")
+        run("add", "f")
+        run("commit", "-q", "-m", "one")
+
+    def test_a_clean_checkout_is_not_dirty(self, tmp_path):
+        self._repo(tmp_path)
+        found = app_version._git_build(tmp_path)
+        assert found and found["dirty"] is False
+
+    def test_an_edited_tracked_file_is_dirty_and_an_untracked_one_is_not(self, tmp_path):
+        self._repo(tmp_path)
+        (tmp_path / "scratch.txt").write_text("not the code")
+        assert app_version._git_build(tmp_path)["dirty"] is False
+        (tmp_path / "f").write_text("two")
+        assert app_version._git_build(tmp_path)["dirty"] is True
+
+    def test_the_badge_says_when_the_build_is_not_exactly_its_number(self, monkeypatch):
+        monkeypatch.setattr(app_version, "_baked",
+                            lambda: {"build": 132, "commit": "abc1234", "date": "",
+                                     "source": "baked", "dirty": True})
+        monkeypatch.setattr(app_version, "_git_build", lambda *a, **k: None)
+        monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
+        app_version.info.cache_clear()
+        assert app_version.info()["dirty"] is True
+        tip = app_version.tooltip()
+        assert "uncommitted changes" in tip
+        assert "not exactly v2.132" in tip
+
+    def test_a_stamp_without_the_field_is_read_as_clean(self, monkeypatch):
+        monkeypatch.setattr(app_version, "_baked",
+                            lambda: {"build": 90, "commit": "old", "date": "",
+                                     "source": "baked"})
+        monkeypatch.setattr(app_version, "_git_build", lambda *a, **k: None)
+        monkeypatch.setattr(app_version.paths, "is_frozen", lambda: True)
+        app_version.info.cache_clear()
+        assert app_version.info()["dirty"] is False
+        assert "uncommitted" not in app_version.tooltip()

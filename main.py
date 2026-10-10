@@ -29,7 +29,8 @@ def selftest() -> int:
 
     print("SONAR self-test")
     print(f"  version:         {build['version']}  "
-          f"({build['source']}{', ' + build['commit'] if build['commit'] else ''})")
+          f"({build['source']}{', ' + build['commit'] if build['commit'] else ''}"
+          f"{', uncommitted changes' if build['dirty'] else ''})")
     print(f"  up to date:      {stale['detail']}")
     print(f"  frozen bundle:   {frozen}")
     print(f"  resource base:   {paths.resource_base()}")

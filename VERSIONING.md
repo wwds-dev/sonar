@@ -89,7 +89,9 @@ checkout:
 
 | Situation | What it says |
 |---|---|
-| Checkout is at the same build or older | *Up to date with the checkout.* |
+| Checkout is at the same build **and the same commit** | *Up to date with the checkout.* |
+| Same build number, different commit | *Same build number as the checkout but a different commit (ae3c296 here, d7da1bb there): the commit was amended or rebased after this build was made. Re-run ./build\_app.sh --install to match it.* — the count cannot see this; the installed v2.132 of 2026-10-08 was stamped from a commit amended that night and read "up to date" |
+| Checkout is older (rolled back) | *Ahead of the checkout (v2.100), which was rolled back after this build.* |
 | Checkout has moved on | *7 commits behind the checkout (v2.107). Re-run ./build\_app.sh --install to catch up.* |
 | No checkout reachable, or no git | *No checkout to compare against, so whether a newer build exists cannot be known from here.* |
 | Build carries no stamp at all | *This build carries no version stamp.* |
