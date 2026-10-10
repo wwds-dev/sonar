@@ -10,6 +10,19 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 > probability model priced against a real market. SONAR builds exactly that — and keeps it
 > **paper money** so it can be honest about what it is.
 
+## What you do first
+
+1. Run it (see **Run it** below). It opens on **My investments**, your paper book — it starts empty.
+2. Open the **Screener**, pick one instrument that shows *worth a look*, and press **Buy** or **Short**.
+   Paper money only; nothing here can touch a real account.
+3. Open the **Learn** tab and read §1 and §10 — what the score claims (notability, never direction)
+   and how the app grades itself.
+4. Come back in a day. Positions close on their own when they reach their target or stop, and
+   **My investments** shows whether the score kept to its odds. Twenty closed positions before it says anything.
+
+What is real and what is simulated is under **What's real vs simulated** below; nothing in SONAR is
+financial advice.
+
 ## Eight tabs
 
 A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no web view.
@@ -54,7 +67,7 @@ carries the staged plan; read it before changing the scoring.
 
 A Polymarket board used to sit here and was removed — mirroring a market's own odds back at
 you is not analysis, and dropping it also removed ~52MB/hour of downloads. Full docs live in
-the app behind the **Docs** button, plus a tooltips toggle explaining every number on hover.
+the app behind the **Learn** tab, plus a tooltips toggle explaining every number on hover.
 
 ## What's real vs simulated
 
@@ -207,7 +220,7 @@ An earlier estimate in `GOING_LIVE.md` put this at ~4% and ~€0.80. Measuring i
 exists. `summary()` reports `reliable: False` below 20 completed round trips and declines to
 name a figure, the same threshold and reasoning as `calibration.MIN_SAMPLE`.
 
-Five pre-registered studies failed to find drift to put against that floor. That is the whole
+Five pre-registered studies failed to find drift to put against that floor (a sixth found a volatility effect, not a drift; see below). That is the whole
 argument for keeping this on paper, and it is arithmetic rather than caution.
 
 ## What the backtest found
@@ -216,7 +229,7 @@ argument for keeping this on paper, and it is arithmetic rather than caution.
 bars only, then walk forward through actual highs and lows. A bar spanning both barriers scores as a
 **loss** (daily data cannot order them) and costs are excluded, so reality is worse than this.
 
-Over **25,504 setups** — 5 years, 113 instruments. (An earlier version of this section
+Over **25,504 setups** — 5 years, 113 instruments (the set the study ran on; the board lists 129 today). (An earlier version of this section
 called them *independent*; at a replay step shorter than the holding time, neighbouring
 setups share the bars that decide them, so they are not. The Lab's error bars now carry a
 Newey-West correction for that overlap. Overlap only ever *widens* an error bar, so the
@@ -336,13 +349,13 @@ file 20-F/6-K with no item numbers and are skipped honestly). The replay then
 computes the catalyst score exactly as the live board does, on real dates.
 
 Over 10,873 five-day setups across 50 equities and five years, 6,268 carried a
-catalyst series, and **the component became the first ever to come back KEEP**:
+catalyst series, and **the component became the first ever to come back KEEP** (pooled; the two re-run readings above are why it is not stronger than that):
 
 | reading | value |
 |---|---|
 | IC | **+0.040**, p = 0.003, survives FDR |
 | Quintile spread | top 44.0% vs bottom 39.0% — **+5.0 points (±2.0)** |
-| Time blocks | positive in **6 of 6** |
+| Time blocks | positive in **6 of 6** when first run; **5 of 6** on a re-run with fresh data on 2026-10-10 (the earliest block, Nov 2021–Sep 2022, was slightly negative) |
 | Leave-one-out | removing it costs the blend 0.028 IC — the only weight buying anything |
 | Control: another company's dates | +0.016 — the earnings-*season* residual, as it should be |
 | Control: every date shifted +45d | **−0.029, 0 of 6** — not a shrug but the mirror image |
@@ -685,7 +698,10 @@ on every scan, which would cost real money for no benefit.
 ## Run it
 
 SONAR is a native macOS app — PySide6 widgets, every chart drawn with `QPainter`. There is no
-web view, which is why the bundle is ~98MB rather than ~300MB.
+web view, which is why the bundle is ~98MB rather than ~300MB. It needs **Python 3.11 or newer**
+and [`uv`](https://docs.astral.sh/uv/) (`brew install uv`); Linux and Windows are untested and
+unsupported. Keys, when you want them, go in a `.env` beside `main.py` (see the feature sections:
+Alpaca paper, Finnhub, FRED) — never in the repo.
 
 ```bash
 uv venv .venv && uv pip install -r requirements.txt
@@ -741,7 +757,7 @@ in. Tier 1 is done — `model.py` and `engine.py` both went from ~39% to **100%*
 and writing the engine's cross-check test found a real ten-point disagreement between the app's
 two ways of computing P(up) (a lattice bin sitting exactly on the barrier), since fixed. Tier 2
 landed too (`feeds.py` 30% → 82%, `server.py` 0% → 92%); `universe.py` and
-`research/features.py` are the next gaps.
+`research/features.py` have since been covered too; `TESTING.md` §0 has the current figures.
 
 ### Learning what the numbers mean
 
@@ -765,7 +781,7 @@ signing off v2, run against the installed bundle rather than the checkout,
 because several of the failures only exist in a build. Eighteen of them are marked
 as regressions, which makes the list double as this project's bug history.
 
-The app's **Test plan** button (next to *Docs*) opens it as a page that remembers
+The app's **Test plan** button (next to the wording switch) opens it as a page that remembers
 which cases you have passed or failed; the daemon serves it at `/testplan`. That
 page is generated from the markdown by `scripts/build_testplan.py` — edit the
 markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
@@ -975,7 +991,7 @@ sonar/
   model.py     barrier probability + Galton-lattice distribution
   risk.py      risk profiles — staking and filtering, never scoring
   horizon.py   return horizons, intraday → year — timing curve + momentum window
-  macro.py     FRED regime (curve, VIX, real rates, labour) for long horizons
+  macro/       FRED regime (curve, VIX, real rates, labour) for long horizons — its own git repo, gitignored here
   paths.py     dev vs frozen path resolution — the packaging landmine — plus daily state backups
   engine.py    paper portfolio: sizing, settlement, the hourly model-vs-market score log, run health, LLM calibration
   llm.py       the optional narrative read (the only module with a dependency)
@@ -997,12 +1013,13 @@ sonar/
   alerts.py    what changed — fires on transitions, never asserts a direction
   enginelock.py single-writer guard so two SONARs cannot double-count one book
   server.py    stdlib HTTP server over core.Live (headless mode)
-  playmaker/   sports prop pricing, seven sports — the Playmaker tab
+  playmaker/   sports prop pricing, seven sports — the Playmaker tab; its own git repo, gitignored here
     devig.py   three devig methods (multiplicative, Clarke power, Shin), cross-book consensus, outlier screen
+    ratings.py / poisson.py / results.py / scoring.py   ratings, Dixon-Coles goals model, result feeds, walk-forward scoring
     staking.py Estimate (probability + interval + source); Kelly at the interval's low end
     MODELS.md  what the successful sports models do, and the staged plan
-  research/    the study apparatus — features, panel, stats, validate, regimes,
-               and hourlyvol (the measured EWMA × hour-of-day σ the Terminal prices with)
+  research/    the study apparatus — features, panel, stats, validate, regimes, study,
+               earnings (the EDGAR calendar), and hourlyvol (the measured EWMA × hour-of-day σ the Terminal prices with)
 ui/
   app.py       the window — My investments / Screener / News / My trades / Big picture / Practice (with the hourly model at its foot) / Sports / Learn
   tabs.py      the navigation rail and page header: plain name over the name
@@ -1019,6 +1036,13 @@ assets/
 static/
   index.html   the BTC terminal (canvas charts, tooltips)
   docs.html    in-app documentation
+  testplan.html the acceptance plan as a page (generated by scripts/build_testplan.py)
+tests/         the suite (see TESTING.md)
+scripts/       build_testplan.py, install_agent.sh, stamp_version.py
+packaging/     the launchd plist for the headless agent
+docs/          the engineering process: specs, ADRs, audit reports, playbooks, ROADMAP
+research_results/, docs_attention_study.json   outputs of the studies, kept as their record
+CONFIDENCE.md  research notes on the score; GOING_LIVE.md  a plan only, nothing applied
 ```
 
 ### API
@@ -1030,6 +1054,12 @@ static/
 | `GET /api/config` | current risk/horizon/protocol, available options, LLM availability |
 | `POST /api/config` | `{"risk": "...", "horizon": "...", "protocol": true}` — switches and rescans |
 | `POST /api/read` | `{"kind": "btc\|asset", "id": "..."}` — one LLM read |
+| `GET /api/health` | is the engine doing its job — 200, or 503 with the problems listed |
+| `GET /api/book`, `/api/wire`, `/api/macro` | the paper book, the alerts and central-bank calendar, the macro regime |
+| `POST /api/trade`, `/api/close` | `{"symbol": "...", "direction": "LONG\|SHORT"}`, `{"id": "..."}` — paper trades; how a second window hands its actions to the engine that holds the book |
+| `GET /`, `/docs`, `/testplan` | the BTC terminal page, the manual, the acceptance plan |
+
+Every route answers only requests that name this machine in their `Host` header; writes must be JSON from no foreign `Origin` (see `docs/specs/t0-7-api-origin.md`).
 
 ## What is left
 

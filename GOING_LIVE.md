@@ -13,7 +13,7 @@ Nothing in this document has been applied. `sonar/execution.py` still talks only
 
 This shapes the design, so it comes first.
 
-SONAR's own numbers say it has no edge. Five pre-registered studies across 116,563
+SONAR's own numbers say it has no edge. Five pre-registered directional studies across 116,563
 asset-days found nothing that survived multiple-testing correction. The score is therefore
 uncalibrated, and `scoring.py` prices every plan off a driftless random walk:
 
@@ -471,15 +471,13 @@ Flagging, not advising — get a *Steuerberater* before the first live order, no
 
 ---
 
-## Where I stand
+## Where this stands
 
-I will not write the live adapter or flip the switch — connecting funded accounts is a
-decision that should require your hands. Everything up to that line I am glad to build:
-the `flatten()` and startup reconciliation in §6, the cost-measurement logging in §5, a
-`GuardedBroker` adapter, or the whole venue adapter written and tested against a
-sandbox endpoint with the live host unreachable, so that going live is a one-constant
-change you make yourself and can see clearly in a diff.
+Out of scope until the owner says otherwise in writing. The live adapter and the switch are not
+built: connecting funded accounts is a decision that should require the owner's hands.
 
-Ask, and I will start with §6 — those three gaps are worth fixing whether or not you ever
-go live, because a kill switch that leaves you holding a position is a bug in the
-simulator too.
+Work that is worth doing whether or not SONAR ever goes live, because a kill switch that leaves
+a position held is a bug in the simulator too: the `flatten()` and startup reconciliation in §6,
+the cost-measurement logging in §5, and a `GuardedBroker` adapter. A venue adapter, if one is ever
+written, is written and tested against a sandbox endpoint with the live host unreachable, so that
+going live is a one-constant change the owner makes and can see in a diff. See §6 first.

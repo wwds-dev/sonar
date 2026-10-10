@@ -22,9 +22,9 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `BLOCKED` — a row that lands m
 
 | # | Suggestion | Category | Effort | Status |
 |---|---|---|---|---|
-| 9 | Confidence score shown as a distribution rather than a single number | design | M | IDEA |
-| 10 | Export a closed round trip as a one-page post-mortem (entry, exit, thesis, realized cost) | feature | S | IDEA |
-| 15 | **Guided mode for the Lab** — controls phrased as questions, a verdict in words above the table, and the three tests that decide whether a result means anything stated inline rather than assumed | feature | L | PLANNED |
+| I-9 | Confidence score shown as a distribution rather than a single number | design | M | IDEA |
+| I-10 | Export a closed round trip as a one-page post-mortem (entry, exit, thesis, realized cost) | feature | S | IDEA |
+| I-15 | **Guided mode for the Lab** — controls phrased as questions, a verdict in words above the table, and the three tests that decide whether a result means anything stated inline rather than assumed | feature | L | PLANNED |
 | 16 | **First-run cards**: paper money, notability is not direction, start on Assets, check claims in the Lab, the manual is a tab | feature | M | PLANNED |
 | 17 | Say what would change an "unproven" — "needs ~20 closed positions, you have 3" — wherever the app refuses to claim something | design | S | PLANNED |
 

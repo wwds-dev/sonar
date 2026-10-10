@@ -72,7 +72,7 @@
   <h1>SONAR — how it works</h1>
   <p class="sub">A market scanner and paper-trading terminal that tries very hard
     not to overstate what it knows. Live prices, live news, a probability model,
-    and five studies that failed to find an edge — all reported plainly.</p>
+    and six studies — five that failed to find a directional edge and one that found a volatility effect — all reported plainly.</p>
 
   <div class="callout">
     <b>The one thing to understand first.</b> SONAR reads <b>real</b> market data
@@ -835,7 +835,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     what it reports, not better.</p>
 
   <h2 id="findings"><span class="n">11</span>What the research found</h2>
-  <p>Five studies, each more careful than the last. All of them negative.</p>
+  <p>Six studies, each more careful than the last. Five directional nulls and one volatility-shaped survivor.</p>
   <table>
     <tr><th>Question</th><th>Answer</th></tr>
     <tr><td>Does momentum predict the barrier outcome?</td>
@@ -854,7 +854,7 @@ APCA_API_SECRET_KEY=...</code></pre>
     <tr><td>Does a scheduled earnings date sharpen the barrier odds?</td>
       <td><b class="up">Yes — the first survivor.</b> IC +0.040 over 6,268
         setups, top quintile beating the bottom by 5.0 points (±2.0),
-        positive in <b>6 of 6</b> time blocks, and it passed the controls the
+        positive in <b>6 of 6</b> time blocks when first run (<b>5 of 6</b> on a re-run with fresh data), and it passed the controls the
         three dead findings failed: another company's dates keep only the
         earnings-<em>season</em> residual (+0.016), and shifting every date by
         45 days does not shrug — it <em>inverts</em> (−0.029, 0 of 6), which
@@ -919,8 +919,8 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     spread, real slippage and real risk — none of which a simulation pays.
   </div>
   <ul>
-    <li><b>No edge has been found.</b> Five studies, progressively more careful,
-      all negative. That is the expected answer for liquid instruments priced by
+    <li><b>No directional edge has been found.</b> Five studies, progressively more careful,
+      all negative — and a sixth found that scheduled events make prices jump, which is not a direction. That is the expected answer for liquid instruments priced by
       people running the same arithmetic.</li>
     <li><b>Confidence is notability</b>, not the probability of profit. P(PROF)
       is that, and it sits at its driftless baseline because no drift has been
