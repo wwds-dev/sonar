@@ -55,6 +55,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import math
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -99,6 +101,14 @@ TERMINAL_STATUSES = frozenset({
     "filled", "canceled", "cancelled", "rejected", "expired", "done_for_day",
     "closed", "stopped",
 })
+
+
+def _finite(x) -> bool:
+    """A real, finite number — a string or Decimal is not one, and used to fall
+    through to a TypeError in the caps instead of a rejection."""
+    if isinstance(x, bool) or not isinstance(x, (int, float)):
+        return False
+    return math.isfinite(x)
 
 
 def _f(x, default: float = 0.0) -> float:
@@ -179,6 +189,8 @@ class OrderIntent:
     def notional(self) -> float | None:
         if self.limit_price is None:
             return None
+        if not (_finite(self.quantity) and _finite(self.limit_price)):
+            return None        # check() rejects these; it must be able to ask first
         return round(self.quantity * self.limit_price, 2)
 
     @property
@@ -212,15 +224,23 @@ class AuditLog:
     def __init__(self, path=None) -> None:
         self.path = path or (paths.user_data_base() / "execution_audit.jsonl")
 
-    def write(self, event: str, **fields) -> None:
+    def write(self, event: str, **fields) -> bool:
+        """Append a record; True if it was written. A failure is reported, not
+        raised, so logging never breaks the flow it observes — but the one
+        record the guard's caps and idempotency rest on ("submitted") checks it."""
         rec = {"t": time.time(), "iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
                "event": event, **fields}
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a") as fh:
+            fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            os.fchmod(fd, 0o600)               # an older log keeps its old mode otherwise
+            with os.fdopen(fd, "a") as fh:
                 fh.write(json.dumps(rec, default=str) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+            return True
         except OSError:
-            pass          # logging must never break the flow it observes
+            return False
 
     def records(self):
         """Every record, oldest first. Malformed lines are skipped rather than
@@ -411,6 +431,7 @@ class Guard:
         self.halted = False
         self.halt_reason = ""
         self._sent: set[str] = set()
+        self._sent_today: dict = {}      # date -> orders this process sent
 
     def equity(self) -> float | None:
         """Account equity from the venue, or ``None`` if it cannot be read.
@@ -448,12 +469,15 @@ class Guard:
             problems.append(f"{intent.symbol} is not on the instrument allowlist")
         if intent.side.upper() not in ("BUY", "SELL"):
             problems.append(f"bad side {intent.side!r}")
-        if intent.quantity <= 0:
-            problems.append("quantity must be positive")
+        # Every comparison with NaN is False, so a NaN quantity or price used to
+        # pass the caps, the notional check and the equity check at once.
+        if not (_finite(intent.quantity) and intent.quantity > 0):
+            problems.append("quantity must be a positive number")
         elif intent.quantity > L["max_quantity"]:
             problems.append(f"quantity {intent.quantity:g} exceeds cap {L['max_quantity']:g}")
 
-        if intent.limit_price is None or intent.limit_price <= 0:
+        if intent.limit_price is None or not _finite(intent.limit_price) \
+                or intent.limit_price <= 0:
             problems.append("unpriced order rejected — without a limit price there "
                             "is no notional to cap, so it cannot be risk-checked")
         else:
@@ -464,7 +488,7 @@ class Guard:
             pct = L.get("max_notional_pct_equity") or 0.0
             if pct > 0:
                 eq = self.equity()
-                if eq is None:
+                if eq is None or not _finite(eq):
                     # Fail closed, as with the allowlist: an order that cannot
                     # be measured against the account is not one to send.
                     problems.append("venue equity unavailable — refusing to send "
@@ -473,7 +497,8 @@ class Guard:
                     problems.append(f"notional {n:,.2f} exceeds {pct:.0%} of venue "
                                     f"equity {eq:,.2f} ({eq * pct:,.2f})")
 
-        used = self.audit.today_count()
+        # The log can fail to write; this process's own count is the floor.
+        used = max(self.audit.today_count(), self._sent_today.get(date.today(), 0))
         if used >= L["max_orders_per_day"]:
             problems.append(f"daily order cap reached ({used}/{L['max_orders_per_day']})")
 
@@ -500,10 +525,14 @@ class Guard:
 
         coid = intent.client_order_id
         # Recorded BEFORE the call, not after: if it times out we must still be
-        # unable to send it a second time.
+        # unable to send it a second time. And if it cannot be recorded, it is
+        # not sent: the daily cap and idempotency read this very log.
         self._sent.add(coid)
-        self.audit.write("submitted", client_order_id=coid, intent=asdict(intent),
-                         describe=intent.describe())
+        self._sent_today[date.today()] = self._sent_today.get(date.today(), 0) + 1
+        if not self.audit.write("submitted", client_order_id=coid, intent=asdict(intent),
+                                describe=intent.describe()):
+            raise GuardRejection("the audit log could not be written, so the order was "
+                                 "not sent: its caps and idempotency rest on that record")
 
         try:
             reply = self.broker.place(

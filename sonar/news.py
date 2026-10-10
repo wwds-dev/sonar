@@ -65,7 +65,7 @@ FEEDS: dict[str, Feed] = {
     # --- Western press ---------------------------------------------------- #
     "BBC Business":   Feed("https://feeds.bbci.co.uk/news/business/rss.xml", "financial", "uk"),
     "BBC Politics":   Feed("https://feeds.bbci.co.uk/news/politics/rss.xml", "political", "uk"),
-    "MarketWatch":    Feed("http://feeds.marketwatch.com/marketwatch/topstories/", "financial", "us"),
+    "MarketWatch":    Feed("https://feeds.content.dowjones.io/public/rss/mw_topstories", "financial", "us"),
     "Yahoo Finance":  Feed("https://finance.yahoo.com/news/rssindex", "financial", "us"),
     "NPR Business":   Feed("https://feeds.npr.org/1006/rss.xml", "financial", "us"),
     "Ars Technica":   Feed("https://feeds.arstechnica.com/arstechnica/index", "tech", "us"),

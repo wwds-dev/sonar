@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import os
 import time
+import unicodedata
 from dataclasses import asdict, dataclass, field
 
 MODEL = "claude-opus-5"
@@ -149,16 +150,25 @@ def available() -> tuple[bool, str]:
     return True, "ready"
 
 
+def _clean(text: object, limit: int) -> str:
+    """One line of plain text: no angle brackets (a title containing
+    ``</HEADLINES>`` closed the untrusted block and kept talking), no control
+    characters, capped."""
+    flat = "".join(c if c.isprintable() and c not in "<>" else " "
+                   for c in unicodedata.normalize("NFKC", str(text)))
+    return " ".join(flat.split())[:limit]
+
+
 def _fmt_headlines(headlines: list[dict] | None) -> str:
     """Titles only, delimited, capped. No article bodies ever leave the box."""
     if not headlines:
         return "<HEADLINES>(none matched)</HEADLINES>"
     lines = []
     for h in headlines[:8]:
-        src = str(h.get("source", "?"))[:40]
-        title = str(h.get("title", ""))[:200].replace("\n", " ")
+        src = _clean(h.get("source", "?"), 40)
+        title = _clean(h.get("title", ""), 200)
         age = h.get("age_h")
-        stamp = f"{age}h ago" if age is not None else "undated"
+        stamp = f"{_clean(age, 8)}h ago" if age is not None else "undated"
         lines.append(f"- [{src}, {stamp}] {title}")
     return "<HEADLINES>\n" + "\n".join(lines) + "\n</HEADLINES>"
 
@@ -170,7 +180,9 @@ def _fmt_numbers(numbers: dict) -> str:
             continue
         if isinstance(v, float):
             v = f"{v:,.4f}".rstrip("0").rstrip(".")
-        rows.append(f"- {k}: {v}")
+        else:
+            v = _clean(v, 120)         # asset names and market titles come from feeds
+        rows.append(f"- {_clean(k, 60)}: {v}")
     return "<MEASUREMENTS>\n" + "\n".join(rows) + "\n</MEASUREMENTS>"
 
 
@@ -211,10 +223,11 @@ class LLMReader:
             return _err(subject, why)
 
         started = time.time()
-        horizon_line = f"\nHolding horizon: {horizon_label}" if horizon_label else ""
+        horizon_line = (f"\nHolding horizon: {_clean(horizon_label, 40)}"
+                        if horizon_label else "")
         prompt = (
-            f"{kind}: {subject}\n"
-            f"Risk profile: {risk_name}{horizon_line}\n\n"
+            f"{_clean(kind, 20)}: {_clean(subject, 120)}\n"
+            f"Risk profile: {_clean(risk_name, 30)}{horizon_line}\n\n"
             f"{_fmt_numbers(numbers)}\n\n"
             f"{_fmt_headlines(headlines)}\n\n"
             "Give your read. Remember the conviction you state is logged and "

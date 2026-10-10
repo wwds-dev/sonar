@@ -26,6 +26,7 @@ that boundary is load-bearing.
 
 from __future__ import annotations
 
+import html
 import os
 import sys
 import time
@@ -695,6 +696,7 @@ class SuggestionCard(QFrame):
         if s.get("headlines"):
             h = s["headlines"][0]
             hl = label(f'{h["source"]} · {h["title"]}', "muted", theme.figure(9))
+            hl.setTextFormat(Qt.PlainText)          # feed text is never markup
             hl.setWordWrap(True)
             lay.addWidget(hl)
 
@@ -752,6 +754,7 @@ class TickerRow(QFrame):
         src.setFixedWidth(104)
         lay.addWidget(src)
         title = label(h.title, font=theme.text(11))
+        title.setTextFormat(Qt.PlainText)           # feed text is never markup
         title.setWordWrap(True)
         lay.addWidget(title, 1)
 
@@ -2988,21 +2991,24 @@ class MainWindow(QMainWindow):
         head = ["<b>MODEL READ — commentary only</b>"]
         if est is not None:
             head.append(
-                f"States {est.probability*100:.1f}% ({result.lean or 'no lean'}, "
-                f"confidence {result.confidence or 'unstated'}). "
+                f"States {est.probability*100:.1f}% ({html.escape(result.lean or 'no lean')}, "
+                f"confidence {html.escape(str(result.confidence or 'unstated'))}). "
                 "Not used for the edge, the EV or the stake above: a language "
                 "model's percentage is not a measurement, and feeding one to "
                 "Kelly is the defect this tab was rebuilt to remove.")
         else:
-            head.append(f"Lean {result.lean or '—'}, "
-                        f"confidence {result.confidence or '—'}; no figure stated.")
+            head.append(f"Lean {html.escape(result.lean or '—')}, "
+                        f"confidence {html.escape(str(result.confidence or '—'))}; no figure stated.")
 
+        # Model text is data, not markup: scraped pages steer it, and unescaped
+        # it could draw its own bold, links or fake "commentary only" notices.
         blocks = ["<br>".join(head)]
         for name in playmaker.SECTIONS:
             body = result.sections.get(name)
             if body:
-                blocks.append(f"<b>{name}</b><br>{body.replace(chr(10), '<br>')}")
-        narrative = "<br><br>".join(blocks) or text.replace("\n", "<br>")
+                blocks.append(f"<b>{name}</b><br>{html.escape(body).replace(chr(10), '<br>')}")
+        narrative = ("<br><br>".join(blocks)
+                     or html.escape(text).replace("\n", "<br>"))
         before = getattr(self, "_playmaker_html", "")
         self.playmaker_out.setHtml(f"{before}<br><br><hr>{narrative}" if before else narrative)
 
@@ -3387,6 +3393,7 @@ class MainWindow(QMainWindow):
             f"color: {(theme.GOLD if level == 'Heavy' else theme.MUTED).name()};")
         rows = [f"· [{e['institution']}] {e['title'][:88]}"
                 for e in (inst.get("policy") or inst.get("recent") or [])[:5]]
+        self.inst_list.setTextFormat(Qt.PlainText)  # feed text is never markup
         self.inst_list.setText("\n".join(rows) or "nothing on the wire yet")
 
     def _refresh_macro(self, snap: dict) -> None:

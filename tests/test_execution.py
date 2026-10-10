@@ -217,6 +217,53 @@ def test_audit_survives_an_unwritable_path(tmp_path):
     assert bad.today_count() == 0
 
 
+@pytest.mark.parametrize("field,value", [("quantity", float("nan")),
+                                         ("limit_price", float("nan")),
+                                         ("quantity", float("inf")),
+                                         ("limit_price", float("inf"))])
+def test_non_finite_numbers_are_rejected(guard, field, value):
+    """Every comparison with NaN is False: a NaN used to pass the quantity cap,
+    the notional cap and the percent-of-equity check together."""
+    with pytest.raises(GuardRejection):
+        guard.submit(intent(**{field: value}))
+    assert guard.broker.positions() == [] or len(guard.broker.positions()) == 0
+
+
+def test_non_finite_venue_equity_fails_closed(audit):
+    class NanEquity(SimBroker):
+        def equity(self):
+            return float("nan")
+    g = Guard(broker=NanEquity(), allowlist=ALLOW, audit=audit,
+              limits={"max_notional_pct_equity": 0.5})
+    with pytest.raises(GuardRejection, match="equity"):
+        g.submit(intent())
+
+
+def test_an_order_is_not_sent_if_the_audit_log_cannot_be_written(tmp_path):
+    """The daily cap and idempotency read this log; unwritable, they were void."""
+    g = Guard(broker=SimBroker(), allowlist=ALLOW, audit=AuditLog(tmp_path))  # a directory
+    with pytest.raises(GuardRejection, match="audit log"):
+        g.submit(intent())
+    assert g.broker.positions() == []
+
+
+def test_the_daily_cap_holds_when_the_log_is_unwritable(tmp_path, monkeypatch):
+    """The process's own count is the floor, whatever the log says."""
+    audit = AuditLog(tmp_path / "audit.jsonl")
+    g = Guard(broker=SimBroker(), allowlist=ALLOW, audit=audit,
+              limits={"max_orders_per_day": 1})
+    g.submit(intent(symbol="AAPL"))
+    monkeypatch.setattr(audit, "today_count", lambda event="submitted": 0)
+    with pytest.raises(GuardRejection, match="daily order cap"):
+        g.submit(intent(symbol="MSFT"))
+
+
+def test_the_audit_log_is_private_and_synced(tmp_path):
+    a = AuditLog(tmp_path / "audit.jsonl")
+    assert a.write("x", k=1) is True
+    assert (tmp_path / "audit.jsonl").stat().st_mode & 0o077 == 0
+
+
 # --- reconciliation -------------------------------------------------------- #
 def test_reconcile_reports_venue_state(guard):
     guard.submit(intent())
