@@ -1569,6 +1569,14 @@ class MainWindow(QMainWindow):
 
     ASSETS_LOADING = ("Fetching prices for 129 markets — the first scan takes about "
                       "a minute.")
+    # The other first-run lists. A bordered box with nothing in it looks broken,
+    # so each says what it is waiting for (UX audit U-2).
+    BOOK_EMPTY = "No trades yet — open one from the Screener."
+    ALERTS_EMPTY = "Nothing yet — alerts need one scan to compare against."
+    HEADLINES_LOADING = "Waiting for the first headlines…"
+    SUGGESTIONS_LOADING = "Waiting for the first scan…"
+    EVENTS_LOADING = "Waiting for the first calendar…"
+    EVENTS_NONE = "No scheduled events found."
 
     def _scroll_tab(self, which: str, header: QWidget | None = None) -> QWidget:
         area = QScrollArea()
@@ -1623,7 +1631,7 @@ class MainWindow(QMainWindow):
             "blended score's measured IC is negative, so an alert shouting BUY "
             "would point at the wrong instruments with a straight face.",
             "faint", theme.figure(8), wrap=True))
-        self.alert_list = label("nothing yet", "muted", theme.figure(9))
+        self.alert_list = label(self.ALERTS_EMPTY, "muted", theme.figure(9))
         self.alert_list.setWordWrap(True)
         al.addWidget(self.alert_list)
         outer.addWidget(alerts_panel)
@@ -1647,6 +1655,7 @@ class MainWindow(QMainWindow):
         self._sugg_lay.setContentsMargins(0, 4, 6, 4)
         self._sugg_lay.setSpacing(7)
         self._sugg_lay.addStretch(1)
+        self._rebuild(self._sugg_lay, [], self.SUGGESTIONS_LOADING)
         self._sugg_area.setWidget(shost)
         sl.addWidget(self._sugg_area, 1)
         lay.addWidget(sugg, 3)
@@ -1673,6 +1682,7 @@ class MainWindow(QMainWindow):
         self._wire_lay.setContentsMargins(0, 4, 6, 4)
         self._wire_lay.setSpacing(5)
         self._wire_lay.addStretch(1)
+        self._rebuild(self._wire_lay, [], self.HEADLINES_LOADING)
         self._wire_area.setWidget(host)
         ll.addWidget(self._wire_area, 1)
         lay.addWidget(left, 3)
@@ -1692,6 +1702,7 @@ class MainWindow(QMainWindow):
         self._events_lay.setContentsMargins(0, 4, 6, 4)
         self._events_lay.setSpacing(5)
         self._events_lay.addStretch(1)
+        self._rebuild(self._events_lay, [], self.EVENTS_LOADING)
         self._events_area.setWidget(ehost)
         rl.addWidget(self._events_area, 1)
         lay.addWidget(right, 2)
@@ -1704,8 +1715,7 @@ class MainWindow(QMainWindow):
         with self.live.lock:
             rows = list(self.live.alerts)
         if not rows:
-            self.alert_list.setText("nothing yet — alerts need one scan to "
-                                    "compare against")
+            self.alert_list.setText(self.ALERTS_EMPTY)
             return
         out = []
         for a in rows[:6]:
@@ -1758,7 +1768,9 @@ class MainWindow(QMainWindow):
         rows = []
         for h in fresh:
             rows.append(TickerRow(h))
-        self._rebuild(self._wire_lay, rows, "no headlines yet")
+        # An empty cache is "not fetched yet" as far as the UI can tell: the
+        # feeds keep retrying, so "waiting" stays true until one answers.
+        self._rebuild(self._wire_lay, rows, self.HEADLINES_LOADING)
 
         try:
             sg = self.live.suggestions()
@@ -1767,7 +1779,8 @@ class MainWindow(QMainWindow):
         self._rebuild(self._sugg_lay,
                       [SuggestionCard(s, self._trade) for s in sg],
                       "Nothing with elevated coverage right now — which is a\n"
-                      "normal state, not a failure to find something.")
+                      "normal state, not a failure to find something."
+                      if asset_gen else self.SUGGESTIONS_LOADING)
 
         items = []
         for e in ev.get("earnings", [])[:25]:
@@ -1777,7 +1790,8 @@ class MainWindow(QMainWindow):
             sym = l["symbol"] or "—"
             items.append(EventRow(sym, f'IPO {l["status"]} · {l["company"][:26]}',
                                   l["price"] or "", theme.UP))
-        self._rebuild(self._events_lay, items, "no scheduled events found")
+        self._rebuild(self._events_lay, items,
+                      self.EVENTS_NONE if ev.get("generated") else self.EVENTS_LOADING)
 
     def _book_tab(self) -> QWidget:
         """Open paper positions, and the only page that grades the app itself."""
@@ -1852,6 +1866,7 @@ class MainWindow(QMainWindow):
         self._book_lay.setContentsMargins(2, 4, 8, 8)
         self._book_lay.setSpacing(8)
         self._book_lay.addStretch(1)
+        self._rebuild(self._book_lay, [], self.BOOK_EMPTY)
         area.setWidget(host)
         lay.addWidget(area, 1)
         self._book_sig = None
@@ -1893,7 +1908,7 @@ class MainWindow(QMainWindow):
         self._rebuild(self._book_lay,
                       [PositionRow(p, self._close_position)
                        for p in pos.get("open", [])],
-                      "No open paper positions. Use buy or short on the Assets tab.")
+                      self.BOOK_EMPTY)
 
     # -- portfolio: the landing page --------------------------------------- #
     CARD_COLUMNS = 3

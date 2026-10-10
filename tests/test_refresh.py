@@ -230,3 +230,42 @@ def test_the_edge_figure_is_neutral_until_the_model_beats_the_market(window):
     snap["portfolio"]["model_vs_market"]["model_better"] = True
     window._refresh_terminal(snap)
     assert theme.MUTED.name() not in window.stats["edge"].val.styleSheet()
+
+
+# --------------------------------------------------------------------------- #
+# UX U-2 remainder: My trades and News say what they are waiting for
+# --------------------------------------------------------------------------- #
+def test_my_trades_says_there_are_no_trades_before_any_refresh(window):
+    """Built, not yet refreshed: the list must not be a blank box."""
+    assert _texts(window._book_lay) == [window.BOOK_EMPTY]
+    assert "open one from the Screener" in window.BOOK_EMPTY
+    window._book_sig = None
+    window._refresh_book()
+    assert _texts(window._book_lay) == [window.BOOK_EMPTY]
+
+
+def test_news_lists_say_what_they_are_waiting_for_before_the_first_data(window):
+    assert _texts(window._wire_lay) == [window.HEADLINES_LOADING]
+    assert _texts(window._sugg_lay) == [window.SUGGESTIONS_LOADING]
+    assert _texts(window._events_lay) == [window.EVENTS_LOADING]
+    assert window.alert_list.text() == window.ALERTS_EMPTY
+    assert "first headlines" in window.HEADLINES_LOADING
+
+
+def test_news_lists_keep_saying_waiting_until_there_is_something_to_say(window):
+    """Nothing fetched yet is not 'no events' and not 'nothing elevated'."""
+    window._wire_sig = None
+    window._refresh_wire()
+    assert _texts(window._wire_lay) == [window.HEADLINES_LOADING]
+    assert _texts(window._sugg_lay) == [window.SUGGESTIONS_LOADING]
+    assert _texts(window._events_lay) == [window.EVENTS_LOADING]
+
+
+def test_news_calendar_and_suggestions_change_their_wording_once_fetched(window):
+    window.live.events._fetched_at = 1.0
+    with window.live.lock:
+        window.live.assets["generated"] = 1.0
+    window._wire_sig = None
+    window._refresh_wire()
+    assert _texts(window._events_lay) == [window.EVENTS_NONE]
+    assert any("normal state" in t for t in _texts(window._sugg_lay))

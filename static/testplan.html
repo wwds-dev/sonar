@@ -107,7 +107,7 @@
 <p><b>Run it in the state it is used in: the app open on top of the launchd agent</b> (<code>./scripts/install_agent.sh --status</code> says <em>installed and loaded</em>). Since v2.128 the window <em>follows</em> the agent — every figure is the agent's, every action that writes the book is handed to it — so a case passed with the agent stopped has tested a different program. §10.4–10.5 and the handovers in §12 say when to stop it.</p>
 <table><tr><th></th><th></th></tr>
 <tr><td>Build under test</td><td><code>./build_app.sh --install</code>, then <code>/Applications/SONAR.app/Contents/MacOS/SONAR --selftest</code></td></tr>
-<tr><td>Automated suite</td><td><code>./run-tests.sh tests/ -q</code> — expect <b>1,742 tests</b> and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently</td></tr>
+<tr><td>Automated suite</td><td><code>./run-tests.sh tests/ -q</code> — expect <b>1,746 tests</b> and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently</td></tr>
 <tr><td>Time to run this plan</td><td>~30 minutes</td></tr>
 <tr><td>Prerequisite</td><td>A working internet connection. Two cases deliberately need it off.</td></tr>
 </table>
