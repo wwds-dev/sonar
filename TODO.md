@@ -35,6 +35,12 @@ not-planned list sit between the two.
       Everywhere the app refuses to claim something, say what would change it
       and how far along it is: "unproven — needs ~20 closed positions, you have
       3". The Book tab has the count already.
+- [ ] `P2` `testing` `@me` **Open the installed v2.178 once and look.** The first-run placeholders (My trades, News),
+      the plain captions on Practice, Sports and Macro, and the attribution table in both wordings were verified by
+      tests, not by eye. Toggle Wording and run one Practice simulation.
+- [ ] `P2` `infra` `@me` **Decide whether to restart the launchd agent on v2.178.** It still runs the code from before
+      2026-10-10's wording and docs changes; none of them touch the engine, so leaving it keeps the 30-day clean run
+      (day 1 = 2026-10-10, due 2026-11-09) undisturbed. Restarting puts agent and app on one build.
 
 ## v3 — only if the research is resumed
 
