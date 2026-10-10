@@ -711,8 +711,11 @@ when someone opens the Playmaker tab and asks for a rating, so nothing imports t
 loudly rather than silently — the playmaker case shipped the same trap a second time before it
 was caught.
 
-Note the frozen app and the source tree keep **separate portfolios**: `~/Library/Application
-Support/SONAR/state.json` versus `data/state.json`. Installing does not inherit a dev bankroll.
+Note the frozen app and a source run keep **separate portfolios** by default:
+`~/Library/Application Support/SONAR/state.json` versus the checkout's `data/state.json`.
+Installing does not inherit a dev bankroll. `SONAR_DATA` points a source run at another
+directory — the launchd agent's plist sets it to the app's, so the agent and the installed app
+share one book (see *Uptime* below).
 
 Leave it running and the equity curve grows by one point each hour as markets resolve. The
 active risk profile is saved with the state, so a bankroll keeps the profile it was built
