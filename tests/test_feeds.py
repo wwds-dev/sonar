@@ -396,6 +396,73 @@ def test_an_already_ended_market_is_none_not_a_price(api):
     assert feeds.current_market() is None
 
 
+def test_the_slug_ignores_the_locale(monkeypatch):
+    """Qt sets LC_TIME from the environment; under de_DE `%B` gave 'oktober'
+    and `%p` nothing. The slug must not depend on it."""
+    import locale
+    before = locale.setlocale(locale.LC_TIME)
+    for name in ("de_DE.UTF-8", "de_DE", "fr_FR.UTF-8"):
+        try:
+            locale.setlocale(locale.LC_TIME, name)
+            break
+        except locale.Error:
+            continue
+    else:
+        pytest.skip("no non-English locale installed")
+    try:
+        assert feeds._hour_slug(datetime(2026, 10, 10, 19, 5)) == \
+            "bitcoin-up-or-down-october-10-2026-7pm-et"
+    finally:
+        locale.setlocale(locale.LC_TIME, before)
+
+
+@pytest.mark.parametrize("hour,label", [(0, "12am"), (1, "1am"), (11, "11am"),
+                                        (12, "12pm"), (13, "1pm"), (23, "11pm")])
+def test_the_slug_hour_edges(hour, label):
+    assert feeds._hour_slug(datetime(2026, 3, 9, hour, 5)).endswith(f"-{label}-et")
+
+
+def test_a_live_slug_market_never_asks_the_series(api, monkeypatch):
+    live = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 1800))
+    api["events?slug="] = [{"slug": "s", "title": "t", "endDate": live,
+                            "markets": [{"outcomePrices": '["0.5","0.5"]'}]}]
+    asked = []
+    real = feeds._get
+    monkeypatch.setattr(feeds, "_get", lambda url, *a, **k: asked.append(url) or real(url, *a, **k))
+    assert feeds.current_market() is not None
+    assert not any("series_slug" in u for u in asked)
+
+
+def test_the_series_skips_an_ended_event_to_the_live_one(api):
+    now = time.time()
+    fmt = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+    api["series_slug="] = [
+        {"slug": "first-1am", "title": "first", "endDate": fmt(now - 60),
+         "markets": [{"outcomePrices": '["0.99","0.01"]'}]},
+        {"slug": "second-1am", "title": "second", "endDate": fmt(now + 3000),
+         "markets": [{"outcomePrices": '["0.40","0.60"]'}]}]
+    book = feeds.current_market()
+    assert book is not None and book.title == "second"
+
+
+def test_on_the_fall_back_night_the_second_1am_finds_its_own_market(api, monkeypatch):
+    """2026-11-01: 1am ET happens twice and both share one slug, which names
+    the first, already-ended hour. That used to be None for the whole second
+    hour; it falls through to the series instead."""
+    now = time.time()
+    ended = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 600))
+    live = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + 1800))
+    api["events?slug="] = [{"slug": "bitcoin-up-or-down-november-1-2026-1am-et",
+                            "title": "first 1am", "endDate": ended,
+                            "markets": [{"outcomePrices": '["0.99","0.01"]'}]}]
+    api["series_slug="] = [{"slug": "second-1am", "title": "second 1am",
+                            "endDate": live,
+                            "markets": [{"outcomePrices": '["0.55","0.45"]'}]}]
+    book = feeds.current_market()
+    assert book is not None and book.title == "second 1am"
+    assert book.implied_up == pytest.approx(0.55)
+
+
 def test_a_market_with_no_midpoint_falls_back_to_the_outcome_price(api):
     api["events?slug="] = [{"slug": "s", "title": "t",
                             "markets": [{"clobTokenIds": '["tok-up","tok-down"]',

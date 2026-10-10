@@ -1065,6 +1065,12 @@ class Live:
                 self._last_market = m
                 self._market_at = now
         market = self._last_market
+        if (market is not None and candle is not None
+                and market.end_time != candle.open_time + 3600):
+            # Another hour's market (the series fallback can hand back the next
+            # one): the engine refuses it, so the screen must not price it
+            # beside this hour's candle either.
+            market = None
 
         if candle is not None:
             self.spark.append({"t": int(now), "p": candle.price})

@@ -34,3 +34,19 @@ def test_a_candle_from_an_earlier_hour_never_reaches_the_screen(tmp_path, monkey
     assert [p["p"] for p in live.spark] == [101.0], "an old price reached the spark line"
     assert live.snapshot.get("candle") is None, "an old candle reached the snapshot"
     assert live.engine.current_hour == HOUR
+
+
+def test_another_hours_market_is_not_priced_on_screen(tmp_path, monkeypatch, real_poll):
+    """The series fallback can return the next hour's market; the engine
+    refuses it, and the snapshot must not show it beside this hour's candle."""
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
+    live = Live()
+    live._sigma = lambda: 0.0045
+    live._rescan = lambda: None
+    monkeypatch.setattr(feeds, "hour_close", lambda t: None)
+    monkeypatch.setattr(feeds, "hourly_candle", lambda symbol="BTCUSDT": _candle(HOUR, 101.0))
+    nxt = feeds.MarketBook(slug="next", title="next hour", implied_up=0.6, best_bid=0.59,
+                           best_ask=0.61, end_time=HOUR + 7200, volume=0.0, up_token="")
+    monkeypatch.setattr(feeds, "current_market", lambda: nxt)
+    real_poll(live)
+    assert live.snapshot.get("market") is None

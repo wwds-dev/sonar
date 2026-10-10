@@ -218,27 +218,60 @@ class MarketBook:
     asks: list[tuple[float, float]] = field(default_factory=list)
 
 
+MONTHS = ("january", "february", "march", "april", "may", "june", "july",
+          "august", "september", "october", "november", "december")
+
+
 def _hour_slug(dt_et: datetime) -> str:
-    hour = dt_et.strftime("%-I%p").lower()          # e.g. "7pm"
-    month = dt_et.strftime("%B").lower()
-    return f"bitcoin-up-or-down-{month}-{dt_et.day}-{dt_et.year}-{hour}-et"
+    """Polymarket's slug for the hour, e.g. ``...-january-5-2026-7pm-et``.
+
+    Spelled out rather than ``strftime``: ``%B`` and ``%p`` follow the
+    locale, and Qt sets it from the environment at start-up — a window
+    launched under ``LANG=de_DE`` looked for ``oktober`` with no am/pm."""
+    h = dt_et.hour
+    hour = f"{h % 12 or 12}{'am' if h < 12 else 'pm'}"
+    return (f"bitcoin-up-or-down-{MONTHS[dt_et.month - 1]}-{dt_et.day}-"
+            f"{dt_et.year}-{hour}-et")
 
 
 def current_market() -> MarketBook | None:
     """The Polymarket hourly market whose candle is in progress right now."""
     now_et = datetime.now(ET)
-    ev = _get(f"{GAMMA}/events?slug={_hour_slug(now_et)}")
-    if not ev:
-        # fall back to the soonest-ending open market in the series
-        ev = _get(f"{GAMMA}/events?series_slug=btc-up-or-down-hourly"
-                  f"&closed=false&limit=1&order=endDate&ascending=true")
-    if not ev:
-        return None
-    event = ev[0]
+    book = _market_from(_get(f"{GAMMA}/events?slug={_hour_slug(now_et)}"))
+    if book is None:
+        # Not found, or found but already ended: on the night the clocks go
+        # back, 1am ET happens twice and its slug names the first, ended hour.
+        # Either way, the soonest-ending open market in the series.
+        book = _market_from(_get(f"{GAMMA}/events?series_slug=btc-up-or-down-hourly"
+                                 f"&closed=false&limit=3&order=endDate&ascending=true"))
+    return book
+
+
+def _market_from(ev) -> MarketBook | None:
+    """The first live market in a Gamma events answer, or None. The series
+    query asks for a few: in the first minutes of the second 1am on the
+    fall-back night, the soonest-ending open event is still the first 1am."""
+    for event in ev or []:
+        book = _live_book(event)
+        if book is not None:
+            return book
+    return None
+
+
+def _live_book(event: dict) -> MarketBook | None:
     markets = event.get("markets") or []
     if not markets:
         return None
     m = markets[0]
+    end_time = _iso_to_unix(m.get("endDate") or event.get("endDate"))
+    # A market whose end has passed prices nothing — it is the previous hour
+    # sitting at ~0 or ~1 awaiting resolution. The fallback query above can
+    # hand back exactly that when the current hour's slug is not found, and
+    # treating it as live poisoned the score log on the first night it ran:
+    # None is the honest answer, same as a stale candle. Checked before the
+    # midpoint call, which would be wasted on it.
+    if end_time <= time.time():
+        return None
 
     try:
         up_token = json.loads(m["clobTokenIds"])[0]
@@ -246,14 +279,6 @@ def current_market() -> MarketBook | None:
         up_token = ""
 
     implied = _midpoint(up_token, m)
-    end_time = _iso_to_unix(m.get("endDate") or event.get("endDate"))
-    # A market whose end has passed prices nothing — it is the previous hour
-    # sitting at ~0 or ~1 awaiting resolution. The fallback query above can
-    # hand back exactly that when the current hour's slug is not found, and
-    # treating it as live poisoned the score log on the first night it ran:
-    # None is the honest answer, same as a stale candle.
-    if end_time <= time.time():
-        return None
     book = MarketBook(
         slug=event.get("slug", ""),
         title=event.get("title", "Bitcoin Up or Down"),
