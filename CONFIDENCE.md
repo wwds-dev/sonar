@@ -521,6 +521,237 @@ that the evidence says is predictable and that the app is already built to consu
 
 ---
 
+## 13. The completed studies and the cost floor
+
+Moved verbatim from `README.md` on 2026-10-10 when the README was cut to what / how / where. Statements here are as of the commit they were written in; the README no longer repeats them.
+
+These are the results the rest of this file keeps pointing at: the cost floor first, then the six pre-registered studies in order. They were moved here from the README unchanged.
+
+### The cost floor
+
+That zero is **gross**. Net of what a round trip costs — spread, commission, slippage — the
+expectation is
+
+```
+EV = −c   per trade, every trade
+```
+
+which makes `c` the number that decides whether any of this is worth doing, and the only one
+in the project that can be measured rather than estimated. `sonar/costs.py` measures it from
+the execution audit log:
+
+```python
+from sonar import costs
+costs.summary()        # cost per round trip, or a refusal to name one yet
+```
+
+Run through the ledger at crypto taker fees of 0.2% a side plus 5bp of slippage, on a €2,000
+account risking 1% per trade:
+
+| | |
+|---|---|
+| cost per round trip | **€1.05** (50.0 bps per side) |
+| as a share of the €20 risked | **5.2%** |
+| over 100 trades | **−€105** |
+
+An earlier estimate in `GOING_LIVE.md` put this at ~4% and ~€0.80. Measuring it gave 5.2% and
+€1.05 — the estimate was optimistic, which is the usual direction and the reason the ledger
+exists. `summary()` reports `reliable: False` below 20 completed round trips and declines to
+name a figure, the same threshold and reasoning as `calibration.MIN_SAMPLE`.
+
+Five pre-registered studies failed to find drift to put against that floor (a sixth found a volatility effect, not a drift; see below). That is the whole
+argument for keeping this on paper, and it is arithmetic rather than caution.
+
+### What the backtest found
+
+`sonar.backtest` replays the same plan over years of real bars: momentum and volatility from prior
+bars only, then walk forward through actual highs and lows. A bar spanning both barriers scores as a
+**loss** (daily data cannot order them) and costs are excluded, so reality is worse than this.
+
+Over **25,504 setups** — 5 years, 113 instruments (the set the study ran on; the board lists 129 today). (An earlier version of this section
+called them *independent*; at a replay step shorter than the holding time, neighbouring
+setups share the bars that decide them, so they are not. The Lab's error bars now carry a
+Newey-West correction for that overlap. A wider error bar makes a null result *less*
+informative, not more: these studies can rule out large effects, not small ones — at this sample
+an effect of about 3 points on the hit rate, or an IC of 0.04–0.07, would usually go undetected.)
+
+| momentum bucket | hit rate | | attention | hit rate | vs baseline | ±2 s.e. |
+|---|---|---|---|---|---|---|
+| 0–2% | 39.5% | | below normal | 38.7% | −1.3 | 1.2 |
+| 2–5% | 39.7% | | normal | 39.0% | −1.0 | 1.1 |
+| 5–10% | 39.8% | | elevated | 40.8% | +0.8 | 2.0 |
+| 10%+ | 38.7% | | **spike** | **40.8%** | **+0.8** | 3.1 |
+
+Baseline is 40.0%. **Neither momentum nor news showed a detectable edge** — +0.8 ± 3.1 points for
+a news spike leaves room for an effect of about 3 points either way, but not for a large one.
+Overall hit rate is 39.58% against a 39.99% prediction. (The replay itself scores a bar that spans
+both barriers as a loss and drops trials that time out, which biases it about 0.3–0.9 points low
+on a driftless walk — so "matches the barrier maths" is consistent with no edge, not proof of it.)
+
+**Survivorship.** The instruments studied are the ones listed today — companies that survived and
+mostly grew, coins still trading. That flatters any long or trend-following test (momentum, the
+52-week high); it cannot manufacture the nulls above, but it can inflate the one positive finding
+that leaned on recent winners.
+
+An earlier run on 26 instruments put a news spike at **+4.9 points** and this README said so. It did
+not survive: at 3.7× the sample the effect fell to **+0.8**, well inside its own error bar. That was
+small-sample noise, and the honest thing is to record that it was reported and then withdrawn rather
+than quietly delete it.
+
+Two things follow. The Bullish/Bearish lean stays deleted — momentum never justified it. And
+`P(profit)` stays pinned at its driftless `1/(1+R:R)` baseline, because no measured drift exists to
+move it. The confidence score remains what it always claimed to be: a **notability** heuristic for
+what is worth a human look, explicitly *not* a profit predictor.
+
+What is still untested: SONAR's own word-list **sentiment**. Wikipedia pageviews measure attention
+volume, not tone, so the direction half of the news idea has never been put on trial.
+
+### Chasing the one lead, and killing it
+
+The study above left a single candidate: `dist_52w_high` — proximity to the
+52-week high — at t = +3.39 in the holdout. `sonar/research/validate.py` puts a
+lead through three tests a real effect should pass and a lucky one should not.
+
+**1. Consistency across non-overlapping periods.** Six blocks, five years:
+
+| period | IC | t |
+|---|---|---|
+| 2022-04 → 2023-01 | +0.045 | +0.61 |
+| 2023-01 → 2023-09 | −0.033 | −0.67 |
+| 2023-09 → 2024-05 | +0.036 | +0.84 |
+| 2024-05 → 2025-01 | +0.028 | +0.65 |
+| 2025-01 → 2025-10 | +0.015 | +0.44 |
+| **2025-10 → 2026-06** | **+0.136** | **+3.90** |
+
+The entire effect lives in the final block — which *is* the earlier study's
+holdout window. That is the whole explanation of the +3.39, and the reason a
+single holdout cannot be trusted no matter how it is embargoed.
+
+**2. Decay across horizons.** A signal being used up fades smoothly. This one
+goes +0.026 (5d), +0.028 (10d), +0.037 (20d), +0.034 (60d) — it *rises* to the
+horizon it was discovered at and falls after. That is the shape of noise found
+by looking.
+
+**3. Where it appears.** The 52-week-high anomaly is an *equity* effect with a
+behavioural story about anchoring on a salient price. Measured by class:
+
+| class | IC | t |
+|---|---|---|
+| Crypto | +0.087 | +2.84 |
+| Equity | +0.002 | +0.09 |
+
+It is absent exactly where the theory says it should be strongest, and present
+only where the theory does not apply. The mechanism is not the stated one.
+
+**The comparison that settles it.** Every candidate was run against the same
+tests as the controls, and they are indistinguishable:
+
+| feature | blocks agreeing | sign-test p | beats noise floor |
+|---|---|---|---|
+| dist_52w_high | 5/6 | 0.219 | 1/6 |
+| attention_z | 4/6 | 0.688 | 0/6 |
+| reversal_1 | 4/6 | 0.688 | 0/6 |
+| mom_250_ex1m | 4/6 | 0.688 | 1/6 |
+| *random_control* | *4/6* | *0.688* | — |
+| *price_level* | *3/6* | *1.000* | — |
+
+A seeded random number scores 4/6. So does attention. So does reversal. The
+lead is dead, and nothing else in the registry is alive.
+
+
+### Do any of them work *sometimes*?
+
+The last idea worth testing. Unconditional effects are rare in the literature;
+what it usually reports is effects that switch on in particular states — momentum
+working in calm markets, the low-volatility anomaly strongest when rates fall. So
+`sonar/research/regimes.py` splits every date by VIX (against its own trailing
+median), by whether the 10y–2y curve is inverted, and by the direction of policy
+rates, all classified **point-in-time**, and re-runs every feature inside each
+state.
+
+48 feature-by-regime tests. **Zero survivors.** The strongest:
+
+| interaction | IC (state A) | IC (state B) | difference | t |
+|---|---|---|---|---|
+| attention_trend × VIX | −0.009 | +0.019 | −0.028 | −1.81 |
+| mom_20 × VIX | +0.042 | −0.002 | +0.043 | +1.71 |
+| attention_z × VIX | −0.007 | +0.021 | −0.029 | −1.61 |
+
+And the noise floor, from the controls put through identical conditioning:
+`price_level × curve` reached **t = +1.72**. The best real interaction is
+1.81. A feature that cannot predict anything scored 1.72 by being sliced the
+same way.
+
+Conditioning doubles the hypothesis count, which is exactly how "it only works
+when X" results get published and then fail. Here it produced nothing that a
+control could not match.
+
+### The sixth study: the catalyst weight, finally on trial
+
+The catalyst component — 0.20 of the confidence score — was the one weight
+attribution could never grade: the replay had no historical earnings calendar.
+September 2026 gave it one, from EDGAR's own record: every **Item-2.02 8-K**
+filing *is* an earnings release, so the SEC's submissions API is a free,
+documented calendar reaching back years (`sonar/research/earnings.py`; ADRs
+file 20-F/6-K with no item numbers and are skipped honestly). The replay then
+computes the catalyst score exactly as the live board does, on real dates.
+
+Over 10,873 five-day setups across 50 equities and five years, 6,268 carried a
+catalyst series, and **the component became the first ever to come back KEEP** (pooled; the two re-run readings above are why it is not stronger than that):
+
+| reading | value |
+|---|---|
+| IC | **+0.040**, p = 0.003, survives FDR |
+| Quintile spread | top 44.0% vs bottom 39.0% — **+5.0 points (±2.0)** |
+| Time blocks | positive in **6 of 6** when first run; **5 of 6** on a re-run with fresh data on 2026-10-10 (the earliest block, Nov 2021–Sep 2022, was slightly negative) |
+| Leave-one-out | removing it costs the blend 0.028 IC — the only weight buying anything |
+| Control: another company's dates | +0.016 — the earnings-*season* residual, as it should be |
+| Control: every date shifted +45d | **−0.029, 0 of 6** — not a shrug but the mirror image |
+
+The phase-shift control is the telling one: a spurious pattern would fade when
+the dates move; this *inverts*, because mid-quarter genuinely is the quiet
+regime.
+
+**Read it carefully — it is not a direction.** Direction in the replay is
+still momentum's sign, still a coin. What a scheduled date brings is *jumps*:
+the advertised 40% comes from a smooth random walk, and symmetric fat tails
+favour the barrier that is further away, so near a known event the realised
+hit rate at 1.5:1 runs above the diffusion baseline. That is volatility being
+forecastable off a calendar — precisely the shape `CONFIDENCE.md` predicted —
+measured **before costs**, which widen into the very events it keys on. It
+earns the weight the score already carried, as notability; it moves nothing
+else.
+
+### Where the research ended up
+
+Six studies, each more careful than the last:
+
+| question | answer |
+|---|---|
+| Does momentum predict the barrier outcome? | No — flat, worse at extremes |
+| Does a news/attention spike? | No — +0.8 pts, ±3.1, over 25,504 setups |
+| Does anything sort the cross-section? | No — 0 of 16 survived FDR |
+| Does the one surviving lead replicate? | No — one period, wrong asset class, no decay |
+| Does anything work conditionally? | No — 0 of 48, floor set by a control |
+| Does a scheduled earnings date sharpen the barrier odds? | **Yes** — the first survivor; see above |
+
+Five directional nulls and one volatility-shaped survivor is the expected
+picture for liquid instruments priced by people running the same arithmetic.
+The value built here is the apparatus that can tell the difference — one that
+has caught itself three times (a +4.9 attention claim, a Thursday effect, and
+a t = +3.39 holdout) and has now also *passed* something, using the same
+controls that killed the rest.
+
+**What this means for the app.** SONAR stays what it is: an honest notability
+screener with real paper trading. `P(profit)` stays pinned at its driftless
+`1/(1+R:R)` baseline — the catalyst effect is fat tails, not drift, and drift
+is only ever supplied by `calibration.py` from positions that actually closed.
+Nothing here is a reason to trade.
+
+
+
+---
+
 ## Sources
 
 - [Measuring Geopolitical Risk — Caldara & Iacoviello (Federal Reserve IFDP 1222)](https://www.federalreserve.gov/econres/ifdp/files/ifdp1222.pdf)

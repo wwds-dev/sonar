@@ -8,6 +8,57 @@
 
 ## Open
 
+Only unfinished items live here. Finished work is under **Done** at the foot; v3 and the
+not-planned list sit between the two.
+
+- [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. No code needed — `providers.py` already registers Finnhub at preference 5, ahead of Yahoo, and picks the key up from `FINNHUB_API_KEY` in a git-ignored `.env`. Also removes the ~15-minute quote delay during market hours.
+- [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
+      it is the one that decides whether anything here is true. Three parts:
+      a guided mode whose controls are questions rather than `STEP (BARS)`;
+      a verdict in words above the table ("did not beat chance: 41% against a
+      40% baseline, error bar ±3 — that is noise"), generated from numbers the
+      run already produces; and the three tests that decide whether a result
+      means anything (error bar, out-of-sample, multiple testing) stated inline
+      with a link to §8 rather than assumed.
+- [ ] `P1` `research` `@me` **Let the paper book run.** The calibration table stays empty until ~20 positions have closed. No amount of backtesting substitutes for a track record. **Protocol mode** (Book tab, off by default) now fills it systematically — coin-flip direction, fixed small stakes — so the remaining decision is only to switch it on and leave the app running.
+- [ ] `P2` `design` `@ai` **The other six tabs are still written in jargon.**
+      The Screener is done and the shared stat strips got English captions via
+      `STAT_WORDS`, but the Practice tab still asks for `STEP (BARS)`, and the
+      Sports tab is a wall of devigging vocabulary. Same treatment, tab by tab.
+      (2026-10-10, UX audit U-7: the Practice controls and attribution table, the Sports figures and the Macro figures now have plain wording; the other tabs' prose is still to do.)
+- [ ] `P2` `feature` `@ai` **Nothing greets a first launch.** Five cards on
+      first run — it is paper money; a high score means *notable*, never *going
+      up*; start on Assets; check any claim in the Lab; the manual is the Learn
+      tab — reopenable from Learn, with the "seen" flag in
+      `paths.user_data_base()`.
+- [ ] `P2` `design` `@ai` **"unproven" reads as broken rather than honest.**
+      Everywhere the app refuses to claim something, say what would change it
+      and how far along it is: "unproven — needs ~20 closed positions, you have
+      3". The Book tab has the count already.
+- [ ] `P3` `docs` `@me` **Choose a licence (or none).** There is no `LICENSE` file and `pyproject.toml`
+      declares none, so by default all rights are reserved. The product spec (`docs/specs/v1-product.md`)
+      says "the owner now; others later", so this can wait, but it must be decided before anyone else
+      receives the code. Say which one (MIT, Apache-2.0, proprietary, none) and `@ai` adds the file.
+
+## v3 — only if the research is resumed
+
+- [ ] `P2` `research` `@me` Intraday bars, order flow, or a tone-tagged news archive. Five studies found nothing in daily bars, free news and macro regimes; more features on the same data is not the answer.
+- [ ] `P3` `feature` `@ai` Week-over-week deltas on scans, to show which signals are growing rather than merely large
+
+## Explicitly not planned
+
+- [ ] `P0` `security` `@me` **Real-money execution stays off.** SONAR will not place live orders or connect a funded broker. `portfolio.default_broker()` returns Alpaca paper or the internal book — a live venue would have to be constructed explicitly by a caller that means it, never via a fallback chain.
+- Revolut integration — investigated and closed. No public retail-investment API; balances would need a licensed Open Banking aggregator.
+
+---
+
+## Done
+
+Everything that shipped, newest areas last as they were written. Moved here from the old Open and v2
+sections on 2026-10-10 without edits to the entries.
+
+### Landing page, the book and early test coverage
+
 - [x] `P1` `design` `@ai` ~~The landing page is about one asset.~~ The app
       opened on the hourly BTC model, captioned "practice cash" as if the
       model's bankroll were the reader's. 2026-10-08: the first page is the
@@ -56,6 +107,7 @@
       92%, against a real server on an ephemeral port. `conftest.py` grew a
       `loopback` fixture so this did not mean weakening the suite's ban on
       sockets.
+
 ### Approachability — the app is unreadable without a finance background
 
 The user who commissioned this cannot read his own screener, and that is a
@@ -104,27 +156,6 @@ explaining a number in place is worth more than any amount of new prose.
       sharing one ledger panel. Two invariants in `tests/test_layout.py`:
       folded, the minimum fits 1280×775; expanded, the minimum stays below the
       fold threshold, or dragging the window narrower could never reach it.
-- [ ] `P2` `design` `@ai` **The other six tabs are still written in jargon.**
-      The Screener is done and the shared stat strips got English captions via
-      `STAT_WORDS`, but the Practice tab still asks for `STEP (BARS)`, and the
-      Sports tab is a wall of devigging vocabulary. Same treatment, tab by tab.
-- [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
-      it is the one that decides whether anything here is true. Three parts:
-      a guided mode whose controls are questions rather than `STEP (BARS)`;
-      a verdict in words above the table ("did not beat chance: 41% against a
-      40% baseline, error bar ±3 — that is noise"), generated from numbers the
-      run already produces; and the three tests that decide whether a result
-      means anything (error bar, out-of-sample, multiple testing) stated inline
-      with a link to §8 rather than assumed.
-- [ ] `P2` `feature` `@ai` **Nothing greets a first launch.** Five cards on
-      first run — it is paper money; a high score means *notable*, never *going
-      up*; start on Assets; check any claim in the Lab; the manual is the Learn
-      tab — reopenable from Learn, with the "seen" flag in
-      `paths.user_data_base()`.
-- [ ] `P2` `design` `@ai` **"unproven" reads as broken rather than honest.**
-      Everywhere the app refuses to claim something, say what would change it
-      and how far along it is: "unproven — needs ~20 closed positions, you have
-      3". The Book tab has the count already.
 - [x] `P2` `design` `@me` ~~Decide the vocabulary question.~~ **Both.** The
       `Wording` button switches plain ↔ expert; `ui/words.py` remembers it.
       The worry that it would be built and never used was answered by what it
@@ -133,22 +164,14 @@ explaining a number in place is worth more than any amount of new prose.
       vocabulary and the row density, never the layout — `tests/test_wording.py`
       asserts the columns are identical in both.
 
----
-
-
-
----
-
-## v2 — current
+### v2 — current
 
 The arc. Its precise build number is derived, not written here — `v2.100` today
 — so this heading names the phase and `sonar/version.py` names the build; see
 `VERSIONING.md` for the scheme and `CHANGELOG.md` for what each installed build
-contained. Everything below landed. What remains open in v2 is two items that
-need an account and time rather than code, kept at the top.
+contained. Everything below landed. The two v2 items that
+need an account and time rather than code are under **Open** above.
 
-- [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. No code needed — `providers.py` already registers Finnhub at preference 5, ahead of Yahoo, and picks the key up from `FINNHUB_API_KEY` in a git-ignored `.env`. Also removes the ~15-minute quote delay during market hours.
-- [ ] `P1` `research` `@me` **Let the paper book run.** The calibration table stays empty until ~20 positions have closed. No amount of backtesting substitutes for a track record. **Protocol mode** (Book tab, off by default) now fills it systematically — coin-flip direction, fixed small stakes — so the remaining decision is only to switch it on and leave the app running.
 
 ### Execution and the paper book
 
@@ -197,7 +220,6 @@ need an account and time rather than code, kept at the top.
       leave-one-out — one whale is a story, not an edge. The active profile's
       own gate always has a row, so an aggressive book is never silently
       graded at 4¢.
-
 - [x] `P2` `infra` `@ai` **CI made portable** (9a1ddb1): the dashboard test
       skips on an `exists()` check, the AGE column widened 66→72 so DejaVu
       fits too, and the checkout fetches full history because the version
@@ -314,7 +336,6 @@ need an account and time rather than code, kept at the top.
       not "known" (TESTPLAN §12, TESTING §7, README). TESTPLAN grew cases
       2.8–2.9 (model-vs-market + health line), 5.19–5.23 (protocol mode) and
       10.6–10.8 (STALLED, recovery, backups) — 101 cases, 17 ⚠ regressions.
-
 - [x] `P1` `feature` `@ai` **The hourly snapshot records the touch.** Brier
       says who was better *calibrated*; only the bid/ask at the moment of the
       snapshot can later say whether the difference was ever **buyable** — and
@@ -447,13 +468,3 @@ need an account and time rather than code, kept at the top.
 - [x] `P3` `docs` `@ai` ~~Fold the cost floor into the README.~~ With the measured €1.05 per round trip and the note that the earlier estimate was optimistic.
 - [x] `P2` `docs` `@ai` ~~`CONFIDENCE.md`~~ — how the institutional process builds a score versus how this one does: cross-sectional standardisation, benchmark-relative momentum, levels versus surprises, a daily GPR-style political index from the newswire already being read, and the argument that the thing worth forecasting here is volatility rather than direction.
 - [x] `P2` `docs` `@ai` ~~In-app docs rewritten for seven tabs~~, adding the Lab, alerts and venue sections. The previous version described five tabs and knew nothing about half the app.
-
-## v3 — only if the research is resumed
-
-- [ ] `P2` `research` `@me` Intraday bars, order flow, or a tone-tagged news archive. Five studies found nothing in daily bars, free news and macro regimes; more features on the same data is not the answer.
-- [ ] `P3` `feature` `@ai` Week-over-week deltas on scans, to show which signals are growing rather than merely large
-
-## Explicitly not planned
-
-- [ ] `P0` `security` `@me` **Real-money execution stays off.** SONAR will not place live orders or connect a funded broker. `portfolio.default_broker()` returns Alpaca paper or the internal book — a live venue would have to be constructed explicitly by a caller that means it, never via a fallback chain.
-- Revolut integration — investigated and closed. No public retail-investment API; balances would need a licensed Open Banking aggregator.

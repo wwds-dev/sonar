@@ -10,6 +10,23 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 > probability model priced against a real market. SONAR builds exactly that — and keeps it
 > **paper money** so it can be honest about what it is.
 
+SONAR asserts **no edge**. The score says what is *notable*, never which way a price will go;
+the research behind that is in [CONFIDENCE.md](CONFIDENCE.md). Nothing here is financial advice.
+
+## Six words you will meet
+
+The full primer (about 25 terms, no finance background assumed) is **§1 of the Learn tab**
+(`static/docs.html#learn`). These six come up on this page first.
+
+| Word | What it means |
+|---|---|
+| **Paper trading** | Doing everything a trader does with imaginary money, to test an idea without risking anything. Everything in SONAR is paper. |
+| **R:R** | Reward divided by risk. A target 15% away with a stop 10% away is 1.5. A bigger number sounds better and is not free: it lowers the hit rate by the same proportion. |
+| **P(profit)** | The chance a position reaches its target before its stop. Here it is pinned at the driftless baseline `1/(1+R:R)` until closed positions say otherwise. |
+| **Expected value (EV)** | What you would win or lose on average per attempt if you repeated a bet forever. Here it is zero before costs and negative after them. |
+| **Calibration** | Whether the numbers mean what they say: of everything called 40% likely, did about 40% happen? |
+| **Brier score** | A mark out of one for a set of probability guesses; lower is better. 0 is perfect foresight, 0.25 is a coin flip on everything. |
+
 ## What you do first
 
 1. Run it (see **Run it** below). It opens on **My investments**, your paper book — it starts empty.
@@ -20,56 +37,27 @@ an overnight trading bot" dashboard, with the marketing stripped out and the mec
 4. Come back in a day. Positions close on their own when they reach their target or stop, and
    **My investments** shows whether the score kept to its odds. Twenty closed positions before it says anything.
 
-What is real and what is simulated is under **What's real vs simulated** below; nothing in SONAR is
-financial advice.
-
 ## Eight tabs
 
-Six on the main path, then the manual, then two experiments under a **Lab** heading at the foot of the rail (Practice, with the hourly BTC model, and Sports).
-
-A native macOS app — PySide6 widgets, every chart drawn with `QPainter`, no web view.
-
-Each tab carries **two names**: the plain one it is called by, and — under it in
-small caps — the one this README and `static/docs.html` use. The plain names came
-in with the Plain Language direction (below); the originals stayed because forty
-sentences in the manual refer to them. `ui/tabs.py` paints both, because Qt will
-not: a `\n` in `setTabText` round-trips through the API and is then drawn on one
-line and clipped.
+Six on the main path, then the manual, then two experiments under a **Lab** heading at the foot of the rail
+(Practice, with the hourly BTC model, and Sports). A native macOS app — PySide6 widgets, every chart drawn
+with `QPainter`, no web view. Each tab carries **two names**: the plain one, and under it in small caps the
+one this README and `static/docs.html` use (`ui/tabs.py` paints both).
 
 | Tab | What it does | Asserts a direction? |
 |---|---|---|
-| **My investments**  \n<sub>PORTFOLIO</sub> | The page the app opens on: your paper book as a picture — profit or loss now as the biggest figure, the account value, what is invested (split into cash spent on longs and stock borrowed for shorts), what every stop hitting would cost; then **Is the score right?**, the calibration verdict and its score bands, because that is the question the app exists to answer; the account's value over time; every open position as a tile sized by what it can lose and coloured by how it is doing; what resolved recently; and a card per position with its entry, target and stop drawn over sixty days of price | — |
-| **Screener**  \n<sub>ASSETS</sub> | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, **how old each row's price is**, and buy/short per row | **No** — direction is yours |
-| **News**  \n<sub>WIRE</sub> | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
-| **My trades**  \n<sub>BOOK</sub> | Open paper positions, the calibration table, and the backtest button | — |
-| **Big picture**  \n<sub>MACRO</sub> | Regime: curve, VIX, real rates, unemployment | No |
-| **Learn** | The manual and the glossary **inside the app** — `static/docs.html` rendered by Qt, with a contents list and a search box that takes one unfamiliar word. Same file the browser serves, so the prose cannot drift; `ui/learn.py` does the translation | — |
-| **Practice**  \n<sub>LAB</sub> | Replay the plan over real bars with the parameters exposed, compare the realised hit rate against what the barrier maths predicted, and **attribute the score component by component** — IC, quintile spread, leave-one-out, and a KEEP / WEAK / DROP / INVERTED verdict per component. Also holds **Replay**: step through real history one setup at a time making your own calls, with everything after the cursor withheld, and see your hit rate and P&L against the model's on identical setups. At its foot, the **hourly BTC up/down model** — the model prices each hour, compares to Polymarket, takes at most one simulated bet with its own practice cash, and grades itself against the market on every hour, traded or not. It was the landing page until Oct 2026 | **Yes** — the hourly model is the only independent one |
-| **Sports**  \n<sub>PLAYMAKER</sub> | Sports prop pricing across **seven sports** (NFL, College Football, NBA, MMA/UFC, International Football, Golf, Cycling) — paste a table of books' prices and it removes the margin three ways, finds which book is out of line with its peers, and sizes the result; an LLM read is appended as commentary | — |
+| **My investments**  <sub>PORTFOLIO</sub> | The page the app opens on: your paper book as a picture — profit or loss now, account value, what is invested, what every stop hitting would cost; **Is the score right?** (the calibration verdict); the account's value over time; a tile and a card per open position | — |
+| **Screener**  <sub>ASSETS</sub> | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, **how old each row's price is**, and buy/short per row | **No** — direction is yours |
+| **News**  <sub>WIRE</sub> | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
+| **My trades**  <sub>BOOK</sub> | Open paper positions, the calibration table, and the backtest button | — |
+| **Big picture**  <sub>MACRO</sub> | Regime: curve, VIX, real rates, unemployment | No |
+| **Learn** | The manual and glossary **inside the app** — `static/docs.html` rendered by Qt (`ui/learn.py`), with a contents list and a search box | — |
+| **Practice**  <sub>LAB</sub> | Replay the plan over real bars and compare the realised hit rate with the barrier maths; attribute the score component by component; **Replay** real history one setup at a time with the future hidden. At its foot, the **hourly BTC up/down model**, graded against Polymarket every hour | **Yes** — the hourly model is the only independent one |
+| **Sports**  <sub>PLAYMAKER</sub> | Prop pricing across **seven sports** (NFL, College Football, NBA, MMA/UFC, International Football, Golf, Cycling): paste books' prices, remove the margin three ways, find which book is out of line with its peers; an LLM read is commentary only | — |
 
-Playmaker is `sonar/playmaker/` plus its tab in `ui/app.py`. It was ported from
-Sentinel's NFL agent early on but was never a standalone project, and the scaffold
-that once reserved the name under `active/` has been removed. The package is its
-own git repo nested here — versioned separately, but not a separate app.
-
-It now holds the same line the rest of SONAR does. A language model's percentage
-cannot size a bet: `staking.Estimate` carries a source with every probability and
-returns a zero stake for a narrative one. Both sides of a market are required,
-because a margin is how far prices sum past certainty and one side cannot reveal
-it. The feature with an actual published track record is the cross-book screen —
-Kaunitz, Zhong & Kreiner (2017) — which finds where books disagree with each
-other rather than predicting anything.
-
-It now predicts, too: Elo in FiveThirtyEight's published form, Dixon-Coles for
-football, and Pythagorean as a cross-check, fed by a keyless ESPN results adapter.
-Nothing predicts until it has been measured, the same gate `calibration.py` applies
-on the markets side — NFL, NBA and EPL all came back KEEP on walk-forward skill
-(+0.071 / +0.120 / +0.139). `sonar/playmaker/MODELS.md` surveys the models and
-carries the staged plan; read it before changing the scoring.
-
-A Polymarket board used to sit here and was removed — mirroring a market's own odds back at
-you is not analysis, and dropping it also removed ~52MB/hour of downloads. Full docs live in
-the app behind the **Learn** tab, plus a tooltips toggle explaining every number on hover.
+Playmaker is `sonar/playmaker/` (its own nested git repo) plus its tab in `ui/app.py`. A language model's
+percentage cannot size a bet there: `staking.Estimate` carries a source with every probability and returns a
+zero stake for a narrative one. `sonar/playmaker/MODELS.md` surveys the models; read it before changing the scoring.
 
 ## What's real vs simulated
 
@@ -85,8 +73,7 @@ the app behind the **Learn** tab, plus a tooltips toggle explaining every number
 The probability model, the asset screener and the paper engine make **zero AI/LLM calls** — that is
 all local arithmetic over public data, and it needs no API key. The one exception is the
 optional **LLM read** (below), which you invoke by hand on a single opportunity and which
-requires an Anthropic key. Leave it off and SONAR runs exactly as it always did: keyless,
-dependency-free, and free.
+requires an Anthropic key. Leave it off and SONAR runs keyless and free.
 
 ## The model
 
@@ -106,78 +93,34 @@ Our only disagreement with the market is the volatility estimate: we use **reali
 while the market prices its own **implied** vol. That is the realised-vs-implied disagreement
 quants trade on — but here it has **not** been shown to be an edge: over the hours scored so far
 the model's calibration is no better than the market's (the Terminal's model-vs-market line says
-which, live), and after crossing the spread it is frequently negative.
-
-Since Sep 2026 that estimate is an **EWMA scaled by an hour-of-day profile** rather than a
-flat 72-hour standard deviation. Measured first, wired second, per this project's standing
-rule: over 16,078 held-out hours (two years of BTCUSDT) the combination beat the old
-trailing window by **7.5% on QLIKE**, winning all six time blocks — clustering (+3.9%) and
-diurnal seasonality (+3.5%) are separate, additive facts about the same hour. GARCH also
-beat the incumbent but was passed over: its 720-hour anchor means part of its win is
-effective sample size, the artefact the daily study's synthetic control caught — the same
-control shows EWMA and the profile find nothing on constant-volatility data, so their win
-can only be the two hypothesised effects. `sonar/research/hourlyvol.py` records the study
-and its pre-registered expectations.
+which, live), and after crossing the spread it is frequently negative. The estimate is an EWMA scaled by
+an hour-of-day profile; the study behind it is in
+[docs/history/hourly-model-notes.md](docs/history/hourly-model-notes.md).
 
 The engine takes at most **one** capped half-Kelly paper position per hour (max 8% of bankroll),
 only when the model's probability for the side beats its **executable** price — the ask plus
 slippage, not the midpoint — by 4¢ with enough time left, and settles it on the real candle.
-(The gate used to read the midpoint, which let a fat disagreement across a fat spread count as
-an edge; a 4¢ mid edge across a 10¢ spread buys nothing.)
 
-It also **scores itself every hour, traded or not**: a mid-hour snapshot of the model's P(up)
-and the market's is settled against the real candle and the two are compared by Brier score.
-The paper P&L only ever grades the hours the model traded — its boldest claims, a few a day —
-while this grades both forecasters on all 24, which is the direct test of the
-realised-vs-implied thesis and converges in weeks instead of months. Each snapshot also
-records the book's **bid and ask** at that moment, because it cannot be backfilled: Brier says
-who was better *calibrated*, and only the spread can later say whether the difference was ever
-**buyable** — a model can beat the mid on every hour and still have every disagreement sit
-inside the bid-ask.
+It also **scores itself every hour, traded or not**: a mid-hour snapshot of the model's P(up) and the market's
+is settled against the real candle and the two are compared by Brier score. The paper P&L only ever grades the
+hours the model traded; this grades both forecasters on all 24, and records the book's **bid and ask** so a later
+reader can tell whether a difference was ever **buyable**.
 
-The equity curve is seeded with a **fair-odds backtest** over the last 36 real hours
-(expected value ≈ 0 by construction — it illustrates variance, not profit), then extends
-with live paper trades marked by a gold "LIVE" divider. The seeded rows stay out of the
-displayed win rate and trade count, which grade live trades only — a fresh install shows
-an honest zero, not a record built from trades nobody took.
+The project's recurring lesson, in one line: **one hour must never price another.** An hourly market must end
+exactly one hour after its candle opens or the engine refuses the tick; the story is in the notes above.
 
-Settlement survives gaps honestly too: if the app slept or restarted past the end of an
-open position's hour, the next candle's open is a price from hours after that market
-resolved, so the engine fetches the hour's own close and settles against that — or **voids**
-the position when the close cannot be recovered, because a shorter record beats a corrupt one.
+## Confidence scores, and P(profit)
 
-Entry is held to the same clock discipline, learned the expensive way: an hourly market must
-end **exactly one hour after its candle opens** or the engine refuses the tick outright.
-Without that invariant a stale candle meeting a fresh market — around wakes and feed hiccups
-— once opened five positions up to 51 minutes *after* their own hour had settled, buying the
-known outcome at longshot prices for 71% of a week's paper P&L. An adversarial review found
-it, the phantom fills were scrubbed from the record, and the regression test replays the
-wild case verbatim. It is the project's recurring lesson in one line: **one hour must never
-price another.**
-
-## Confidence scores
-
-The Assets screen ranks by a **confidence score (0–100)**. Read it honestly: it is a heuristic
+The Screener ranks by a **confidence score (0–100)**. Read it honestly: it is a heuristic
 for how *notable* something looks — **not** the probability you'll make money. That is
 `P(profit)`, and it is a separate number. Every row shows its component mix as a bar.
-
 Weights: news `0.35`, momentum `0.30`, catalyst `0.20`, volatility `0.15`. There is **no
-directional lean** — the research below found momentum carried none, so the row shows a news
-*level* (Quiet / Normal / Elevated / Spike) and you pick the side with buy or short.
+directional lean**: the row shows a news *level* (Quiet / Normal / Elevated / Spike) and you pick the side.
 
-Sources span nine press blocs, and each feed is tagged with its origin and whether it is state-directed. That is not decoration: `news.bloc_spread()` can then tell a story carried across five blocs from one outlet running the same line all day, and flag coverage that is state-only — evidence about a government rather than corroboration of an event. A geopolitical signal built on Anglo-American outlets alone measures what one bloc is talking about.
-
-News is **context, not a predictor**. Sentiment is a small word-list heuristic, matching is
-deliberately conservative, and scraped text is treated as **untrusted data** — read and
-summarised, never acted upon.
-
-[CONFIDENCE.md](CONFIDENCE.md) is the research file on how this score is built versus how the
-institutional process builds one — cross-sectional standardisation, benchmark-relative
-momentum, levels versus surprises, a daily GPR-style political index from the newswire already
-being read, and the argument that the thing worth forecasting here is **volatility**, not
-direction.
-
-## Risk, reward, and the probability of profit
+News comes from nine press blocs, each feed tagged with its origin and whether it is state-directed
+(`news.bloc_spread()`). News is **context, not a predictor**: sentiment is a small word-list heuristic, and
+scraped text is **untrusted data** — read and summarised, never acted upon.
+[CONFIDENCE.md](CONFIDENCE.md) is the research file on how the score is built and how it could be improved.
 
 Targets and stops are scaled to how much a thing actually moves, so `reward:risk = k_target/k_stop`.
 The barrier maths then fixes the hit rate — for a driftless walk, P(reaching the target before the
@@ -190,444 +133,48 @@ P(profit) = 1 / (1 + R:R)          EV = P·target − (1−P)·stop = 0
 They are the same number twice. A fatter target buys a proportionally lower hit rate and expected
 value multiplies out to **exactly zero**. Only *drift* — a real edge — creates profit, and drift is
 only ever supplied by `sonar.calibration` from positions that actually closed. Never assumed.
+That zero is **gross**: net of spread, commission and slippage the expectation is `−c` per trade, and
+`sonar/costs.py` measures `c` from the execution audit log (€1.05 per round trip, 5.2% of the €20 risked,
+in the worked example in [CONFIDENCE.md](CONFIDENCE.md) §13).
 
-### The cost floor
+## What the research found
 
-That zero is **gross**. Net of what a round trip costs — spread, commission, slippage — the
-expectation is
-
-```
-EV = −c   per trade, every trade
-```
-
-which makes `c` the number that decides whether any of this is worth doing, and the only one
-in the project that can be measured rather than estimated. `sonar/costs.py` measures it from
-the execution audit log:
-
-```python
-from sonar import costs
-costs.summary()        # cost per round trip, or a refusal to name one yet
-```
-
-Run through the ledger at crypto taker fees of 0.2% a side plus 5bp of slippage, on a €2,000
-account risking 1% per trade:
-
-| | |
-|---|---|
-| cost per round trip | **€1.05** (50.0 bps per side) |
-| as a share of the €20 risked | **5.2%** |
-| over 100 trades | **−€105** |
-
-An earlier estimate in `GOING_LIVE.md` put this at ~4% and ~€0.80. Measuring it gave 5.2% and
-€1.05 — the estimate was optimistic, which is the usual direction and the reason the ledger
-exists. `summary()` reports `reliable: False` below 20 completed round trips and declines to
-name a figure, the same threshold and reasoning as `calibration.MIN_SAMPLE`.
-
-Five pre-registered studies failed to find drift to put against that floor (a sixth found a volatility effect, not a drift; see below). That is the whole
-argument for keeping this on paper, and it is arithmetic rather than caution.
-
-## What the backtest found
-
-`sonar.backtest` replays the same plan over years of real bars: momentum and volatility from prior
-bars only, then walk forward through actual highs and lows. A bar spanning both barriers scores as a
-**loss** (daily data cannot order them) and costs are excluded, so reality is worse than this.
-
-Over **25,504 setups** — 5 years, 113 instruments (the set the study ran on; the board lists 129 today). (An earlier version of this section
-called them *independent*; at a replay step shorter than the holding time, neighbouring
-setups share the bars that decide them, so they are not. The Lab's error bars now carry a
-Newey-West correction for that overlap. A wider error bar makes a null result *less*
-informative, not more: these studies can rule out large effects, not small ones — at this sample
-an effect of about 3 points on the hit rate, or an IC of 0.04–0.07, would usually go undetected.)
-
-| momentum bucket | hit rate | | attention | hit rate | vs baseline | ±2 s.e. |
-|---|---|---|---|---|---|---|
-| 0–2% | 39.5% | | below normal | 38.7% | −1.3 | 1.2 |
-| 2–5% | 39.7% | | normal | 39.0% | −1.0 | 1.1 |
-| 5–10% | 39.8% | | elevated | 40.8% | +0.8 | 2.0 |
-| 10%+ | 38.7% | | **spike** | **40.8%** | **+0.8** | 3.1 |
-
-Baseline is 40.0%. **Neither momentum nor news showed a detectable edge** — +0.8 ± 3.1 points for
-a news spike leaves room for an effect of about 3 points either way, but not for a large one.
-Overall hit rate is 39.58% against a 39.99% prediction. (The replay itself scores a bar that spans
-both barriers as a loss and drops trials that time out, which biases it about 0.3–0.9 points low
-on a driftless walk — so "matches the barrier maths" is consistent with no edge, not proof of it.)
-
-**Survivorship.** The instruments studied are the ones listed today — companies that survived and
-mostly grew, coins still trading. That flatters any long or trend-following test (momentum, the
-52-week high); it cannot manufacture the nulls above, but it can inflate the one positive finding
-that leaned on recent winners.
-
-An earlier run on 26 instruments put a news spike at **+4.9 points** and this README said so. It did
-not survive: at 3.7× the sample the effect fell to **+0.8**, well inside its own error bar. That was
-small-sample noise, and the honest thing is to record that it was reported and then withdrawn rather
-than quietly delete it.
-
-Two things follow. The Bullish/Bearish lean stays deleted — momentum never justified it. And
-`P(profit)` stays pinned at its driftless `1/(1+R:R)` baseline, because no measured drift exists to
-move it. The confidence score remains what it always claimed to be: a **notability** heuristic for
-what is worth a human look, explicitly *not* a profit predictor.
-
-What is still untested: SONAR's own word-list **sentiment**. Wikipedia pageviews measure attention
-volume, not tone, so the direction half of the news idea has never been put on trial.
-
-## Chasing the one lead, and killing it
-
-The study above left a single candidate: `dist_52w_high` — proximity to the
-52-week high — at t = +3.39 in the holdout. `sonar/research/validate.py` puts a
-lead through three tests a real effect should pass and a lucky one should not.
-
-**1. Consistency across non-overlapping periods.** Six blocks, five years:
-
-| period | IC | t |
-|---|---|---|
-| 2022-04 → 2023-01 | +0.045 | +0.61 |
-| 2023-01 → 2023-09 | −0.033 | −0.67 |
-| 2023-09 → 2024-05 | +0.036 | +0.84 |
-| 2024-05 → 2025-01 | +0.028 | +0.65 |
-| 2025-01 → 2025-10 | +0.015 | +0.44 |
-| **2025-10 → 2026-06** | **+0.136** | **+3.90** |
-
-The entire effect lives in the final block — which *is* the earlier study's
-holdout window. That is the whole explanation of the +3.39, and the reason a
-single holdout cannot be trusted no matter how it is embargoed.
-
-**2. Decay across horizons.** A signal being used up fades smoothly. This one
-goes +0.026 (5d), +0.028 (10d), +0.037 (20d), +0.034 (60d) — it *rises* to the
-horizon it was discovered at and falls after. That is the shape of noise found
-by looking.
-
-**3. Where it appears.** The 52-week-high anomaly is an *equity* effect with a
-behavioural story about anchoring on a salient price. Measured by class:
-
-| class | IC | t |
-|---|---|---|
-| Crypto | +0.087 | +2.84 |
-| Equity | +0.002 | +0.09 |
-
-It is absent exactly where the theory says it should be strongest, and present
-only where the theory does not apply. The mechanism is not the stated one.
-
-**The comparison that settles it.** Every candidate was run against the same
-tests as the controls, and they are indistinguishable:
-
-| feature | blocks agreeing | sign-test p | beats noise floor |
-|---|---|---|---|
-| dist_52w_high | 5/6 | 0.219 | 1/6 |
-| attention_z | 4/6 | 0.688 | 0/6 |
-| reversal_1 | 4/6 | 0.688 | 0/6 |
-| mom_250_ex1m | 4/6 | 0.688 | 1/6 |
-| *random_control* | *4/6* | *0.688* | — |
-| *price_level* | *3/6* | *1.000* | — |
-
-A seeded random number scores 4/6. So does attention. So does reversal. The
-lead is dead, and nothing else in the registry is alive.
-
-
-## Do any of them work *sometimes*?
-
-The last idea worth testing. Unconditional effects are rare in the literature;
-what it usually reports is effects that switch on in particular states — momentum
-working in calm markets, the low-volatility anomaly strongest when rates fall. So
-`sonar/research/regimes.py` splits every date by VIX (against its own trailing
-median), by whether the 10y–2y curve is inverted, and by the direction of policy
-rates, all classified **point-in-time**, and re-runs every feature inside each
-state.
-
-48 feature-by-regime tests. **Zero survivors.** The strongest:
-
-| interaction | IC (state A) | IC (state B) | difference | t |
-|---|---|---|---|---|
-| attention_trend × VIX | −0.009 | +0.019 | −0.028 | −1.81 |
-| mom_20 × VIX | +0.042 | −0.002 | +0.043 | +1.71 |
-| attention_z × VIX | −0.007 | +0.021 | −0.029 | −1.61 |
-
-And the noise floor, from the controls put through identical conditioning:
-`price_level × curve` reached **t = +1.72**. The best real interaction is
-1.81. A feature that cannot predict anything scored 1.72 by being sliced the
-same way.
-
-Conditioning doubles the hypothesis count, which is exactly how "it only works
-when X" results get published and then fail. Here it produced nothing that a
-control could not match.
-
-## The sixth study: the catalyst weight, finally on trial
-
-The catalyst component — 0.20 of the confidence score — was the one weight
-attribution could never grade: the replay had no historical earnings calendar.
-September 2026 gave it one, from EDGAR's own record: every **Item-2.02 8-K**
-filing *is* an earnings release, so the SEC's submissions API is a free,
-documented calendar reaching back years (`sonar/research/earnings.py`; ADRs
-file 20-F/6-K with no item numbers and are skipped honestly). The replay then
-computes the catalyst score exactly as the live board does, on real dates.
-
-Over 10,873 five-day setups across 50 equities and five years, 6,268 carried a
-catalyst series, and **the component became the first ever to come back KEEP** (pooled; the two re-run readings above are why it is not stronger than that):
-
-| reading | value |
-|---|---|
-| IC | **+0.040**, p = 0.003, survives FDR |
-| Quintile spread | top 44.0% vs bottom 39.0% — **+5.0 points (±2.0)** |
-| Time blocks | positive in **6 of 6** when first run; **5 of 6** on a re-run with fresh data on 2026-10-10 (the earliest block, Nov 2021–Sep 2022, was slightly negative) |
-| Leave-one-out | removing it costs the blend 0.028 IC — the only weight buying anything |
-| Control: another company's dates | +0.016 — the earnings-*season* residual, as it should be |
-| Control: every date shifted +45d | **−0.029, 0 of 6** — not a shrug but the mirror image |
-
-The phase-shift control is the telling one: a spurious pattern would fade when
-the dates move; this *inverts*, because mid-quarter genuinely is the quiet
-regime.
-
-**Read it carefully — it is not a direction.** Direction in the replay is
-still momentum's sign, still a coin. What a scheduled date brings is *jumps*:
-the advertised 40% comes from a smooth random walk, and symmetric fat tails
-favour the barrier that is further away, so near a known event the realised
-hit rate at 1.5:1 runs above the diffusion baseline. That is volatility being
-forecastable off a calendar — precisely the shape `CONFIDENCE.md` predicted —
-measured **before costs**, which widen into the very events it keys on. It
-earns the weight the score already carried, as notability; it moves nothing
-else.
-
-## Where the research ended up
-
-Six studies, each more careful than the last:
+Six pre-registered studies, each more careful than the last; the full tables are in
+[CONFIDENCE.md](CONFIDENCE.md) §13.
 
 | question | answer |
 |---|---|
-| Does momentum predict the barrier outcome? | No — flat, worse at extremes |
-| Does a news/attention spike? | No — +0.8 pts, ±3.1, over 25,504 setups |
-| Does anything sort the cross-section? | No — 0 of 16 survived FDR |
+| Does momentum predict the barrier outcome? | Not detected — flat, worse at extremes |
+| Does a news/attention spike? | Not detected — +0.8 pts, ±3.1, over 25,504 setups |
+| Does anything sort the cross-section? | Not detected — 0 of 16 survived FDR |
 | Does the one surviving lead replicate? | No — one period, wrong asset class, no decay |
-| Does anything work conditionally? | No — 0 of 48, floor set by a control |
-| Does a scheduled earnings date sharpen the barrier odds? | **Yes** — the first survivor; see above |
+| Does anything work conditionally? | Not detected — 0 of 48, floor set by a control |
+| Does a scheduled earnings date sharpen the barrier odds? | **Yes** — the first survivor, and a volatility effect, not a direction |
 
-Five directional nulls and one volatility-shaped survivor is the expected
-picture for liquid instruments priced by people running the same arithmetic.
-The value built here is the apparatus that can tell the difference — one that
-has caught itself three times (a +4.9 attention claim, a Thursday effect, and
-a t = +3.39 holdout) and has now also *passed* something, using the same
-controls that killed the rest.
-
-**What this means for the app.** SONAR stays what it is: an honest notability
-screener with real paper trading. `P(profit)` stays pinned at its driftless
-`1/(1+R:R)` baseline — the catalyst effect is fat tails, not drift, and drift
-is only ever supplied by `calibration.py` from positions that actually closed.
-Nothing here is a reason to trade.
-
+Five directional nulls and one volatility-shaped survivor. These studies can rule out large effects, not small
+ones (at this sample an effect of about 3 points on the hit rate, or an IC of 0.04–0.07, would usually go
+undetected), and the instruments studied are the ones listed today, which flatters long tests. `P(profit)` stays
+pinned at its driftless baseline and nothing here is a reason to trade.
 
 ## Paper trading through Alpaca (optional)
 
-The built-in book fills instantly at the quoted price with no fees and no queue,
-which makes it an optimistic bound rather than a simulation. Alpaca's **paper**
-environment is the cheap way to do better: real symbols, real market hours, real
-order handling, orders that sit unfilled when the market is shut — and no money
-anywhere.
+The built-in book fills instantly at the quoted price with no fees and no queue, which makes it an optimistic
+bound. Alpaca's **paper** environment does better — real symbols, market hours, order handling — with no money
+anywhere. Copy `.env.example` to a git-ignored `.env` and fill in the paper keys (they start with `PK`); SONAR
+picks them up automatically and falls back to the internal book if they are absent or misconfigured.
 
-```bash
-# a free Alpaca PAPER account, then in a git-ignored .env:
-APCA_API_KEY_ID=PK...        # paper keys start with PK
-APCA_API_SECRET_KEY=...
-```
-
-SONAR picks it up automatically and falls back to the internal book if it is
-absent or misconfigured.
-
-**On the guards.** Alpaca's live and paper APIs differ by one hostname, so a
-typo or a stray environment variable is all that separates a simulation from
-real orders. The host is a module constant with no parameter to override; a key
-that is not clearly a paper key (`PK…`) is refused before any request; the
-account is checked at connect time; and the whole set is re-checked on every
-order rather than only at construction. Each failure raises — a broker adapter
-that keeps working after a safety check fails is worse than none.
-
-One trap worth recording, because the tests caught it: a substring check for the
-live host looks like sensible defence in depth and is actively wrong.
-`api.alpaca.markets` is contained in `paper-api.alpaca.markets`, so it rejects
-the only safe URL. The guard uses exact host equality.
-
-Going live is not a flag in this file. It is a decision for a human with an
-account, and SONAR does not implement it.
-
+The host is a module constant with no parameter to override and a key that is not clearly a paper key is
+refused before any request. Going live is not a flag in this file: it is a decision for a human with an account.
 
 ## Data providers, and the switch behind each one
 
-Everything runs on Yahoo Finance, which is free, broad and **undocumented**. It
-can change shape or start refusing requests without notice, and it already has:
-the `quoteSummary` endpoint used for earnings dates now answers 401. One
-undocumented endpoint carrying the whole app is its largest fragility.
+Everything runs on Yahoo Finance, which is free, broad and **undocumented**. It can change shape or start
+refusing requests without notice, and it already has: the `quoteSummary` endpoint used for earnings dates now
+answers 401. One undocumented endpoint carrying the whole app is its largest fragility.
 
-## The Cockpit shell
-
-Chosen 2026-09-29, from a mockup approved before any code moved. The Plain
-Language direction fixed the vocabulary and the contrast; what remained was
-structure, and the shell now has one:
-
-- **A left rail carries the eight destinations** instead of a top tab bar —
-  both names each, exactly as before (`ui/tabs.py` still paints them, and
-  `PlainTabs.add(widget, plain, was)` is still the only way in, which is what
-  the docs test greps). The old toolbar's wordmark, version badge and
-  practice-money line sit at the rail's head; the Wording and Test plan
-  buttons and the status line sit at its foot. `PlainTabs` is no longer a
-  QTabWidget — a QTabBar docked West draws its text vertically — but it keeps
-  the QTabWidget surface (`count`/`widget`/`tabText`/`setCurrentIndex`/
-  `tabBar`) so nothing else had to learn a new API.
-- **A page header names every screen**: the destination's plain name, the
-  small-caps original, one sentence saying what the screen is (the same
-  sentence the rail shows on hover), and — always visible, on every screen —
-  the two question-captioned knobs, because risk and horizon shape everything.
-  Expert wording drops the sentence, the same density trade the board makes.
-- **The rail folds to icons below `RAIL_COLLAPSE_BELOW` (1420pt)** and unfolds
-  above it, from `MainWindow.resizeEvent`. Two invariants hold it together,
-  both in `tests/test_layout.py`: folded, the window's minimum fits 1280×775;
-  expanded, the minimum stays *below* the threshold — Qt stops an interactive
-  resize at the layout minimum, so a threshold under the expanded minimum
-  would be unreachable and the rail could never fold by dragging. The first
-  cut of this shell had exactly that deadlock. Fold state changes painting
-  and chrome visibility, never wording or subtitles, and the tests assert the
-  round trip. One quirk worth knowing: Qt delivers no resizeEvent to a hidden
-  window, so tests drive the fold through `MainWindow._sync_rail()`.
-- **The Terminal's six equal stat cells became a hierarchy.** The edge —
-  model minus market, the only number in the app that is a disagreement — is
-  the largest figure on the screen, in the one highlighted cell; the price
-  anchors the left; tau is drawn as a filling hour-bar (`ui/charts.HourBar`)
-  as well as printed. The bankroll strip and the model-vs-market Brier line
-  share one ledger panel under the equity curve. Same keys, same tooltips,
-  same `refresh()` — the arrangement changed, the readouts did not. (Since
-  Oct 2026 this whole panel lives at the foot of Practice; see the next
-  section.)
-
-The rail's icons are inline SVG strokes tinted per state (`ui/icons.py`) —
-not emoji, which bring their own colours and ignore the palette. The window
-now prefers 1440×850 and lets `_fit_to_screen` clamp it, so a big display
-opens with the names showing and a 13" laptop opens folded.
-
-## The portfolio landing page
-
-Chosen 2026-10-08, from a mockup drawn with the real book (31 open, 19 closed)
-and approved before any code moved. The app had opened on the hourly bitcoin
-model since the day it existed, and the person it is for asked the right
-question: why does the first screen show one asset the model trades, rather
-than what *I* hold? So:
-
-- **The first page is the paper book** (`_portfolio_tab`, "My investments /
-  PORTFOLIO"), built from `Live.positions` alone, so it renders while the
-  first poll is in flight. The strip is a hierarchy: the profit or loss now is
-  the biggest figure, in the one highlighted cell, because it is the
-  question; beside it the account value, what is invested, what every stop
-  hitting would cost, and what has closed. Under it the **account value over
-  time** (`ui/charts.AccountCurve` — time on the x-axis for real, so a gap in
-  the log is a gap on the chart), every open position as a **tile**
-  (`PositionTiles`, a squarified treemap) beside what resolved recently, and a
-  **card per position** (`PositionCard`, with `PositionChart` drawing the
-  entry, target and stop over sixty days of price). Cards update in place
-  and keep their order; a page you look at every day should not reshuffle.
-- **"Invested" is two numbers and the page says so.** A long spends cash; a
-  short borrows stock. Summed blindly on the real book they came to $46k on a
-  $10k account — which is not a bug, but a figure that looks like one. The
-  strip shows the sum with the split under it (`Portfolio.stats()` gained
-  `long_cash`, `short_notional`, `at_risk`, `realised`, `n_long`, `n_short`).
-- **Tiles are sized by what a position can lose, not by what it is worth.**
-  A currency short carries a notional thirty times an equity long's for the
-  same risk budget; sized by notional the picture would be about leverage
-  conventions. Sized by `cash_at_risk` it is about the bets, and under
-  protocol mode — every position the same risk — it is an honest equal grid.
-- **The account-value log** (`Portfolio.log_equity`, `equity_log` in
-  `portfolio.json`): a point an hour, plus one at every entry, exit or barrier
-  hit, written by whichever process marks the book — one, by the engine
-  lock. A point is only written when every held position has a price, because
-  marking a missing one at entry draws a dip that never happened. The weeks
-  before the log existed are rebuilt once by `seed_equity_log` from the
-  book's own records and real daily closes (`assets.fetch_bars`, on the
-  engine thread, three tries at most) — the trades it made, valued at each
-  day's close. Nothing invented; the curve starts where the book did.
-- **The hourly model kept its readout and lost its page.** It is an
-  experiment the engine runs, not something the reader holds, so
-  `_terminal_tab()` — unchanged — is hosted at the foot of Practice, with
-  the LLM read panel, which `_read()` now scrolls to. The engine keeps
-  settling hours whether or not anything shows them; the Brier line is the
-  only evidence that experiment produces, which is the argument for keeping
-  the readout and the whole argument against keeping a page for one asset.
-  Its ledger cells are captioned *model's practice cash* / *model's trades*
-  now, because "practice cash" on the old landing page read as the reader's
-  own account, and it never was.
-
-- **"Is the score right?" sits under the figures** (added the same day, when
-  the person this app is for pointed out that answering it is the whole
-  purpose of the app). It is `calibration.report()` in the manual's words:
-  the verdict sentence verbatim, one line per score band — closed, won, the
-  rate the plan promised, and whether the band has the twenty it needs to
-  count — and what the verdict still lacks: how many of the twenty closed
-  positions exist, how many were protocol (coin-flip) entries so the table
-  grades the score and not a picker, and whether protocol mode is on. The
-  profit figures above it cannot answer the question, and the panel says so:
-  a coin-flip position's profit is luck, and the score claims that something
-  is happening, never which way. The same report My trades shows; the first
-  screen now carries the conclusion, the Book tab keeps the full table.
-
-What stayed: the Cockpit shell, both names on every destination (the docs
-test still greps `PlainTabs.add`), the 1280×775 fold, and the rule that
-nothing outside the hourly model asserts a direction — the new page describes
-what you hold and never what to do with it.
-
-## The Plain Language direction
-
-Chosen 2026-09-22, after the person this app is for said he could not read his
-own screener. Three changes, each a rule rather than a taste:
-
-- **Proportional type carries words; monospace carries only code.** Menlo was
-  drawing English prose, which it is bad at. `theme.text` is the interface font,
-  `theme.figure` is the same face with tabular numerals so a column of prices
-  still lines up, and `theme.code` is the real monospace — used in exactly two
-  places, both of which take a pasted table whose columns are made of spaces.
-- **Contrast is a floor.** `MUTED` and `FAINT` now clear 4.5:1 against the panel
-  they sit on; `FAINT` used to measure 1.9:1, which is decoration, not text.
-  Raising it exposed a latent bug worth knowing about: every `QLabel` inherited
-  the window background from the blanket `QWidget` rule and painted it over the
-  panel beneath, which was invisible while the two colours were three points
-  apart and became a dark box behind every cell once they were not.
-- **The board is written in English.** `MOM` is "Recent move", `VOL` is "Swing
-  size" over the words *big swings*, `R:R` and `P(PROF)` are one column reading
-  "win 1.5× the risk / 40% of the time", and `CONF` is "Worth a look" with the
-  score as a meter whose segments are still the component breakdown. Every row
-  carries one plain sentence — "up hard, heavy news" — generated from numbers
-  already on the row, and `tests/test_plain_language.py` asserts that sentence
-  can never acquire a direction.
-
-**Both vocabularies are available.** The `Wording` button switches between
-**plain** (the default, described above) and **expert**, where the columns are
-`MOM`, `VOL`, `R:R · P(PROF)` and `CONF`, the ticker is back under each name,
-the second lines are gone and the rail shows only the original names — about
-a third shorter per row. `ui/words.py` holds the mode and remembers it between
-launches. It changes the **vocabulary and the density, never the layout**: same
-columns, same widths, same order, which is why the header can be re-captioned in
-place and why there is only ever one board to keep correct. A test asserts that
-invariant directly.
-
-Headings that name something non-obvious are links: clicking one opens the Learn
-tab at the section explaining it, and a test checks every one of those anchors
-resolves to a section that exists. The two knobs in the page header are
-captioned with the question they answer ("How much risk are you willing to
-take?") rather than with the word `risk` in 9pt grey.
-
-### How old is a price on the Screener board?
-
-Visible on the row, in the **Updated** column, because a price that is quietly out
-of date is the failure mode this project treats as unacceptable.
-
-The board does not refetch all 129 instruments at once. Doing that took the
-request rate from ~13 a minute to ~64 and got this machine throttled — and a
-throttled scan does not error, it returns fewer rows and the screen silently
-shrinks. So `assets.ROLL_BATCH` refetches the **26 stalest** rows per scan and
-scores the rest from cache. The cadence underneath: the poll loop ticks every
-4s (`core.PRICE_EVERY`), a rescan is due after 90s (`core.SCAN_EVERY`), and the
-scanner's own cache holds for 120s (`AssetScanner.ttl`) — so the screen
-recomputes about every three minutes, and one instrument comes round roughly
-every fifteen. The column goes gold past 20 minutes and red past an hour, which
-means the rotation is losing ground rather than that the price is wrong.
-
-`sonar/providers.py` puts sources behind one interface — a **capability**
-(quotes, bars, FX, crypto), a **tier** (keyless or keyed), and a persisted
-**on/off switch**. A request walks the enabled providers in preference order and
-takes the first that answers, so a vendor going down is a skipped provider
-rather than a broken app.
+`sonar/providers.py` puts sources behind one interface — a **capability** (quotes, bars, FX, crypto), a **tier**
+(keyless or keyed), and a persisted **on/off switch**. A request walks the enabled providers in preference order
+and takes the first that answers, so a vendor going down is a skipped provider rather than a broken app.
 
 | provider | tier | serves | note |
 |---|---|---|---|
@@ -638,28 +185,33 @@ rather than a broken app.
 | Twelve Data | free key | quotes, bars, FX, crypto | Wide coverage, tight request limit |
 | Alpha Vantage | free key | quotes, bars | ~25 requests/day; research only |
 
-Keys go in the same git-ignored `.env` as the Alpaca ones.
+Keys go in the same git-ignored `.env` as the Alpaca ones (names in `.env.example`). Switch Yahoo off and crypto
+still resolves via CoinGecko, FX via Frankfurter — but **equities return nothing at all**: they have no keyless
+second source. A free Finnhub key is the fix. **Stooq is deliberately absent**: both its CSV endpoints now return
+an HTML bot-block page, which an adapter would have parsed into silence.
 
-**What this immediately revealed.** Switch Yahoo off and crypto still resolves
-via CoinGecko, FX via Frankfurter — but **equities return nothing at all**. They
-have no keyless second source, so a single undocumented endpoint is a single
-point of failure for most of the watchlist. A free Finnhub key is the fix, and
-the layer now makes that visible instead of leaving it to be discovered when
-Yahoo breaks.
+### How old is a price on the Screener board?
 
-**Stooq is deliberately absent.** It appears in most "free market data" lists
-and an earlier version of this README recommended it; both its CSV endpoints
-now return an HTML bot-block page. An adapter would have parsed that into
-silence and looked like a working fallback.
+Visible in the **Updated** column, because a price that is quietly out of date is the failure mode this project
+treats as unacceptable. The board does not refetch all 129 instruments at once (that got this machine throttled,
+and a throttled scan returns fewer rows rather than an error): `assets.ROLL_BATCH` refetches the **26 stalest**
+rows per scan and scores the rest from cache, so one instrument comes round roughly every fifteen minutes. The
+column goes gold past 20 minutes and red past an hour, which means the rotation is losing ground rather than
+that the price is wrong.
 
+## Plain wording, or expert
+
+The **Wording** button switches between **plain** (the default: "Recent move", "Swing size", "Worth a look") and
+**expert** (`MOM`, `VOL`, `R:R · P(PROF)`, `CONF`). It changes the vocabulary and density, never the layout
+(`ui/words.py`; rules pinned by `tests/test_plain_language.py` and `tests/test_wording.py`). Design records, including
+the Cockpit shell and the portfolio landing page, are in [docs/history/](docs/history/README.md).
 
 ## Risk tolerance and horizon
 
 Two knobs, and it matters *where* they apply.
 
-**Risk tolerance** (`--risk conservative|moderate|aggressive`) is about **you**, not the market.
-It was always in the code — hardcoded as four constants at the top of `engine.py` — and is now
-named. It changes what you **stake** and what you **see**, never what something **scores**:
+**Risk tolerance** (`--risk conservative|moderate|aggressive`) is about **you**, not the market. It changes
+what you **stake** and what you **see**, never what something **scores**:
 
 | | edge threshold | Kelly | max stake | max daily vol |
 |---|---|---|---|---|
@@ -667,394 +219,129 @@ named. It changes what you **stake** and what you **see**, never what something 
 | **moderate** (default) | 4¢ | ½ | 8% | none |
 | aggressive | 2.5¢ | ¾ | 15% | none |
 
-**Horizon** (`--horizon intraday|week|month`) is about **when**. The hourly engine has no
-horizon to pick — Polymarket's up/down market *is* one hour — so this shapes the asset screener
-only: it switches its momentum window (1d / 5d / 20d) to match, and writes the exit plan
-against that holding period.
-
-Both are live-switchable from `POST /api/config`; the boards rescan immediately.
-
-> Confidence scores are deliberately **not** affected by either. Confidence measures the market;
-> risk measures you. Folding one into the other would mean the same market scored differently for
-> a cautious user than a reckless one — and the number would stop measuring anything.
+**Horizon** (`--horizon intraday|week|month`) is about **when**: the hourly engine has no horizon to pick, so it
+shapes the asset screener only (momentum window 1d / 5d / 20d, and the exit plan). Both are live-switchable from
+`POST /api/config`. Confidence scores are deliberately **not** affected by either.
 
 ## The LLM read (optional, off by default)
 
-A second, **separate** track: an on-demand narrative read of one selected opportunity.
-
-`model.prob_up()` is a *calibrated* probability — when it says 0.6, roughly 60% of those hours
-should close up, and the engine checks by settling every trade against the real candle. An LLM's
-stated conviction is not that; it is fluent, not calibrated. So the two are never averaged:
-
-- **`confidence`** — arithmetic, component bars, unchanged.
-- **`llm_read`** — direction, conviction, catalysts, risks. Labelled uncalibrated everywhere.
-
-The part that earns its keep: every stated conviction is **logged onto the trade record**, and
-SONAR already resolves trades against ground truth. `engine.llm_calibration()` buckets them and
-reports the realised hit rate per bucket, so after enough hours you can see whether the model's
-confidence ever tracked reality. Rising hit rate across buckets means it carries information;
-flat or inverted means it doesn't — and you'll know.
-
-Headlines go to the model as **titles only**, inside a delimited block, marked untrusted. No
-article bodies are sent, and the system prompt states that instructions appearing inside that
-block are never to be followed.
+A second, **separate** track: an on-demand narrative read of one selected opportunity. `model.prob_up()` is a
+*calibrated* probability; an LLM's stated conviction is fluent, not calibrated, so the two are never averaged.
+Every stated conviction is **logged onto the trade record**, and `engine.llm_calibration()` buckets them and
+reports the realised hit rate per bucket, so you can see whether the model's confidence ever tracked reality.
+Headlines go to the model as **titles only**, inside a delimited block, marked untrusted.
 
 ```bash
 pip install anthropic          # only needed for this feature
 export ANTHROPIC_API_KEY=...   # or: ant auth login
 ```
 
-Runs `claude-opus-5` at `medium` effort, on demand for one opportunity — never across the board
-on every scan, which would cost real money for no benefit.
+Runs `claude-opus-5` at `medium` effort, on demand for one opportunity — never across the board on every scan.
 
 ## Run it
 
 SONAR is a native macOS app — PySide6 widgets, every chart drawn with `QPainter`. There is no
 web view, which is why the bundle is ~98MB rather than ~300MB. It needs **Python 3.11 or newer**
 and [`uv`](https://docs.astral.sh/uv/) (`brew install uv`); Linux and Windows are untested and
-unsupported. Keys, when you want them, go in a `.env` beside `main.py` (see the feature sections:
-Alpaca paper, Finnhub, FRED) — never in the repo.
+unsupported. Keys, when you want them, go in a `.env` beside `main.py` (copy `.env.example`) — never in the repo.
 
 ```bash
 uv venv .venv && uv pip install -r requirements.txt
 python main.py              # the app
 python main.py --selftest   # check a build's wiring and exit
 python main.py --headless   # the old HTTP daemon instead
+./build_app.sh              # build a signed .app; add --install to copy into /Applications
 ```
 
-Build a signed `.app`:
+The build script runs `--selftest` **against the frozen binary**, because that is where packaging fails
+(writable state lives in `~/Library/Application Support/SONAR/`; lazily-imported modules need a `--hidden-import`).
 
-```bash
-./build_app.sh              # add --install to copy into /Applications
-```
-
-The build script runs `--selftest` **against the frozen binary**, because that is where
-packaging fails: a bundle is read-only and code-signed, so writable state must live in
-`~/Library/Application Support/SONAR/` (writing inside the `.app` breaks the signature and a
-reinstall wipes it), and lazily-imported modules — `anthropic`, `sonar.execution`, `sonar.costs`,
-and `sonar.playmaker`'s model modules (`results`, `ratings`, `poisson`, `scoring` — reached only
-when someone opens the Playmaker tab and asks for a rating, so nothing imports them at start-up)
-— are invisible to PyInstaller's static analysis without an explicit `--hidden-import`.
-`--selftest` asserts all of them are present in the packaged build so a lost hidden-import fails
-loudly rather than silently — the playmaker case shipped the same trap a second time before it
-was caught.
-
-Note the frozen app and a source run keep **separate portfolios** by default:
-`~/Library/Application Support/SONAR/state.json` versus the checkout's `data/state.json`.
-Installing does not inherit a dev bankroll. `SONAR_DATA` points a source run at another
-directory — the launchd agent's plist sets it to the app's, so the agent and the installed app
-share one book (see *Uptime* below).
-
-Leave it running and the equity curve grows by one point each hour as markets resolve. The
-active risk profile is saved with the state, so a bankroll keeps the profile it was built
-under; delete the state file to reset to a clean $10,000.
+The frozen app and a source run keep **separate portfolios** by default (`~/Library/Application Support/SONAR/state.json`
+versus the checkout's `data/state.json`). `SONAR_DATA` points a source run at another directory — the launchd
+agent's plist sets it to the app's, so the agent and the installed app share one book. The active risk profile
+is saved with the state; delete the state file to reset to a clean $10,000.
 
 ### Tests
 
 ```bash
-./run-tests.sh                 # the suite, 300s budget
-./run-tests.sh -k playmaker    # anything after the script is passed through
-TEST_BUDGET_S=60 ./run-tests.sh
+./run-tests.sh tests/ -q          # 1,763 tests, bounded by an external watchdog
+QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
-Three tests build a real `MainWindow`. The suite is **deterministic since
-2026-09-19** — the wedge that used to hit one run in three was the conftest
-guards being function-scoped below a module-scoped window fixture, so the
-window tests ran unguarded; the guards are session-scoped now. `run-tests.sh`
-keeps its external watchdog as a backstop, so a hang today is a regression to
-report, not weather.
-
-`TESTING.md` is the coverage roadmap: what's tested, what isn't, and the order to fix it
-in. Tier 1 is done — `model.py` and `engine.py` both went from ~39% to **100%**, mutation-checked,
-and writing the engine's cross-check test found a real ten-point disagreement between the app's
-two ways of computing P(up) (a lattice bin sitting exactly on the barrier), since fixed. Tier 2
-landed too (`feeds.py` 30% → 82%, `server.py` 0% → 92%); `universe.py` and
-`research/features.py` have since been covered too; `TESTING.md` §0 has the current figures.
+Three tests build a real `MainWindow`; `run-tests.sh` keeps an external watchdog as a backstop (`TEST_BUDGET_S`
+changes the 300s budget; anything after the script is passed to pytest). `TESTING.md` is the automated side —
+what is covered and what is not. **`TESTPLAN.md` is the manual side**: 145 acceptance cases for signing off v2,
+run against the installed bundle, shown in the app by the **Test plan** button; the page is generated by
+`scripts/build_testplan.py` (edit the markdown, never the HTML).
 
 ### Learning what the numbers mean
 
-The **Learn** tab *is* the manual — contents on the left, a search box that
-takes one unfamiliar word ("vig", "Brier", "drawdown"), and **Open in browser**
-for the full-fidelity page. It used to be a button that launched a web browser,
-which is the wrong place for it: someone looking at a number they do not
-understand is exactly the person who will not go and find a second window.
-§1 is a plain-English primer with a 25-term glossary — it assumes no finance
-background. **§8 is the one to read
-before trusting a Lab run**: how to read an error bar, what the four attribution
-verdicts mean, how many trials a number needs before it means anything (at 20
-trials the band is ±21.5 points), and five ways to fool yourself, each of which
-happened here and each naming what caught it.
-
-### Testing
-
-`TESTING.md` is the automated side — what is covered, what is not, and the order
-to fix it in. **`TESTPLAN.md` is the manual side**: 145 acceptance cases for
-signing off v2, run against the installed bundle rather than the checkout,
-because several of the failures only exist in a build. Eighteen of them are marked
-as regressions, which makes the list double as this project's bug history.
-
-The app's **Test plan** button (next to the wording switch) opens it as a page that remembers
-which cases you have passed or failed; the daemon serves it at `/testplan`. That
-page is generated from the markdown by `scripts/build_testplan.py` — edit the
-markdown, never the HTML, and `tests/test_testplan_page.py` fails if the two
-drift apart.
-
-```bash
-./run-tests.sh tests/ -q          # 1,763 tests, bounded by an external watchdog
-./build_app.sh --install          # then the installed binary's --selftest
-```
+The **Learn** tab *is* the manual: a plain-English primer with a 25-term glossary (§1), and **§8, the one to read
+before trusting a Practice run** — how to read an error bar, what the attribution verdicts mean, and how many
+trials a number needs before it means anything (at 20 trials the band is ±21.5 points).
 
 ### Uptime
 
-SONAR is a daemon wearing an app: the equity curve only means something if positions settle on
-the hours they were priced for. So two things protect that.
+SONAR is a daemon wearing an app: the equity curve only means something if positions settle on the hours they
+were priced for. The full notes are in [docs/history/uptime-notes.md](docs/history/uptime-notes.md); in short:
 
-**The close button hides.** The window disappears, the engine keeps running, and the menu-bar
-item shows bankroll and open position. Quitting is a separate, deliberate menu action — and
-clicking the Dock icon brings the window back if the menu-bar item is hard to find. Clicking
-the menu-bar icon itself only opens its menu, the same as every other Mac menu-bar item; it
-used to also reveal the window, which dragged the whole app to the front over whatever was in
-it.
+- **The close button hides.** The window disappears, the engine keeps running, and the menu-bar item shows
+  bankroll and open position. Quitting is a separate, deliberate menu action, and quitting never waits for the network.
+- **Nothing the window waits on may fetch**, and no background thread may hold the shared lock across a network
+  call (`tests/test_ui_thread.py` checks it).
+- **A launchd agent** keeps it running when you are not logged into the app: `./scripts/install_agent.sh`
+  (`--status`, `--uninstall`). It writes `SONAR_DATA` into the plist so the agent and the app share one directory.
+- **One engine per state file** (`sonar/enginelock.py`). Whoever starts first drives; the other **follows**,
+  mirroring the agent's snapshot over localhost and handing every write to it, and takes over the moment the lock
+  is free. The status line says *following the engine at 127.0.0.1:8787* while this is so.
+- **The run watches itself.** The hourly model's panel carries the run's vital signs; two silent hours always
+  means a stall, and the menu-bar item says so. State files keep a daily rotating backup (last seven days).
+- **Protocol mode** (a checkbox on My trades, off by default) opens fixed-small paper positions on the five
+  highest- and five lowest-confidence rows once a day, direction by **coin flip**, so the calibration table fills
+  without discretion. Turning it off leaves open positions to resolve.
 
-Leaving full-screen and hiding are also untangled from each other, in both directions. Exiting
-a full-screen Space and clicking the close button both trigger the macOS activation event a
-real Dock click uses, so for just over a second after either one the window ignores that event
-rather than reopening itself the moment it just hid (`reopen_allowed`). And a close pressed
-while still in full screen waits for the Space to actually finish collapsing — not for
-`showNormal()` to be called, which Qt reports as done a full transition-length before it is —
-then confirms against the platform window's own exposure state that the hide landed, retrying
-if it did not: AppKit can drop a hide aimed at a window still mid-animation while Qt marks it
-hidden anyway, which is what once left the window on screen, blank, with a second press of the
-close button doing nothing because Qt believed there was nothing left to hide. A close arriving
-at a window Qt already thinks is hidden shows it before hiding it again, for the same reason.
-Everything that reopens the window goes through one method, because a reveal has to call off a
-hide a full-screen close leaves pending.
-
-**Nothing the window waits on may fetch**, which is a wider rule than it sounds. The UI
-thread reads the shared snapshot under a lock every second, so a background thread holding
-that lock across a network call freezes the window just as thoroughly as fetching on the UI
-thread would: the window goes blank, ignores the close button, and comes back a few seconds
-later when the fetch finishes. That is what the central-bank feed did every fifteen minutes.
-Build the payload first, then take the lock for the assignment — `tests/test_ui_thread.py`
-checks both the behaviour and, by AST, that no known fetch sits inside a lock.
-
-**Quitting never waits for the network.** A quit that lands while the app is fetching gives
-the background threads about a second and then ends the process, printing what it gave up on.
-That is deliberate: the alternative is a window that stops repainting while it waits, which is
-indistinguishable from a hang — and the earlier attempt to stop a stuck thread outright froze
-the app completely. Nothing is lost by leaving this way, because the engine writes each change
-as it happens rather than saving on exit.
-
-**A launchd agent** keeps it running when you are not logged into the app at all:
-
-```bash
-./scripts/install_agent.sh             # install and start
-./scripts/install_agent.sh --status
-./scripts/install_agent.sh --uninstall
-```
-
-**One directory, or they never meet.** A frozen app keeps its state in
-`~/Library/Application Support/SONAR`; a checkout keeps it in its own `data/`. The agent runs
-`main.py` from the checkout, so without help it runs a *second* experiment beside the
-installed app's — which is exactly what happened for weeks until the build's self-test line
-"state file: …/Application Support/SONAR/state.json" gave it away. `SONAR_DATA` overrides the
-directory (`paths.user_data_base`, `~` expanded, frozen or not), and `install_agent.sh` writes
-it into the agent's plist pointing at the app's directory. A checkout run from source without
-the variable still uses `data/` — a development book, separate on purpose.
-
-Running both is safe, and since Oct 2026 it is also useful. `sonar/enginelock.py` enforces
-**one engine per state file**: whoever starts first drives, because two engines settling the
-same hour would double-count the portfolio silently. The other one **follows** rather than
-sitting there blank: the agent records its HTTP address in the lock, and a window that loses
-the race mirrors the agent's snapshot, board, book, alerts and knobs over localhost
-(`Live._wait_for_lock`, `/api/book`, `/api/wire`) — every figure on every page is the
-agent's, and every action that writes the book (buy, short, close, the knobs, protocol mode,
-an LLM read) is handed to the agent over `/api/trade`, `/api/close`, `/api/config`,
-`/api/read`, so there is still exactly one writer. The status line says *following the
-engine at 127.0.0.1:8787* while this is so. Whoever waits re-tries the lock every fifteen
-seconds and **takes over the moment it is free**: quit the agent and the window drives
-without a restart; quit the window and the agent — which was waiting, not idling — drives
-the night. A second window has no address to follow, so it waits with a plain message. A
-lock left behind by a killed process is reclaimed rather than blocking forever.
-
-**The run watches itself.** Over a weeks-long collection run, hours can go missing silently —
-feed down, machine asleep, agent dead — and the damage would only show at review time as a
-mysteriously small n. So the hourly model's panel carries the run's vital signs (hours scored vs
-elapsed, settlements voided, time since anything last settled), and because the BTC market
-resolves around the clock, **two silent hours always means a stall**: the menu-bar item posts
-a notification and flags STALLED rather than sitting there looking healthy. The state files
-also keep a **daily rotating backup** (`.bak.<date>`, last seven days) beside themselves —
-they are the experiment's output and live nowhere else.
-
-**Protocol mode** (a checkbox on the Book tab, off by default) is how the calibration table
-fills without discretion: once a day it opens fixed-small paper positions on the five highest-
-and five lowest-confidence rows, direction chosen by **coin flip**. Random on purpose — the
-score claims notability, never direction, and a coin flip isolates exactly the claim the
-calibration table exists to test. Turning it off leaves open positions to resolve; closing
-them early would censor the outcomes being measured. Paper money, as everything here.
-
-**Headless is still dependency-free.** `python main.py --headless` runs the same
-`sonar.core.Live` behind the stdlib HTTP server with the original browser dashboards.
+`python main.py --headless` runs the same `sonar.core.Live` behind the stdlib HTTP server and stays dependency-free.
 
 ## Execution guard (simulator only)
 
-`sonar/execution.py` is the safety layer that would sit between a signal and a real order. It
-contains **no broker integration** — it talks to an abstract port whose only implementation is
-an in-process simulator, so every rule in it is testable:
+`sonar/execution.py` is the safety layer that would sit between a signal and a real order: human confirmation,
+idempotent order ids, hard caps, a fail-closed allowlist, an audit log, a kill switch that flattens, and venue
+reconciliation. It contains **no broker integration**; there is deliberately no live venue wired up. The rules
+are listed in [docs/execution-guard.md](docs/execution-guard.md); [GOING_LIVE.md](GOING_LIVE.md) is a plan only.
 
-- an order is never sent without explicit human confirmation
-- idempotent client order ids, recorded *before* the send, so a double-click cannot double-fill
-- hard caps on notional, quantity, orders per day, and open positions, checked locally
-- an instrument allowlist that **fails closed** — empty permits nothing
-- unpriced orders rejected: no limit price means no notional to cap
-- an unknown outcome halts the guard rather than retrying, because a retry is how one order
-  becomes two
-- notional also capped as a share of equity **read from the venue**, so a stale local bankroll
-  cannot size the next position; a port that cannot report equity is refused
-- append-only audit log
-- a kill switch that cancels, **flattens**, then latches — `flatten()` is exempt from the halt
-  latch and every cap, because a limit that can stop you closing a position is one that traps
-  you in it, and it stays idempotent because a duplicate closing order opens the opposite
-  position rather than closing twice
-- `reconcile(expected=...)` halts on any disagreement between local state and the venue —
-  a position opened by hand in the broker's own app is otherwise invisible
-- `GuardedBroker` fills the portfolio's broker seam through the guard, so the Book tab
-  cannot become a second unguarded route to a venue. Confirmation defaults to *refuse*, and
-  a refusal **raises** rather than returning an error dict — `Portfolio.enter` ignores that
-  return value, so a dict would leave the book holding a position that was never sent
-- the book distinguishes **accepted** from **filled**. A broker declares `synchronous`; when it
-  is false a position is recorded `PENDING`, carries no unrealised P&L, and is never closed on a
-  barrier — `poll_fills()` then rewrites it from the venue's real quantity and price, or refunds
-  the reserved cash if the order died. The target and stop are deliberately *not* re-derived
-  from a worse fill: slippage should eat the reward, not move the goalposts
-- `settle()` polls orders to a terminal state and records what each one actually cost;
-  `sonar/costs.py` turns that into cost per round trip. Slippage is measured against the
-  decision mark rather than the limit, so deliberately crossing the spread is not scored as
-  a cost, and the summary refuses to name a figure below 20 completed round trips
+## What it costs
 
-There is deliberately **no live venue wired up**. SONAR's only calibrated model prices the
-Polymarket hourly BTC market, which conventional brokers cannot trade; the assets board, which
-they can trade, explicitly asserts nothing. Connecting execution to the board SONAR does not
-model would be pointing a careful safety layer at the wrong signal.
-
-If you intend to connect one anyway, [GOING_LIVE.md](GOING_LIVE.md) is the implementation
-guide: venue choice, the `BrokerPort` contract, what paper trading hides, and the trap that
-there are **two** broker seams here and only one of them is guarded.
-
-### What it costs
-
-**Nothing, unless you use the LLM read.** Every data source is a free keyless public API, no
-trades means no fees, and the model, the screener and the paper engine make no AI calls at all.
-The only standing resource is bandwidth — roughly **8 MB/hour (~190 MB/day)** left running 24/7.
-It used to be 60 MB/hour: dropping the multi-market Polymarket board removed ~52 MB/hour, which
-was the single largest thing SONAR downloaded, for a board that mirrored the crowd's own prices
-and could say nothing of its own.
-
-The LLM read is the one paid path: it bills normal Anthropic API rates per invocation, and only
-when you ask for one. It is not wired into any polling loop.
+**Nothing, unless you use the LLM read** (billed per invocation at normal Anthropic API rates, only when you ask).
+Every data source is a free keyless public API; the only standing resource is bandwidth, roughly **8 MB/hour
+(~190 MB/day)** left running 24/7.
 
 ## Which version am I running?
 
-The header says, next to the name: **`v2.103`** — a number that moves with
-every commit. The window title carries it
-too, because bug reports arrive as screenshots and the title is in every one.
-
-```
-v<MAJOR>.<BUILD>
-   │        └── git rev-list --count HEAD, zero-padded to three digits
-   └─────────── the product arc, from the VERSION file
-```
-
-MAJOR is hand-edited and changes only on a deliberate milestone. BUILD is the
-commit count — derived, so it cannot be forgotten, and a version that is never
-bumped by hand is never silently wrong. The Lab Project Monitor computes the
-same string from the same two inputs, so the dashboard and the app cannot
-disagree.
-
-**Hover the version** and it reports the commit, the date, whether this is a
-packaged build or a checkout, and whether a newer build exists:
-
-```
-SONAR v2.103
-commit c3fcd81
-2026-09-22
-packaged build
-7 commits behind the checkout (v2.107). Re-run ./build_app.sh --install to catch up.
-```
-
-When that cannot be known — a packaged app on a machine with no source — it says
-so rather than claiming to be current. A version display that guesses is worse
-than none, because it gets believed.
-
-This exists because of a specific, repeated failure: a rebuild would land, the
-app would be opened, and the new work was not there — the bundle in
-`/Applications` was older than the conversation about it, and nothing on screen
-could say so. `main.py --selftest` prints the same information and **fails** if a
-frozen bundle has no build stamp. Full scheme in `VERSIONING.md`; what each
-installed build contained is in `CHANGELOG.md`.
+The header shows a number like **`v2.103`** (`v<MAJOR>.<BUILD>`: the `VERSION` file, then `git rev-list --count
+HEAD`, so it cannot be forgotten); the window title carries it too. **Hover it** for the commit, date, packaged
+build or checkout, and whether a newer build exists. `main.py --selftest` fails if a frozen bundle has no build
+stamp. Scheme in `VERSIONING.md`; what each installed build contained is in `CHANGELOG.md`.
 
 ## Layout
 
 ```
 main.py        entry point — app, --selftest, --headless
-sonar/
-  core.py      the headless engine driver; both the app and the daemon use it
-  feeds.py     BTC/ETH candles + the hourly Polymarket market and its order book
-  model.py     barrier probability + Galton-lattice distribution
-  risk.py      risk profiles — staking and filtering, never scoring
-  horizon.py   return horizons, intraday → year — timing curve + momentum window
-  macro/       FRED regime (curve, VIX, real rates, labour) for long horizons — its own git repo, gitignored here
-  paths.py     dev vs frozen path resolution — the packaging landmine — plus daily state backups
-  engine.py    paper portfolio: sizing, settlement, the hourly model-vs-market score log, run health, LLM calibration
-  llm.py       the optional narrative read (the only module with a dependency)
-  news.py      reputable RSS/Atom (financial, political, tech, wires), matching + sentiment
-  assets.py    real-asset screener (equities/indices/FX/crypto/commodities)
-  scoring.py   volatility-scaled target/stop → R:R, P(profit), EV, position sizing
-  portfolio.py the general paper book: buy/short anything, mark, settle, persist
-  calibration.py did high scores actually win? the loop that grades the screener
-  backtest.py  replay the plan over years of real bars, with an attention proxy
-  events.py    Nasdaq earnings and IPO calendars — scheduled catalysts
-  universe.py  the tradeable universe from Nasdaq + Wikipedia article resolution
-  providers.py pluggable data sources: capability, tier, and an on/off switch
-  alpaca.py    Alpaca **paper** broker, with the live endpoint made unreachable
-  execution.py the order guard: caps, confirmation, idempotency, flatten, audit
-  costs.py     what a round trip actually cost, derived from the audit log
-  institutions.py central-bank releases, FOMC and speeches — scheduled catalysts
-  venues.py    where a row could actually be traded, and where it could not
-  replay.py    step through history one setup at a time — grades you, not the model
-  alerts.py    what changed — fires on transitions, never asserts a direction
-  enginelock.py single-writer guard so two SONARs cannot double-count one book
-  server.py    stdlib HTTP server over core.Live (headless mode)
-  playmaker/   sports prop pricing, seven sports — the Playmaker tab; its own git repo, gitignored here
-    devig.py   three devig methods (multiplicative, Clarke power, Shin), cross-book consensus, outlier screen
-    ratings.py / poisson.py / results.py / scoring.py   ratings, Dixon-Coles goals model, result feeds, walk-forward scoring
-    staking.py Estimate (probability + interval + source); Kelly at the interval's low end
-    MODELS.md  what the successful sports models do, and the staged plan
-  research/    the study apparatus — features, panel, stats, validate, regimes, study,
-               earnings (the EDGAR calendar), and hourlyvol (the measured EWMA × hour-of-day σ the Terminal prices with)
-ui/
-  app.py       the window — My investments / Screener / News / My trades / Big picture / Practice (with the hourly model at its foot) / Sports / Learn
-  tabs.py      the navigation rail and page header: plain name over the name
-               the docs use, folding to icons on a narrow window
-  icons.py     the rail's stroke-SVG glyphs, tinted per state
-  words.py     plain or expert vocabulary, and the file that remembers which
-  learn.py     static/docs.html translated into what Qt's rich text can render
-  charts.py    QPainter charts: equity curve, sparkline, depth, lattice, bars
-  theme.py     type, contrast and the stylesheet — the Plain Language rules
-  worker.py    QThreads for the poll loop, LLM reads, and config changes
-  tray.py      the menu-bar companion; the window hides rather than quitting
-assets/
-  make_icon.py one-off icon generator (QPainter, no extra deps)
-static/
-  index.html   the BTC terminal (canvas charts, tooltips)
-  docs.html    in-app documentation
-  testplan.html the acceptance plan as a page (generated by scripts/build_testplan.py)
-tests/         the suite (see TESTING.md)
-scripts/       build_testplan.py, install_agent.sh, stamp_version.py
-packaging/     the launchd plist for the headless agent
-docs/          the engineering process: specs, ADRs, audit reports, playbooks, ROADMAP
-research_results/, docs_attention_study.json   outputs of the studies, kept as their record
-CONFIDENCE.md  research notes on the score; GOING_LIVE.md  a plan only, nothing applied
+sonar/         the engine and models (each module's docstring says what it is for)
+  core.py engine.py enginelock.py   the driver, the paper engine, the single-writer lock
+  model.py feeds.py risk.py horizon.py   the hourly model, its feeds, risk profiles, horizons
+  assets.py scoring.py portfolio.py calibration.py   the screener, the plan maths, the book, the grade
+  backtest.py replay.py research/    the replay, step-through, and the study apparatus
+  news.py events.py institutions.py alerts.py   headlines, calendars, central banks, what changed
+  providers.py paths.py server.py llm.py   data sources, path/backup logic, the HTTP server, the optional LLM
+  alpaca.py execution.py costs.py universe.py venues.py   dormant real-money code, kept on purpose
+  macro/         FRED regime for long horizons — its own git repo, gitignored here
+  playmaker/     sports prop pricing, seven sports — its own git repo, gitignored here
+ui/              app.py (the window), tabs.py (rail + page header), words.py (plain/expert), learn.py,
+                 charts.py, theme.py, worker.py (QThreads), tray.py, icons.py
+static/          index.html (BTC terminal), docs.html (the manual), testplan.html (generated)
+tests/           the suite (see TESTING.md)      scripts/   build_testplan.py, install_agent.sh, stamp_version.py
+packaging/       the launchd plist              docs/      specs, ADRs, audit reports, playbooks, ROADMAP, history
+research_results/, docs_attention_study.json     outputs of the studies, kept as their record
 ```
 
 ### API
@@ -1076,25 +363,19 @@ Every route answers only requests that name this machine in their `Host` header;
 
 ## What is left
 
-The build backlog is finished — providers, Alpaca paper trading, the paper book, the research
-apparatus and the calibration loop all shipped. What remains is not more code:
+The build backlog is finished; what remains is not more code (`TODO.md` has the open items, and
+`docs/specs/v1-product.md` defines v1.0 as 30 clean days).
 
-- **A free Finnhub key.** Equities currently have no keyless second source, so most of the
-  watchlist rides on one undocumented Yahoo endpoint. This is the single highest-value change.
-- **Let the paper book run.** A real track record is the one thing no amount of backtesting
-  substitutes for, and the calibration table stays empty until ~20 positions have closed.
-  **Protocol mode** (Book tab) fills it systematically — coin-flip direction, fixed small
-  stakes — so the table measures the score rather than the operator's moods.
-- **Better data, if the research is ever resumed.** Five studies detected no directional effect in
-  daily bars, free news and macro regimes (large effects ruled out, small ones not). Anything further needs intraday bars, order flow, or a news
-  archive with tone — all of which cost money. More features on this data is not the answer.
+- **A free Finnhub key.** Equities have no keyless second source, so most of the watchlist rides on one
+  undocumented Yahoo endpoint. This is the single highest-value change.
+- **Let the paper book run.** A real track record is the one thing no backtest substitutes for, and the
+  calibration table stays empty until ~20 positions have closed. **Protocol mode** (My trades) fills it.
+- **Better data, if the research is ever resumed.** Five studies detected no directional effect in daily bars,
+  free news and macro regimes (large effects ruled out, small ones not). Anything further needs intraday bars,
+  order flow, or a news archive with tone, all of which cost money.
 
-**Not planned: real-money execution.** SONAR will not place live orders, connect a funded
-broker, or move real money. Going live is a decision for a human with an account.
-
-**Investigated and closed: Revolut.** There is no public retail-investment API, so reading
-holdings is not possible; balances would need a licensed Open Banking aggregator. Reopen only
-as a deliberate project, not a spike.
+**Not planned: real-money execution.** SONAR will not place live orders, connect a funded broker, or move real
+money. **Investigated and closed: Revolut** — no public retail-investment API; reopen only as a deliberate project.
 
 ## Not advice
 

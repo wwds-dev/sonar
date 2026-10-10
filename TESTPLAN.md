@@ -175,7 +175,7 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
-| 5.17 | | Read the Book's P&L, then `README.md` §"The cost floor" | The book's P&L **excludes costs**. The measured floor is **€1.05 per round trip** (50 bps per side), so a real version of the same trade is €1.05 worse. |
+| 5.17 | | Read the Book's P&L, then `CONFIDENCE.md` §13 "The cost floor" | The book's P&L **excludes costs**. The measured floor is **€1.05 per round trip** (50 bps per side), so a real version of the same trade is €1.05 worse. |
 | 5.18 | ⚠ | Ask whether the app told you that anywhere you would have seen it | Today it does not — the caveat is in the Lab and backtest captions and in the README, not on the Book tab. **A paper P&L that reads better than reality is the single most misleading thing this app could show.** Log it if it still is not surfaced. |
 
 ### Protocol mode — filling the table without discretion
