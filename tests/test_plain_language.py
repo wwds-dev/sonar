@@ -133,3 +133,35 @@ def test_a_tab_is_wide_enough_for_its_own_name(window):
         needed = QFontMetrics(theme.text(12, True)).horizontalAdvance(
             window.tabs.tabText(i))
         assert room >= needed, window.tabs.tabText(i)
+
+
+# --------------------------------------------------------------------------- #
+# UX U-7: jargon that survived plain mode
+# --------------------------------------------------------------------------- #
+def test_controls_say_what_they_do_in_plain_wording(window, monkeypatch):
+    from ui import words
+    monkeypatch.setattr(words, "plain", lambda: True)
+    window._apply_wording()
+    assert window.read_btn.text() == "AI commentary on this hour"
+    assert window.protocol_box.text() == "test the score automatically"
+    monkeypatch.setattr(words, "plain", lambda: False)
+    window._apply_wording()
+    assert window.read_btn.text() == "LLM read on this hour"
+    assert window.protocol_box.text() == "protocol mode"
+
+
+def test_the_model_vs_market_line_has_no_jargon_in_plain_wording(window, monkeypatch):
+    from ui import words
+    pf = {"model_vs_market": {"n": 214, "model_brier": 0.2491, "market_brier": 0.2503,
+                              "verdict": "within noise"},
+          "run_health": {"started": 1.0, "coverage_pct": 98, "voided": 2,
+                         "last_settled_age_s": 600, "stale": True}}
+    snap = {"status": "live", "lattice": {}, "market": {}, "portfolio": pf}
+    monkeypatch.setattr(words, "plain", lambda: True)
+    window._refresh_terminal(snap)
+    text = window.mvm.text()
+    for jargon in ("Brier", "coverage", "voided", "settle", "STALLED"):
+        assert jargon not in text, jargon
+    monkeypatch.setattr(words, "plain", lambda: False)
+    window._refresh_terminal(snap)
+    assert "Brier" in window.mvm.text() and "STALLED" in window.mvm.text()

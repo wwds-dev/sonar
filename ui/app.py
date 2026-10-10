@@ -393,6 +393,15 @@ STAT_WORDS = {
     "p&l now": "profit / loss now",
     "at risk": "if every stop hits",
     "closed": "closed so far",
+    "win rate": "how often it won",
+    "profile": "risk setting",
+}
+
+#: Control labels with jargon in them, as (plain, expert). The expert wording
+#: keeps the term; plain says what the control does (audit UX U-7).
+CONTROL_WORDS = {
+    "read_btn": ("AI commentary on this hour", "LLM read on this hour"),
+    "protocol_box": ("test the score automatically", "protocol mode"),
 }
 
 
@@ -639,7 +648,7 @@ class AssetRow(QFrame):
              "Open a practice position betting this goes down.\n"
              "Practice money — no order is placed anywhere.",
              lambda: on_trade(a["symbol"], "SHORT")),
-            ("Read" if plain else "read",
+            ("AI note" if plain else "read",
              "A written read from a language model (optional, off by\n"
              "default). Commentary — it cannot size a position.",
              lambda: on_read("asset", a["symbol"], a["name"])),
@@ -3206,6 +3215,10 @@ class MainWindow(QMainWindow):
         self.assets_banner.setVisible(plain)
         for stat in self.findChildren(Stat):
             stat.retitle()
+        for attr, (easy, expert) in CONTROL_WORDS.items():
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.setText(easy if plain else expert)
         self._assets_sig = None
 
     def _apply_config(self) -> None:
@@ -3420,18 +3433,23 @@ class MainWindow(QMainWindow):
             # on hover, where there is room for its error bar.
             self.mvm.setToolTip(self.mvm.toolTip().split("\n\nAt the touch:")[0]
                                 + "\n\nAt the touch: " + buy["verdict"])
+        plain = words.plain()
         health = ""
         if rh.get("started"):
-            health = (f' · coverage {rh.get("coverage_pct", 0):.0f}%'
+            health = (f' · {rh.get("coverage_pct", 0):.0f}% of hours watched'
+                      f' · {rh.get("voided", 0)} skipped' if plain else
+                      f' · coverage {rh.get("coverage_pct", 0):.0f}%'
                       f' · {rh.get("voided", 0)} voided')
             age = rh.get("last_settled_age_s")
             if age is not None:
-                health += f' · last settle {age // 60}m ago'
+                health += (f' · last result {age // 60}m ago' if plain
+                           else f' · last settle {age // 60}m ago')
             if rh.get("stale"):
-                health += "  ⚠ STALLED"
+                health += "  ⚠ no results lately" if plain else "  ⚠ STALLED"
         if mvm.get("n"):
+            score = ("accuracy score (lower is better)" if plain else "Brier")
             self.mvm.setText(
-                f'model vs market · {mvm["n"]} hrs scored · Brier '
+                f'model vs market · {mvm["n"]} hrs scored · {score} '
                 f'{mvm.get("model_brier", 0):.4f} vs {mvm.get("market_brier", 0):.4f}'
                 f' — {mvm.get("verdict", "")}{health}')
         else:
