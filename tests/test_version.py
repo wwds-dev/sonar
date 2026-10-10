@@ -97,6 +97,15 @@ class TestStalenessIsHonest:
         assert verdict["known"] is False and verdict["current"] is False
         assert "no version stamp" in verdict["detail"]
 
+    def test_an_unstamped_build_can_still_describe_itself(self, monkeypatch):
+        """No checkout and no stamp: info() lacked "dirty", so tooltip() —
+        built for the tray and the window at start-up — raised KeyError."""
+        monkeypatch.setattr(app_version, "_git_build", lambda *a, **k: None)
+        monkeypatch.setattr(app_version, "_baked", lambda: None)
+        app_version.info.cache_clear()
+        assert app_version.info()["source"] == "unknown"
+        assert "no version stamp" in app_version.tooltip()
+
     def test_no_checkout_is_reported_as_unknown_not_as_current(self, monkeypatch):
         """A packaged app on a machine with no source is the normal case, and
         the one where a confident "up to date" would be a lie."""

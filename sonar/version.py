@@ -190,8 +190,10 @@ def info() -> dict:
     found = (_baked() or _git_build()) if paths.is_frozen() \
         else (_git_build() or _baked())
     if not found:
+        # Every key the found branch has: `tooltip()` and `--selftest` read
+        # "dirty", and its absence made an unstamped bundle fail to start.
         return {"major": major, "build": None, "version": f"v{major}.???",
-                "commit": "", "date": "", "source": "unknown"}
+                "commit": "", "date": "", "dirty": False, "source": "unknown"}
     return {
         "major": major,
         "build": found["build"],

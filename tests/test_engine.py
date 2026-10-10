@@ -98,6 +98,24 @@ def test_llm_calibration_on_an_empty_book_is_not_an_error(engine):
     assert all(r["n"] == 0 and r["hit_rate"] is None for r in rows)
 
 
+def test_an_unclear_read_is_counted_not_graded_as_a_miss(engine):
+    """An LLM with no information that says UNCLEAR at low conviction used to
+    show 0% hit rate low and ~50% high — the very shape the table tests for."""
+    def t(conv, direction, result):
+        return eng.Trade(hour_key=0, title="t", side="UP", entry_price=0.5, shares=1.0,
+                         stake=1.0, model_up=0.5, market_up=0.5, edge=0.0, entered_at=0,
+                         result=result, won=result == "UP", pnl=0.0,
+                         llm_conviction=conv, llm_direction=direction)
+    engine.trades = ([t(10, "UNCLEAR", "UP") for _ in range(8)]
+                     + [t(10, "UP", "UP"), t(10, "DOWN", "UP")]
+                     + [t(80, "UP", "UP"), t(80, "DOWN", "UP")])
+    r = engine.llm_calibration()
+    low, high = r["buckets"][0], r["buckets"][3]
+    assert low["n"] == 2 and low["unclear"] == 8 and low["hit_rate"] == 50.0
+    assert high["hit_rate"] == 50.0
+    assert r["n_scored"] == 4 and r["n_unclear"] == 8
+
+
 # --------------------------------------------------------------------------- #
 # tick
 # --------------------------------------------------------------------------- #

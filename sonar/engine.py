@@ -784,8 +784,13 @@ class Engine:
         Interpret with care until ``n`` per bucket is well into double digits;
         small samples say nothing.
         """
-        scored = [t for t in self.trades
-                  if t.llm_conviction is not None and t.won is not None]
+        read = [t for t in self.trades
+                if t.llm_conviction is not None and t.won is not None]
+        # A read that called no direction makes no claim to grade. Scored as
+        # a miss, UNCLEAR — which the model says most at low conviction — gave
+        # an LLM with no information a hit rate rising with its conviction:
+        # exactly the shape this table exists to test for.
+        scored = [t for t in read if t.llm_direction in ("UP", "DOWN")]
         buckets = [(0, 25), (25, 50), (50, 75), (75, 101)]
         rows = []
         for lo, hi in buckets:
@@ -794,6 +799,8 @@ class Engine:
             rows.append({
                 "bucket": f"{lo}–{hi - 1 if hi <= 100 else 100}",
                 "n": len(in_b),
+                "unclear": sum(1 for t in read if t.llm_direction not in ("UP", "DOWN")
+                               and lo <= t.llm_conviction < hi),
                 "hit_rate": round(len(hits) / len(in_b) * 100, 1) if in_b else None,
                 "avg_conviction": (round(sum(t.llm_conviction for t in in_b) / len(in_b), 1)
                                    if in_b else None),
@@ -801,6 +808,7 @@ class Engine:
         agree = [t for t in scored if t.llm_direction == t.side]
         return {
             "n_scored": len(scored),
+            "n_unclear": len(read) - len(scored),
             "buckets": rows,
             # How often the narrative track agreed with the arithmetic one.
             "agreed_with_model_pct": (round(len(agree) / len(scored) * 100, 1)
