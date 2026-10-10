@@ -3,17 +3,38 @@
 What is covered, what is not, and the order to fix it in. Every number here was
 measured, not estimated — with
 `coverage run --branch --source=sonar,ui -m pytest tests/`. The headline figures
-are from 2026-09-22; where an older section still carries its own date, that is
+are from 2026-10-10; where an older section still carries its own date, that is
 what it was measured on.
 
 ---
 
 ## 0. Where we are
 
-**1,582 tests**, 71% of statements and branches across `sonar/` and `ui/`
-(2026-09-22). The 2026-09-16 figure was 66% of statements over `sonar/` alone;
-the rise is mostly the UI, which went from three tests that built a window to
-six files' worth — see §4.
+**1,582 tests**, 80% of statements and branches across `sonar/` and `ui/`
+(2026-10-10; 71% on 2026-09-22, 66% of `sonar/` alone on 2026-09-16), plus 30
+opt-in `-m network` checks of every live source. Run the suite **twice** before
+a push — natively and under `QT_QPA_PLATFORM=offscreen`, which is how CI runs
+it: the two disagree on font metrics, and CI was red for two days in October
+while the native run was green.
+
+> **2026-10-10 QA pass.** A risk-ranked plan (kept outside the repo, findings
+> QA-1…QA-14) and the tests it called for: the landing page's figures checked
+> against each other (`test_landing_figures.py`), follow mode across two real
+> processes (`test_two_processes.py`), both engine verdicts at exactly 99/100
+> hours, the feed parsers on recorded payload shapes (`news.py` 38% → 96%,
+> `events.py` 47% → 99%), state-file recovery (`test_state_recovery.py`), a
+> QThread census, the backtest's driftless `1/(1+R:R)` identity, and the
+> live-source checks (`test_live_sources.py`). Twenty-nine more planted
+> mutations: twenty-six caught; two were equivalent (an `acquire()` guard that
+> O_EXCL makes redundant) or unreachable (buyability's leave-one-out branch —
+> a mean beyond 2se already implies a positive leave-one-out mean); one
+> exposed a real gap that the test was then strengthened to catch (a trade
+> not forwarded while following). It fixed seven defects on the way: the rail
+> clipping "My investments" on 96-dpi platforms, CI's exit-time Qt crash, the
+> version badge calling an amended build "up to date", an unreadable state
+> file silently restarting the book at $10,000, a junk preference file
+> stopping the app, an offline start leaving the calendar empty for six
+> hours, and the LLM read gated on the wrong process while following.
 
 > **Progress.** Steps 1–5 are done, plus `research/features.py`. `model.py` 39% → **100%**, `engine.py`
 > 38% → **100%**, `feeds.py` 30% → **82%**, `server.py` 0% → **92%**. The overall figure barely moves,
