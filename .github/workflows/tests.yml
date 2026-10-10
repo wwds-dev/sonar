@@ -52,4 +52,8 @@ jobs:
       - name: Run the suite
         env:
           QT_QPA_PLATFORM: offscreen
+          # A crash after the summary — Qt objects torn down in the wrong order
+          # at interpreter exit — reads as "signal 11" and nothing else. With
+          # this Python prints the stack of every thread when it happens.
+          PYTHONFAULTHANDLER: "1"
         run: ./run-tests.sh -q
