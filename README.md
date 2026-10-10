@@ -103,9 +103,10 @@ P(up) = Φ( ln(c / o) / (σ · √τ) )
 - As the hour runs out (`τ→0`) → collapses to 1 or 0 on the current sign.
 
 Our only disagreement with the market is the volatility estimate: we use **realised** vol
-while the market prices its own **implied** vol. When they differ we get a thin, statistical
-edge — the realised-vs-implied trade quants actually run. It is small and frequently negative
-after crossing the spread.
+while the market prices its own **implied** vol. That is the realised-vs-implied disagreement
+quants trade on — but here it has **not** been shown to be an edge: over the hours scored so far
+the model's calibration is no better than the market's (the Terminal's model-vs-market line says
+which, live), and after crossing the spread it is frequently negative.
 
 Since Sep 2026 that estimate is an **EWMA scaled by an hour-of-day profile** rather than a
 flat 72-hour standard deviation. Measured first, wired second, per this project's standing
@@ -234,8 +235,9 @@ bars only, then walk forward through actual highs and lows. A bar spanning both 
 Over **25,504 setups** — 5 years, 113 instruments (the set the study ran on; the board lists 129 today). (An earlier version of this section
 called them *independent*; at a replay step shorter than the holding time, neighbouring
 setups share the bars that decide them, so they are not. The Lab's error bars now carry a
-Newey-West correction for that overlap. Overlap only ever *widens* an error bar, so the
-null below survives the correction — it was, if anything, understated before.)
+Newey-West correction for that overlap. A wider error bar makes a null result *less*
+informative, not more: these studies can rule out large effects, not small ones — at this sample
+an effect of about 3 points on the hit rate, or an IC of 0.04–0.07, would usually go undetected.)
 
 | momentum bucket | hit rate | | attention | hit rate | vs baseline | ±2 s.e. |
 |---|---|---|---|---|---|---|
@@ -244,8 +246,16 @@ null below survives the correction — it was, if anything, understated before.)
 | 5–10% | 39.8% | | elevated | 40.8% | +0.8 | 2.0 |
 | 10%+ | 38.7% | | **spike** | **40.8%** | **+0.8** | 3.1 |
 
-Baseline is 40.0%. **Neither momentum nor news carries a usable edge.** Overall hit rate is 39.58%
-against a 39.99% prediction — the barrier maths is right, and nothing in the score beats it.
+Baseline is 40.0%. **Neither momentum nor news showed a detectable edge** — +0.8 ± 3.1 points for
+a news spike leaves room for an effect of about 3 points either way, but not for a large one.
+Overall hit rate is 39.58% against a 39.99% prediction. (The replay itself scores a bar that spans
+both barriers as a loss and drops trials that time out, which biases it about 0.3–0.9 points low
+on a driftless walk — so "matches the barrier maths" is consistent with no edge, not proof of it.)
+
+**Survivorship.** The instruments studied are the ones listed today — companies that survived and
+mostly grew, coins still trading. That flatters any long or trend-following test (momentum, the
+52-week high); it cannot manufacture the nulls above, but it can inflate the one positive finding
+that leaned on recent winners.
 
 An earlier run on 26 instruments put a news spike at **+4.9 points** and this README said so. It did
 not survive: at 3.7× the sample the effect fell to **+0.8**, well inside its own error bar. That was
@@ -1075,8 +1085,8 @@ apparatus and the calibration loop all shipped. What remains is not more code:
   substitutes for, and the calibration table stays empty until ~20 positions have closed.
   **Protocol mode** (Book tab) fills it systematically — coin-flip direction, fixed small
   stakes — so the table measures the score rather than the operator's moods.
-- **Better data, if the research is ever resumed.** Five studies found nothing in daily bars,
-  free news and macro regimes. Anything further needs intraday bars, order flow, or a news
+- **Better data, if the research is ever resumed.** Five studies detected no directional effect in
+  daily bars, free news and macro regimes (large effects ruled out, small ones not). Anything further needs intraday bars, order flow, or a news
   archive with tone — all of which cost money. More features on this data is not the answer.
 
 **Not planned: real-money execution.** SONAR will not place live orders, connect a funded

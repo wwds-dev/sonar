@@ -23,9 +23,10 @@ That's the whole model. It is a *fair value*, not a crystal ball:
 
 Our only disagreement with the market comes from estimating ``sigma`` from
 recent *realised* volatility while the market prices in its own *implied*
-volatility. When they differ we have a small statistical edge — the same
-realised-vs-implied trade quants actually run. It is thin, and over many hours
-it is often wrong. The paper P&L is honest about that.
+volatility. That is the realised-vs-implied disagreement quants trade on, but
+it has not been shown to be an edge here: Engine.model_vs_market grades it
+against the market's own calibration every hour, and so far it is no better.
+The paper P&L is honest about that.
 """
 
 from __future__ import annotations
