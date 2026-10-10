@@ -125,6 +125,26 @@ def test_forecast_without_a_full_profile_window_is_plain_ewma():
     assert len(readings) == 1, "no profile yet, so the hour must not matter"
 
 
+def test_forecast_is_the_estimator_the_study_measured():
+    """The study's +7.5% belongs to EWMA over deseasonalised r². The shipped
+    forecast ran EWMA over raw r² instead — a different, unmeasured and on
+    real data worse estimator. Held equal here, at origins across the run."""
+    rng = random.Random(3)
+    sigmas = []
+    level = 0.004
+    for i in range(hv.DIURNAL_WINDOW + 400):
+        level = max(0.001, level * math.exp(rng.gauss(0, 0.05)))   # clustering
+        season = 2.0 if 13 <= (i + 1) % 24 <= 20 else 1.0           # US hours
+        sigmas.append(level * season)
+    closes, times = series(sigmas, seed=11)
+    trace: list = []
+    hv.study(closes, times, warmup=hv.DIURNAL_WINDOW, trace=trace)
+    assert trace
+    for i, studied in trace[::37]:
+        shipped = hv.forecast(closes[:i + 1], times[:i + 1], target_time=times[i + 1])
+        assert shipped == pytest.approx(max(studied, hv.MIN_VOL), rel=1e-12), i
+
+
 def test_forecast_needs_a_minimum_of_history():
     closes, times = series([0.004] * 20)
     assert hv.forecast(closes, times) is None
@@ -136,6 +156,50 @@ def test_forecast_refuses_a_gappy_series():
     closes, times = series([0.004] * 200)
     closes[50] = 0.0
     assert hv.forecast(closes, times) is None
+
+
+def test_forecast_refuses_a_missing_hour():
+    closes, times = series([0.004] * 200)
+    del closes[120], times[120]
+    assert hv.forecast(closes, times) is None
+
+
+def test_forecast_refuses_history_that_ended_hours_ago():
+    """A partial pull once ended twenty days back and was priced as now."""
+    closes, times = series([0.004] * 200)
+    assert hv.forecast(closes, times, now=times[-1] + 1800) is not None
+    assert hv.forecast(closes, times, now=times[-1] + 20 * 86400) is None
+
+
+def test_a_failed_page_is_an_error_not_a_shorter_history(monkeypatch):
+    """The second page of a 62-day pull failing used to return the first page
+    alone, ending about twenty days ago."""
+    import io, json as _json
+    calls = []
+
+    def fake_urlopen(req, timeout=15):
+        calls.append(req.full_url)
+        if len(calls) == 1:
+            rows = [[(1_700_000_000 + h * 3600) * 1000, "0", "0", "0", "100"]
+                    for h in range(1000)]
+            return io.BytesIO(_json.dumps(rows).encode())
+        raise OSError("page two failed")
+
+    monkeypatch.setattr(hv.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(RuntimeError, match="incomplete"):
+        hv.fetch_hourly(days=62)
+
+
+def test_only_the_hour_in_progress_is_dropped(monkeypatch):
+    import io, json as _json
+    import time as _time
+    now_hour = int(_time.time()) // 3600 * 3600
+    rows = [[(now_hour - (5 - h) * 3600) * 1000, "0", "0", "0", str(100 + h)]
+            for h in range(5)]                    # ends with the last *closed* hour
+    monkeypatch.setattr(hv.urllib.request, "urlopen",
+                        lambda req, timeout=15: io.BytesIO(_json.dumps(rows).encode()))
+    times, closes = hv.fetch_hourly(days=1)
+    assert len(times) == 5, "a closed hour was dropped as if in progress"
 
 
 def test_forecast_tracks_a_volatility_regime():

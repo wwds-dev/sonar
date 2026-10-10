@@ -1031,7 +1031,7 @@ class Live:
         """
         try:
             times, closes = hourlyvol.fetch_hourly(days=62)
-            s = hourlyvol.forecast(closes, times)
+            s = hourlyvol.forecast(closes, times, now=time.time())
             if s is not None:
                 return s
         except Exception:

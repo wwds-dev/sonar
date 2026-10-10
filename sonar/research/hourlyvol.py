@@ -206,7 +206,7 @@ def log_returns(closes: list[float]) -> list[float]:
 
 
 def study(closes: list[float], times: list[int], blocks: int = 6,
-          warmup: int = DIURNAL_WINDOW) -> dict:
+          warmup: int = DIURNAL_WINDOW, trace: list | None = None) -> dict:
     """Walk every hour once, scoring all five models on the hour that followed.
 
     `times` are the candles' open times (unix seconds), aligned with `closes`;
@@ -239,6 +239,8 @@ def study(closes: list[float], times: list[int], blocks: int = 6,
                 "trailing72_diurnal": trail_d.std() * math.sqrt(fac),
                 "ewma_diurnal": math.sqrt(ewma_d_var * fac),
             }
+            if trace is not None:               # what forecast() must reproduce
+                trace.append((i, f["ewma_diurnal"]))
             a = abs(r)
             for m in MODELS:
                 losses[m].append(qlike(f[m], a))
@@ -287,8 +289,10 @@ def study(closes: list[float], times: list[int], blocks: int = 6,
 # What the app actually uses
 # --------------------------------------------------------------------------- #
 #: The study's result, run 2026-09-19 on 16,078 held-out hours (two years of
-#: BTCUSDT, six time blocks). Every candidate beat the incumbent in 6/6
-#: blocks; the winner is the one that was pre-registered to win:
+#: BTCUSDT, six time blocks). The winner is the one that was pre-registered
+#: to win. (Reproduced 2026-10-10 on a fresh pull: ewma_diurnal +7.57%, 6/6;
+#: garch +6.08%, 6/6; ewma +3.71% and trailing72_diurnal +3.73% only 5/6 —
+#: "every candidate 6/6" did not replicate. docs/audit/model-validation.md.)
 #:
 #:     model                QLIKE     vs trailing-72
 #:     trailing72           1.96318   — (the incumbent, model.hourly_sigma)
@@ -313,8 +317,12 @@ STUDY_RESULT_2026_09 = {
 MIN_RETURNS = 72
 
 
+#: Older than this and the history is not "now" (two closed hours of slack).
+MAX_HISTORY_AGE_S = 3 * 3600
+
+
 def forecast(closes: list[float], times: list[int],
-             target_time: int | None = None) -> float | None:
+             target_time: int | None = None, now: float | None = None) -> float | None:
     """σ for the hour in progress, per the study's winner (EWMA × diurnal).
 
     Degrades along the measured ladder rather than guessing: with less than a
@@ -326,21 +334,40 @@ def forecast(closes: list[float], times: list[int],
     """
     rets = log_returns(closes)
     if len(rets) != len(closes) - 1 or len(rets) < MIN_RETURNS:
-        return None                              # gappy or too-short series
+        return None                              # unusable prices or too short
+    if any(b - a != 3600 for a, b in zip(times, times[1:])):
+        return None                              # a missing hour: not the measured series
+    if now is not None and now - times[-1] > MAX_HISTORY_AGE_S:
+        return None                              # history that ends hours ago is not now
     hods = hods_from_times(times)[1:]
 
-    ewma_var = None
+    # Step for step the study's two estimators: plain EWMA on r², and the
+    # winner, EWMA on *deseasonalised* r² (r² over the hour's factor as of
+    # before that hour) times the target hour's factor. This used to run the
+    # EWMA on raw r² and multiply by the factor — a different estimator the
+    # study never measured, and on real data a significantly worse one (QLIKE
+    # 1.884 against 1.827 over every hour of the live-shaped 62-day window, +4.6%
+    # against trailing-72 instead of +7.5%; docs/audit/model-validation.md P1-1,
+    # docs/specs/t1-2-hourly-sigma.md). tests/test_hourlyvol.py holds the two
+    # equal on the same data; live sees 62 days, the study two years.
+    ewma_var = ewma_d_var = None
     diurnal = _Diurnal()
     for r, hod in zip(rets, hods):
         r2 = r * r
+        rd2 = r2 / diurnal.factor(hod)
         diurnal.push(hod, r2)
-        ewma_var = (max(r2, MIN_VOL ** 2) if ewma_var is None
-                    else EWMA_LAMBDA * ewma_var + (1 - EWMA_LAMBDA) * r2)
+        if ewma_var is None:
+            ewma_var = ewma_d_var = max(r2, MIN_VOL ** 2)
+        else:
+            ewma_var = EWMA_LAMBDA * ewma_var + (1 - EWMA_LAMBDA) * r2
+            ewma_d_var = EWMA_LAMBDA * ewma_d_var + (1 - EWMA_LAMBDA) * rd2
 
     if target_time is None:
         target_time = times[-1] + 3600
-    factor = diurnal.factor((target_time % 86400) // 3600) if diurnal.full else 1.0
-    return max(math.sqrt(ewma_var * factor), MIN_VOL)
+    if not diurnal.full:
+        return max(math.sqrt(ewma_var), MIN_VOL)
+    factor = diurnal.factor((target_time % 86400) // 3600)
+    return max(math.sqrt(ewma_d_var * factor), MIN_VOL)
 
 
 # --------------------------------------------------------------------------- #
@@ -353,9 +380,14 @@ _UA = {"User-Agent": "sonar/0.4 (research)"}
 
 def fetch_hourly(symbol: str = "BTCUSDT", days: int = 730
                  ) -> tuple[list[int], list[float]]:
-    """Paged hourly closes from Binance — ~18 requests for two years."""
+    """Paged hourly closes from Binance — ~18 requests for two years.
+
+    All of it or an error: a failed page used to end the loop and return the
+    pages before it, so a 62-day pull whose second page failed ended twenty
+    days ago and was priced as if it were now."""
     import time as _time
 
+    now_hour = int(_time.time()) // 3600 * 3600
     start = (int(_time.time()) - days * 86400) * 1000
     times: list[int] = []
     closes: list[float] = []
@@ -364,8 +396,9 @@ def fetch_hourly(symbol: str = "BTCUSDT", days: int = 730
         try:
             req = urllib.request.Request(url, headers=_UA)
             rows = json.loads(urllib.request.urlopen(req, timeout=15).read())
-        except Exception:
-            break
+        except Exception as exc:
+            raise RuntimeError(f"hourly history incomplete ({type(exc).__name__}: "
+                               f"{exc})") from exc
         if not rows:
             break
         for r in rows:
@@ -374,6 +407,6 @@ def fetch_hourly(symbol: str = "BTCUSDT", days: int = 730
         if len(rows) < 1000:
             break
         start = int(rows[-1][0]) + 3_600_000
-    if times and closes:
-        times.pop(), closes.pop()               # drop the in-progress hour
+    if times and times[-1] >= now_hour:
+        times.pop(), closes.pop()               # drop the in-progress hour, only that
     return times, closes
