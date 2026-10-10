@@ -407,6 +407,13 @@ def _day_text(ts: float | None) -> str:
     return time.strftime("%-d %b", time.localtime(ts)) if ts else "—"
 
 
+def _band_top(bucket: dict) -> int:
+    """A calibration band's printed upper bound. The top band is stored as
+    80–101 so a score of exactly 100 falls inside a half-open range; a score
+    never exceeds 100, so it reads "80–100" — "101" on screen looks like a bug."""
+    return min(bucket["hi"], 100)
+
+
 def _money(v: float, signed: bool = False, places: int = 2) -> str:
     """``$1,234.56``, or ``+$1,234.56`` / ``-$1,234.56`` when the sign is the
     point — the sign goes before the currency, as a bank statement puts it."""
@@ -1843,7 +1850,7 @@ class MainWindow(QMainWindow):
                 continue
             hr = "—" if not b["enough"] else f'{b["hit_rate"]*100:.0f}%'
             note = "" if b["enough"] else f'  (need {cal.get("min_sample", 20)})'
-            rows.append(f'  score {b["lo"]:>3}–{b["hi"]:<3}  n={b["n"]:<4} '
+            rows.append(f'  score {b["lo"]:>3}–{_band_top(b):<3}  n={b["n"]:<4} '
                         f'hit {hr:<5} vs advertised {b["expected"]*100:.0f}%{note}')
         self.cal_table.setText("\n".join(rows) or
                                "  no closed positions yet — nothing to grade")
@@ -2029,7 +2036,7 @@ class MainWindow(QMainWindow):
                 continue
             wins = round(b["hit_rate"] * b["n"])
             note = "" if b.get("enough") else f"   (a band needs {need} to count)"
-            rows.append(f'scores {b["lo"]}–{b["hi"]}:  {b["n"]} closed · {wins} won '
+            rows.append(f'scores {b["lo"]}–{_band_top(b)}:  {b["n"]} closed · {wins} won '
                         f'({b["hit_rate"]*100:.0f}%) · the plan promised '
                         f'{b["expected"]*100:.0f}%{note}')
         if cal.get("calibrated") and cal.get("overall_hit_rate") is not None:

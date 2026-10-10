@@ -10,7 +10,7 @@ what it was measured on.
 
 ## 0. Where we are
 
-**1,501 tests**, 71% of statements and branches across `sonar/` and `ui/`
+**1,518 tests**, 71% of statements and branches across `sonar/` and `ui/`
 (2026-09-22). The 2026-09-16 figure was 66% of statements over `sonar/` alone;
 the rise is mostly the UI, which went from three tests that built a window to
 six files' worth — see §4.
