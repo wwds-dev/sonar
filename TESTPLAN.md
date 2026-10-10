@@ -272,12 +272,12 @@ The cases most likely to be skipped, and the ones that produced the worst bugs.
 The landing page since v2.127. Every figure on it is the book's, and several are
 the same quantity reached two ways, so most of these cases compare one number
 with another rather than with a value written here. `curl -s
-http://127.0.0.1:8787/api/book` is the agent's own account of the book.
+127.0.0.1:8787/api/book` is the agent's own account of the book.
 
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
 | 11.1 | | Launch the app | It opens on **My investments**: P&L now (the largest figure), account value, invested, at risk, closed. |
-| 11.2 | | Compare the strip with `curl -s http://127.0.0.1:8787/api/book` (`positions.stats`) | Equity, P&L, invested and at-risk match to the dollar. |
+| 11.2 | | Compare the strip with `curl -s 127.0.0.1:8787/api/book` (`positions.stats`) | Equity, P&L, invested and at-risk match to the dollar. |
 | 11.3 | | Read the line under **invested** | Two figures — *your cash in N longs* and *borrowed for M shorts* — that add up to the big one. N + M is the number of open positions. Never one figure called cash. |
 | 11.4 | | Read the line under **at risk** | A percentage of the account and *N stops set*, N equal to the open count. |
 | 11.5 | | Check: account value − starting cash = P&L now, and P&L now = open + closed on its own line | Both hold to the dollar. |
@@ -304,13 +304,13 @@ the model-vs-market *n* and the closed count before 12.6; 12.10 compares.
 |---|---|---|---|
 | 12.1 | | With the agent running, launch the app | The status line at the foot of the rail says *following the engine at 127.0.0.1:8787*. |
 | 12.2 | | `cat ~/Library/Application\ Support/SONAR/engine.lock` | Names the agent's pid, role `agent`, and its URL. The app is not the holder. |
-| 12.3 | | Buy a row on **Screener** | The position appears in `curl -s http://127.0.0.1:8787/api/book` and on the window within a few seconds — the agent booked it. |
+| 12.3 | | Buy a row on **Screener** | The position appears in `curl -s 127.0.0.1:8787/api/book` and on the window within a few seconds — the agent booked it. |
 | 12.4 | | Close it from **My trades** | Gone from the agent's book too. |
-| 12.5 | | Change the risk knob | `curl -s http://127.0.0.1:8787/api/config` reports the new profile, and the window's knob stays on it. |
+| 12.5 | | Change the risk knob | `curl -s 127.0.0.1:8787/api/config` reports the new profile, and the window's knob stays on it. |
 | 12.6 | | Press **LLM read on this hour** | It runs on the agent. If the agent's environment has no `anthropic`, the reply says so **and says it is the agent's**, not just "off". |
 | 12.7 | | Stop the agent: `launchctl bootout gui/$(id -u)/com.netrunner3000.sonar` | Within about 15 seconds the status line stops saying *following*, the lock names the app, and the price keeps moving — no restart. |
 | 12.8 | | Reinstall the agent with the window still open: `./scripts/install_agent.sh` | The agent starts and **waits** (the window holds the lock and publishes no address); the window keeps driving. |
-| 12.9 | | Quit the window from the menu bar | Within about 15 seconds the lock names the agent and `curl -s http://127.0.0.1:8787/api/state` reports `"status": "live"`. |
+| 12.9 | | Quit the window from the menu bar | Within about 15 seconds the lock names the agent and `curl -s 127.0.0.1:8787/api/state` reports `"status": "live"`. |
 | 12.10 | | Compare the model-vs-market *n* and the closed count with the note from before 12.7 | *n* has grown by at most one per hour elapsed; no closed position appears twice. Two engines settling the same hour would show here. |
 | 12.11 | | `kill -9` the agent's pid while the window follows it | launchd restarts it; the window either keeps following or takes over — either way, within a minute one of them drives and the lock is not left stale. |
 
