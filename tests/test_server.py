@@ -163,21 +163,94 @@ def test_a_read_defaults_to_btc(daemon):
     assert live.reads == [("btc", "")]
 
 
-def test_a_malformed_body_does_not_take_the_route_down(daemon):
+def _raw(base, path, data=b"", method="POST", headers=None):
+    req = urllib.request.Request(f"{base}{path}", data=data, method=method,
+                                 headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+JSON = {"Content-Type": "application/json"}
+
+
+def test_a_malformed_body_is_refused_and_the_route_stays_up(daemon):
     base, live = daemon
-    req = urllib.request.Request(f"{base}/api/config", data=b"{not json",
-                                 method="POST")
-    with urllib.request.urlopen(req, timeout=5) as r:
-        assert r.status == 200
-    assert live.configured == [(None, None, None)], "an unreadable body reads as empty"
+    status, _ = _raw(base, "/api/config", b"{not json", headers=JSON)
+    assert status == 400 and live.configured == []
+    assert post(base, "/api/config", {})[0] == 200, "the route went down"
 
 
 def test_a_body_with_no_content_length_is_treated_as_empty(daemon):
     base, live = daemon
-    req = urllib.request.Request(f"{base}/api/config", data=b"", method="POST")
-    with urllib.request.urlopen(req, timeout=5) as r:
-        assert r.status == 200
-    assert live.configured == [(None, None, None)]
+    status, _ = _raw(base, "/api/config", b"", headers=JSON)
+    assert status == 200 and live.configured == [(None, None, None)]
+
+
+# --------------------------------------------------------------------------- #
+# Only this machine's own requests (audit security P1-1)
+# --------------------------------------------------------------------------- #
+def test_a_cross_site_text_plain_write_is_refused(book_daemon):
+    """What a web page can send without a preflight: no JSON content type."""
+    base, live = book_daemon
+    status, _ = _raw(base, "/api/trade", b'{"symbol":"AAA","direction":"LONG"}',
+                     headers={"Content-Type": "text/plain"})
+    assert status == 415 and live.trades == []
+
+
+def test_a_write_from_a_foreign_origin_is_refused(book_daemon):
+    base, live = book_daemon
+    status, _ = _raw(base, "/api/close", b'{"id":"p1"}',
+                     headers={**JSON, "Origin": "https://evil.example"})
+    assert status == 403 and live.closes == []
+
+
+def test_the_servers_own_origin_may_write(book_daemon):
+    base, live = book_daemon
+    status, _ = _raw(base, "/api/close", b'{"id":"p1"}', headers={**JSON, "Origin": base})
+    assert status == 200 and live.closes == ["p1"]
+
+
+@pytest.mark.parametrize("method,path", [("GET", "/api/state"), ("GET", "/"),
+                                         ("POST", "/api/trade")])
+def test_a_rebinding_host_is_refused_for_reads_and_writes(daemon, method, path):
+    """A DNS-rebinding page reaches 127.0.0.1 under its own domain name."""
+    base, live = daemon
+    status, body = _raw(base, path, b"{}" if method == "POST" else None, method=method,
+                        headers={**JSON, "Host": "evil.example:8787"})
+    assert status == 403 and b"unknown host" in body
+
+
+def test_an_oversized_or_non_object_body_is_refused(daemon):
+    base, live = daemon
+    assert _raw(base, "/api/config", b"[]", headers=JSON)[0] == 400
+    big = b'{"x": "' + b"a" * (70 * 1024) + b'"}'
+    assert _raw(base, "/api/config", big, headers=JSON)[0] == 413
+    assert live.configured == []
+
+
+def test_a_chunked_body_is_refused_rather_than_read_as_empty(daemon):
+    base, live = daemon
+    status, _ = _raw(base, "/api/config", None,
+                     headers={**JSON, "Transfer-Encoding": "chunked"})
+    assert status == 411 and live.configured == []
+
+
+def test_responses_carry_the_hardening_headers(daemon):
+    base, _ = daemon
+    _status, headers, _ = get(base, "/")
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["X-Frame-Options"] == "DENY"
+
+
+def test_the_daemon_refuses_to_listen_off_the_machine(monkeypatch):
+    def started(*a, **k):
+        raise AssertionError("started an engine for a non-loopback host")
+    monkeypatch.setattr(server, "Live", started)     # fail fast, never serve
+    with pytest.raises(SystemExit, match="loopback only"):
+        server.main(host="0.0.0.0", port=0)
 
 
 # --------------------------------------------------------------------------- #
@@ -435,3 +508,14 @@ def test_a_close_is_forwarded_to_the_book(book_daemon):
     status, got = post(base, "/api/close", {"id": "p1"})
     assert status == 200 and got["ok"]
     assert live.closes == ["p1"]
+
+
+def test_on_a_default_port_the_bare_host_is_its_own():
+    """Clients leave :80 out of the Host header; requiring it locked them out."""
+    class Fake:
+        server = type("S", (), {"server_address": ("127.0.0.1", 80)})()
+    assert {"127.0.0.1", "localhost", "127.0.0.1:80"} <= server.Handler._own_hosts(Fake())
+
+    class Other:
+        server = type("S", (), {"server_address": ("127.0.0.1", 8787)})()
+    assert "localhost" not in server.Handler._own_hosts(Other())
