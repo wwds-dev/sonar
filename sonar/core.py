@@ -92,6 +92,10 @@ class Live:
         # it and forwards instead: one writer, whoever holds the lock.
         self.following: str | None = None
         self._follow_failures = 0
+        # Whether the engine being followed can run an LLM read, as its own
+        # /api/config says. The read runs there, so this process's SDK and
+        # key are beside the point while following.
+        self._holder_llm: tuple[bool, str] | None = None
         self.horizon = horizon.get(horizon_name)
         paths.ensure_dirs()
         self.engine = Engine(paths.state_file(), risk=risk.get(risk_name))
@@ -467,8 +471,25 @@ class Live:
             self._rescan()
         return self.config()
 
+    def llm_available(self) -> tuple[bool, str]:
+        """Whether an LLM read can run — *where it would run*.
+
+        While following, the holder runs every read, so the answer is the
+        holder's, and a refusal names it: the launchd agent runs the
+        checkout's venv, the window runs the bundle, and the two need not
+        have the same SDK. Asking this process instead refused reads the
+        holder could run, and misattributed the holder's refusals to this one.
+        """
+        if not self.following:
+            return llm.available()
+        where = f"the engine at {self.following.split('//')[-1]} runs the read"
+        if self._holder_llm is None:
+            return False, f"{where}, and has not said yet whether it can"
+        ok, why = self._holder_llm
+        return (True, "ready") if ok else (False, f"{where}: {why}")
+
     def config(self) -> dict:
-        ok, why = llm.available()
+        ok, why = self.llm_available()
         return {
             "risk": self.risk.as_dict(),
             "horizon": self.horizon.as_dict(),
@@ -737,6 +758,10 @@ class Live:
             self.horizon = horizon.get(name)
         if "on" in (cfg.get("protocol") or {}):
             self.protocol_on = bool(cfg["protocol"]["on"])
+        llm_cfg = cfg.get("llm")
+        if isinstance(llm_cfg, dict) and "available" in llm_cfg:
+            self._holder_llm = (bool(llm_cfg["available"]),
+                                str(llm_cfg.get("detail") or ""))
 
     @staticmethod
     def _fetch(url: str, path: str):

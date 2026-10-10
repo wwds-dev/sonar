@@ -46,10 +46,12 @@ class FakeAgent:
         self.inst = {"n": 1, "recent": [], "pressure": {"level": "Light"}}
         self.risk_name, self.hz_name = "moderate", "week"
         self.trades, self.closes, self.configured, self.reads = [], [], [], []
+        self.llm = {"available": False,
+                    "detail": "anthropic SDK not installed (pip install anthropic)"}
 
     def config(self):
         return {"risk": {"name": self.risk_name}, "horizon": {"name": self.hz_name},
-                "protocol": {"on": self.protocol_on}}
+                "protocol": {"on": self.protocol_on}, "llm": dict(self.llm)}
 
     def configure(self, risk, hz, protocol=None):
         self.configured.append((risk, hz, protocol))
@@ -266,3 +268,35 @@ def test_stop_ends_the_wait(quick, tmp_path, monkeypatch):
     thread.join(timeout=5)
     assert not thread.is_alive()
     assert not live.engine_lock.held
+
+
+# --------------------------------------------------------------------------- #
+# The read runs on the holder, so the holder decides whether it can run
+# --------------------------------------------------------------------------- #
+def test_whether_a_read_can_run_is_the_holders_answer(following, monkeypatch):
+    """The launchd agent runs the checkout's venv and the window the bundle;
+    they need not have the same SDK. This process being able to run a read
+    says nothing about the process that will."""
+    live, fake, url = following
+    monkeypatch.setattr("sonar.llm.available", lambda: (True, "ready"))
+    ok, why = live.llm_available()
+    assert ok is False, "the follower's own SDK answered for the holder"
+    assert "anthropic SDK not installed" in why
+    assert url.split("//")[-1] in why, "a refusal must say where the read runs"
+    assert live.config()["llm"]["available"] is False
+
+
+def test_a_holder_that_can_read_lets_a_follower_without_the_sdk_ask(following, monkeypatch):
+    live, fake, _ = following
+    monkeypatch.setattr("sonar.llm.available",
+                        lambda: (False, "anthropic SDK not installed"))
+    fake.llm = {"available": True, "detail": "ready"}
+    assert _wait(lambda: live.llm_available() == (True, "ready"))
+
+
+def test_an_engine_that_drives_answers_for_itself(tmp_path, monkeypatch):
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
+    live = Live()
+    monkeypatch.setattr("sonar.llm.available", lambda: (False, "no key here"))
+    assert live.following is None
+    assert live.llm_available() == (False, "no key here")

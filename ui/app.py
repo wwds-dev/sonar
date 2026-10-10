@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
                                QVBoxLayout, QWidget)
 
 from sonar import horizon as hz_mod
-from sonar import llm, paths, playmaker, risk as risk_mod
+from sonar import paths, playmaker, risk as risk_mod
 from sonar import version as version_mod
 from sonar.playmaker import devig as pm_devig, staking as pm_staking
 from sonar.core import Live
@@ -3200,7 +3200,7 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(self._lab_index)
         self._lab_scroll.ensureWidgetVisible(self.read_panel)
 
-        ok, why = llm.available()
+        ok, why = self.live.llm_available()
         if not ok:
             self.read_panel.show_read({"subject": subject, "error": why}, False)
             return

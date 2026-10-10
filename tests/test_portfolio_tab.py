@@ -122,7 +122,7 @@ def test_the_hourly_model_lives_under_practice_now(window):
 
 
 def test_an_llm_read_brings_the_reader_to_the_model(window, monkeypatch):
-    monkeypatch.setattr("ui.app.llm.available", lambda: (False, "no key"))
+    monkeypatch.setattr("sonar.llm.available", lambda: (False, "no key"))
     window.tabs.setCurrentIndex(0)
     window._read("btc", "", "BTC/USD hourly up-or-down")
     assert window.tabs.currentIndex() == window._lab_index
