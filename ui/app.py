@@ -50,6 +50,7 @@ from sonar.core import Live
 from sonar import assets as asset_mod
 from sonar import news as news_mod
 from sonar import venues
+from sonar.portfolio import PENDING
 from sonar.assets import _W as ASSET_W
 
 from . import learn as learn_mod
@@ -496,6 +497,8 @@ def _open_by_band(buckets: list, open_rows: list) -> list:
     ages = [[] for _ in buckets]
     now = time.time()
     for row in open_rows:
+        if row.get("status") == PENDING:        # accepted, not filled: nothing is entered yet
+            continue
         score = row.get("confidence") or 0.0
         age = row.get("age_s")
         if age is None:
@@ -1989,6 +1992,9 @@ class MainWindow(QMainWindow):
                         f'  score {b["lo"]:>3}–{_band_top(b):<3}  n=0{still}')
             if n_open / (b["n"] + n_open) >= CENSORED_SHARE:
                 mostly_open.append(f'{b["lo"]}–{_band_top(b)}')
+        if cal.get("n_manual"):
+            rows.append(f"  {cal['n_manual']} closed by hand — not graded, and not in the "
+                        "counts above")
         if mostly_open:
             rows.append(f"  provisional: slow positions are missing from this grade — "
                         f"{CENSORED_SHARE * 100:.0f}% or more of the positions entered "

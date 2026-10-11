@@ -362,3 +362,19 @@ def test_my_trades_table_shows_the_open_share_too(window):
     finally:
         window.live.positions["open"].pop()
         window._refresh_book()
+
+
+def test_an_unfilled_order_is_not_an_entered_position(grade):
+    rows, nxt = grade([], [dict(_open(10, 3), status="PENDING")])
+    assert rows == ["no closed positions yet — nothing to grade"]
+    assert "provisional" not in nxt
+
+
+def test_my_trades_says_where_a_hand_close_went(window):
+    window.live.calibration["n_manual"] = 2
+    try:
+        window._refresh_book()
+        assert "2 closed by hand — not graded, and not in the counts above" in window.cal_table.text()
+    finally:
+        window.live.calibration["n_manual"] = 0
+        window._refresh_book()
