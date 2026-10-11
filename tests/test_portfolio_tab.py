@@ -23,6 +23,11 @@ ROWS = [{"symbol": "AAA", "name": "Alpha", "price": 100.0, "volatility": 0.02,
          "confidence": 60.0, "cls": "Equity", "spark": [96, 97, 99, 98, 100]},
         {"symbol": "BBB", "name": "Beta", "price": 50.0, "volatility": 0.03,
          "confidence": 40.0, "cls": "Equity", "spark": [52, 51, 50, 49, 50]}]
+# What the Screener needs on top to draw a row: refresh() draws the board in
+# every engine state since closing UX C-1, not only once the BTC poll is live.
+SCREEN = {"day_change": 0.01, "momentum": 0.05, "momentum_days": 5, "lean": "Normal",
+          "comp": {"momentum": .5, "volatility": .3, "news": .8, "catalyst": .2},
+          "data_age_s": 60.0, "plan": {"rr": 1.5, "p_profit": 0.4, "calibrated": False}}
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +49,7 @@ def window(tmp_path_factory):
     win.poll.quit(); win.poll.wait(3000)
     # What a scan would have left behind: the board, and the book marked on it.
     with live.lock:
-        live.assets = {"status": "live", "assets": [dict(r) for r in ROWS]}
+        live.assets = {"status": "live", "assets": [{**r, **SCREEN} for r in ROWS]}
     live._mark_book({"assets": [dict(r) for r in ROWS]})
     win.refresh()
     yield win

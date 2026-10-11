@@ -3461,7 +3461,15 @@ class MainWindow(QMainWindow):
         self._refresh_wire()
         self._sync_knobs()
 
-        if snap.get("status") == "read-only":
+        # The Screener and Big picture do not depend on the bitcoin feed: they
+        # draw whatever the engine has, whatever state the hourly poll is in.
+        # Gating them on it froze the core path on "Fetching prices…" for as
+        # long as Binance and Coinbase were unreachable (closing UX C-1).
+        status = snap.get("status")
+        self._refresh_cards(assets, read_only=status == "read-only")
+        self._refresh_macro(snap)
+
+        if status == "read-only":
             # Another SONAR holds the engine lock and cannot be followed (a
             # second window), or the one being followed stopped answering.
             # Say so plainly rather than showing a window that looks broken;
@@ -3469,13 +3477,18 @@ class MainWindow(QMainWindow):
             self._set_status("⚠  " + snap.get("detail", "another engine is running"))
             self.read_btn.setEnabled(False)
             return
-        if snap.get("status") != "live":
-            self._set_status(f'{snap.get("status", "…")} — first poll can take a moment')
+        if status == "error":
+            detail = " ".join(str(snap.get("detail") or "no reason given").split())
+            following = snap.get("following")
+            whose = (f'the engine at {following.split("//")[-1]}: ' if following else "")
+            self._set_status(f"⚠  {whose}bitcoin price poll failed ({detail[:140]}) — retrying. "
+                             "The Screener and Big picture do not depend on it.")
+            return
+        if status != "live":
+            self._set_status(f'{status or "…"} — first poll can take a moment')
             return
         self.read_btn.setEnabled(True)
         self._refresh_terminal(snap)
-        self._refresh_cards(assets)
-        self._refresh_macro(snap)
         if self.tray is not None:
             self.tray.update_state(snap)
 
@@ -3559,8 +3572,43 @@ class MainWindow(QMainWindow):
             self.mvm.setText("model vs market: no settled hours scored yet — "
                              f"fills in as hours resolve, traded or not{health}")
 
-    def _refresh_cards(self, assets: dict) -> None:
-        asig = (assets.get("generated"), assets.get("n"))
+    #: After this long with no board, "the first scan takes about a minute"
+    #: is no longer true and the placeholder says so.
+    ASSETS_LATE_S = 180
+
+    def _assets_empty_text(self, assets: dict, now: float,
+                           read_only: bool = False) -> str:
+        """What the Screener says when it has no rows: never "fetching" once
+        that has stopped being true (closing UX C-1)."""
+        if assets.get("error"):
+            # First: an old board's "filtered" or "fetching" is about a scan
+            # that is no longer the latest. Neutral wording — the failure may be
+            # after the prices arrived (marking the book, alerts).
+            return (f"The last scan failed ({assets['error'][:140]}). "
+                    "Trying again shortly.")
+        if assets.get("generated"):
+            if assets.get("priced") == 0:
+                return ("No prices came back from the market data source on the last "
+                        "scan. Trying again shortly.")
+            return "No instruments pass this risk profile's volatility filter."
+        if read_only:
+            return ("No board in this window: it is read-only, and the status "
+                    "line says why.")
+        waited = now - self._assets_since
+        if waited > self.ASSETS_LATE_S:
+            return (f"Still no prices after {int(waited // 60)} minutes: the first "
+                    "scan has not finished. It keeps trying.")
+        return self.ASSETS_LOADING
+
+    def _refresh_cards(self, assets: dict, read_only: bool = False) -> None:
+        now = time.time()
+        if read_only or getattr(self, "_assets_since", None) is None:
+            # A read-only window does not scan: its "still no prices after N
+            # minutes" clock starts when it may.
+            self._assets_since = now
+        empty = (self._assets_empty_text(assets, now, read_only)
+                 if not assets.get("assets") else None)
+        asig = (assets.get("generated"), assets.get("n"), empty)
         if asig != self._assets_sig:
             self._assets_sig = asig
             generated = float(assets.get("generated") or 0.0)
@@ -3570,11 +3618,8 @@ class MainWindow(QMainWindow):
             # object and a RuntimeError on the next tick.
             self._asset_rows = [AssetRow(a, self._read, self._trade, generated)
                                 for a in assets.get("assets", [])]
-            self._rebuild(self._assets_lay, list(self._asset_rows),
-                          "No instruments pass this risk profile's volatility filter."
-                          if assets.get("generated") else self.ASSETS_LOADING)
+            self._rebuild(self._assets_lay, list(self._asset_rows), empty or "")
         else:
-            now = time.time()
             for row in self._asset_rows:
                 row.update_age(now)
 
@@ -3585,7 +3630,9 @@ class MainWindow(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
         if not widgets:
-            lay.addWidget(label(empty_msg, "muted", theme.figure(10)))
+            # Wrapped: an error can make this long, and an unwrapped label
+            # sets the window's minimum width (see label()).
+            lay.addWidget(label(empty_msg, "muted", theme.figure(10), wrap=True))
         for wdg in widgets:
             lay.addWidget(wdg)
         lay.addStretch(1)
@@ -3610,7 +3657,20 @@ class MainWindow(QMainWindow):
             self.regime_lb.setText("—")
             self.regime_lb.setStyleSheet(f"color: {theme.MUTED.name()};")
             self.regime_sub.setText("")
-            on_long = (snap.get("horizon") or {}).get("macro")
+            # No figures without a regime: a dash beside the last known 10y and
+            # VIX read as current numbers once the feed behind them stopped.
+            self.regime_bar.set_parts({}, {})
+            for stat in self.macro_stats.values():
+                stat.set("—")
+            if snap.get("status") == "read-only":
+                # Nothing loads here and the horizon cannot be changed: say so,
+                # rather than "Loading…" or advice that would be refused.
+                self.macro_note.setText("The macro regime is not available in this "
+                                        "window: it is read-only, and the status "
+                                        "line says why.")
+                return
+            on_long = (snap.get("horizon") or {}).get("macro",
+                                                      self.live.horizon.macro)
             self.macro_note.setText(
                 "Loading the macro regime…" if on_long else
                 "The macro regime is only material at long horizons. "

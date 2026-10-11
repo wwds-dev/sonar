@@ -266,7 +266,7 @@ is saved with the state; delete the state file to reset to a clean $10,000.
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 1,785 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,811 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 

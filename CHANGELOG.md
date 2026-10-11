@@ -17,6 +17,10 @@ section lists what the v2 arc shipped.
 - `scripts/install_agent.sh` refuses a tree with uncommitted tracked changes (its own or a
   nested repo's) unless `--allow-dirty`; `--status` prints the running agent's build.
   (closing-sre-release P1-2, part 1; running the agent from a clean snapshot awaits the owner.)
+- A failed bitcoin poll no longer freezes the app: the Screener and Big picture keep drawing,
+  the status line says the poll failed and why, and the empty Screener says what is true (scan
+  failed, nothing priced, still waiting after N minutes, read-only) instead of "Fetching prices…"
+  forever. Big picture clears old figures when it has no regime. (closing UX C-1)
 
 ## v2.180 — 2026-10-10
 
