@@ -10,7 +10,7 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## Unreleased (not installed)
+## v2.195 — 2026-10-11 (not installed)
 
 - `/api/health` says which code the agent loaded: `build: {version, commit, dirty, source,
   nested}`, read at start, nested repos included; unknown is reported as `null`, not clean.
@@ -26,6 +26,23 @@ section lists what the v2 arc shipped.
   rewritten within a second; "applying — rescanning…" stays until the rescan is done, without
   hiding warnings. A setting a read-only window cannot change now says so.
   (closing UX C-2)
+
+## v2.187 — 2026-10-11
+
+**"Is the score right?" says how much of the book it could not grade.** The
+calibration report grades closed positions only, and the paper book has no
+time stop, so how long a position takes to close depends on its score and the
+closed set is the quick ones: on the live book 54% / 40% / 14% of the entries
+had closed across the 0–20 / 40–60 / 60–80 bands
+(`docs/audit/calibration-censoring-by-score.md`). Each band's line on the
+first screen now says how many positions were entered, how many are still open
+and their median age, and how many closed; when 40% or more of a band's
+entries are still open, the panel adds that the verdict is provisional because
+slow positions are missing from the grade. My trades' calibration table
+carries the same open counts and caveat. Only the readout changed:
+`calibration.report()`, its verdict text and the book are as they were, and the
+grade-by-cohort and time-stop options in the audit note remain the owner's
+call.
 
 ## v2.180 — 2026-10-10
 
