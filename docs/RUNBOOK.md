@@ -16,7 +16,10 @@ For the owner, at a terminal, when something looks wrong. Real money is out of s
 | Three versions | the checkout (`git log -1`), the installed app (`/Applications/SONAR.app`, About box), the running agent |
 
 The agent runs the **checkout's working tree**, not the installed app. Uncommitted edits load on
-any restart. Check `git status` before restarting it.
+any restart. Check `git status` before restarting it. `install_agent.sh` refuses a tree with
+uncommitted tracked changes (in it or in `sonar/macro`, `sonar/playmaker`) unless given
+`--allow-dirty`; `/api/health` reports the loaded code as `build: {version, commit, dirty, source,
+nested}`, read at the agent's start (`dirty: null` means it could not be told).
 
 ## 2. Is it healthy?
 
@@ -25,7 +28,7 @@ any restart. Check `git status` before restarting it.
 curl -s 127.0.0.1:8787/api/health
 ```
 
-Healthy: `"ok": true` and `"problems": []`. HTTP 503 means a problem: `poll` (no price for
+Healthy: `"ok": true`, `"problems": []`, and `build.dirty` false with the `build.commit` you expect. HTTP 503 means a problem: `poll` (no price for
 minutes), `settle` (no hour settled for hours) or `loop` (the engine loop ended). The agent posts
 a macOS notification after 10 minutes of a poll problem; that banner only reaches you at this Mac.
 

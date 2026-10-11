@@ -10,6 +10,14 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## Unreleased (not installed)
+
+- `/api/health` says which code the agent loaded: `build: {version, commit, dirty, source,
+  nested}`, read at start, nested repos included; unknown is reported as `null`, not clean.
+- `scripts/install_agent.sh` refuses a tree with uncommitted tracked changes (its own or a
+  nested repo's) unless `--allow-dirty`; `--status` prints the running agent's build.
+  (closing-sre-release P1-2, part 1; running the agent from a clean snapshot awaits the owner.)
+
 ## v2.180 — 2026-10-10
 
 **One day of review, then the fixes.** Builds v2.132 to v2.180 were all made
