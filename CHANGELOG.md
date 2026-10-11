@@ -10,7 +10,7 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## v2.195 — 2026-10-11 (not installed)
+## v2.198 — 2026-10-11 (not installed)
 
 - `/api/health` says which code the agent loaded: `build: {version, commit, dirty, source,
   nested}`, read at start, nested repos included; unknown is reported as `null`, not clean.
