@@ -609,13 +609,18 @@ class Live:
                 if isinstance(board, dict):
                     with self.lock:
                         self.assets = board
-            except Exception:
-                pass                      # the next mirror round shows what took
+            except Exception as exc:
+                # The next mirror round shows what took; the caller is told
+                # now, so the window can say the setting may not have applied.
+                return {**self.config(), "error":
+                        f"the engine at {url.split('//')[-1]} did not confirm it "
+                        f"({type(exc).__name__}: {exc})"}
             return self.config()
         if self._waiting_without_a_holder_to_follow():
             # A risk change saves the state file and the rescan marks the book;
             # neither is this window's to write while another engine drives.
-            return self.config()
+            return {**self.config(), "refused":
+                    "this window is read-only while another SONAR runs the engine"}
         changed = False
         if risk_name and risk.get(risk_name).name != self.risk.name:
             self.risk = risk.get(risk_name)

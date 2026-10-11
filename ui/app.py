@@ -61,6 +61,8 @@ from .worker import (BacktestThread, ConfigThread, PollThread, PropThread,
                      ReadThread, SportsMeasureThread)
 
 REFRESH_MS = 1000
+#: The status line's hold clock (a seam for tests; monotonic, not wall time).
+_now = time.monotonic
 # Opening size, before the screen gets a say. See MainWindow._fit_to_screen.
 # Wider than a 13" laptop on purpose: on a screen that has the room, the rail
 # opens with its names showing; _fit_to_screen clamps it on one that does not,
@@ -1483,7 +1485,7 @@ class MainWindow(QMainWindow):
         """
         page = paths.resource_base() / "static" / filename
         if not page.exists():
-            self._set_status(f"⚠  {what} not found at {page}")
+            self._set_status(f"⚠  {what} not found at {page}", hold_s=True)
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(page)))
 
@@ -3329,7 +3331,11 @@ class MainWindow(QMainWindow):
             return
         self.risk_box.setEnabled(False)
         self.hz_box.setEnabled(False)
-        self._set_status("applying — rescanning…")
+        # Not an unbounded hold: refresh()'s own ⚠ (read-only, a failed poll,
+        # health) must still get through during a long rescan. Its ordinary
+        # line says "applying" instead while this is pending.
+        self._config_pending = True
+        self._set_status(self.APPLYING, hold_s=True)
         self._cfg_thread = ConfigThread(
             self.live, self.risk_box.currentData(), self.hz_box.currentData(), self)
         self._cfg_thread.done.connect(self._config_done)
@@ -3344,19 +3350,30 @@ class MainWindow(QMainWindow):
         touched can disagree with the engine. Synced quietly, so setting the
         widget does not fire the action again."""
         if not (self._cfg_thread and self._cfg_thread.isRunning()):
-            i = self.risk_box.findData(self.live.risk.name)
-            if i >= 0 and i != self.risk_box.currentIndex():
-                self.risk_box.blockSignals(True)
-                self.risk_box.setCurrentIndex(i)
-                self.risk_box.blockSignals(False)
+            for box, name in ((self.risk_box, self.live.risk.name),
+                              (self.hz_box, self.live.horizon.name)):
+                i = box.findData(name)
+                if i >= 0 and i != box.currentIndex():
+                    box.blockSignals(True)
+                    box.setCurrentIndex(i)
+                    box.blockSignals(False)
         if self.protocol_box.isChecked() != self.live.protocol_on:
             self.protocol_box.blockSignals(True)
             self.protocol_box.setChecked(self.live.protocol_on)
             self.protocol_box.blockSignals(False)
 
-    def _config_done(self, _cfg: dict) -> None:
+    APPLYING = "applying — rescanning…"
+
+    def _config_done(self, cfg: dict) -> None:
         self.risk_box.setEnabled(True)
         self.hz_box.setEnabled(True)
+        self._config_pending = False
+        why = cfg.get("refused") or cfg.get("error")
+        if why:
+            self._set_status(f"⚠  setting not applied: {why}", hold_s=True)
+            if self._toast_target is None:
+                # Not over a live Undo: the trade it offers is unrelated.
+                self._warn(f"Setting not applied: {why}")
         for which in ("markets", "assets"):
             setattr(self, f"_{which}_sig", None)      # force a rebuild
 
@@ -3401,19 +3418,24 @@ class MainWindow(QMainWindow):
         this would then belong on a thread."""
         result = self.live.trade(symbol, direction)
         self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"]
-                         + "  ·  paper money only")
+                         + "  ·  paper money only", hold_s=True)
         pos = result.get("position") or {}
         if result["ok"] and pos.get("id"):
             self._toast(f"{result['message']} — paper money only", pos["id"], "trade")
+        elif not result["ok"]:
+            self._warn(f"Not traded: {result['message']}")
         self._assets_sig = None          # force the board to redraw
         self._book_sig = None
         self._portfolio_sig = None
 
     def _close_position(self, pos_id: str) -> None:
         result = self.live.close_position(pos_id)
-        self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"])
+        self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"],
+                         hold_s=True)
         if result["ok"]:
             self._toast(result["message"], pos_id, "close")
+        else:
+            self._warn(f"Not closed: {result['message']}")
         self._book_sig = None
         self._portfolio_sig = None
 
@@ -3485,7 +3507,8 @@ class MainWindow(QMainWindow):
                              "The Screener and Big picture do not depend on it.")
             return
         if status != "live":
-            self._set_status(f'{status or "…"} — first poll can take a moment')
+            self._set_status(self.APPLYING if getattr(self, "_config_pending", False)
+                             else f'{status or "…"} — first poll can take a moment')
             return
         self.read_btn.setEnabled(True)
         self._refresh_terminal(snap)
@@ -3499,6 +3522,7 @@ class MainWindow(QMainWindow):
         who = (f'following the engine at {following.split("//")[-1]} · '
                if following else "")
         self._set_status(
+            self.APPLYING if getattr(self, "_config_pending", False) else
             f'{who}risk {self.live.risk.name} · horizon {hz.name} · '
             f'{assets.get("n", 0)} assets · paper money only')
         # A dead loop leaves its last snapshot looking live; say so instead.
@@ -3981,13 +4005,24 @@ class MainWindow(QMainWindow):
             self._bar_status.setVisible(self.tabs.is_collapsed())
         return self._bar_status
 
-    def _set_status(self, text: str) -> None:
+    def _set_status(self, text: str, hold_s: float | bool = False) -> None:
+        """Write the status line. ``hold_s`` keeps it for that many seconds
+        (True: as long as a toast) against refresh()'s once-a-second rewrite,
+        which used to erase a refused trade's warning within a second (closing
+        UX C-2). A later held message replaces an earlier one at once."""
+        now = _now()
+        if hold_s is False:
+            if now < getattr(self, "_status_hold_until", 0.0):
+                return
+        else:
+            span = self.TOAST_MS / 1000 if hold_s is True else float(hold_s)
+            self._status_hold_until = now + span
         self.status.setText(text)
         self._status_bar_parts().setText(text)
 
     def _sync_status_bar(self) -> None:
         self._status_bar_parts()
-        toast = self._toast_target is not None
+        toast = not self._toast_label.isHidden()
         self._bar_status.setVisible(self.tabs.is_collapsed())
         self.statusBar().setVisible(self.tabs.is_collapsed() or toast)
 
@@ -4004,6 +4039,17 @@ class MainWindow(QMainWindow):
         self._toast_timer.start(self.TOAST_MS)
         self._sync_status_bar()
 
+    def _warn(self, text: str) -> None:
+        """A refusal, held as long as a success's toast but with nothing to
+        undo: the user who clicked and looked away still sees it."""
+        self._status_bar_parts()
+        self._toast_target = None
+        self._toast_label.setText(f"⚠  {text}")
+        self._toast_label.show()
+        self._toast_undo.hide()
+        self._toast_timer.start(self.TOAST_MS)
+        self._sync_status_bar()
+
     def _toast_done(self) -> None:
         self._toast_target = None
         self._toast_label.hide()
@@ -4017,7 +4063,10 @@ class MainWindow(QMainWindow):
         result = self.live.undo(pos_id, kind)
         self._toast_timer.stop()
         self._toast_done()
-        self._set_status(("↶  " if result["ok"] else "⚠  ") + result["message"])
+        self._set_status(("↶  " if result["ok"] else "⚠  ") + result["message"],
+                         hold_s=True)
+        if not result["ok"]:
+            self._warn(f"Not undone: {result['message']}")
         self._assets_sig = self._book_sig = self._portfolio_sig = None
 
     def _sync_rail(self) -> None:

@@ -21,6 +21,11 @@ section lists what the v2 arc shipped.
   the status line says the poll failed and why, and the empty Screener says what is true (scan
   failed, nothing priced, still waiting after N minutes, read-only) instead of "Fetching prices…"
   forever. Big picture clears old figures when it has no regime. (closing UX C-1)
+- A refused trade, a failed close or undo, and a setting that did not apply each get a ⚠ message
+  in the window's bar for 8 seconds, and the status line keeps an action's result instead of being
+  rewritten within a second; "applying — rescanning…" stays until the rescan is done, without
+  hiding warnings. A setting a read-only window cannot change now says so.
+  (closing UX C-2)
 
 ## v2.180 — 2026-10-10
 
