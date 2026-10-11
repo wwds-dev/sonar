@@ -36,6 +36,9 @@ unchanged behaviour. Say which phases were skipped and why.
 - Full suite green in every mode; new logic mutation-checked.
 - Reviewer P0/P1 findings fixed or explicitly deferred by the owner.
 - CHANGELOG entry; docs updated; version bumped per the app's versioning doc.
+- CI is green and the tooling baseline (`docs/company/tooling-baseline.md`, from `/harden`) has not
+  regressed: no new lint/type findings, coverage at or above the floor, no secrets, no new
+  vulnerable dependency.
 
 ## Rules for agents
 - **Write to files, not chat.** A finding that is not in a file did not happen.
@@ -52,6 +55,12 @@ unchanged behaviour. Say which phases were skipped and why.
   current practice, refreshed with `install.sh --update`; never hand-edit them in an app.
   `status: baseline` or `last-reviewed` over 90 days old means stale: say so.
 - The company's radar proposes playbook changes; only the owner approves them.
+
+## Machine-checked gates
+`/harden <app>` wires CI, lint, coverage, secret and dependency scanning into an app (see
+`docs/company/tooling/README.md`). These checks, not an agent's opinion, decide whether a build
+fails. What stays with the owner: branch protection, repo secrets, the GitHub connector, and
+activating the git hook.
 
 ## Where things live
 `docs/specs/` specs · `docs/adr/` decisions · `docs/audit/` review reports ·
