@@ -10,6 +10,23 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## Unreleased (not installed)
+
+- `/api/health` says which code the agent loaded: `build: {version, commit, dirty, source,
+  nested}`, read at start, nested repos included; unknown is reported as `null`, not clean.
+- `scripts/install_agent.sh` refuses a tree with uncommitted tracked changes (its own or a
+  nested repo's) unless `--allow-dirty`; `--status` prints the running agent's build.
+  (closing-sre-release P1-2, part 1; running the agent from a clean snapshot awaits the owner.)
+- A failed bitcoin poll no longer freezes the app: the Screener and Big picture keep drawing,
+  the status line says the poll failed and why, and the empty Screener says what is true (scan
+  failed, nothing priced, still waiting after N minutes, read-only) instead of "Fetching prices…"
+  forever. Big picture clears old figures when it has no regime. (closing UX C-1)
+- A refused trade, a failed close or undo, and a setting that did not apply each get a ⚠ message
+  in the window's bar for 8 seconds, and the status line keeps an action's result instead of being
+  rewritten within a second; "applying — rescanning…" stays until the rescan is done, without
+  hiding warnings. A setting a read-only window cannot change now says so.
+  (closing UX C-2)
+
 ## v2.180 — 2026-10-10
 
 **One day of review, then the fixes.** Builds v2.132 to v2.180 were all made
