@@ -79,5 +79,6 @@ before installing.
 ## 6. Open owner decisions
 
 Developer ID signing and notarization; where the off-disk copy really leaves this disk (the
-Google Drive job `com.andreas.gdrive-backup` failed to start on 2026-10-11); running the agent from
-a clean snapshot instead of the working tree; an always-on host; an off-machine alarm channel.
+Google Drive job `com.andreas.gdrive-backup` failed to start on 2026-10-11); an always-on host; an off-machine
+alarm channel. (Decided 2026-10-11: the agent will run from the installed `SONAR.app`, option A
+in `docs/specs/t2-1-agent-provenance.md`; not built yet, so it still runs the working tree.)

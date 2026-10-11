@@ -1,7 +1,8 @@
 # Spec: the agent says which code it runs, and will not be installed on a dirty tree
 
 - Status: part 1 built (branch `p1-2-agent-provenance`); part 2 draft
-- Owner approval: part 1 pending review of the branch; **part 2 (clean snapshot) GATE, pending**
+- Owner approval: part 1 merged to master 2026-10-11; **part 2: owner chose option A (the
+  installed bundle) on 2026-10-11** — not built yet; the drill in the verification plan comes first
 
 ## Problem
 `docs/audit/closing-sre-release.md` P1-2. The launchd agent `com.netrunner3000.sonar` runs
@@ -60,7 +61,8 @@ file. That already happens today (follow mode tolerates it); `/api/health.build`
 app's About box makes it visible.
 
 ## Risks and open questions
-- **Owner decision:** A, B or C, or keep part 1 only for the 30-day run.
+- **Owner decision (2026-10-11): A.** Build it via the pipeline (architect for the
+  bootout/bootstrap-around-install ordering, security for the launchd binary), drill first.
 - For A: is the frozen binary allowed to bind 127.0.0.1:8787 and post notifications from
   launchd with an ad hoc signature? Needs a drill before switching.
 
