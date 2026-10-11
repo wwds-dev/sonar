@@ -263,7 +263,7 @@ is saved with the state; delete the state file to reset to a clean $10,000.
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 1,763 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,811 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -341,6 +341,8 @@ static/          index.html (BTC terminal), docs.html (the manual), testplan.htm
 tests/           the suite (see TESTING.md)      scripts/   build_testplan.py, install_agent.sh, stamp_version.py
 packaging/       the launchd plist              docs/      specs, ADRs, audit reports, playbooks, ROADMAP, history
 research_results/, docs_attention_study.json     outputs of the studies, kept as their record
+AGENTS.md      agent instructions: the engineering pipeline (roles, gates, definition of done)
+CLAUDE.md      Claude Code instructions: imports AGENTS.md, points to docs/company/app-context.md
 ```
 
 ### API
