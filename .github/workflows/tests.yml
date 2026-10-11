@@ -41,7 +41,7 @@ jobs:
           repository: wwds-dev/sonar_playmaker
           ref: 1162ba5e46c737cebf1edc21c7f74beacb825d5c
           path: sonar/playmaker
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Qt runtime libraries
