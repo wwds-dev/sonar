@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import html
 import os
+import statistics
 import sys
 import time
 
@@ -465,6 +466,45 @@ def _band_top(bucket: dict) -> int:
     80–101 so a score of exactly 100 falls inside a half-open range; a score
     never exceeds 100, so it reads "80–100" — "101" on screen looks like a bug."""
     return min(bucket["hi"], 100)
+
+
+#: A score band with this share or more of its entered positions still open is
+#: read with a caveat. The book has no time stop, so how long a position takes
+#: to close depends on its score, and the closed ones are the quick ones —
+#: see docs/audit/calibration-censoring-by-score.md.
+CENSORED_SHARE = 0.40
+
+
+def _open_span(seconds: float) -> str:
+    """How long a position has been open, in the unit a book that keeps
+    positions for days is read in. Never "0": under an hour says so."""
+    if seconds < 3600:
+        return "under an hour"
+    if seconds < 86400:
+        hours = round(seconds / 3600)
+        return f"{hours} hour{'' if hours == 1 else 's'}"
+    days = round(seconds / 86400, 1)
+    return "1 day" if days == 1.0 else f"{days:.1f} days"
+
+
+def _open_by_band(buckets: list, open_rows: list) -> list:
+    """For each calibration band, in order: how many open positions were
+    entered on a score inside it, and their median age in seconds (None when
+    there are none). Banded as `calibration.buckets` bands the closed ones
+    (lo <= score < hi), so a band's closed and open counts describe the same
+    set of entries."""
+    ages = [[] for _ in buckets]
+    now = time.time()
+    for row in open_rows:
+        score = row.get("confidence") or 0.0
+        age = row.get("age_s")
+        if age is None:
+            age = now - (row.get("opened_at") or now)
+        for i, b in enumerate(buckets):
+            if b["lo"] <= score < b["hi"]:
+                ages[i].append(float(age))
+                break
+    return [(len(a), statistics.median(a) if a else None) for a in ages]
 
 
 def _money(v: float, signed: bool = False, places: int = 2) -> str:
@@ -1895,7 +1935,7 @@ class MainWindow(QMainWindow):
         self.cal_verdict = label("—", font=theme.text(12))
         self.cal_verdict.setWordWrap(True)
         cl.addWidget(self.cal_verdict)
-        self.cal_table = label("", "muted", theme.figure(10))
+        self.cal_table = label("", "muted", theme.figure(10), wrap=True)
         cl.addWidget(self.cal_table)
         self.bt_result = label("", "muted", theme.figure(10))
         self.bt_result.setWordWrap(True)
@@ -1934,13 +1974,25 @@ class MainWindow(QMainWindow):
 
         self.cal_verdict.setText(cal.get("verdict", "—"))
         rows = []
-        for b in cal.get("buckets", []):
-            if not b["n"]:
+        mostly_open = []
+        buckets = cal.get("buckets", [])
+        for b, (n_open, age) in zip(buckets, _open_by_band(buckets, pos.get("open") or [])):
+            if not b["n"] and not n_open:
                 continue
             hr = "—" if not b["enough"] else f'{b["hit_rate"]*100:.0f}%'
             note = "" if b["enough"] else f'  (need {cal.get("min_sample", 20)})'
+            still = (f"  still open {n_open} (median age {_open_span(age)})"
+                     if n_open else "")
             rows.append(f'  score {b["lo"]:>3}–{_band_top(b):<3}  n={b["n"]:<4} '
-                        f'hit {hr:<5} vs advertised {b["expected"]*100:.0f}%{note}')
+                        f'hit {hr:<5} vs advertised {b["expected"]*100:.0f}%{note}{still}'
+                        if b["n"] else
+                        f'  score {b["lo"]:>3}–{_band_top(b):<3}  n=0{still}')
+            if n_open / (b["n"] + n_open) >= CENSORED_SHARE:
+                mostly_open.append(f'{b["lo"]}–{_band_top(b)}')
+        if mostly_open:
+            rows.append(f"  provisional: slow positions are missing from this grade — "
+                        f"{CENSORED_SHARE * 100:.0f}% or more of the positions entered "
+                        f"at scores {', '.join(mostly_open)} are still open")
         self.cal_table.setText("\n".join(rows) or
                                "  no closed positions yet — nothing to grade")
 
@@ -2041,7 +2093,9 @@ class MainWindow(QMainWindow):
         gl.addLayout(gh)
         self.grade_verdict = label("—", font=theme.text(12), wrap=True)
         gl.addWidget(self.grade_verdict)
-        self.grade_rows = label("", "muted", theme.figure(10))
+        # Wraps: a band's line now carries its open count and age as well, and
+        # an unwrapped label that long sets a floor under the window's width.
+        self.grade_rows = label("", "muted", theme.figure(10), wrap=True)
         gl.addWidget(self.grade_rows)
         self.grade_next = label("", "faint", theme.figure(9), wrap=True)
         gl.addWidget(self.grade_next)
@@ -2115,21 +2169,39 @@ class MainWindow(QMainWindow):
         self._curve_sig = None
         return w
 
-    def _refresh_grade(self, cal: dict, closed: list) -> None:
+    def _refresh_grade(self, cal: dict, closed: list, open_rows: list) -> None:
         """The calibration verdict in the words the manual uses (§10), plus
-        what the verdict still lacks. Reads the same report My trades does."""
+        what the verdict still lacks. Reads the same report My trades does.
+
+        The report grades only positions that have closed, and the book has no
+        time stop, so the grade is made of the quick ones. Each band's line
+        therefore also says how many of its entries are still open and how old
+        they are, and a band that is mostly open is named in the caveat.
+        `closed` is only the latest forty rows; the closed count per band is
+        the report's, which covers the whole book."""
         n = cal.get("n_settled", 0)
         need = cal.get("min_sample", 20)
         self.grade_verdict.setText(cal.get("verdict") or "—")
         rows = []
-        for b in cal.get("buckets", []):
-            if not b.get("n"):
+        mostly_open = []
+        buckets = cal.get("buckets", [])
+        for b, (n_open, age) in zip(buckets, _open_by_band(buckets, open_rows)):
+            n_closed = b.get("n", 0)
+            entered = n_closed + n_open
+            if not entered:
                 continue
-            wins = round(b["hit_rate"] * b["n"])
-            note = "" if b.get("enough") else f"   (a band needs {need} to count)"
-            rows.append(f'scores {b["lo"]}–{_band_top(b)}:  {b["n"]} closed · {wins} won '
-                        f'({b["hit_rate"]*100:.0f}%) · the plan promised '
-                        f'{b["expected"]*100:.0f}%{note}')
+            still = (f"{n_open} still open (median age {_open_span(age)})"
+                     if n_open else "none still open")
+            line = (f'scores {b["lo"]}–{_band_top(b)}:  {entered} entered, '
+                    f'{still} · {n_closed} closed')
+            if n_closed:
+                wins = round(b["hit_rate"] * n_closed)
+                note = "" if b.get("enough") else f"   (a band needs {need} to count)"
+                line += (f' · {wins} won ({b["hit_rate"]*100:.0f}%) · the plan '
+                         f'promised {b["expected"]*100:.0f}%{note}')
+            rows.append(line)
+            if n_open / entered >= CENSORED_SHARE:
+                mostly_open.append(f'{b["lo"]}–{_band_top(b)}')
         if cal.get("enough") and cal.get("overall_hit_rate") is not None:
             line = (f'all {n}:  {cal["overall_hit_rate"]*100:.0f}% won against '
                     f'{(cal.get("advertised_rate") or 0)*100:.0f}% promised')
@@ -2141,11 +2213,19 @@ class MainWindow(QMainWindow):
         self.grade_count.setText(f"{n} graded" if n else "")
         manual = cal.get("n_manual", 0)
         if manual:
-            rows.append(f"{manual} closed by hand — not graded: the odds are about "
-                        "reaching the target or the stop")
+            rows.append(f"{manual} closed by hand — not graded, and not in the counts "
+                        "above: the odds are about reaching the target or the stop")
             self.grade_rows.setText("\n".join(rows))
 
         parts = []
+        if mostly_open:
+            where = (mostly_open[0] if len(mostly_open) == 1 else
+                     ", ".join(mostly_open[:-1]) + " and " + mostly_open[-1])
+            lead = ("the verdict is provisional" if cal.get("enough")
+                    else "any verdict is provisional")
+            parts.append(f"{lead}: slow positions are missing from the grade — "
+                         f"{CENSORED_SHARE * 100:.0f}% or more of the positions "
+                         f"entered at scores {where} are still open")
         if n < need:
             parts.append(f"{n} of the {need} closed positions a verdict needs — "
                          f"{need - n} to go")
@@ -2221,7 +2301,7 @@ class MainWindow(QMainWindow):
         st = pos.get("stats") or {}
         if not st:
             return
-        self._refresh_grade(cal, pos.get("closed") or [])
+        self._refresh_grade(cal, pos.get("closed") or [], pos.get("open") or [])
         pnl = st.get("total_pnl", 0.0)
         self.pstats["p&l now"].set(_money(pnl, signed=True), theme.pnl_color(pnl))
         self.plines["p&l now"].setText(

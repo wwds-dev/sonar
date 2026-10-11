@@ -41,6 +41,11 @@ closed ones ever got — the survivors are the slow ones.
 Recommendation: 1 now (no behaviour change), decide 2 vs 3 with `model-validator` — the QA-11/QA-13 session
 already has `calibration.py` and `docs/adr/0001` open, so route it there rather than editing in parallel.
 
+**2026-10-11: option 1 built for the landing panel** (v2.187, branch `claude/happy-visvesvaraya-84b4ef`, not merged;
+My trades does not show it yet). Each band's line gives entered / still open (median age) / closed, and the panel
+calls the verdict provisional while any band has 40% or more of its entries open. `calibration.report()` and its
+verdict text are untouched. Options 2 and 3 are still open.
+
 ## Reproduce
 ```
 .venv/bin/python - <<'EOF'
