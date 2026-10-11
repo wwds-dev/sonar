@@ -10,6 +10,61 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.180 — 2026-10-10
+
+**One day of review, then the fixes.** Builds v2.132 to v2.180 were all made
+on 2026-10-10 and are recorded here as one entry, by theme, not build by build.
+The first internal audit (eight roles, `docs/audit/`) found no money-path
+defect and a list of ways the paper record could be wrong or silent. Every P0
+and P1 finding is fixed; the product was defined; most P2 items are done.
+
+**The record cannot silently go wrong**
+- The paper book and the engine are written whole from any thread (locks and
+  per-writer temp files), and a window taking over from the agent no longer
+  writes its launch-time book over the agent's. The engine lock survives
+  races, reused pids and malformed files.
+- The fair-odds warm-up is chart history, not money: the book's P&L is
+  corrected on load and the old figure is kept beside the file.
+- A past hour's candle no longer voids a live position. A position the risk
+  filter hides is still priced, watched and closed at its own price.
+- The hourly market is found in any locale and on the night the clocks go
+  back. The hourly σ is the estimator the study measured, on whole and fresh
+  history.
+- Calibration is a report, never an input: the track record no longer moves
+  P(profit). Research claims say "not detected", not "absent".
+
+**The agent says when it stops**
+- A health check (`/api/health`, 503 when unhealthy), a watchdog that exits so
+  launchd restarts a dead engine loop, and a macOS notification when polling or
+  settling stalls. Failed polls are logged and counted instead of swallowed.
+- The price poll never waits on the scan, the σ fetch or FRED.
+- The local API answers only this machine's own requests (Host, Origin and
+  JSON content-type checks, a body-size cap, a socket timeout).
+- The order guard fails closed on NaN and on an unwritable audit log; untrusted
+  feed and model text stays text.
+
+**Backups and build**
+- A second copy of the book goes off its own disk (`SONAR_BACKUP_DIR` or a
+  `backup-to` file, 30 kept). A restore from it was drilled once.
+- CI installs from a hashed `requirements.lock` and checks out the nested
+  repos at pinned commits. The built app's ad-hoc seal survives its version
+  stamp, and a build whose git check fails is stamped dirty, not clean.
+
+**What you see**
+- The product is defined (`docs/specs/v1-product.md`): a notability scanner
+  and an honest paper book, for the owner. The two experiments sit under a
+  **Lab** heading at the foot of the rail.
+- Status at any window width, a 30-second **undo** after a trade or close, and
+  a first-run **Start here** card. The Screener says it is loading; practice
+  money is always said; "edge" waits for proof. My trades and News say what
+  they are waiting for; Practice, Sports and Macro use plain wording.
+- The README is 386 lines (was 1,105); the HTTP API table is `docs/api.md`;
+  MIT licence.
+
+**Not done:** no signed or notarized build, no second-machine install, and
+the Google Drive leg of the backup was never tested. The closing review of
+2026-10-11 (`docs/audit/closing-*.md`) lists what remains.
+
 ## v2.131 — 2026-10-08
 
 **"Is the score right?" on the first screen.** The question the app exists

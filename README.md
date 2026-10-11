@@ -22,7 +22,7 @@ The full primer (about 25 terms, no finance background assumed) is **§1 of the 
 |---|---|
 | **Paper trading** | Doing everything a trader does with imaginary money, to test an idea without risking anything. Everything in SONAR is paper. |
 | **R:R** | Reward divided by risk. A target 15% away with a stop 10% away is 1.5. A bigger number sounds better and is not free: it lowers the hit rate by the same proportion. |
-| **P(profit)** | The chance a position reaches its target before its stop. Here it is pinned at the driftless baseline `1/(1+R:R)` until closed positions say otherwise. |
+| **P(profit)** | The chance a position reaches its target before its stop. Here it is pinned at the driftless baseline `1/(1+R:R)`. The track record is reported beside it and never changes it. |
 | **Expected value (EV)** | What you would win or lose on average per attempt if you repeated a bet forever. Here it is zero before costs and negative after them. |
 | **Calibration** | Whether the numbers mean what they say: of everything called 40% likely, did about 40% happen? |
 | **Brier score** | A mark out of one for a set of probability guesses; lower is better. 0 is perfect foresight, 0.25 is a coin flip on everything. |
@@ -52,7 +52,7 @@ one this README and `static/docs.html` use (`ui/tabs.py` paints both).
 | **My trades**  <sub>BOOK</sub> | Open paper positions, the calibration table, and the backtest button | — |
 | **Big picture**  <sub>MACRO</sub> | Regime: curve, VIX, real rates, unemployment | No |
 | **Learn** | The manual and glossary **inside the app** — `static/docs.html` rendered by Qt (`ui/learn.py`), with a contents list and a search box | — |
-| **Practice**  <sub>LAB</sub> | Replay the plan over real bars and compare the realised hit rate with the barrier maths; attribute the score component by component; **Replay** real history one setup at a time with the future hidden. At its foot, the **hourly BTC up/down model**, graded against Polymarket every hour | **Yes** — the hourly model is the only independent one |
+| **Practice**  <sub>LAB</sub> | Replay the plan over real bars and compare the realised hit rate with the barrier maths; attribute the score component by component; **Replay** real history one setup at a time with the future hidden. At its foot, the **hourly BTC up/down model**, graded against Polymarket every hour | **Yes**, as a prediction graded every hour — no edge shown so far |
 | **Sports**  <sub>PLAYMAKER</sub> | Prop pricing across **seven sports** (NFL, College Football, NBA, MMA/UFC, International Football, Golf, Cycling): paste books' prices, remove the margin three ways, find which book is out of line with its peers; an LLM read is commentary only | — |
 
 Playmaker is `sonar/playmaker/` (its own nested git repo) plus its tab in `ui/app.py`. A language model's
@@ -68,7 +68,7 @@ zero stake for a narrative one. `sonar/playmaker/MODELS.md` surveys the models; 
 | Equities/indices/FX/commodities — Yahoo Finance | The P&L |
 | News — 24 feeds across nine press blocs: Reuters, AP, Bloomberg, FT, BBC, MarketWatch, Yahoo, NPR, CNBC, Ars Technica, TechCrunch, The Verge, plus Al Jazeera, Anadolu, Global Times, SCMP, TASS, Times of India, The Hindu, Japan Times, AllAfrica and Folha | |
 
-**No** authentication, **no** write access anywhere, and nothing here can move real money.
+The public data sources need no authentication, SONAR writes to none of them, and nothing here can move real money.
 
 The probability model, the asset screener and the paper engine make **zero AI/LLM calls** — that is
 all local arithmetic over public data, and it needs no API key. The one exception is the
@@ -131,8 +131,8 @@ P(profit) = 1 / (1 + R:R)          EV = P·target − (1−P)·stop = 0
 ```
 
 They are the same number twice. A fatter target buys a proportionally lower hit rate and expected
-value multiplies out to **exactly zero**. Only *drift* — a real edge — creates profit, and drift is
-only ever supplied by `sonar.calibration` from positions that actually closed. Never assumed.
+value multiplies out to **exactly zero**. Only *drift* — a real edge — creates profit, and SONAR assumes none: `sonar.calibration` grades the
+positions that actually closed against this baseline as a report, and never feeds the result back.
 That zero is **gross**: net of spread, commission and slippage the expectation is `−c` per trade, and
 `sonar/costs.py` measures `c` from the execution audit log (€1.05 per round trip, 5.2% of the €20 risked,
 in the worked example in [CONFIDENCE.md](CONFIDENCE.md) §13).
@@ -241,8 +241,11 @@ Runs `claude-opus-5` at `medium` effort, on demand for one opportunity — never
 
 SONAR is a native macOS app — PySide6 widgets, every chart drawn with `QPainter`. There is no
 web view, which is why the bundle is ~98MB rather than ~300MB. It needs **Python 3.11 or newer**
-and [`uv`](https://docs.astral.sh/uv/) (`brew install uv`); Linux and Windows are untested and
-unsupported. Keys, when you want them, go in a `.env` beside `main.py` (copy `.env.example`) — never in the repo.
+and [`uv`](https://docs.astral.sh/uv/) (`brew install uv`); Linux runs the test suite in CI but is
+otherwise unsupported; Windows is untested. Keys, when you want them, go in a `.env` beside `main.py` (copy `.env.example`) — never in the repo.
+
+A fresh clone also needs two nested repos that are gitignored here: `sonar/macro` (`wwds-dev/sonar_macro`) and
+`sonar/playmaker` (`wwds-dev/sonar_playmaker`). `main.py` imports both at start-up, so clone each into that path first.
 
 ```bash
 uv venv .venv && uv pip install -r requirements.txt
@@ -294,7 +297,8 @@ were priced for. The full notes are in [docs/history/uptime-notes.md](docs/histo
   mirroring the agent's snapshot over localhost and handing every write to it, and takes over the moment the lock
   is free. The status line says *following the engine at 127.0.0.1:8787* while this is so.
 - **The run watches itself.** The hourly model's panel carries the run's vital signs; two silent hours always
-  means a stall, and the menu-bar item says so. State files keep a daily rotating backup (last seven days).
+  means a stall, and the menu-bar item says so. State files keep a daily rotating backup (last seven days) beside themselves, and a second copy (last 30 days)
+  in the directory named by `SONAR_BACKUP_DIR` or by a `backup-to` file in the data directory. Point it at another disk.
 - **Protocol mode** (a checkbox on My trades, off by default) opens fixed-small paper positions on the five
   highest- and five lowest-confidence rows once a day, direction by **coin flip**, so the calibration table fills
   without discretion. Turning it off leaves open positions to resolve.

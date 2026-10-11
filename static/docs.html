@@ -349,7 +349,7 @@
         bet with its own practice cash — separate from yours — and grades
         itself against the market on <em>every</em> hour, traded or not (§4).
         It was the page the app opened on, as <b>Terminal</b>, until Oct 2026.</td>
-      <td><b class="up">Yes</b> — the hourly model is the only independent one</td></tr>
+      <td><b class="up">Yes</b>, as a prediction graded every hour — no edge shown so far</td></tr>
     <tr><td>Sports<div class="muted">was <b>Playmaker</b></div></td>
       <td>Sports prop pricing across seven sports — NFL, College Football,
         NBA, MMA (UFC), International Football, Golf and Cycling. Paste what
@@ -745,9 +745,9 @@ APCA_API_SECRET_KEY=...</code></pre>
       rank correlation with an error bar rather than eyeballed buckets.</li>
   </ul>
   <div class="callout warn"><b>None of that has happened yet.</b> The Lab has
-    never reported a directional component as KEEP on a full run, calibration
-    has zero closed positions of the twenty it needs, and the model-vs-market
-    log has zero scored hours of its hundred. The honest state of this
+    never reported a directional component as KEEP on a full run, the calibration
+    table needs twenty closed positions before it reports anything, and the
+    model-vs-market log needs a hundred scored hours. The honest state of this
     app is that its own tools have not found an edge in it — which is worth
     far more than a tool that never looked.</div>
 
@@ -898,10 +898,12 @@ python main.py              # the app
 python main.py --selftest   # check a build's wiring and exit
 python main.py --headless   # the HTTP daemon instead</code></pre>
   <h3>Does it cost money?</h3>
-  <p><b>No.</b> It runs locally, every source is a free public API with no key and
+  <p><b>Not by default.</b> It runs locally, every source is a free public API with no key and
     no billing, it places no real trades, and the running app makes <b>zero
     AI/LLM calls</b> — the model is local arithmetic and the news sentiment is a
-    local word list. Building SONAR used AI; running it does not.</p>
+    local word list. The one exception is the optional <b>read</b> button, which
+    sends one opportunity to Anthropic with your own key and bills your account.
+    Building SONAR used AI; running it does not, unless you press that button.</p>
   <p>The only resource is bandwidth, roughly <b>8MB an hour</b> since the
     Polymarket board was removed — down from about 60MB. Negligible on
     broadband, and worth knowing on a metered connection.</p>
@@ -911,8 +913,10 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     hours always means the run has stalled — the menu-bar item then posts a
     notification and shows STALLED, rather than letting a dead run look exactly
     like a healthy one. The state files keep a daily rotating backup
-    (<code>.bak.&lt;date&gt;</code>, last seven days) beside themselves: they
-    are the run's output, and they live nowhere else.</p>
+    (<code>.bak.&lt;date&gt;</code>, last seven days) beside themselves, and a second copy (last 30 days) in the
+    directory named by <code>SONAR_BACKUP_DIR</code> or by a <code>backup-to</code>
+    file in the data directory — point it at another disk. They are the run's
+    output, and they live nowhere else.</p>
 
   <h2 id="honesty"><span class="n">13</span>Honesty &amp; limits</h2>
   <div class="warn">
@@ -922,7 +926,7 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
   </div>
   <ul>
     <li><b>No directional edge has been found.</b> Five studies, progressively more careful,
-      all negative — and a sixth found that scheduled events make prices jump, which is not a direction. That is the expected answer for liquid instruments priced by
+      none detected an edge — and a sixth found that scheduled events make prices jump, which is not a direction. That is the expected answer for liquid instruments priced by
       people running the same arithmetic.</li>
     <li><b>Confidence is notability</b>, not the probability of profit. P(PROF)
       is that, and it sits at its driftless baseline because no drift has been
@@ -1025,8 +1029,8 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
     itself. It says nothing about who wins — only that one bookmaker disagrees
     with the rest.</p>
   <div class="callout warn"><b>The same paper's other finding.</b> The
-    bookmakers limited the accounts that kept winning. The edge is real and the
-    capacity for it is very small. Anyone who quotes the first half of that
+    bookmakers limited the accounts that kept winning. The edge it found was real and the
+    capacity for it is very small. SONAR has not shown an edge of its own. Anyone who quotes the first half of that
     result without the second is selling you something.</div>
 
   <h3>The models, and what they scored</h3>
