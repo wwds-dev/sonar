@@ -139,27 +139,28 @@ def direction_p(clusters: Sequence[tuple[tuple[float, float],
                 "q": 0, "draws": 0, "method": None, "t": None, "delta": None}
     kept = [_five(*k) for k, _s in clusters]
     swapped = [_five(*s) for _k, s in clusters]
-    observed = [math.fsum(col) for col in zip(*kept)]
+    observed = [math.fsum(col) for col in zip(*kept, strict=True)]
     t0 = cluster_t(*observed)
     delta = observed[0] / observed[1] if observed[1] > 0 else 0.0
     ge = le = 0
     if q <= enumerate_max:
         monte_carlo, n_draws = False, 2 ** q
-        for combo in product(*zip(kept, swapped)):
-            t = cluster_t(*(math.fsum(col) for col in zip(*combo)))
+        for combo in product(*zip(kept, swapped, strict=True)):
+            t = cluster_t(*(math.fsum(col) for col in zip(*combo, strict=True)))
             ge += t >= t0
             le += t <= t0
     else:
         monte_carlo, n_draws = True, draws
-        kept_cols = list(zip(*kept))
-        swapped_cols = list(zip(*swapped))
+        kept_cols = list(zip(*kept, strict=True))
+        swapped_cols = list(zip(*swapped, strict=True))
         rng = random.Random(seed)
         for _ in range(draws):
             pick = rng.randbytes(q)
             swap, keep = pick.translate(_SWAP), pick.translate(_KEEP)
             t = cluster_t(*(math.fsum(chain(compress(kc, keep),
                                             compress(sc, swap)))
-                            for kc, sc in zip(kept_cols, swapped_cols)))
+                            for kc, sc in zip(kept_cols, swapped_cols,
+                                              strict=True)))
             ge += t >= t0
             le += t <= t0
     p_hi, p_lo = _tails(ge, le, n_draws, monte_carlo)
@@ -200,7 +201,7 @@ def sign_flip_p(scores: Sequence[float], seed: int, draws: int = B_DRAWS,
     ge = le = 0
     if q <= enumerate_max:
         monte_carlo, n_draws = False, 2 ** q
-        for combo in product(*zip(pos, neg)):
+        for combo in product(*zip(pos, neg, strict=True)):
             t = _crs_t(math.fsum(combo), sq, q)
             ge += t >= t0
             le += t <= t0
