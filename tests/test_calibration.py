@@ -563,8 +563,11 @@ def test_the_gate_is_the_hc3_slope_of_the_evidence_script():
 
 @pytest.mark.parametrize("x,y", [([], []), ([1.0, 2.0], [0.0, 1.0]),
                                  ([5.0] * 6, [1, 2, 3, 4, 5, 6]),
-                                 ([1.0, 2.0, 3.0, 4.0], [2.0, 4.0, 6.0, 8.0])])
+                                 ([1.0, 2.0, 3.0, 4.0], [2.0, 4.0, 6.0, 8.0]),
+                                 ([0.0, 0.0, 0.0, 1.0], [1.0, 2.0, 3.0, 4.0])])
 def test_an_undefined_gate_is_none_never_nan(x, y):
+    """Too few points, one score for all, a perfect fit, or a point with
+    leverage 1 (HC3 divides by 1 − h): no slope test, and no NaN."""
     assert calibration.hc3_z(x, y) is None
 
 
