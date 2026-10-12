@@ -10,11 +10,13 @@ what it was measured on.
 
 ## 0. Where we are
 
-**2,248 tests**, 80% of statements and branches across `sonar/` and `ui/`
+**2,294 tests**, 80% of statements and branches across `sonar/` and `ui/`
 (2026-10-10; 71% on 2026-09-22, 66% of `sonar/` alone on 2026-09-16), plus 30
-opt-in `-m network` checks of every live source and 3 opt-in `-m slow` Monte-Carlo
+opt-in `-m network` checks of every live source and 22 opt-in `-m slow` Monte-Carlo
 checks of the time-stop shadow's gate (V-12 of `docs/specs/shadow-time-stop.md`:
-2,000 and 20,000 seeded books, about a minute; run them at release and on any
+2,000 and 20,000 seeded books on the gate, and 4,000 whole synthetic books through
+`shadow_time_stop`, in chunks of a few seconds each so none nears the 60 s hang
+guard; about three minutes in all; run them at release and on any
 change to the gate code with `./run-tests.sh tests/ -m slow`; a cheaper version
 always runs). Run the suite **twice** before
 a push — natively and under `QT_QPA_PLATFORM=offscreen`, which is how CI runs

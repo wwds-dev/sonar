@@ -504,7 +504,7 @@ SHADOW_WORDS = {
                               "Not a test yet. Look {k} due; {w} of {N} awaiting a final "
                               "close."),
     "SH_LOOK_NOT_CROSSED": ("Look {k} of 3, first {N} entries ({used} with a result): no "
-                            "clear link between score and result. z = {z}; the line is "
+                            "link strong enough to cross the line yet. z = {z}; the line is "
                             "±2.315.",
                             "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| < "
                             "2.315, not crossed."),
@@ -514,19 +514,24 @@ SHADOW_WORDS = {
                              "entered.",
                              "Next: n = {N2}, {missing} not yet entered."),
     "SH_LOOK_CROSSED_UP": ("Look {k} of 3, first {N} entries ({used} with a result): "
-                           "crossed the line. Entries with higher scores had larger "
-                           "results. z = {z}; the line is ±2.315. The test ends here.",
+                           "crossed the line. On these paper entries, higher scores went "
+                           "with higher R on average. z = {z}; the line is ±2.315. The test ends here.",
                            "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| ≥ "
                            "2.315, crossed. Design closed."),
     "SH_LOOK_CROSSED_DOWN": ("Look {k} of 3, first {N} entries ({used} with a result): "
-                             "crossed the line. Entries with higher scores had smaller "
-                             "results. z = {z}; the line is ±2.315. The test ends here.",
+                             "crossed the line. On these paper entries, higher scores went "
+                             "with lower R on average. z = {z}; the line is ±2.315. The test ends here.",
                              "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| ≥ "
                              "2.315, crossed. Design closed."),
-    "SH_CAVEAT_CROSSED": ("This means only that the score sorts how coin-flip entries end "
-                          "after {T}. It is not a trading edge.",
-                          "Ranks random-direction outcomes at T only; not a tradeable "
-                          "edge."),
+    "SH_CAVEAT_CROSSED": ("This says only that the score sorted how these past coin-flip "
+                          "paper entries ended after {T}. It does not show that trading "
+                          "high scores would make money: it is one test on {used} entries, "
+                          "before costs, fees and slippage, with exact fills, and a test "
+                          "like this can cross by chance even when there is no link. It is "
+                          "not a trading edge.",
+                          "Ranks past random-direction paper outcomes at T only; before "
+                          "costs, exact fills, one test with a by-design false-alarm rate; "
+                          "not a tradeable edge."),
     "SH_FINAL_NONE": ("Three looks, no crossing: no evidence that the score ranks {T_adj} "
                       "results, at the planned size. The test is finished.",
                       "Looks 1-3 not crossed: no evidence that the score ranks {T_adj} "
@@ -539,9 +544,12 @@ SHADOW_WORDS = {
                        "waiting for a closing price",
                        "waiting: {w} before T (next {next_t}) · {wp} awaiting a final "
                        "close"),
-    "SH_ROW_REF": ("what no edge would give after {T}: about {a}% at the target · {b}% at "
-                   "the stop · {c}% at neither, and an average result of 0R",
-                   "what no edge would give: {a}% / {b}% / {c}%, mean 0R"),
+    "SH_ROW_REF": ("what no edge would give after {T}, if the volatility estimate was right: "
+                   "about {a}% at the target · {b}% at the stop · {c}% at neither. A "
+                   "different split mostly means the volatility estimate was off. With no "
+                   "edge the average result is 0R whatever the volatility.",
+                   "what no edge would give at planned σ: {a}% / {b}% / {c}% (a σ̂ check); "
+                   "mean 0R at any σ"),
     "SH_ROW_RUNNING": ("running, not a test: average result {m}R (95% range {lo} to {hi}R) "
                        "· link z = {z} · no costs",
                        "running, not a test: mean R {m} [{lo}, {hi}] · HC3 slope z {z} · "
@@ -561,15 +569,17 @@ SHADOW_WORDS = {
                    "between checks",
                    "{g} gap exits (daily close beyond a barrier)"),
     "SH_ROW_BAND": ("scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} "
-                    "neither · what no edge would give {a}% / {b}% / {c}%",
-                    "score {lo}-{hi}  n={n}  T/S/N {t}/{s}/{x}  no edge {a}/{b}/{c}%"),
+                    "neither · what no edge would give if the volatility estimate was right: "
+                    "{a}% / {b}% / {c}%",
+                    "score {lo}-{hi}  n={n}  T/S/N {t}/{s}/{x}  no edge @σ̂ {a}/{b}/{c}%"),
     "SH_WARN": ("Note: {x} of the first {N} entries were left out ({pct}%). This look rests "
                 "on the other {used}.",
                 "Note: {x}/{N} excluded ({pct}%) at look {k}."),
     "SH_NOTE": ("R is the result in units of the amount risked: -1R lost the amount risked, "
                 "+{rr}R reached the target. This grade asks only whether the score sorts "
-                "how coin-flip entries end after {T}. Even a crossed line is not a trading "
-                "edge: the direction was random, and there are no costs.",
+                "how coin-flip entries end after {T}. These are paper entries with a random "
+                "direction, before costs, fees and slippage. Even a crossed line is not a "
+                "trading edge and says nothing about how future entries end.",
                 "R = result / initial risk. Ranks random-direction outcomes at T only; not "
                 "a tradeable edge. No costs."),
     "SH_WORKED_OUT": ("Worked out {when}.", "As of {when}."),
@@ -688,9 +698,21 @@ def _sh_t_words(t_days) -> tuple[str, str]:
     return f"{t:g} days", f"{t:g}-day"
 
 
+#: Timestamps outside this range are not dates SONAR can have written (1970
+#: to about 3237). `time.localtime` raises OSError past ~1e17 on macOS, and a
+#: holder's payload must never be able to stop the window's refresh.
+SHADOW_TS_MAX = 4e10
+
+
+def _sh_ts(v) -> float | None:
+    """A payload timestamp, or None when it is not a plausible date."""
+    t = _sh_num(v)
+    return t if t is not None and 0 <= t <= SHADOW_TS_MAX else None
+
+
 def _sh_date(ts, now: float) -> str:
     """``6 Nov``, with the year when it is not this one ("7 Jan 2027")."""
-    t = _sh_num(ts)
+    t = _sh_ts(ts)
     if t is None:
         return "n/a"
     day = time.localtime(t)
@@ -803,7 +825,7 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
     out["rows"] = "\n".join(r for r in rows if r)
     out["warn"] = "\n".join(_sh_warnings(looks, now))
     note = _sh_word("SH_NOTE", rr=f"{rr:g}", T=T)
-    at = _sh_num(d.get("computed_at"))
+    at = _sh_ts(d.get("computed_at"))
     if at is not None:
         age_h = (now - at) / 3600
         note += " " + (_sh_word("SH_STALE", h=int(age_h)) if age_h > SHADOW_STALE_H else
@@ -823,9 +845,11 @@ def _sh_look_status(looks: list[dict], now: float, T: str,
     if crossed is not None:
         z = _sh_num(crossed.get("z")) or 0.0
         key = "SH_LOOK_CROSSED_UP" if z > 0 else "SH_LOOK_CROSSED_DOWN"
-        return (_sh_word(key, k=_sh_int(crossed.get("k")), N=_sh_int(crossed.get("n")),
-                         used=_sh_int(crossed.get("used")), z=_sh_z(z, True))
-                + " " + _sh_word("SH_CAVEAT_CROSSED", T=T)), _sh_int(crossed.get("k"))
+        used = _sh_int(crossed.get("used"))
+        line = (_sh_word(key, k=_sh_int(crossed.get("k")), N=_sh_int(crossed.get("n")),
+                         used=used, z=_sh_z(z, True))
+                + " " + _sh_word("SH_CAVEAT_CROSSED", T=T, used=used))
+        return line, _sh_int(crossed.get("k"))
     if looks and len(evaluated) == len(looks):
         return _sh_word("SH_FINAL_NONE", T_adj=T_adj), None
     due = next((lk for lk in pending if _sh_num(lk.get("due")) is not None
@@ -968,7 +992,7 @@ class ShadowGrade(QFrame):
         try:
             texts = shadow_texts(shadow, self.detail, now, t_default)
         except (TypeError, ValueError, KeyError, AttributeError, IndexError,
-                OverflowError):
+                OverflowError, OSError):
             # A dict this build cannot read (another version's, or damaged):
             # say so rather than show half of it.
             texts = shadow_texts({"error": "unreadable"}, self.detail, now, t_default)
@@ -2433,7 +2457,6 @@ class MainWindow(QMainWindow):
             pos = dict(self.live.positions)
             cal = dict(self.live.calibration)
             shadow = self.live.shadow
-        self.book_shadow.render(shadow, self._shadow_t_default())
         st = pos.get("stats", {})
         pnl = st.get("total_pnl", 0.0)
         for key, val, col in [
@@ -2473,6 +2496,8 @@ class MainWindow(QMainWindow):
                         f"at scores {', '.join(mostly_open)} are still open")
         self.cal_table.setText("\n".join(rows) or
                                "  no closed positions yet — nothing to grade")
+        # After the existing grade, so nothing the shadow does can hold it up.
+        self.book_shadow.render(shadow, self._shadow_t_default())
 
         sig = (st.get("n_open"), st.get("n_closed"), round(st.get("unrealised", 0), 1))
         if sig == self._book_sig:
@@ -2784,11 +2809,13 @@ class MainWindow(QMainWindow):
             cal = dict(self.live.calibration)
             shadow = self.live.shadow
         self._sync_start_card(pos)
-        self.shadow_grade.render(shadow, self._shadow_t_default())
         st = pos.get("stats") or {}
+        if st:
+            self._refresh_grade(cal, pos.get("closed") or [], pos.get("open") or [])
+        # After the existing grade, so nothing the shadow does can hold it up.
+        self.shadow_grade.render(shadow, self._shadow_t_default())
         if not st:
             return
-        self._refresh_grade(cal, pos.get("closed") or [], pos.get("open") or [])
         pnl = st.get("total_pnl", 0.0)
         self.pstats["p&l now"].set(_money(pnl, signed=True), theme.pnl_color(pnl))
         self.plines["p&l now"].setText(

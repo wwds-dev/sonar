@@ -224,11 +224,11 @@ def test_u4_each_state_says_its_own_sentence(window):
     assert "The first look is due; 3 of its 45 entries are still waiting" in \
         s["f look due, prices missing"]
     assert s["c not crossed"].startswith("Look 1 of 3, first 45 entries (45 with a result): "
-                                         "no clear link")
+                                         "no link strong enough to cross the line yet")
     assert "Next look: the first 101 entries, on or after" in s["c not crossed"]
     assert "after 21 more are entered" in s["c not crossed, next undated"]
-    assert "higher scores had larger results" in s["c crossed up"]
-    assert "higher scores had smaller results" in s["c crossed down"]
+    assert "On these paper entries, higher scores went with higher R on average." in s["c crossed up"]
+    assert "On these paper entries, higher scores went with lower R on average." in s["c crossed down"]
     for name in ("c crossed up", "c crossed down"):
         assert "It is not a trading edge." in s[name] and "crossed the line" in s[name]
     assert "no evidence that the score ranks 4-week results, at the planned size" in \
@@ -310,8 +310,12 @@ def test_u6_no_reference_means_no_reference_line_and_no_dash(window):
 
 def test_u6_the_reference_and_the_bands_when_present(window):
     t = show(window, readout())
-    assert ("what no edge would give after 4 weeks: about 37% at the target · 57% at the "
-            "stop · 5% at neither, and an average result of 0R") in t["landing"]["rows"]
+    assert ("what no edge would give after 4 weeks, if the volatility estimate was right: "
+            "about 37% at the target · 57% at the stop · 5% at neither. A different split "
+            "mostly means the volatility estimate was off. With no edge the average result "
+            "is 0R whatever the volatility.") in t["landing"]["rows"]
+    assert ("· what no edge would give if the volatility estimate was right: 37% / 57% / 5%"
+            in t["book"]["rows"])
     assert "scores 80-100:" in t["book"]["rows"] and "scores" not in t["landing"]["rows"]
 
 
@@ -327,7 +331,7 @@ def test_u7_the_sentence_follows_the_unrounded_decision(window):
     near = [look(1, 45, due=NOW - 30 * DAY, used=45, evaluated=True, z=2.3149),
             look(2, 101, entered=60), look(3, 201, entered=60)]
     s = show(window, readout(n_reached=45, looks=near))["landing"]["status"]
-    assert "no clear link" in s and "z = +2.314" in s
+    assert "no link strong enough" in s and "z = +2.314" in s
     near[0].update(z=2.3151, crossed=True)
     near[1]["design_closed"] = near[2]["design_closed"] = True
     s = show(window, readout(n_reached=45, looks=near))["landing"]["status"]
@@ -378,6 +382,11 @@ def test_payload_text_is_never_markup(window):
     {"n_entered": 5, "n_reached": 2, "looks": "nope", "bands": [None, 3]},
     {"n_entered": 5, "n_reached": 25, "mean_r": float("nan"), "z": "1e9", "ref": []},
     {"n_entered": 5, "n_reached": 2, "looks": [{"k": "1", "due": "soon", "n": None}]},
+    {"n_entered": 50, "n_reached": 30, "looks": [], "computed_at": 1e17},
+    {"n_entered": 3, "n_reached": 0, "n_waiting": 3, "next_t": 1e17, "looks": []},
+    {"n_entered": 50, "n_reached": 30, "computed_at": 1e18,
+     "looks": [{"k": 1, "n": 45, "entered": 45, "due": 1e18, "used": 30}]},
+    {"n_entered": 50, "n_reached": 30, "computed_at": -1e12, "looks": []},
 ])
 def test_a_damaged_readout_is_never_a_crash(window, junk):
     t = show(window, junk)
@@ -393,7 +402,7 @@ def test_both_wordings_keep_the_same_rows(window, monkeypatch, name):
     expert = show(window, STATES[name])["book"]
     assert len(plain["rows"].splitlines()) == len(expert["rows"].splitlines())
     assert bool(plain["warn"]) == bool(expert["warn"])
-    assert "no costs" in plain["note"].lower() or "no costs" in plain["note"]
+    assert "before costs, fees and slippage" in plain["note"]
     assert "No costs" in expert["note"]
 
 
@@ -444,3 +453,125 @@ def test_a_readout_this_build_cannot_read_is_said_not_half_shown(window, monkeyp
     window.shadow_grade.render(readout(), 28.0, NOW)
     assert window.shadow_grade.shadow_status.text().startswith(
         "Could not work it out this time (unreadable)")
+
+
+@pytest.mark.parametrize("caveat", ["paper entries", "before costs, fees and slippage",
+                                    "with exact fills", "can cross by chance",
+                                    "It is not a trading edge."])
+def test_domain_p1_the_crossing_says_what_it_does_not_show(window, caveat):
+    """Domain review P1-1: beside a crossing, the copy says the figures are
+    past paper entries, before costs and fills, from one test that can cross
+    by chance — and never states a false-alarm rate."""
+    for name in ("c crossed up", "c crossed down"):
+        status = show(window, STATES[name])["landing"]["status"]
+        assert caveat in status, name
+        assert "%" not in status, name
+    note = show(window, STATES["c crossed up"])["landing"]["note"]
+    assert "the direction was random" not in note
+    assert "says nothing about how future entries end" in note
+
+
+def test_the_existing_grade_is_refreshed_before_the_shadow(window, monkeypatch):
+    """Code review P2-2: whatever the shadow block does, the existing grade
+    has already been brought up to date on both pages."""
+    show(window, None)
+
+    def boom(*a, **k):
+        raise RuntimeError("shadow")
+
+    with window.live.lock:
+        window.live.calibration = {**window.live.calibration, "verdict": "fresh verdict"}
+    for w in (window.shadow_grade, window.book_shadow):
+        monkeypatch.setattr(w, "render", boom)
+    with pytest.raises(RuntimeError):
+        window._refresh_portfolio()
+    with pytest.raises(RuntimeError):
+        window._refresh_book()
+    assert window.grade_verdict.text() == "fresh verdict"
+    assert window.cal_verdict.text() == "fresh verdict"
+
+
+def test_an_impossible_date_reads_as_n_a_not_as_a_failure(window):
+    """Security P2-1 / code review P2-2: a timestamp past ~1e17 makes
+    `time.localtime` raise. It is shown as n/a and the rest of the readout
+    renders as usual. Kills: dropping the bound on payload timestamps."""
+    t = show(window, readout(n_reached=0, n_target=0, n_stop=0, n_time=0, ref=None,
+                             mean_r=None, z=None, ic=None, bands=[], next_t=1e17,
+                             computed_at=1e17,
+                             looks=[look(1, 45, due=NOW + 25 * DAY), look(2, 101, entered=51),
+                                    look(3, 201, entered=51)]))["landing"]
+    assert t["status"].startswith("Not a test yet. None of the 51 entries")
+    assert "first gets there on n/a" in t["status"]
+    assert "Worked out" not in t["note"] and "Could not" not in t["status"]
+
+
+def test_qa_u01_a_due_look_waiting_for_prices_comes_before_the_last_result(window):
+    """QA U01, D3 order: (f) "look due, prices missing" outranks (c)."""
+    looks = [look(1, 45, due=NOW - 40 * DAY, used=45, evaluated=True, z=0.6),
+             look(2, 101, due=NOW - DAY, used=98, wait_price=3), look(3, 201, entered=130)]
+    s = show(window, readout(n_entered=130, n_reached=110, n_wait_price=3,
+                             looks=looks))["landing"]
+    assert s["status"].startswith("Not a test yet. The second look is due; 3 of its 101")
+    assert "look 1, first 45: z = +0.60, did not cross the line" in s["rows"]
+
+
+def test_qa_u04_the_tenth_left_out_warning_shows_on_a_due_look_too(window):
+    """QA U04, D3 (h): "for an evaluated or due look"."""
+    looks = [look(1, 45, due=NOW - DAY, used=38, excluded=5, wait_price=2),
+             look(2, 101, entered=60), look(3, 201, entered=60)]
+    t = show(window, readout(n_reached=38, n_wait_price=2, looks=looks))["landing"]
+    assert t["warn_shown"] and t["warn"].startswith("Note: 5 of the first 45 entries")
+    looks[0]["due"] = NOW + DAY                              # not due yet: no warning
+    assert not show(window, readout(n_reached=38, looks=looks))["landing"]["warn_shown"]
+
+
+def test_qa_u05_none_at_t_is_not_said_while_entries_wait_for_a_price(window):
+    """QA U05: entries past T, waiting for a close, have had their T."""
+    s = show(window, readout(n_reached=0, n_target=0, n_stop=0, n_time=0, n_wait_price=2,
+                             n_waiting=49, ref=None, mean_r=None, z=None, ic=None,
+                             bands=[]))["landing"]["status"]
+    assert "None of the" not in s and "of the first 45 entries have a result" in s
+
+
+def test_qa_u08_two_looks_are_not_three(window):
+    """QA U08: "The test is finished" only once all three looks are evaluated."""
+    looks = [look(1, 45, due=NOW - 90 * DAY, used=45, evaluated=True, z=0.4),
+             look(2, 101, due=NOW - 60 * DAY, used=101, evaluated=True, z=1.1),
+             look(3, 201, entered=150, used=120)]
+    s = show(window, readout(n_entered=150, n_reached=130, looks=looks))["landing"]["status"]
+    assert "The test is finished" not in s and s.startswith("Look 2 of 3")
+
+
+def test_qa_u09_the_past_look_row_never_repeats_the_named_look(window):
+    t = show(window, STATES["c not crossed"])["landing"]
+    assert t["status"].startswith("Look 1 of 3")
+    assert "look 1, first 45" not in t["rows"]
+
+
+def test_u2_a_grade_with_a_verdict_reads_the_same_with_the_shadow_present(window):
+    """QA on U-2: the existing grade with enough closes for a verdict (25
+    graded), compared in every shadow state."""
+    from sonar import calibration
+    from sonar.portfolio import Position
+    closed = [Position(id=f"g{i}", symbol="AAA", name="A", direction="LONG", units=1.0,
+                       entry=100.0, target=103.0, stop=98.0, opened_at=0.0,
+                       cash_at_risk=2.0, confidence=float(4 * i), rr=1.5, p_profit=0.4,
+                       horizon="week", protocol=True, closed_at=1.0,
+                       exit=103.0 if i % 3 == 0 else 98.0,
+                       pnl=3.0 if i % 3 == 0 else -2.0,
+                       outcome="TARGET" if i % 3 == 0 else "STOP") for i in range(25)]
+    report = calibration.report(closed)
+    assert report["enough"] is True and report["n_settled"] == 25
+    with window.live.lock:
+        saved = window.live.calibration
+        window.live.calibration = report
+    try:
+        show(window, None)
+        before = grade_texts(window)
+        assert before[0] == report["verdict"] and before[4] == report["verdict"]
+        for name, shadow in STATES.items():
+            show(window, shadow)
+            assert grade_texts(window) == before, name
+    finally:
+        with window.live.lock:
+            window.live.calibration = saved
