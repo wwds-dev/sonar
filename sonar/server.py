@@ -177,6 +177,7 @@ class Handler(BaseHTTPRequestHandler):
             with self.live.lock:
                 self._json({"positions": self.live.positions,
                             "calibration": self.live.calibration,
+                            "shadow": self.live.shadow,
                             "protocol_on": self.live.protocol_on})
             return
         if self.path.startswith("/api/wire"):
