@@ -2,6 +2,7 @@
 # Install (or remove) the launchd agent that keeps the SONAR engine running.
 #
 #   ./scripts/install_agent.sh            install and start
+#   ./scripts/install_agent.sh --allow-dirty   install although the tree has uncommitted edits
 #   ./scripts/install_agent.sh --status   is it running?
 #   ./scripts/install_agent.sh --uninstall stop and remove
 #
@@ -38,6 +39,9 @@ status() {
     echo
     echo "state: $DATA_DIR  (the installed app's — one book)"
     echo "logs:  $PROJECT_DIR/data/logs/agent.{out,err}.log"
+    echo "build: $(curl -s -m 3 127.0.0.1:8787/api/health | \
+      "$PROJECT_DIR/.venv/bin/python" -c 'import json,sys; b=json.load(sys.stdin).get("build"); print(json.dumps(b) if b else "not reported (this agent predates the build field)")' 2>/dev/null \
+      || echo "not answering")"
   else
     echo "not loaded."
     [[ -f "$PLIST_DST" ]] && echo "(plist present at $PLIST_DST but not loaded)"
@@ -51,12 +55,54 @@ uninstall() {
   echo "Your paper portfolio is untouched."
 }
 
+ALLOW_DIRTY=0
+if [[ $# -gt 1 ]]; then
+  echo "usage: $0 [--allow-dirty | --status | --uninstall]  (one at a time)"; exit 2
+fi
 case "${1:-}" in
-  --status)    status; exit 0 ;;
-  --uninstall) uninstall; exit 0 ;;
+  --status)      status; exit 0 ;;
+  --uninstall)   uninstall; exit 0 ;;
+  --allow-dirty) ALLOW_DIRTY=1 ;;
+  "")            ;;
+  *) echo "usage: $0 [--allow-dirty | --status | --uninstall]"; exit 2 ;;
 esac
 
 # --- preflight ------------------------------------------------------------- #
+# The agent runs this working tree, not a build: whatever is on disk when
+# launchd (re)starts it is what drives the paper book. A half-finished edit
+# would crash-loop it or change the model mid-run, and /api/health could not
+# say which commit that was. So a tree with uncommitted tracked changes (or
+# one git cannot read) is refused unless --allow-dirty says it is meant.
+# Untracked files do not count, same as sonar/version.py.
+if ! DIRTY="$(git status --porcelain --untracked-files=no 2>/dev/null)"; then
+  DIRTY="(git status failed: cannot tell whether the tree is clean)"
+fi
+# The nested repos are code the agent imports, and the outer status cannot
+# see into them (sonar/version.py NESTED_REPOS).
+for nested in sonar/macro sonar/playmaker; do
+  [[ -e "$nested/.git" ]] || continue
+  if ! more="$(git -C "$nested" status --porcelain --untracked-files=no 2>/dev/null)"; then
+    more="(git status failed: cannot tell whether it is clean)"
+  fi
+  if [[ -n "$more" ]]; then
+    NL=$'\n'
+    DIRTY+="${DIRTY:+$NL}$(sed "s|^|$nested: |" <<<"$more")"
+  fi
+done
+if [[ -n "$DIRTY" ]]; then
+  echo "WARNING: the agent runs this working tree, and it has uncommitted changes:"
+  head -15 <<<"$DIRTY"     # not echo | head: SIGPIPE under pipefail on a long list
+  if [[ "$ALLOW_DIRTY" != 1 ]]; then
+    echo
+    echo "Refusing to install. Commit or revert them, or knowingly run:"
+    echo "  $0 --allow-dirty"
+    echo "(/api/health will then report \"dirty\": true.)"
+    exit 1
+  fi
+  echo "--allow-dirty given: installing anyway."
+  echo
+fi
+
 PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "error: $PYTHON_BIN not found."
