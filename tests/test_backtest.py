@@ -784,13 +784,12 @@ def test_too_few_stretches_names_the_fix_the_reader_has():
     assert "before costs, from one replay of past prices" in unpaired
 
 
-@pytest.mark.release
 def test_no_verdict_ships_with_an_unfilled_figure():
     """Release gate (code review P2-1, domain P1-1): the chance rate the
     beats and below sentences quote is the validator's measured figure,
-    never a placeholder. Deselected by default; sre-release runs
-    `pytest -m release` (TESTING.md), and a "{" or "}" left in the figure or
-    in any judged sentence blocks the release.
+    never a placeholder. It runs in the default suite (about 0 s; code
+    review P3-1: a deselected check nothing ran), so a "{" or "}" left in
+    the figure, a judged sentence or the ten-year one fails every run.
     Mutation it catches: a placeholder such as "{measured}" put back."""
     for figure in (backtest.CHANCE_VERDICT_RATE,
                    backtest.CHANCE_VERDICT_RATE_WORST,
@@ -800,6 +799,8 @@ def test_no_verdict_ships_with_an_unfilled_figure():
                          ("unconfirmed", 0.031), ("within", 0.011)):
         v = backtest._verdict(delta, 0.009, state)
         assert "{" not in v and "}" not in v, (state, v)
+    drift = backtest._withheld_verdict("drift", 20, 9000, 481)
+    assert "{" not in drift and "}" not in drift, drift
 
 
 # --------------------------------------------------------------------------- #
@@ -1943,6 +1944,16 @@ def _both_ways(seed: int, h: int = _H15) -> list[tuple]:
 _cached_world = functools.lru_cache(maxsize=30)(_both_ways)
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _drop_the_cached_worlds():
+    """The rate tests' caches hold about 225 MB; once this module is done
+    nothing reads them, so they go with it (code review P3-4)."""
+    yield
+    _cached_world.cache_clear()
+    _per_class_h_coin.cache_clear()
+    _attribution_world.cache_clear()
+
+
 def _coin_rows(world: list[tuple], tag: str, block_days: int,
                per_class: bool) -> tuple[list, list, list]:
     """The rows one coin takes — resolved, timed out, short-window — when it
@@ -1988,15 +1999,15 @@ def _headline_tag(seed: int, coin: int) -> str:
     return f"{seed}|{_H15}|{coin}|cls"
 
 
-@functools.lru_cache(maxsize=2)
-def _per_class_h_coin(first_world: int) -> tuple[tuple, ...]:
-    """The 300 runs of one headline test — 15 worlds from ``first_world`` ×
-    20 per-class one-horizon coins at h15 — as (withheld, verdict_state,
-    p_tail, stretches)."""
+@functools.lru_cache(maxsize=4)
+def _per_class_h_coin(first_world: int, first_coin: int) -> tuple[tuple, ...]:
+    """The 150 runs of one headline set — 15 worlds from ``first_world`` ×
+    10 per-class one-horizon coins from ``first_coin`` at h15 — as
+    (withheld, verdict_state, p_tail, stretches)."""
     out = []
     for seed in range(first_world, first_world + 15):
         world = _cached_world(seed)
-        for coin in range(20):
+        for coin in range(first_coin, first_coin + 10):
             s = _coin_run(world, _headline_tag(seed, coin), _coin_block(1),
                           per_class=True)
             r = s["randomisation"]
@@ -2018,51 +2029,52 @@ def _headline_randomisation(seed: int, coin: int) -> dict:
 
 
 def _assert_headline_rate(runs: tuple[tuple, ...]) -> None:
-    assert len(runs) == 300
+    assert len(runs) == 150
     # Every run judged, at exactly 8 stretches: a change in the calendar
     # fails here, loudly, instead of quietly withholding runs.
     assert all(w is None for w, _s, _p, _q in runs), [w for w, *_ in runs]
     assert all(q == 8 for _w, _s, _p, q in runs), {q for *_, q in runs}
     verdicts = sum(s in ("beats", "below") for _w, s, _p, _q in runs)
     beats = sum(s == "beats" for _w, s, _p, _q in runs)
-    assert verdicts <= 24, f"{verdicts} of 300 coin runs got a verdict"
-    assert beats <= 14, f"{beats} of 300 coin runs read 'beats'"
+    assert verdicts <= 14, f"{verdicts} of 150 coin runs got a verdict"
+    assert beats <= 9, f"{beats} of 150 coin runs read 'beats'"
+
+
+# The four headline sets, (first world, first coin): worlds 0–14 and 15–29 ×
+# coins 0–9 and 10–19 — the 600 runs of the two earlier 300-run tests, split
+# so that no test nears the 60 s cap (code review P3-2, QA P2-A).
+_HEADLINE_SETS = ((0, 0), (0, 10), (15, 0), (15, 10))
 
 
 @pytest.mark.slow
-def test_a_correlated_coin_rarely_gets_a_verdict():
-    """Measure 8, the headline rate test (first of two, split for the 60 s
-    cap). 15 worlds of 30 correlated instruments over two years, 20 coins
-    each that pick one direction per (class, one-horizon stretch) — the
-    validator's per-class coin — at h15: 300 judged runs, every one at
-    exactly 8 stretches. Bounds, pre-registered: at most 24 verdicts, the
-    99th percentile of Binomial(300, 5%), and at most 14 'beats', that of
-    Binomial(300, 2.5%).
+@pytest.mark.parametrize("first_world, first_coin", _HEADLINE_SETS)
+def test_a_correlated_coin_rarely_gets_a_verdict(first_world, first_coin):
+    """Measure 8, the headline rate test, in four sets of 150 runs. Each
+    set: 15 worlds of 30 correlated instruments over two years × 10 coins
+    that pick one direction per (class, one-horizon stretch) — the
+    validator's per-class coin — at h15: 150 judged runs, every one at
+    exactly 8 stretches. Bounds, set in advance from the binomial and not
+    from these seeds: at most 14 verdicts, the 99th percentile of
+    Binomial(150, 5%) (P(X ≤ 14) = 0.992), and at most 9 'beats', that of
+    Binomial(150, 2.5%) (P(X ≤ 9) = 0.995).
 
-    This is a gate against today's code, not proof of 5%. With the error bar
-    alone (the gate removed) this coin read 24 verdicts here, exactly at the
-    bound, and 31 on the twin's worlds; its rate on these worlds is 9.2%
-    (QA, 10 world sets: 7.7–12.8%), at which this test fails with
-    probability about 0.73 and one of the two about 0.93. With the
-    randomisation it reads 11 here and 9 on the twin's worlds. Proof of 5%
-    is measure 1, on real bars at full scale.
-    Mutation it catches, with its twin: the randomisation gate removed."""
-    _assert_headline_rate(_per_class_h_coin(0))
-
-
-@pytest.mark.slow
-def test_a_correlated_coin_rarely_gets_a_verdict_on_other_worlds():
-    """Measure 8, the second headline rate test: worlds 15–29, the same 20
-    coins and bounds as the first (see its docstring). A gate against
-    today's code, not proof of 5%; with the gate removed it read 31 and
-    fails."""
-    _assert_headline_rate(_per_class_h_coin(15))
+    A gate against today's code, not proof of 5%. With the error bar alone
+    (the gate removed) the four sets read 14, 10, 18 and 13 verdicts (7, 3,
+    9 and 5 'beats'): the third fails. At today's rate on these worlds,
+    9.2% (QA, 10 world sets: 7.7–12.8%), one set fails with probability
+    about 0.41 and at least one of the four about 0.88, counting the
+    verdict bound alone. With the randomisation the sets read 6, 5, 7 and 2
+    (3, 2, 4 and 1 'beats'). Proof of 5% is measure 1, on real bars at full
+    scale.
+    Mutation it catches, over the four sets: the randomisation gate
+    removed."""
+    _assert_headline_rate(_per_class_h_coin(first_world, first_coin))
 
 
 @pytest.mark.slow
 def test_the_randomisation_alone_rejects_near_its_size():
     """Measure 8 / Architecture §11 test 9: exactness, on the 600 runs of
-    the two headline tests. The coin is nested in the test's stretches, so
+    the four headline sets. The coin is nested in the test's stretches, so
     the randomisation alone (p_tail < 0.05, outside the bar or not) is exact
     for it: measured 33 of 600 (5.5%) here, and 22–32 on ten other world
     sets (QA), against 4.0% expected, under 5% because an enumerated p at 8
@@ -2085,89 +2097,104 @@ def test_the_randomisation_alone_rejects_near_its_size():
     assert 13 <= rejected <= 37, rejected
 
 
-def _guard(block_days: int, per_class: bool, name: str) -> int:
-    """Verdicts of one guard coin over worlds 0–14, 20 coins each: 300 runs,
-    every one judged at exactly 8 stretches."""
+def _guard(block_days: int, per_class: bool, name: str,
+           first_coin: int) -> int:
+    """Verdicts of one guard coin over worlds 0–14, 10 coins each from
+    ``first_coin``: 150 runs, every one judged at exactly 8 stretches."""
     verdicts, judged, stretches = 0, 0, set()
     for seed in range(15):
         world = _cached_world(seed)
-        for coin in range(20):
+        for coin in range(first_coin, first_coin + 10):
             s = _coin_run(world, f"{seed}|{_H15}|{coin}|{name}", block_days,
                           per_class)
             judged += s["withheld"] is None
             stretches.add(s["randomisation"]["q"])
             verdicts += s["significant"]
-    assert judged == 300, judged
+    assert judged == 150, judged
     assert stretches == {8}, stretches
     return verdicts
 
 
+# Each guard runs in two sets of 150, coins 0–9 and 10–19 on worlds 0–14
+# (the 300 runs of the earlier single tests), split for the 60 s cap (code
+# review P3-2, QA P2-A). Bound per set: at most 19 verdicts, the 99th
+# percentile of Binomial(150, 7.5%) (P(X ≤ 19) = 0.991), measure 2's bar.
+_GUARD_SETS = (0, 10)
+
+
 @pytest.mark.slow
-def test_a_coin_slower_than_the_stretches_rarely_gets_a_verdict():
+@pytest.mark.parametrize("first_coin", _GUARD_SETS)
+def test_a_coin_slower_than_the_stretches_rarely_gets_a_verdict(first_coin):
     """Measure 2's circular-pass guard: one coin per class held for eight
     horizons (174 days at h15), longer than the test's 88-day stretches and
-    not nested in them, so the randomisation is not exact for it. 300
-    judged runs on worlds 0–14; at most 34 verdicts, the 99th percentile of
-    Binomial(300, 7.5%), measure 2's bar, set before the rate was measured:
-    21 here (7.0%), 63 with the gate removed.
+    not nested in them, so the randomisation is not exact for it. 150
+    judged runs a set; at most 19 verdicts (Binomial(150, 7.5%), 99th
+    percentile), measure 2's bar, set before the rate was measured: 12 and
+    9 here, 36 and 27 with the gate removed (both fail).
 
     A regression guard, not measure 2. On real bars this coin reads 9.48%
     [8.0–11.3] (r5) and 9.11% [7.6–10.9] held out (validator r7), so
     measure 2 is not met; the owner accepted that and the copy discloses it
     (spec, decisions after validator r7). This bound cannot tell 7.5% from
     9%: it catches the gate gone, not a rate a little over the bar."""
-    v = _guard(_coin_block(8), per_class=True, name="cls8h")
-    assert v <= 34, f"{v} of 300 runs of the eight-horizon coin got a verdict"
+    v = _guard(_coin_block(8), per_class=True, name="cls8h",
+               first_coin=first_coin)
+    assert v <= 19, f"{v} of 150 runs of the eight-horizon coin got a verdict"
 
 
 @pytest.mark.slow
-def test_a_market_wide_coin_rarely_gets_a_verdict():
+@pytest.mark.parametrize("first_coin", _GUARD_SETS)
+def test_a_market_wide_coin_rarely_gets_a_verdict(first_coin):
     """Measure 2's circular-pass guard: one direction per one-horizon
     stretch for the whole watchlist at once — the failure that forced the
     all-class stretch (8.2% at full scale under (class, stretch) clusters).
-    Nested in the test's stretches. 300 judged runs; at most 34 verdicts
-    (Binomial(300, 7.5%), 99th percentile). The prototype read 4.7% at h15
-    and this test 14 (4.7%); real bars 4.17% (r5) and 3.73% held out
-    (validator r7)."""
-    v = _guard(_coin_block(1), per_class=False, name="mkt1h")
-    assert v <= 34, f"{v} of 300 runs of the market-wide coin got a verdict"
+    Nested in the test's stretches. 150 judged runs a set; at most 19
+    verdicts (Binomial(150, 7.5%), 99th percentile). Measured 6 and 8 here
+    (13 and 17 with the gate removed, so this guard does not catch that);
+    real bars 4.17% (r5) and 3.73% held out (validator r7)."""
+    v = _guard(_coin_block(1), per_class=False, name="mkt1h",
+               first_coin=first_coin)
+    assert v <= 19, f"{v} of 150 runs of the market-wide coin got a verdict"
 
 
 @pytest.mark.slow
-def test_a_market_wide_four_horizon_coin_rarely_gets_a_verdict():
+@pytest.mark.parametrize("first_coin", _GUARD_SETS)
+def test_a_market_wide_four_horizon_coin_rarely_gets_a_verdict(first_coin):
     """Measure 2's market-wide four-horizon coin, nested: one direction per
     stretch for the whole watchlist, its stretch rounded as the test rounds
     its own (backtest.randomisation_block_days: 4 × 22 = 88 days at h15),
     so the coin's stretches are the test's (21.9% at full scale under
-    (class, stretch) clusters). 300 judged runs; at most 34 verdicts
-    (Binomial(300, 7.5%), 99th percentile). Measured 14 here (4.7%), 60 with
-    the gate removed (code review P2-3 read 11 and 49 on other coins); real
-    bars 5.88% (r5) and 6.25% held out (validator r7)."""
+    (class, stretch) clusters). 150 judged runs a set; at most 19 verdicts
+    (Binomial(150, 7.5%), 99th percentile). Measured 4 and 10 here, 28 and
+    32 with the gate removed (both fail); real bars 5.88% (r5) and 6.25%
+    held out (validator r7)."""
     block = backtest.randomisation_block_days(_H15)
     assert block == 4 * _coin_block(1) == 88
-    v = _guard(block, per_class=False, name="mkt4h88")
-    assert v <= 34, f"{v} of 300 runs of the nested four-horizon coin got a verdict"
+    v = _guard(block, per_class=False, name="mkt4h88", first_coin=first_coin)
+    assert v <= 19, f"{v} of 150 runs of the nested four-horizon coin got a verdict"
 
 
 @pytest.mark.slow
-def test_an_off_grid_market_wide_coin_rarely_gets_a_verdict():
+@pytest.mark.parametrize("first_coin", _GUARD_SETS)
+def test_an_off_grid_market_wide_coin_rarely_gets_a_verdict(first_coin):
     """Measure 2's stronger guard, off the grid: one direction per 87-day
     stretch for the whole watchlist (four horizons rounded up once,
     ceil(4 × 15 × 365/252)), so its edges drift one day a stretch across
     the test's 88-day ones — the shifted-edge failure, which the nested
-    coin cannot show. 300 judged runs; at most 34 verdicts (Binomial(300,
-    7.5%), 99th percentile). Measured 24 here (8.0%), 58 with the gate
-    removed (code review P2-3); real bars 8.66% [7.2–10.4] (r5) and 5.73%
-    held out (validator r7).
+    coin cannot show. 150 judged runs a set; at most 19 verdicts
+    (Binomial(150, 7.5%), 99th percentile). Measured 14 and 10 here, 35 and
+    23 with the gate removed (both fail); real bars 8.66% [7.2–10.4] (r5)
+    and 5.73% held out (validator r7).
 
-    Its weakness, stated: the bound passes a true 8.7% rate about 95% of the
-    time (Binomial(300, 8.7%); validator r7 P2-1). Telling 8.7% from 7.5% needs thousands of
-    runs, and 600 would already pass the 60 s cap on a loaded machine, so
-    this catches the gate gone (58), not a rate a little over the bar.
-    Measure 2 is not met and is disclosed (owner, after validator r7)."""
+    Its weakness, stated: at a true 8.7% rate a set passes about 96% of the
+    time (Binomial(150, 8.7%); validator r7 P2-1). Telling 8.7% from 7.5%
+    needs thousands of runs, so this catches the gate gone, not a rate a
+    little over the bar. Measure 2 is not met and is disclosed (owner,
+    after validator r7)."""
     assert _coin_block(4) == 87
-    v = _guard(_coin_block(4), per_class=False, name="mkt4h")
-    assert v <= 34, f"{v} of 300 runs of the off-grid market coin got a verdict"
+    v = _guard(_coin_block(4), per_class=False, name="mkt4h",
+               first_coin=first_coin)
+    assert v <= 19, f"{v} of 150 runs of the off-grid market coin got a verdict"
 
 
 @pytest.mark.slow
@@ -2218,9 +2245,13 @@ def _attribution_world(seed: int) -> tuple[tuple, tuple]:
 
 
 @pytest.mark.slow
-def test_a_meaningless_clustered_component_is_rarely_graded():
+@pytest.mark.parametrize("first_world", (0, 2))
+def test_a_meaningless_clustered_component_is_rarely_graded(first_world):
     """A regression guard, labelled as one: the attribution size gate is the
-    real-bar figure of measure 3 (n ≥ 480 per design), not this test.
+    real-bar figure of measure 3 (n ≥ 480 per design), not this test. It
+    runs in two sets of 12 — worlds 0–1 and 2–3, the 24 runs of the
+    earlier single test — so that neither nears the 60 s cap (code review
+    P3-2, QA P2-A).
 
     The placebo: a news component that is one random value per (class,
     one-horizon stretch), plus a little per-setup noise, and says nothing
@@ -2234,11 +2265,13 @@ def test_a_meaningless_clustered_component_is_rarely_graded():
     (2) with the randomisation, 4 more not told apart from chance. Over ten
     disjoint sets of 24 the graded count was 0–1, the mean spread z² 0.97–
     1.59 and the IC z² 0.48–1.67; with the quintile spread's date-clustered
-    bar removed the spread z² was 2.35–4.00. Bounds: at most 4 of 24 graded,
-    the 99th percentile of Binomial(24, 5%), measure 3's bar; the spread
-    and IC z² bounds of 2.2 and 2.0 are kept from the h20 version. It
-    cannot tell the gate from no gate (QA P3-2); the UNCONFIRMED fixtures
-    above pin the gate.
+    bar removed the spread z² was 2.35–4.00. Bounds per set of 12: at most
+    3 graded, the 99th percentile of Binomial(12, 5%) (P(X ≤ 3) = 0.998),
+    measure 3's bar; the spread and IC z² bounds of 2.2 and 2.0 are kept
+    from the h20 version (a mean over 24 above 2.2 puts at least one set of
+    12 above it). Today the two sets read 0 and 0 graded, spread z² 0.99
+    and 0.98, IC z² 1.16 and 0.81. It cannot tell the gate from no gate (QA P3-2); the
+    UNCONFIRMED fixtures above pin the gate.
     Mutation it catches: the date-clustered floor left out of the quintile
     spread. (The IC's floor is pinned by
     test_the_ic_test_counts_setups_entered_on_the_same_day_together: at h15
@@ -2249,7 +2282,7 @@ def test_a_meaningless_clustered_component_is_rarely_graded():
     from statistics import NormalDist
     h, block = _H15, _coin_block(1)
     graded, ic_z2, sp_z2, runs = 0, 0.0, 0.0, 0
-    for seed in range(4):
+    for seed in range(first_world, first_world + 2):
         cached, timeouts = _attribution_world(seed)
         rows = [dict(t) for t in cached]
         s = backtest.summarise(rows, step=3, timeouts=list(timeouts),
@@ -2272,8 +2305,8 @@ def test_a_meaningless_clustered_component_is_rarely_graded():
             ic_z2 += NormalDist().inv_cdf(1 - max(news["p"], 1e-12) / 2) ** 2
             sp_z2 += (news["spread"]["spread"] / news["spread"]["se"]) ** 2
             runs += 1
-    assert runs == 24
-    assert graded <= 4, f"{graded} of 24 meaningless components graded"
+    assert runs == 12
+    assert graded <= 3, f"{graded} of 12 meaningless components graded"
     assert sp_z2 / runs <= 2.2, sp_z2 / runs
     assert ic_z2 / runs <= 2.0, ic_z2 / runs
 

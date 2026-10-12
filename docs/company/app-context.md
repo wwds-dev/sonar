@@ -14,7 +14,12 @@ Python 3, PySide6 >= 6.6 (optional `anthropic` for the LLM read panel), pytest, 
 - Install deps: `pip install -r requirements.txt` (venv at `.venv`)
 - Tests: `./run-tests.sh` (external watchdog; native), and
   `QT_QPA_PLATFORM=offscreen ./run-tests.sh` (offscreen). Both must pass. Run twice if flaky.
-- Coverage: `coverage run --branch --source=sonar,ui -m pytest tests/`
+- Coverage: two passes under the watchdog, appended: `.venv/bin/python -m coverage erase`, then
+  `COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow'` (the fast pass, 60 s
+  per-test cap), then `COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m slow -o
+  faulthandler_timeout=0` (the slow rate tests, uncapped per test; under coverage on a loaded
+  machine they can pass 60 s), then `.venv/bin/python -m coverage report --skip-empty`. A single
+  `coverage run -m pytest tests/` can abort on the per-test cap (TESTING.md).
 - Build: `./build_app.sh`
 - Release smoke test: launch the bundle, run one scan, place one paper trade, quit, relaunch
   with state intact; confirm the headless agent (the installed app with `--headless`, `./scripts/install_agent.sh

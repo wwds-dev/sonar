@@ -12,8 +12,9 @@
 #
 #   ./run-tests.sh                 # the suite, 600s budget
 #   ./run-tests.sh -k playmaker    # anything after the script is passed through
-#   ./run-tests.sh -m release      # the release checks, deselected by default
 #   TEST_BUDGET_S=60 ./run-tests.sh
+#   COVERAGE=1 ./run-tests.sh ...  # the same run under coverage, appended to
+#                                  # .coverage (the two-pass command: TESTING.md)
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -24,7 +25,16 @@ cd "$(dirname "$0")"
 BUDGET="${TEST_BUDGET_S:-600}"
 PYTHON="${PYTHON:-.venv/bin/python}"
 
-"$PYTHON" -m pytest "$@" &
+# Coverage appends, so a fast pass and an uncapped slow pass add up to one
+# figure: under coverage on a loaded machine the slow rate tests can pass
+# pytest's 60 s per-test cap (QA P2-A), and the slow pass lifts that cap
+# while this watchdog stays (TESTING.md, docs/company/app-context.md).
+if [ -n "${COVERAGE:-}" ]; then
+    "$PYTHON" -m coverage run --append --branch --source=sonar,ui \
+        -m pytest "$@" &
+else
+    "$PYTHON" -m pytest "$@" &
+fi
 pid=$!
 
 # The sleep runs in the watchdog's background and the trap reaps it. Killing

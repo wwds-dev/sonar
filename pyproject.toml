@@ -37,13 +37,8 @@ faulthandler_exit_on_timeout = true
 # every league in the registry — but a suite that reaches the network is a
 # suite that fails when someone else rate-limits you, and one that varies from
 # 3 to 16 seconds depending on their latency. Both were happening here.
-#
-# Release checks are opt-in too: `pytest -m release` (sre-release runs it;
-# TESTING.md). They fail while a figure user copy quotes is still a
-# placeholder, which is true on a branch mid-build and must not be at release.
-addopts = "-m 'not network and not release'"
+addopts = "-m 'not network'"
 markers = [
     "network: test genuinely needs a live network connection (deselected by default)",
-    "release: a release-blocking check, such as no placeholder left in user copy (deselected by default; sre-release runs `-m release`)",
     "slow: a rate test of many replays, each under the 60 s cap (runs by default; `-m 'not network and not slow'` skips them)",
 ]

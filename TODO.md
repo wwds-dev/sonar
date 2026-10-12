@@ -95,8 +95,8 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
         2026-10-12): the 8h per-class coin, 9.11% [7.6–10.9] of 1,152 judged held-out runs, 52.9% withheld.
         **Owner chose the pooled any-verdict figure** over beats-only (5.12%, "1 in 19"; domain P2-1):
         `CHANCE_VERDICT_RATE = "about 1 run in 10"`, worded "got a verdict either way" in both the beats and
-        the below sentence, with "about 1 in 5 at some settings" (5y h30–59). Fix loop 1: a release-marked test
-        (`pytest -m release`, run by sre-release; TESTING.md) fails while either figure holds a `{`.
+        the below sentence, with "about 1 in 5 at some settings" (5y h30–59). Fix loop 1: a test fails while
+        either figure holds a `{` (in the default suite since fix loop 2).
   - [x] `P2` `research` `@ai` **Fix loop 1 (review, QA, domain pass 3, validator r7)**: the R4 tail test; the
         rate tests share their worlds (no slow test over ~22 s alone at load ~85); the nested 88-day and the
         off-grid 87-day market-wide coins; the `unpaired` withheld reason (a run over a universe without its
