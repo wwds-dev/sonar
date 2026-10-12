@@ -219,10 +219,13 @@ Rows in `shadow_rows`, in this order. Each row is omitted when its inputs are ab
 2. `SH_ROW_WAITING`: `n_waiting` (not yet at T) with the next date an entry reaches T, and
    `n_wait_price`. Only non-zero parts are shown.
 3. `SH_ROW_REF`: the no-edge reference split, as whole percents of the same entries
-   (Σ per-entry `barrier_probabilities_within` ÷ `n_reached`), plus "average result 0R". If ADR 0001
+   (Σ per-entry `barrier_probabilities_within` ÷ `n_reached`), plus the conditioned 0R sentence ("with
+   no edge, exact fills and randomly wandering prices, the average result would be about 0R";
+   fix loop 2). If ADR 0001
    has not landed, this row and every per-band reference part are **omitted, not dashed**.
-4. `SH_ROW_RUNNING` (or `_WAIT`): the mean R with its 95% range, the gate statistic z (HC3 slope),
-   and "no costs".
+4. `SH_ROW_RUNNING` (or `_WAIT`): the mean R with its 95% range for the average, the gate
+   statistic z (HC3 slope), "before costs" and "an average above 0 here is not a trading edge"
+   (fix loop 2).
 5. `SH_ROW_IC`: the rank IC on all graded entries, beside the closed-only rank IC **on the same
    entries** (ADR §3), labelled "for comparison only, not a test". It is shown with the running row,
    at `n_reached ≥ 20`.
@@ -276,7 +279,8 @@ architect.
   scroll.
 - **Wording modes:** each string is a `(plain, expert)` pair picked with `words.pick`, as
   `ATTRIBUTION_HEADS` is. Both modes keep the same rows and the same order (`ui/words.py`
-  docstring). The mandatory caveat and "no costs" appear in **both** modes.
+  docstring). The mandatory caveat and "before costs" appear in **both** modes (fix loop 2; it read
+  "no costs" until domain review r2 P2-1).
 
 ### D6. The strings (one place: `SHADOW_WORDS` in `ui/app.py`, beside `ATTRIBUTION_HEADS`)
 Placeholders are in `{braces}`. "·" separates optional parts; each part is dropped when its count is
@@ -287,7 +291,8 @@ zero.
 | `SH_HEAD` | EVERY ENTRY, GRADED AT A FIXED DATE | TIME-STOP SHADOW |
 | `SH_TIP` | A second grade, beside the one above, which counts only closed positions. Here every protocol entry gets a result a fixed time after it opened (4 weeks on the week profile): at the target, at the stop, or at that day's close if it reached neither. Slow entries count too. It is tested only at three looks fixed in advance: the first 45, 101 and 201 entries. | *(same)* |
 | `SH_COUNT` | {reached} of {entered} at {T} | {reached}/{entered} past T |
-| `SH_ROW_WINDOW` | entries opened {first} to {last} | opened {first} to {last} |
+| `SH_ROW_WINDOW` | the {n} with a result opened {first} to {last} | {n} graded: opened {first} to {last} |
+| `SH_ROW_WINDOW_NONE` | entries opened {first} to {last} (none has a result yet) | opened {first} to {last} (none graded yet) |
 | `SH_NOT_AVAILABLE` | Not available from the running agent. It is an older version than this window. | Not available from the running agent (older version). |
 | `SH_LOADING` | Working it out: this needs a scan and a few daily closes. | Computing: waits for a scan and daily closes. |
 | `SH_ERROR` | Could not work it out this time ({reason}). Nothing is guessed; the next scan tries again. | Error: {reason}. Nothing guessed; retried next scan. |
@@ -311,7 +316,7 @@ zero.
 | `SH_ROW_IC` | for comparison only, not a test: rank correlation {ic} on these entries at {T}, {icc} on the closed ones alone | descriptive only: rank IC {ic} (all at T) vs {icc} (closed only) |
 | `SH_ROW_PAST_LOOK` | look {k}, first {N}: z = {z}, did not cross the line | look {k}, n = {N}: z {z}, not crossed |
 | `SH_ROW_LEFT_OUT` | left out and counted: {m} chosen by hand · {l} closed by hand before {T} · {p} with no closing price | excluded: {m} non-protocol · {l} hand-closed before T · {p} no price |
-| `SH_ROW_GAP` | {g} counted at the target or stop price because a daily close went past it between checks (a real fill there could have been worse) | {g} gap exits, filled at the barrier, not the close beyond it |
+| `SH_ROW_GAP` | {g} counted at the target or stop price because a daily close went past it between checks (a real fill could have been different, often worse at a stop) | {g} gap exits, filled at the barrier, not the close beyond it |
 | `SH_ROW_BAND` | scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} neither · what no edge would give if the volatility estimate was right: {a}% / {b}% / {c}% | score {lo}-{hi}  n={n}  T/S/N {t}/{s}/{x}  no edge @σ̂ {a}/{b}/{c}% |
 | `SH_WARN` | Note: {x} of the first {N} entries were left out ({pct}%). This look rests on the other {used}. | Note: {x}/{N} excluded ({pct}%) at look {k}. |
 | `SH_NOTE` | R is the result in units of the amount risked: -1R lost the amount risked, +{rr}R reached the target. This grade asks only whether the score sorts how coin-flip entries end after {T}. These are paper entries with a random direction, before costs, fees and slippage. Even a crossed line is not a trading edge and says nothing about how future entries end. | R = result / initial risk. Ranks random-direction outcomes at T only; not a tradeable edge. Paper; before costs, fees and slippage; exact fills. |
@@ -605,8 +610,10 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
       - a full listing of the data directory, with every file's size and mtime, being unchanged by
         a pass (P3-4).
 26. **The entry-date window** (domain r2 P2-2; owner decision 2026-10-12: ship it in this branch).
-    - `SH_ROW_WINDOW`, "entries opened {first} to {last}" (expert "opened {first} to {last}"), is the
-      first row on both pages, in both wordings.
+    - `SH_ROW_WINDOW` is the first row on both pages, in both wordings. Fix loop 3 (domain r3 N-6)
+      makes it name what it covers: "the {n} with a result opened {first} to {last}" (expert "{n}
+      graded: opened …") once any entry is graded, and `SH_ROW_WINDOW_NONE`, "entries opened {first}
+      to {last} (none has a result yet)" (expert "… (none graded yet)"), before that.
     - The UI computes it from the readout's `entries[*].opened_at`, so a follower shows the holder's
       period. It counts the graded protocol entries when there are any, and otherwise every protocol
       entry entered. It is hidden when there are no entries.

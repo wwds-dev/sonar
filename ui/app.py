@@ -486,7 +486,10 @@ SHADOW_WORDS = {
     "SH_HEAD": ("EVERY ENTRY, GRADED AT A FIXED DATE", "TIME-STOP SHADOW"),
     "SH_TIP": (_SH_TIP, _SH_TIP),
     "SH_COUNT": ("{reached} of {entered} at {T}", "{reached}/{entered} past T"),
-    "SH_ROW_WINDOW": ("entries opened {first} to {last}", "opened {first} to {last}"),
+    "SH_ROW_WINDOW": ("the {n} with a result opened {first} to {last}",
+                      "{n} graded: opened {first} to {last}"),
+    "SH_ROW_WINDOW_NONE": ("entries opened {first} to {last} (none has a result yet)",
+                           "opened {first} to {last} (none graded yet)"),
     "SH_NOT_AVAILABLE": (
         "Not available from the running agent. It is an older version than this window.",
         "Not available from the running agent (older version)."),
@@ -578,7 +581,7 @@ SHADOW_WORDS = {
                         "excluded: {m} non-protocol · {l} hand-closed before T · {p} no "
                         "price"),
     "SH_ROW_GAP": ("{g} counted at the target or stop price because a daily close went past "
-                   "it between checks (a real fill there could have been worse)",
+                   "it between checks (a real fill could have been different, often worse at a stop)",
                    "{g} gap exits, filled at the barrier, not the close beyond it"),
     "SH_ROW_BAND": ("scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} "
                     "neither · what no edge would give if the volatility estimate was right: "
@@ -911,10 +914,13 @@ def _sh_window(entries, now: float) -> str:
     graded = [e for e in rows if e.get("state") in calibration_mod.SHADOW_GRADED]
     stamps = [_sh_ts(e.get("opened_at")) for e in graded or rows]
     good = [t for t in stamps if t is not None]
-    if not good:
-        return _sh_word("SH_ROW_WINDOW", first="n/a", last="n/a")
-    return _sh_word("SH_ROW_WINDOW", first=_sh_date(min(good), now),
-                    last=_sh_date(max(good), now))
+    first, last = ((_sh_date(min(good), now), _sh_date(max(good), now)) if good
+                   else ("n/a", "n/a"))
+    # It names what it covers (domain r3 N-6): the graded entries, or, before
+    # any is graded, every entry.
+    if graded:
+        return _sh_word("SH_ROW_WINDOW", n=len(graded), first=first, last=last)
+    return _sh_word("SH_ROW_WINDOW_NONE", first=first, last=last)
 
 
 def _sh_rows(d: dict, looks: list[dict], named: int | None, detail: bool, T: str,

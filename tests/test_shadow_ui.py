@@ -280,7 +280,7 @@ def test_u4_past_looks_are_listed_under_the_sentence(window):
     ("n_nonprotocol", "3 chosen by hand"), ("n_left", "3 closed by hand before 4 weeks"),
     ("n_no_price", "3 with no closing price"),
     ("n_gap", "3 counted at the target or stop price because a daily close went past it "
-              "between checks (a real fill there could have been worse)"),
+              "between checks (a real fill could have been different, often worse at a stop)"),
 ])
 def test_u5_every_exclusion_is_shown(window, field, text):
     """U-5. Kills: hiding a non-zero exclusion or gap count."""
@@ -622,10 +622,10 @@ def test_window_names_the_period_of_the_graded_entries(window, monkeypatch):
     entries = _entries((_noon(2026, 9, 22), "time"), (_noon(2026, 10, 3), "stop"),
                        (_noon(2026, 11, 20), "waiting"))
     rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
-    assert rows[0] == "entries opened 22 Sep to 3 Oct"
+    assert rows[0] == "the 2 with a result opened 22 Sep to 3 Oct"
     monkeypatch.setattr(words, "_mode", words.EXPERT)
     rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
-    assert rows[0] == "opened 22 Sep to 3 Oct"
+    assert rows[0] == "2 graded: opened 22 Sep to 3 Oct"
 
 
 def test_window_with_nothing_graded_spans_every_entry():
@@ -633,7 +633,14 @@ def test_window_with_nothing_graded_spans_every_entry():
     now = _noon(2026, 10, 12)
     entries = _entries((_noon(2026, 9, 22), "waiting"), (_noon(2026, 10, 11), "left"))
     t = shadow_texts(readout(n_reached=0, entries=entries), False, now, 28.0)
-    assert t["rows"].splitlines()[0] == "entries opened 22 Sep to 11 Oct"
+    assert t["rows"].splitlines()[0] == ("entries opened 22 Sep to 11 Oct "
+                                         "(none has a result yet)")
+    words._mode, keep = words.EXPERT, words._mode
+    try:
+        t = shadow_texts(readout(n_reached=0, entries=entries), False, now, 28.0)
+    finally:
+        words._mode = keep
+    assert t["rows"].splitlines()[0] == "opened 22 Sep to 11 Oct (none graded yet)"
 
 
 def test_window_across_the_new_year_carries_the_year():
@@ -641,14 +648,14 @@ def test_window_across_the_new_year_carries_the_year():
     now = _noon(2027, 2, 1)
     entries = _entries((_noon(2026, 12, 20), "time"), (_noon(2027, 1, 5), "target"))
     rows = shadow_texts(readout(entries=entries), True, now, 28.0)["rows"]
-    assert rows.splitlines()[0] == "entries opened 20 Dec 2026 to 5 Jan"
+    assert rows.splitlines()[0] == "the 2 with a result opened 20 Dec 2026 to 5 Jan"
 
 
 @pytest.mark.parametrize("bad", ["x", 1e18, -5.0, None, float("nan")])
 def test_window_reads_n_a_for_a_bad_date_never_raises(bad):
     from ui.app import shadow_texts
     t = shadow_texts(readout(entries=_entries((bad, "time"))), False, NOW, 28.0)
-    assert t["rows"].splitlines()[0] == "entries opened n/a to n/a"
+    assert t["rows"].splitlines()[0] == "the 1 with a result opened n/a to n/a"
 
 
 def test_window_is_hidden_with_no_entries(window):
@@ -674,4 +681,4 @@ def test_window_on_a_follower_comes_from_the_holders_payload(window, monkeypatch
     window._refresh_book()
     for w in (window.shadow_grade, window.book_shadow):
         first = w.shadow_rows.text().splitlines()[0]
-        assert first.startswith("entries opened 22 Sep") and "3 Oct" in first
+        assert first.startswith("the 2 with a result opened 22 Sep") and "3 Oct" in first
