@@ -914,7 +914,12 @@ def ledger_new(now: float, build: str, ledger_id: str | None = None,
 
 
 def _is_num(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return False
+    try:
+        return math.isfinite(v)
+    except OverflowError:           # an int too large for a float is no timestamp or R
+        return False
 
 
 def _is_int(v) -> bool:

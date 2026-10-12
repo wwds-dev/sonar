@@ -974,6 +974,7 @@ def _mutate(path_, value):
     _mutate(("entries", "0001", "extra"), 0),
     _mutate(("looks", "1", "crossed"), "yes"), _mutate(("looks", "1", "k"), 2),
     _mutate(("looks", "1", "members"), []), _mutate(("looks", "1", "method"), "guess"),
+    _mutate(("entries", "0001", "t_due"), 10 ** 400),
     _mutate(("price_tries", "x"), ["20 Oct"]), _mutate(("errata", 0, "date"), "2026-13-01"),
     _mutate(("errata", 0, "reason"), ""),
 ], ids=lambda f: "change")
@@ -995,6 +996,8 @@ def test_a_file_that_is_not_a_ledger_is_named_by_its_error(raw, why):
 @pytest.mark.parametrize("raw,ok", [(None, None), ({"ledger_id": "x", "created_at": 1.0}, False),
                                     ({"ledger_id": "00000000-0000-4000-8000-000000000000"}, False),
                                     ("marker", False),
+                                    ({"ledger_id": "00000000-0000-4000-8000-000000000000",
+                                      "created_at": 10 ** 400}, False),
                                     ({"ledger_id": "00000000-0000-4000-8000-000000000000",
                                       "created_at": 1.0}, True)])
 def test_the_marker_is_checked_too(raw, ok):
