@@ -615,3 +615,59 @@ def test_an_engine_that_drives_answers_for_itself(tmp_path, monkeypatch):
     monkeypatch.setattr("sonar.llm.available", lambda: (False, "no key here"))
     assert live.following is None
     assert live.llm_available() == (False, "no key here")
+
+
+def test_a_new_holder_has_not_answered_for_the_old_one(tmp_path, monkeypatch):
+    """Review P3-2: the read answer belongs to the holder that gave it. A
+    different holder, a new process at the same address, or none, starts
+    from "has not said yet"."""
+    live = _follower(tmp_path, monkeypatch)
+    a, b = "http://127.0.0.1:1", "http://127.0.0.1:2"
+    not_yet = "runs the read, and has not said yet whether it can"
+    live._follow(a, 10)
+    live._holder_llm = (a, True, "ready")
+    live._follow(a, 10)
+    assert live.llm_available() == (True, "ready"), "same holder keeps its answer"
+    live._follow(b, 10)
+    ok, why = live.llm_available()
+    assert ok is False and why == f"the engine at 127.0.0.1:2 {not_yet}"
+    live._holder_llm = (b, True, "ready")
+    live._follow(b, 11)                         # restarted at the same address
+    assert live.llm_available()[1].endswith(not_yet)
+    live._holder_llm = (b, True, "ready")
+    live._follow(None)
+    assert live._holder_llm is None
+
+
+def test_an_answer_from_the_last_holder_is_not_shown_for_the_next(tmp_path, monkeypatch):
+    """Review P3-1: a configure() in flight for holder A can land its answer
+    after the window moved to B. It is keyed to A, so B has not said yet."""
+    live = _follower(tmp_path, monkeypatch)
+    live._follow("http://127.0.0.1:2", 10)
+    live._holder_llm = ("http://127.0.0.1:1", True, "ready")
+    ok, why = live.llm_available()
+    assert ok is False and "127.0.0.1:2" in why and "has not said yet" in why
+
+
+def test_the_follow_loop_resets_the_answer_when_the_holder_changes(tmp_path, quick,
+                                                                  monkeypatch):
+    """Review P3-2 (loop wiring): with mirroring off, only the loop's own
+    switch to the new holder can clear the old answer."""
+    a, b = "http://127.0.0.1:1", "http://127.0.0.1:2"
+    _lock_held_by(tmp_path, 1, a)
+    live = _follower(tmp_path, monkeypatch)
+    monkeypatch.setattr(live, "_mirror", lambda url, slow: None)
+    thread = threading.Thread(target=live.run, args=("app",), daemon=True)
+    thread.start()
+    try:
+        assert _wait(lambda: live.following == a)
+        live._holder_llm = (a, True, "ready")
+        _lock_held_by(tmp_path, 1, b)
+        assert _wait(lambda: live.following == b)
+        assert live._holder_llm is None
+        live._holder_llm = (b, True, "ready")
+        _lock_held_by(tmp_path, os.getppid(), b)    # a new process, same address
+        assert _wait(lambda: live._holder_llm is None), "a restart kept the answer"
+    finally:
+        live.stop()
+        thread.join(timeout=5)

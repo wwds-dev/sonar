@@ -15,6 +15,7 @@ from __future__ import annotations
 from PySide6.QtCore import QThread, Signal
 
 from sonar.core import Live
+from sonar.llm import _clean
 
 
 class PollThread(QThread):
@@ -41,7 +42,7 @@ class ReadThread(QThread):
         try:
             self.done.emit(self.live.read(self.kind, self.ident))
         except Exception as exc:           # never take the window down
-            self.done.emit({"error": f"{type(exc).__name__}: {exc}"})
+            self.done.emit({"error": _clean(f"{type(exc).__name__}: {exc}", 160)})
 
 
 class BacktestThread(QThread):
@@ -136,4 +137,4 @@ class PropThread(QThread):
             text, error = llm.complete(self.system, self.prompt)
             self.done.emit(text, error or "")
         except Exception as exc:           # never take the window down
-            self.done.emit("", f"{type(exc).__name__}: {exc}")
+            self.done.emit("", _clean(f"{type(exc).__name__}: {exc}", 160))

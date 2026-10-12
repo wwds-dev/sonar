@@ -29,6 +29,15 @@ section lists what the v2 arc shipped.
 
 ## Unreleased — 2026-10-12
 
+**A followed engine's read answer stays with that engine; error text is never
+markup.** While following another SONAR process, whether a read can run is that
+process's answer; it was kept after the window moved to another holder or the
+holder restarted, so the new one was shown the old one's "ready" or refusal. It
+is now tied to the holder that gave it (`docs/specs/holder-llm-playmaker-plaintext.md`).
+The Playmaker status line is plain text, and the Playmaker completion and the
+read and prop workers show exception text cleaned and capped, as the LLM read
+already did.
+
 **The LLM read fails plainly, and its reply is drawn as text.** A refused,
 truncated, unparseable or wrongly shaped reply, and every API error (one fixed
 line per status, a timeout, a full context window), now becomes a plain error

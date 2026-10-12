@@ -357,4 +357,5 @@ def complete(system: str, prompt: str, model: str = MODEL,
         text = "\n".join(parts).strip()
         return (text, None) if text else ("", "empty response")
     except Exception as exc:
-        return "", f"{type(exc).__name__}: {exc}"
+        # Exception text can quote the model or a file path: one clean line.
+        return "", _clean(f"{type(exc).__name__}: {exc}", 160)

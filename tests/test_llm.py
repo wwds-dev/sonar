@@ -303,6 +303,16 @@ def test_an_unexpected_exception_is_shown_cleaned_and_capped(sdk):
     assert len(read.error) < 180
 
 
+def test_a_plain_completion_shows_an_exception_cleaned_and_capped(sdk):
+    """Review P3-5: Playmaker's completion path cleans its error as read() does."""
+    sdk.outcome = OSError("<a href='x'>profile</a>\n" + "y" * 400)
+    text, error = llm.complete("system", "prompt")
+    assert text == ""
+    assert error.startswith("OSError: ")
+    assert "<" not in error and "\n" not in error
+    assert len(error) <= 160
+
+
 def test_a_status_error_never_shows_the_raw_error_body(sdk):
     # Review R2: the SDK's message is "Error code: 401 - {...raw dict...}".
     sdk.outcome = _status(401, "authentication_error", "invalid x-api-key")

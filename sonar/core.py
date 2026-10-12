@@ -138,7 +138,9 @@ class Live:
         # Whether the engine being followed can run an LLM read, as its own
         # /api/config says. The read runs there, so this process's SDK and
         # key are beside the point while following.
-        self._holder_llm: tuple[bool, str] | None = None
+        # (url asked, ok, detail); _holder_key is the (url, pid) followed.
+        self._holder_llm: tuple[str, bool, str] | None = None
+        self._holder_key: tuple[str | None, int | None] = (None, None)
         self.horizon = horizon.get(horizon_name)
         paths.ensure_dirs()
         self.engine = Engine(paths.state_file(), risk=risk.get(risk_name))
@@ -668,12 +670,14 @@ class Live:
         have the same SDK. Asking this process instead refused reads the
         holder could run, and misattributed the holder's refusals to this one.
         """
-        if not self.following:
+        # Read once: the follow thread and a configure() can change both.
+        url, answer = self.following, self._holder_llm
+        if not url:
             return llm.available()
-        where = f"the engine at {self.following.split('//')[-1]} runs the read"
-        if self._holder_llm is None:
+        where = f"the engine at {url.split('//')[-1]} runs the read"
+        if answer is None or answer[0] != url:
             return False, f"{where}, and has not said yet whether it can"
-        ok, why = self._holder_llm
+        _, ok, why = answer
         return (True, "ready") if ok else (False, f"{where}: {why}")
 
     def config(self) -> dict:
@@ -1045,24 +1049,33 @@ class Live:
                     # Still read-only: an action taken now would write the
                     # launch-time book. _take_the_book lifts it once the
                     # record on disk has been re-read.
-                    self.following = None
+                    self._follow(None)
                     self._follow_failures = 0
                     return True
                 self.read_only = True
                 self.conflict = enginelock.describe_conflict(self.engine_lock)
             url = (holder or {}).get("url")
             if url:
-                self.following = url
+                self._follow(url, (holder or {}).get("pid"))
                 slow = now - last_slow >= FOLLOW_SLOW_EVERY
                 self._mirror(url, slow)
                 if slow:
                     last_slow = now
             else:
-                self.following = None
+                self._follow(None)
                 with self.lock:
                     self.snapshot = {"status": "read-only", "detail": self.conflict}
             self._stop.wait(FOLLOW_EVERY)
         return False
+
+    def _follow(self, url: str | None, pid: int | None = None) -> None:
+        """Follow the holder at ``url`` (None: nobody). Another holder, or a
+        new process at the same address, has not said whether it can run a
+        read: the last one's answer is not its."""
+        if (url, pid) != self._holder_key:
+            self._holder_llm = None
+        self._holder_key = (url, pid)
+        self.following = url
 
     def _mirror(self, url: str, slow: bool) -> None:
         """One round of following: the holder's snapshot every time, the
@@ -1150,7 +1163,9 @@ class Live:
                     self.protocol_on = bool(cfg["protocol"]["on"])
         llm_cfg = cfg.get("llm")
         if isinstance(llm_cfg, dict) and "available" in llm_cfg:
-            self._holder_llm = (bool(llm_cfg["available"]),
+            # Keyed by the holder asked: an answer that lands after the
+            # window moved on to another holder is never shown for it.
+            self._holder_llm = (url, bool(llm_cfg["available"]),
                                 str(llm_cfg.get("detail") or ""))
 
     @staticmethod

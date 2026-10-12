@@ -3091,6 +3091,8 @@ class MainWindow(QMainWindow):
         self.playmaker_btn.clicked.connect(self._playmaker_analyse)
         row.addWidget(self.playmaker_btn)
         self.playmaker_status = label("", "faint", theme.figure(9))
+        # Shows exception text, which can quote a model or a file: never markup.
+        self.playmaker_status.setTextFormat(Qt.PlainText)
         row.addWidget(self.playmaker_status, 1)
         dl.addLayout(row)
         lay.addWidget(data_p)

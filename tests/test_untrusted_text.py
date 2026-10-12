@@ -119,3 +119,41 @@ def test_the_read_panel_draws_a_reply_as_text(window, reply):
     panel.show_read(reply, long_horizon=False)
     for lb in (panel.badge, panel.subject, panel.body):
         assert lb.textFormat() == Qt.PlainText
+
+
+def test_the_playmaker_status_line_is_text_not_markup(window):
+    """Review P3-5: the status line shows exception text, never rich text."""
+    from PySide6.QtCore import Qt
+    assert window.playmaker_status.textFormat() == Qt.PlainText
+
+
+def test_a_worker_error_is_cleaned(monkeypatch):
+    """Security S3: a read or completion that raises shows one clean line."""
+    pytest.importorskip("PySide6")
+    from ui import worker
+
+    class Boom:
+        def read(self, kind, ident):
+            raise OSError("<img src='file:///etc/x'>\n" + "y" * 400)
+    got = []
+    t = worker.ReadThread(Boom(), "asset", "BTC")
+    t.done.connect(got.append)
+    t.run()
+    assert got[0]["error"].startswith("OSError: ")
+    assert "<" not in got[0]["error"] and len(got[0]["error"]) <= 160
+
+
+def test_a_completion_worker_error_is_cleaned(monkeypatch):
+    pytest.importorskip("PySide6")
+    from sonar import llm as llm_mod
+    from ui import worker
+
+    def boom(system, prompt):
+        raise OSError("<img src='file:///etc/x'>\n" + "y" * 400)
+    monkeypatch.setattr(llm_mod, "complete", boom)
+    got = []
+    t = worker.PropThread("system", "prompt")
+    t.done.connect(lambda text, error: got.append(error))
+    t.run()
+    assert got[0].startswith("OSError: ")
+    assert "<" not in got[0] and len(got[0]) <= 160
