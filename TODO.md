@@ -87,9 +87,9 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       can read as position size. Keep it, or amend the ADR and take one of the suggested wordings.
 - [ ] `P2` `testing` `@me` **Live weekend stamp check for the shadow (TESTPLAN 11.23).** On a Saturday or Sunday
       after 00:00 UTC, note the newest daily-bar stamps of ^GSPC, META, EURCHF=X, TRX-USD and ^N225 and record them
-      in ADR 0002 §5. Outcomes are correct under any convention, but with last-trade or fetch-time stamps the wait
-      before the 7-day "no price" grace runs out leaves only 1.3 days (US holiday) or 0.27 days (^N225 in Golden
-      Week) (code review r4 P3-A). Also look for a crypto row stamped exactly 00:00:00 UTC with the next row
+      in ADR 0002 §5. Outcomes are correct under any convention. The margin before "no price" was 1.3 days (US
+      holiday) or 0.27 days (^N225 in Golden Week) under the 7-day grace (code review r4 P3-A); the ledger's
+      28-day grace plus 3 tried days removes it (shadow-ledger spec). Also look for a crypto row stamped exactly 00:00:00 UTC with the next row
       missing, which grades a day late (QA r4 P3-4). Spec "Known limits" 1–2.
 - [ ] `P2` `testing` `@me` **The shadow's live success measure at its first look (TESTPLAN 11.21)**, on or after
       the look 1 date (about 2026-11-06): screenshot the block on both pages; each of the first 45 protocol
@@ -103,8 +103,8 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P3` `performance` `@ai` **The shadow's daily fetch runs on the scan thread** (security P3-4): up to ~2 min
       once a UTC day with timeouts, not measured. Eased because decided entries are no longer fetched. Cap the due
       list per pass, or check `_stop` and a time budget.
-- [ ] `P3` `design` `@ai` **Shadow copy P3s the domain review deferred** (domain-finance r2 P3-5 to P3-7): a zero
-      stop distance is shown as "no closing price"; `SH_TIP`'s "at that day's close" on a weekend or holiday T;
+- [ ] `P3` `design` `@ai` **Shadow copy P3s the domain review deferred** (domain-finance r2 P3-5 to P3-7): ~~a zero
+      stop distance is shown as "no closing price"~~ (now `no_risk`, shadow ledger); `SH_TIP`'s "at that day's close" on a weekend or holiday T;
       "+{rr}R reached the target" is exact only at the planned entry. (P3-2, "the line" unexplained, is now in
       manual §10.)
 - [x] `P2` `research` `@me` ~~The shadow's real false-positive rate is about 6%, not 5%.~~ **Decided
@@ -113,15 +113,17 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P2` `testing` `@ai` **Run `./run-tests.sh tests/ -m slow` at release** and on any change to the
       shadow's gate code (V-12 at 2,000 and 20,000 books, about a minute). The default suite runs a cheaper
       version.
-- [ ] `P2` `research` `@me` **Persist the shadow's decided outcomes and evaluated looks across restarts?**
-      Fix loop 1 keeps decided outcomes in memory, so within one process a look evaluated once never
-      changes; a failed fetch keeps the closes already held. A holder restart still decides again from
-      fresh closes, and an entry counted as "no price" can still be graded later. Persisting needs an ADR
-      0002 §7 change (spec Build note 6).
-- [ ] `P2` `research` `@me` **Shadow exclusions select by outcome speed** (model-validator P2-2,
-      `docs/audit/shadow-time-stop-model-validator.md`). `no_price` can only hit entries not settled before T
-      (slow resolvers), and delisting is outcome-related. Options: hold a look with any `no_price` member
-      unevaluated, or show a sensitivity bound (excluded members at R = −1 and at +1.5).
+- [x] `P2` `research` `@me` ~~Persist the shadow's decided outcomes and evaluated looks across restarts?~~
+      **Decided 2026-10-12** (ADR 0002 Amendment 1, spec `docs/specs/shadow-ledger.md`): a write-once
+      ledger with a marker in `portfolio.json`. Built; see the shadow-ledger item below.
+- [x] `P2` `research` `@me` ~~Shadow exclusions select by outcome speed~~ **Decided 2026-10-12**
+      (Amendment 1, G2 (a)): a look is held for a missing price for 28 days and 3 tried days, and a crossing
+      must survive the extreme fills of what is still left out. Built; see the shadow-ledger item below.
+- [ ] `P1` `research` `@ai` **Shadow ledger: Build done 2026-10-12, before the first T on 2026-10-20**
+      (spec `docs/specs/shadow-ledger.md`, engineer report `docs/audit/shadow-ledger-engineer.md`). Next:
+      Review (code-reviewer and domain-finance), Verify (L-1 to L-18, `-m slow` for L-14), Secure (a new
+      file write under `SONAR_DATA`, a new `portfolio.json` key, parsing a hand-editable file), Document
+      (manual §10, CHANGELOG), Release (owner gate). It must be live before look 1 is due.
 - [ ] `P3` `research` `@me` **Shadow rule 1 before rule 2 is not a stopping rule** (model-validator P3-4): a
       missed stop-crossing daily close is overridden if the book later books a TARGET before the cut. Tiny
       bias; a fix changes ADR 0002 §4.

@@ -315,3 +315,57 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
 | L-16 | An erratum in the file is shown and never changes `crossed` or `design_closed`. | erratum rewrites the result |
 | L-17 | A `no_price` member final in look 1 is graded later and counts in look 2; look 1 is unchanged. | cross-look state leak |
 | L-18 | The test fixture refuses a `SONAR_DATA` under `~/Library/Application Support/SONAR` (S8). | — |
+
+## Build notes (shadow ledger)
+*(engineer, 2026-10-12; choices the spec left open. Report: [`shadow-ledger-engineer.md`](../audit/shadow-ledger-engineer.md).)*
+
+1. **Expert strings say "record", not "ledger".** "ledger" contains "edge", which U-1
+   (`tests/test_shadow_ui.py`, `EDGE_ALLOWED`) allows only in fixed phrases. The test was not
+   loosened: "Record since {date}", "record unreadable ({reason}); not recording", "record missing
+   (since {date}); restore from backup", "record write failed ({reason}); retrying".
+2. **A look is a result only when its payload says `recorded: true`** and the ledger is not in a
+   `read` or `missing` state. A payload without the key (a v2.260 holder followed by this window)
+   shows "worked out but not recorded yet". The window checks this itself, whatever the holder
+   sends.
+3. **The split for k > 12** is at the mean confidence of the regression's members (the graded and
+   the filled-in ones), which is what makes the two fills the slope's exact extremes. `no_risk`
+   members are not in the regression and not in the mean.
+4. **Constants** stored: the spec's set plus `try_after_days: 7`; `rules` starts at 1. Any
+   difference is a `constants` mismatch for every recorded look.
+5. **What counts as a try.** A UTC day on which this holder asked for the entry's symbol (a request
+   that failed, or one whose closes still could not decide it), on or after the UTC day of
+   t_T + 7 days. Today's request counts in the same pass, so the third day finalises at once.
+   Stored days earlier than that day are ignored. Days are only added; an entry's are dropped
+   when it is decided (graded, `left`, `no_risk`), and kept while it is `no_price`, which is not
+   written as an entry.
+6. **A ledger that cannot be read or found is read again on each pass** (never written, moved or
+   repaired), so putting the right file back clears the error without a restart. A good ledger is
+   read once per holder tenure, as specified.
+7. **A file with no marker** (for example a `portfolio.json` restored from before the marker) is
+   taken as this book's record and the marker is written back from it. A damaged marker is a
+   `read` error.
+8. **The 10-minute rule.** At load, a marker under 600 s old with no file is taken for a crash
+   between the two writes: the file is made with the marker's id and `created_at`, once per
+   tenure. After that, a failed write is a `write` error and is retried every pass.
+9. **Readout entries from the ledger** drop its `decided_at` and `build`, so an entry read from the
+   ledger equals the one the memo held. `booked` is refreshed from the book, as before.
+10. **Readout looks** add `n_filled`, `past_line`, `price_until`, `recorded` and `recorded_at`;
+    `members` travels only on an evaluated look not yet recorded. The record keeps the spec's
+    fields.
+11. **Mismatch kinds.** `constants` (checked first), `members` (the first N ids in entry order
+    differ), `z` (same ids, a member's state differs, and today's z differs by more than 1e-9).
+12. **Errata** are `{id, reason, r, date}` with `date` as `YYYY-MM-DD`, checked like every other
+    field, and shown with the looks that hold the id.
+13. **Placement.** Ledger errors, mismatches and errata go in the existing gold warning label, the
+    record line at the end of the note, the extremes row first in the rows of the look the
+    sentence names. A recorded past look that was past the line but not robust gets its own row
+    wording. A not-robust z is shown on its own side of the line. "Waits for them until" is
+    added only when the due look has members waiting for a price.
+14. **The file** is JSON with `indent=1` (errata are added by hand), written with
+    `allow_nan=False`, refused above 64 MB on read, and stale temporary files beside it are swept
+    at load. It is written when something was added, a try was counted, or this tenure has not
+    yet written it. `created_by` and `build` are `version.provenance()["version"]`.
+15. **Tests.** `scratch_data` (conftest) sets `SONAR_DATA` to the test's `tmp_path` after
+    `refuse_live_data`. It also clears `SONAR_BACKUP_DIR`, so a scratch backup is never copied
+    off-site. `isolated_state` now refuses a `tmp_path` under the live directory too. The check
+    compares paths as text before resolving anything.
