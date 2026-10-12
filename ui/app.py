@@ -486,6 +486,7 @@ SHADOW_WORDS = {
     "SH_HEAD": ("EVERY ENTRY, GRADED AT A FIXED DATE", "TIME-STOP SHADOW"),
     "SH_TIP": (_SH_TIP, _SH_TIP),
     "SH_COUNT": ("{reached} of {entered} at {T}", "{reached}/{entered} past T"),
+    "SH_ROW_WINDOW": ("entries opened {first} to {last}", "opened {first} to {last}"),
     "SH_NOT_AVAILABLE": (
         "Not available from the running agent. It is an older version than this window.",
         "Not available from the running agent (older version)."),
@@ -830,6 +831,8 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
         status.append(line)
         rows = _sh_rows(d, looks, named, detail, T, waiting, left_out, gap)
 
+    window = _sh_window(d.get("entries"), now)
+    rows = [window] + rows
     out["count"] = (_sh_word("SH_COUNT", reached=reached, entered=entered, T=T)
                     if entered else "")
     out["status"] = " ".join(status)
@@ -894,6 +897,24 @@ def _sh_look_status(looks: list[dict], now: float, T: str,
         return _sh_word("SH_BEFORE_LOOK", due=_sh_date(first.get("due"), now), **kw), None
     return _sh_word("SH_BEFORE_LOOK_UNDATED", missing=_sh_int(first.get("n_missing")),
                     **kw), None
+
+
+def _sh_window(entries, now: float) -> str:
+    """The period the figures are about (domain r2 P2-2, owner decision
+    2026-10-12): the first and last entry date of the graded protocol
+    entries, or of every protocol entry when none is graded yet. Empty when
+    there are no entries. Dates go through the payload clamp; a bad one reads
+    n/a. Read from the readout itself, so a follower shows the holder's."""
+    rows = [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+    if not rows:
+        return ""
+    graded = [e for e in rows if e.get("state") in calibration_mod.SHADOW_GRADED]
+    stamps = [_sh_ts(e.get("opened_at")) for e in graded or rows]
+    good = [t for t in stamps if t is not None]
+    if not good:
+        return _sh_word("SH_ROW_WINDOW", first="n/a", last="n/a")
+    return _sh_word("SH_ROW_WINDOW", first=_sh_date(min(good), now),
+                    last=_sh_date(max(good), now))
 
 
 def _sh_rows(d: dict, looks: list[dict], named: int | None, detail: bool, T: str,

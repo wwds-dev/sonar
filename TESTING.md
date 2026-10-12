@@ -10,7 +10,7 @@ what it was measured on.
 
 ## 0. Where we are
 
-**2,373 tests**, 80% of statements and branches across `sonar/` and `ui/`
+**2,385 tests**, 80% of statements and branches across `sonar/` and `ui/`
 (2026-10-10; 71% on 2026-09-22, 66% of `sonar/` alone on 2026-09-16), plus 30
 opt-in `-m network` checks of every live source and 22 opt-in `-m slow` Monte-Carlo
 checks of the time-stop shadow's gate (V-12 of `docs/specs/shadow-time-stop.md`:

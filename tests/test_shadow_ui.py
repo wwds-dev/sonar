@@ -600,3 +600,78 @@ def test_domain_n2_the_caveat_covers_a_downward_crossing_too(window):
         status = show(window, STATES[name])["landing"]["status"]
         assert "trading by score would make money" in status
         assert "high scores would make money" not in status
+
+
+# --------------------------------------------------------------------------- #
+# The entry-date window (domain r2 P2-2; owner decision 2026-10-12)
+# --------------------------------------------------------------------------- #
+def _noon(y, m, d):
+    from datetime import datetime
+    return datetime(y, m, d, 12).timestamp()            # local noon: no date shift
+
+
+def _entries(*spec):
+    return [{"id": f"w{i}", "opened_at": t, "state": state} for i, (t, state) in enumerate(spec)]
+
+
+def test_window_names_the_period_of_the_graded_entries(window, monkeypatch):
+    """Graded entries set the period when there are any; the not-yet-graded
+    later ones do not stretch it."""
+    from ui.app import shadow_texts
+    now = _noon(2026, 12, 1)
+    entries = _entries((_noon(2026, 9, 22), "time"), (_noon(2026, 10, 3), "stop"),
+                       (_noon(2026, 11, 20), "waiting"))
+    rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
+    assert rows[0] == "entries opened 22 Sep to 3 Oct"
+    monkeypatch.setattr(words, "_mode", words.EXPERT)
+    rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
+    assert rows[0] == "opened 22 Sep to 3 Oct"
+
+
+def test_window_with_nothing_graded_spans_every_entry():
+    from ui.app import shadow_texts
+    now = _noon(2026, 10, 12)
+    entries = _entries((_noon(2026, 9, 22), "waiting"), (_noon(2026, 10, 11), "left"))
+    t = shadow_texts(readout(n_reached=0, entries=entries), False, now, 28.0)
+    assert t["rows"].splitlines()[0] == "entries opened 22 Sep to 11 Oct"
+
+
+def test_window_across_the_new_year_carries_the_year():
+    from ui.app import shadow_texts
+    now = _noon(2027, 2, 1)
+    entries = _entries((_noon(2026, 12, 20), "time"), (_noon(2027, 1, 5), "target"))
+    rows = shadow_texts(readout(entries=entries), True, now, 28.0)["rows"]
+    assert rows.splitlines()[0] == "entries opened 20 Dec 2026 to 5 Jan"
+
+
+@pytest.mark.parametrize("bad", ["x", 1e18, -5.0, None, float("nan")])
+def test_window_reads_n_a_for_a_bad_date_never_raises(bad):
+    from ui.app import shadow_texts
+    t = shadow_texts(readout(entries=_entries((bad, "time"))), False, NOW, 28.0)
+    assert t["rows"].splitlines()[0] == "entries opened n/a to n/a"
+
+
+def test_window_is_hidden_with_no_entries(window):
+    for name, shadow in STATES.items():
+        assert "opened" not in show(window, shadow)["book"]["rows"], name
+
+
+@pytest.mark.parametrize("mode", [words.PLAIN, words.EXPERT])
+def test_window_obeys_the_banned_words(window, monkeypatch, mode):
+    monkeypatch.setattr(words, "_mode", mode)
+    entries = _entries((_noon(2026, 9, 22), "time"), (_noon(2026, 10, 3), "stop"))
+    _check_words(_all_text(show(window, readout(entries=entries))), "window")
+
+
+def test_window_on_a_follower_comes_from_the_holders_payload(window, monkeypatch):
+    """The follower computes nothing: the window is read from the mirrored
+    readout's entries."""
+    entries = _entries((_noon(2026, 9, 22), "time"), (_noon(2026, 10, 3), "stop"))
+    payload = {"shadow": readout(entries=entries)}
+    monkeypatch.setattr(core.Live, "_fetch", staticmethod(lambda url, path: payload))
+    window.live._mirror_book("http://holder")
+    window._refresh_portfolio()
+    window._refresh_book()
+    for w in (window.shadow_grade, window.book_shadow):
+        first = w.shadow_rows.text().splitlines()[0]
+        assert first.startswith("entries opened 22 Sep") and "3 Oct" in first

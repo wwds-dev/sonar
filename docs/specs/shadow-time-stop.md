@@ -287,6 +287,7 @@ zero.
 | `SH_HEAD` | EVERY ENTRY, GRADED AT A FIXED DATE | TIME-STOP SHADOW |
 | `SH_TIP` | A second grade, beside the one above, which counts only closed positions. Here every protocol entry gets a result a fixed time after it opened (4 weeks on the week profile): at the target, at the stop, or at that day's close if it reached neither. Slow entries count too. It is tested only at three looks fixed in advance: the first 45, 101 and 201 entries. | *(same)* |
 | `SH_COUNT` | {reached} of {entered} at {T} | {reached}/{entered} past T |
+| `SH_ROW_WINDOW` | entries opened {first} to {last} | opened {first} to {last} |
 | `SH_NOT_AVAILABLE` | Not available from the running agent. It is an older version than this window. | Not available from the running agent (older version). |
 | `SH_LOADING` | Working it out: this needs a scan and a few daily closes. | Computing: waits for a scan and daily closes. |
 | `SH_ERROR` | Could not work it out this time ({reason}). Nothing is guessed; the next scan tries again. | Error: {reason}. Nothing guessed; retried next scan. |
@@ -603,6 +604,14 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
       - a negative payload timestamp reading n/a (N20);
       - a full listing of the data directory, with every file's size and mtime, being unchanged by
         a pass (P3-4).
+26. **The entry-date window** (domain r2 P2-2; owner decision 2026-10-12: ship it in this branch).
+    - `SH_ROW_WINDOW`, "entries opened {first} to {last}" (expert "opened {first} to {last}"), is the
+      first row on both pages, in both wordings.
+    - The UI computes it from the readout's `entries[*].opened_at`, so a follower shows the holder's
+      period. It counts the graded protocol entries when there are any, and otherwise every protocol
+      entry entered. It is hidden when there are no entries.
+    - Dates go through `_sh_date` (with the year when it differs from now) and the payload clamp. A
+      bad value reads n/a and never raises.
 
 ## Risks and open questions
 - **The rank IC is not exactly zero-centred under no edge.** Barrier R-multiples are skewed: the

@@ -17,7 +17,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **2,373 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **2,385 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -303,6 +303,7 @@ with another rather than with a value written here. `curl -s
 | 11.19 | ⚠ | Run the window while an **older** agent build drives the book | The block says *Not available from the running agent*. With agent and window on the same build, it shows the agent's readout word for word. |
 | 11.20 | | Leave the agent off for more than a day, then open the window | The block's last line says *Not updated for N hours: the agent may be stopped*. Restart the agent: after its first scan the line says *Worked out …* again. |
 | 11.21 | ⚠ | On or after the first look's date (about 2026-11-06), screenshot the block on both pages | Each of the first 45 protocol entries has an outcome (target, stop or time) or a counted exclusion: the sentence names look 1 with its z against ±2.315, or says which entries still wait for a closing price. This is the spec's live success measure. |
+| 11.22 | | Read the first row of the second grade on both pages, and compare it with the oldest and newest protocol entries on **My trades** | *entries opened {first} to {last}*: the dates of the oldest and newest graded entry (all entries before any is graded), with a year only when it is not this one. The same on both pages and in Expert wording (*opened … to …*). Absent when there are no protocol entries. |
 
 ---
 
