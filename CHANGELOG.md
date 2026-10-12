@@ -12,6 +12,24 @@ section lists what the v2 arc shipped.
 
 ## Unreleased (not installed)
 
+- **A second score grade that leaves no entry out.** The existing grade (*Is the score right?* on
+  the landing page, the calibration panel on My trades) counts only positions closed at their
+  target or stop. The slow ones stay open and outside it, and a quick close is more often the
+  nearer barrier, the stop, so that grade leaned on the quick resolvers. Under it, a new block,
+  **Every entry, graded at a fixed date** (Expert: *Time-stop shadow*), gives every protocol entry
+  a result 4 weeks after it opened (on the week profile): its target or stop if the book closed it
+  there first, otherwise the close after those 4 weeks. The result is in **R**, the result in
+  units of the amount risked. It is a test only at three looks fixed in advance, the first 45, 101
+  and 201 protocol entries, each judged once against a line at ±2.315. Until a look is due it says
+  *Not a test yet*, and from 20 results a line marked *running, not a test* shows the paper
+  average. The first row names the entry dates the figures cover. Entries chosen by hand, closed by
+  hand before the 4 weeks, or with no closing price 7 days after their date are left out and
+  counted on screen. These are paper entries with a coin-flip direction, before costs, fees and
+  slippage, with exact fills; even a crossed line is not a trading edge. The agent works it out on
+  each scan, in memory, from the book and Yahoo daily closes; nothing is written to disk. A window
+  that follows the agent shows the agent's copy, and with an older agent it says *Not available
+  from the running agent*. No exit, no row's odds and nothing in the existing grade or its verdict
+  changes. Manual §10 has the details. (ADR 0002, `docs/specs/shadow-time-stop.md`)
 - CI: `actions/checkout` and `actions/setup-python` move to v7, which run on Node.js 24
   (GitHub is retiring Node.js 20 for actions). No change to the app.
 - The launchd agent runs the installed `SONAR.app` headless instead of the checkout's working tree,

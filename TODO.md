@@ -77,10 +77,36 @@ From the review, QA and validation rounds in `docs/audit/qa11-qa13-honest-baseli
 spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 
 - [ ] `P1` `research` `@ai` **Calibration is right-censored by score — time-stop shadow built, not yet shipped.**
-      Owner decision 2026-10-12: ADR 0002, spec `docs/specs/shadow-time-stop.md`. Build done 2026-10-12 on
-      branch `claude/zealous-mclaren-8985d0` (`docs/audit/shadow-time-stop-engineer.md`). Next: Review
-      (code-reviewer, plus domain-finance and model-validator on the gate), Verify, Secure (the payload is
-      untrusted input on a follower), Document (manual §10 sub-heading, Design D8; CHANGELOG), Release.
+      Owner decision 2026-10-12: ADR 0002, spec `docs/specs/shadow-time-stop.md`. On branch
+      `claude/zealous-mclaren-8985d0`, all 2026-10-12: Build, Review (four rounds), Verify (four rounds), Secure
+      and Document (manual §10 "A second grade: every entry at a fixed date", CHANGELOG under Unreleased) are
+      done; reports in `docs/audit/shadow-time-stop-*.md`. Next: Release (owner gate), with the slow suite.
+- [ ] `P2` `design` `@me` **Decide the shadow's `SH_FINAL_NONE` wording before Release** (model-validator P2-4,
+      domain-finance P3-3; spec "Known limits", owner question 3). ADR 0002 §3 fixes "no evidence that the score
+      ranks 4-week results, at the planned size"; the reviews say it overstates a negative and that "planned size"
+      can read as position size. Keep it, or amend the ADR and take one of the suggested wordings.
+- [ ] `P2` `testing` `@me` **Live weekend stamp check for the shadow (TESTPLAN 11.23).** On a Saturday or Sunday
+      after 00:00 UTC, note the newest daily-bar stamps of ^GSPC, META, EURCHF=X, TRX-USD and ^N225 and record them
+      in ADR 0002 §5. Outcomes are correct under any convention, but with last-trade or fetch-time stamps the wait
+      before the 7-day "no price" grace runs out leaves only 1.3 days (US holiday) or 0.27 days (^N225 in Golden
+      Week) (code review r4 P3-A). Also look for a crypto row stamped exactly 00:00:00 UTC with the next row
+      missing, which grades a day late (QA r4 P3-4). Spec "Known limits" 1–2.
+- [ ] `P2` `testing` `@me` **The shadow's live success measure at its first look (TESTPLAN 11.21)**, on or after
+      the look 1 date (about 2026-11-06): screenshot the block on both pages; each of the first 45 protocol
+      entries has an outcome or a counted exclusion.
+- [ ] `P3` `security` `@ai` **A follower takes the shadow's `crossed` and `evaluated` on trust** (security P3-1,
+      `docs/audit/shadow-time-stop-security-engineer.md`): a truthy `"crossed": "no"` renders a crossing. Require
+      `is True`, re-derive crossed from `abs(z) >= SHADOW_BOUNDARY`, check `k` and `n` against `SHADOW_LOOKS`.
+- [ ] `P3` `security` `@ai` **The shadow's `looks` and `bands` lists from the holder have no size bound**
+      (security P3-2): 20,000 bands took 9 s to render. Slice to `len(SHADOW_LOOKS)` and `len(BUCKETS)`; cap the
+      response size in `Live._fetch`.
+- [ ] `P3` `performance` `@ai` **The shadow's daily fetch runs on the scan thread** (security P3-4): up to ~2 min
+      once a UTC day with timeouts, not measured. Eased because decided entries are no longer fetched. Cap the due
+      list per pass, or check `_stop` and a time budget.
+- [ ] `P3` `design` `@ai` **Shadow copy P3s the domain review deferred** (domain-finance r2 P3-5 to P3-7): a zero
+      stop distance is shown as "no closing price"; `SH_TIP`'s "at that day's close" on a weekend or holiday T;
+      "+{rr}R reached the target" is exact only at the planned entry. (P3-2, "the line" unexplained, is now in
+      manual §10.)
 - [x] `P2` `research` `@me` ~~The shadow's real false-positive rate is about 6%, not 5%.~~ **Decided
       2026-10-12:** the owner accepts the measured 5.9–6.2%; ADR 0002 is not amended and the boundary stays
       2.315 (spec Build note 15).

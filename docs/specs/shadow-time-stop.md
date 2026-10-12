@@ -5,16 +5,23 @@
   open questions are accepted: shadow readout (cohort grading stays the fallback); T = 28 calendar days;
   gate on the HC3 slope of R on score, rank IC shown for comparison; Pocock 2.315 at 45 / 101 / 201;
   protocol entries only, hand-closed ones excluded and counted; build after the QA-11/QA-13 work lands.
-- Next: Build. Design (ux-designer) was written 2026-10-12, below. Build is blocked on the dependency
-  below (not landed at approval).
+- Next: **Release** (sre-release), an owner gate. Before or at release: the slow suite
+  (`./run-tests.sh tests/ -m slow`), the owner's live weekend stamp check (TESTPLAN 11.23), and the
+  owner's call on `SH_FINAL_NONE` (Known limits, below).
 - Phases: Define (product-manager role) and Architect (architect role), written 2026-10-12 in one
-  session. Design (ux-designer) is deferred until the owner approves the direction; constraints for it
-  are below. Build, Review, Verify, Secure and Document come after the gate. Both playbooks are
-  `status: baseline`, so no radar run has verified them yet. Treat them as stale.
+  session. Design (ux-designer), 2026-10-12, below. Build, Review (code-reviewer, domain-finance,
+  model-validator; four rounds), Verify (qa-engineer; four rounds), Secure (security-engineer) and
+  Document (tech-writer) are **done**, all 2026-10-12 on branch `claude/zealous-mclaren-8985d0`;
+  reports in `docs/audit/shadow-time-stop-*.md`. The playbooks are `status: baseline`, so no radar
+  run has verified them yet. Treat them as stale.
 - Sources: `docs/audit/calibration-censoring-by-score.md` (master; its status paragraph is on branch
   `claude/happy-visvesvaraya-84b4ef`), `docs/audit/censoring-options-model-validator.md` (that branch
   only). The evidence script is [`shadow-time-stop-sims.py`](shadow-time-stop-sims.py).
 
+> **Landed since:** this dependency was committed in `231540b` (QA-11/QA-13) before Build, and
+> `docs/adr/0001-…` and `scoring.barrier_probabilities_within` are on this branch. The note below is
+> kept as the record at approval.
+>
 > **Dependency, not landed (checked 2026-10-12 03:52 IST).** `scoring.barrier_probabilities_within`,
 > `resolved_hit_probability` and `docs/adr/0001-backtest-baseline-conditional-on-resolution.md` exist
 > only as uncommitted work in the main checkout (`git status`: `M sonar/scoring.py`,
@@ -520,22 +527,42 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
       `cr3/stamp.py` run on this tree): no outcome flips, and nothing is graded at a close before
       t_T.
       - Session-start stamps decide a Thursday T on Saturday and a Friday T on Tuesday.
-      - Fetch-time and last-trade stamps take up to two days longer.
+      - Fetch-time and last-trade stamps take **up to 3 days longer**: a Thursday T is decided on
+        Tuesday, not Saturday (code review r4 P3-A; this note said "two days" until the Document
+        phase).
       - A booked TARGET after the cut is never moved before it.
-    - **Measured** (`test_r2_latency_*`, US-session bars, one fetch a day at 00:01 UTC):
+    - **Measured** (`test_r2_latency_*`, US-session bars with **session-start stamps**, one fetch a
+      day at 00:01 UTC):
       - A Monday–Thursday T is decided **1.4 days** after t_T, and a Friday T **3.4 days** after.
       - A holiday can stretch this to **4.4 days** (a Thursday T before a Friday holiday, or a
         Friday T before a Monday holiday).
       - A first pass later than 00:01 adds its delay (07:00: **4.7 days**).
       - The worst of these leaves **2.3 days** before the 7-day grace makes an entry "no price".
+        That margin holds for session-start stamps on US bars only.
+    - **Worst cases under the other conventions** (code review r4 P3-A, the reviewer's `cr4/`
+      scripts on synthetic bars; not in the suite):
+      - A US holiday under **last-trade** stamps (a Thursday T before a Friday holiday) is decided
+        at the Wednesday 00:01 fetch, **5.4 days** after t_T, or **5.7 days** with a 07:00 first
+        pass. That leaves **1.3 days** of grace.
+      - Markets whose session starts near 00:00 UTC, such as **^N225** and **^KS11** (both in the
+        universe), with **fetch-time** stamps on the in-progress bar: the newest bar is off the
+        pattern at every 00:01 fetch and is dropped, so every T waits a day more (a Monday T, 0.7 →
+        1.7 days). In Golden Week 2026 a Friday T is decided **6.73 days** after t_T, leaving
+        **0.27 days** of grace.
+      - Outcomes stay correct in every case. The risk is the grace limit: `shadow_looks` counts
+        `no_price` as a final exclusion, and the memo does not keep it, so an entry that passes the
+        limit can let a look be evaluated without it, and then be graded a day later. This is older
+        than fix loop 3, which only narrows the margin under the unconfirmed conventions. See Known
+        limits.
     - The FX Sunday case is graded at Wednesday's read at Monday's close, never at Friday's. In
       production the live row is also stamped after `now`, because the pass takes `now` before it
       fetches (code review r3 P3-1), so it is dropped either way. B1, B2 and B3 wait, then grade at
       day 28's close.
     - **Open, for the owner:** verify the weekend stamp live with a Saturday or Sunday fetch after
-      00:00 UTC of ^GSPC, META, EURCHF=X and TRX-USD, and record the newest stamps in ADR §5
-      (TESTPLAN 11.23). The rule above is safe under any of the conventions, so this is a
-      confirmation, not a dependency.
+      00:00 UTC of ^GSPC, META, EURCHF=X, TRX-USD and ^N225, and record the newest stamps in ADR §5
+      (TESTPLAN 11.23). The rule above grades correctly under any of the conventions, so this is a
+      confirmation, not a dependency; what the answer changes is the waiting time and the grace
+      margin above.
 17. **Bars stamped after `now` are ignored** (security P2-2), so a future stamp cannot make an
     in-progress bar look final.
 18. **Payload timestamps** (security P2-1, code review P2-2). The UI reads a timestamp only within
@@ -637,6 +664,54 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
       entry entered. It is hidden when there are no entries.
     - Dates go through `_sh_date` (with the year when it differs from now) and the payload clamp. A
       bad value reads n/a and never raises.
+
+### Known limits *(tech-writer, 2026-10-12, from the review reports)*
+What ships with this build and is not fixed in it. Limits 1 and 2 and every owner question have a
+backlog entry in `TODO.md`.
+
+**Limits, recorded, no code change planned:**
+1. **A crypto bar restamped at exactly 00:00:00 UTC** (QA r4 P3-4,
+   `docs/audit/shadow-time-stop-qa-engineer-r4.md` §4). On a 24-hour market a session's end is the
+   next session's start, so a finished bar restamped at its end lands on the session pattern
+   (Build note 16). If the newest finished crypto row carries exactly 00:00:00 UTC and the next row
+   is missing (provider lag around midnight), that stamp is taken as the cut a day late. A close the
+   book booked inside that day then keeps its booked outcome, and the memo freezes it. It needs an
+   exact-second stamp: with 23:59:59, QA's property harness found no failure in 2,000 books.
+2. **The grace margin under other stamp conventions** (code review r4 P3-A,
+   `docs/audit/shadow-time-stop-code-reviewer-r4.md`). With last-trade or fetch-time stamps, waits
+   reach 5.7 days (US holiday) and 6.73 days (^N225 in Golden Week), leaving 1.3 and 0.27 days before
+   the 7-day grace (Build note 16). An entry that passes the limit counts as `no_price`, which a look
+   treats as final but the memo does not keep. TESTPLAN 11.23 settles which convention Yahoo uses.
+3. **One wrong but plausible close mid-series** still grades a gap exit; it cannot be told from a
+   real move (Build note 19).
+
+**Open owner questions, not built** (each needs an owner decision; some need an ADR 0002 change):
+1. **A persisted, write-once look ledger** (model-validator P1-1 option b,
+   `docs/audit/shadow-time-stop-model-validator.md`). Without it, "each look is evaluated once" holds
+   within one process only; a restart decides again from fresh closes (Build notes 6 and 20). Needs
+   an ADR 0002 §7 amendment.
+2. **`no_price` selects slow resolvers** (model-validator P2-2). Only entries not settled before T
+   can lack a price, and delisting is related to the outcome. Options: hold a look with any
+   `no_price` member unevaluated, or show a sensitivity bound (excluded members at R = −1 and at
+   +1.5).
+3. **The `SH_FINAL_NONE` wording** (model-validator P2-4; domain-finance P3-3,
+   `docs/audit/shadow-time-stop-domain-finance-r2.md` and `-r3.md`). ADR 0002 §3 fixes the sentence
+   "no evidence that the score ranks 4-week results, at the planned size". The validator finds it
+   overstates a negative and suggests "not enough evidence … At the planned size the test could
+   reliably find only a link of about 0.2 or more"; the domain review notes "planned size" can read
+   as position size and suggests "… with the 201 entries planned". Domain r3 asks for the owner's
+   call before Release.
+4. **Rule 1 before rule 2 is not a stopping rule** (model-validator P3-4). A missed stop-crossing
+   daily close is overridden if the book later books a TARGET before the cut, and kept if not. Tiny
+   bias; a fix changes ADR 0002 §4.
+5. **Late fills** (model-validator P3-6). A pending order keeps its acceptance `opened_at`, so a late
+   fill could join an evaluated cohort. Latent: the internal paper broker fills at once.
+6. **ADR 0002 §3's HC3 figure** (model-validator P3-7). "HC3 slope 2.8–3.3%" at n = 400 reads about
+   4.6% at 10,000 books, and the rank-IC bias is stronger than stated (7.7%). The ADR is the owner's
+   to amend.
+
+Also deferred, in `TODO.md`: security P3-1, P3-2 and P3-4
+(`docs/audit/shadow-time-stop-security-engineer.md`), and domain r2 P3-5 to P3-7.
 
 ## Risks and open questions
 - **The rank IC is not exactly zero-centred under no edge.** Barrier R-multiples are skewed: the

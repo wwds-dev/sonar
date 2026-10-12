@@ -938,6 +938,89 @@ APCA_API_SECRET_KEY=...</code></pre>
     daily data cannot order them, and costs are excluded. Reality is worse than
     what it reports, not better.</p>
 
+  <h3>A second grade: every entry at a fixed date</h3>
+  <p><b>Why the grade above leans on quick positions.</b> It counts a position
+    only once it has reached its target or its stop. One that takes longer is
+    still open, so it is not counted yet. If how long a position takes depends
+    on its score, the graded set is not a fair sample of what was entered: it
+    is the quick ones. They are not neutral either. At 1.5:1 the stop is nearer
+    than the target, so a quick close is more often a stop. The grade above can
+    tilt for that reason alone, with no link between score and result.</p>
+  <p><b>The fixed-date result.</b> The block under it on the landing page and
+    on My trades, <b>Every entry, graded at a fixed date</b> (Expert wording:
+    <b>Time-stop shadow</b>), gives every protocol entry a result at one fixed
+    date: 4 weeks after it opened on the week profile (other profiles use four
+    of their own holding periods). In order:</p>
+  <ul>
+    <li>If the book closed it at its target or stop before then, that is its
+      result.</li>
+    <li>Otherwise, if a daily close went past the target or stop between the
+      app's checks (for example while the agent was stopped), it counts at that
+      barrier's price and is listed on its own line. A real fill there could
+      have been different.</li>
+    <li>Otherwise it is valued at the closing price of the trading day the 4
+      weeks end on (the last one before, if markets were shut that day). It
+      waits until that close is final, which takes a day or a few around
+      weekends and holidays.</li>
+  </ul>
+  <p>Results count from the 4-week date on, even for an entry that hit a barrier
+    on day 3, so the running figures do not lean on the quick ones again.</p>
+  <p><b>R</b> is the result in units of the amount risked: the move from entry
+    to exit, in the trade's direction, divided by the distance from entry to
+    stop. A stop is −1R, a target at 1.5:1 is +1.5R, and an entry valued halfway
+    to its target is +0.75R. With no edge, exact fills and randomly wandering
+    prices, the average R is about 0, whatever the volatility estimate got
+    wrong. That is why this grade tests R and not a hit rate.</p>
+  <p><b>Three looks, and the line at 2.315.</b> The question is whether a higher
+    score goes with a higher R. The figure is <b>z</b>: how far the slope of R
+    against score is from flat, in standard errors (§8), with a standard error
+    that allows R to vary more at some scores than at others (called HC3). It is
+    tested only at three <b>looks</b>, fixed before any entry had a result: the
+    first 45, the first 101 and the first 201 protocol entries, in the order
+    they were entered. A look is worked out once, when every one of its entries
+    has a result or a counted exclusion. <b>Crossing the line</b> means z at or
+    beyond ±2.315 at a look: a link strong enough that chance alone would rarely
+    produce it. Looking three times gives chance three tries, so the line sits
+    above the usual two standard errors. The first crossing is the result and
+    ends the test; three looks without one end it with "no evidence". Until a
+    look can be worked out, the block says <em>Not a test yet</em> and how far
+    along it is: the look's date, how many entries are still to come, or how
+    many still wait for a closing price. From 20 results a line marked
+    <em>running, not a test</em> shows the paper average and z so far; it can
+    pass 2.315 and come back, and only a look counts. The rank correlation
+    beside it, against the same number on the closed positions alone, is for
+    comparison only.</p>
+  <p><b>What no edge would give.</b> One row shows the split into target, stop
+    and neither that randomly wandering prices at the planned volatility give
+    after 4 weeks: on weekday instruments, about 37% at the target, 57% at the
+    stop and 5% at neither. It is a check on
+    the <b>volatility estimate</b>, not on the score. A different split can mean
+    the estimate was off; it says nothing about whether the score works.</p>
+  <p><b>Left out, and counted.</b> Entries chosen by hand (not by protocol
+    mode), protocol entries closed by hand before the 4 weeks, and entries with
+    no usable closing price 7 days after their date are left out, and the block
+    always shows how many. If more than a tenth of a look's entries are left
+    out, a line starting <em>Note:</em> says so for as long as that look is
+    shown. The first row names the entry dates the figures cover.</p>
+  <div class="callout warn"><b>What a crossing does not mean.</b> It means only
+    that the score sorted how past coin-flip paper entries ended after 4 weeks,
+    before costs, fees and slippage, with exact fills. It is not a trading edge.
+    The direction of every protocol entry is a coin flip, so this grade cannot
+    see whether the score picks a direction. And a score that picks instruments
+    which trend, in either direction, can cross with no directional skill at
+    all: a strong move in either direction reaches a barrier, and at 1.5:1 the
+    target pays 1.5 while the stop costs 1, so coin-flip entries on trending
+    instruments average above 0R. A test like this can also cross by chance
+    when there is no link.</div>
+  <p><b>Where it comes from.</b> The agent works it out on each scan, in memory,
+    from the book and Yahoo daily closes (at most one request per symbol a day).
+    Nothing is written to disk; a restart works it out again from the book and
+    fresh closes. A window that follows the agent shows the agent's copy word for
+    word; with an older agent it says <em>Not available from the running
+    agent</em>, and when the copy is more than 26 hours old it says the agent may
+    be stopped. It changes no exit, no row's odds and nothing in the grade above.
+    The design is in ADR 0002.</p>
+
   <h2 id="findings"><span class="n">11</span>What the research found</h2>
   <p>Six studies, each more careful than the last. Five directional nulls and one volatility-shaped survivor.</p>
   <table>

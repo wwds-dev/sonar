@@ -46,10 +46,10 @@ one this README and `static/docs.html` use (`ui/tabs.py` paints both).
 
 | Tab | What it does | Asserts a direction? |
 |---|---|---|
-| **My investments**  <sub>PORTFOLIO</sub> | The page the app opens on: your paper book as a picture — profit or loss now, account value, what is invested, what every stop hitting would cost; **Is the score right?** (the calibration verdict, with how many of each score band's positions are still open, since only closed ones are graded); the account's value over time; a tile and a card per open position | — |
+| **My investments**  <sub>PORTFOLIO</sub> | The page the app opens on: your paper book as a picture — profit or loss now, account value, what is invested, what every stop hitting would cost; **Is the score right?** (the calibration verdict, with how many of each score band's positions are still open, since only closed ones are graded), and under it a second grade that gives every protocol entry a result 4 weeks after it opened, tested only at three looks fixed in advance (manual §10); the account's value over time; a tile and a card per open position | — |
 | **Screener**  <sub>ASSETS</sub> | 129 instruments (50 equities, 20 indices, 20 FX pairs, 21 crypto, 18 commodities) with R:R, P(profit), news level, **how old each row's price is**, and buy/short per row | **No** — direction is yours |
 | **News**  <sub>WIRE</sub> | Live newswire across nine press blocs, the earnings and IPO calendar, what the news is pointing at, and **alerts** on what changed since the last scan | No |
-| **My trades**  <sub>BOOK</sub> | Open paper positions, the calibration table (with how many of each band are still open), and the backtest button | — |
+| **My trades**  <sub>BOOK</sub> | Open paper positions, the calibration table (with how many of each band are still open) and the same fixed-date second grade, split by score band, and the backtest button | — |
 | **Big picture**  <sub>MACRO</sub> | Regime: curve, VIX, real rates, unemployment | No |
 | **Learn** | The manual and glossary **inside the app** — `static/docs.html` rendered by Qt (`ui/learn.py`), with a contents list and a search box | — |
 | **Practice**  <sub>LAB</sub> | Replay the plan over real bars and compare the realised hit rate with the barrier maths; attribute the score component by component; **Replay** real history one setup at a time with the future hidden. At its foot, the **hourly BTC up/down model**, graded against Polymarket every hour | **Yes**, as a prediction graded every hour — no edge shown so far |
