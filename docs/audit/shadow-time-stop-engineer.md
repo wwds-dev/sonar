@@ -298,3 +298,46 @@ V-12 numbers in this loop:
 ### Not verified
 Live Yahoo stamps for US equities during the session, Yahoo's split adjustment itself, and a restart
 during an outage. The memo is per process, so a restart still decides again.
+
+## Fix loop 2 (2026-10-12, on top of `52a715e`)
+Inputs: `shadow-time-stop-code-reviewer-r2.md`, `-domain-finance-r2.md` and `-qa-engineer-r2.md`, plus
+the owner's decision to ship the entry-date window. Synthetic books only.
+
+| Finding | Fix |
+|---|---|
+| CR r2 P2-A: the split guard grew with √momentum_days | `SHADOW_SPLIT_GUARD = 4.5` daily σ, where one daily σ is \|entry − stop\| / √momentum_days. Tested on all five presets at 3.5% daily σ with a 2:1 split, a 3:2 split and no split. Quarter with a 2:1 split, which failed before, now waits. Build note 19. |
+| CR r2 P2-B: about 3 more days of waiting around weekends | The engine stores the fetch time with each series, and a failed day keeps the old fetch time. The newest bar is trusted when its stamp is at least 24 h before that fetch (never compared with `now`). An untrusted newest bar still bounds the cut when its session began after t_T. **Measured:** a Monday–Thursday T is decided 2.4 days after t_T, a Friday T 3.4 days after (fix loop 1: 4.4), and a holiday adds a day. That leaves at least 2.6 days before the 7-day grace. Build note 16. B1–B3 and the FX case still never flip; they are decided a day earlier, at the correct close. |
+| Domain r2 P2-1, N-1–N-4 | The running row says "paper average … (95% range for the average …) · before costs; an average above 0 here is not a trading edge"; expert says "pre-cost". The expert note says "Paper; before costs, fees and slippage; exact fills". The gap row says exits are counted at the barrier price. The reference's 0R now carries its conditions, and "mostly" became "can". The caveat says "trading by score". The comment on the allowed "edge" phrases is updated, and `EDGE_ALLOWED` is narrowed to exactly 5 phrases. TESTPLAN 11.15 and 11.18 are updated. |
+| Domain r2 P2-2, owner decision | `SH_ROW_WINDOW` ("entries opened {first} to {last}") is the first row on both pages, computed from the readout's entries (graded ones if any, otherwise all), clamped dates, hidden with no entries. TESTPLAN 11.22, Build note 26. |
+| CR r2 P3-1–P3-5 | `booked` is refreshed after a memo copy; memo entries are deep-copied both ways; `_take_the_book` clears the memo and the bar cache; the `_rescan_lock` contract is documented (not asserted, because tests call the method directly); `SH_ERROR` goes through `_clean(…, 80)`. |
+| QA r2 P2-A | The two slow mean tests skip, with a reason, unless all their chunks ran in the session. Run alone, they skip in 0.6 s. |
+| QA r2 P2-B, P3-1, P3-2, P3-4, P3-5 | New tests: a malformed row mid-series (N17); the guard at exactly 4.5 daily σ on intraday (N14), where the old guard was about 2 daily σ (P3-6); `_sh_date(-1)` reads n/a (N20); the data directory's files, sizes and mtimes are unchanged by two passes, and `_take_the_book` clears the memo and the bar cache (P3-4); Build note 15 names the 2,000-book test. |
+
+**Mutation check.** 21 mutants, each planted alone; all are killed. They cover:
+- the guard: the fix-loop-1 stop-distance form (killed by the quarter case) and `>=` at the bound;
+- newest-bar trust: never trusted, always trusted, judged against `now` in the engine, and a failed
+  day storing `now`;
+- the bounded cut: removed, without its 24 h margin, and a close inside the window taken as before
+  the cut;
+- the memo: the `booked` refresh dropped, the hand-back not deep-copied, storage not deep-copied,
+  and the takeover keeping it;
+- copy and the UI clamp: N17 (`break`), N20 (lower bound), `SH_ERROR` not cleaned, and the caveat
+  back to "high scores";
+- the entry-date window: the graded filter dropped, not the first row, and shown with no entries.
+
+The QA r2 equivalent mutant N24 (the `OSError` catch behind the clamp) is left as is, as instructed.
+
+**Runs.** Before the window commit, on the tree of `1d69e35` and `ed52c04`:
+- native: `./run-tests.sh tests/ -q`, 2370 passed, 3 skipped, 52 deselected, exit 0;
+- offscreen: the same, exit 0;
+- slow: `./run-tests.sh tests/ -m slow`, 22 passed in 204 s, exit 0, nothing skipped.
+
+After the window, on the final tree:
+- native: 2382 passed, 3 skipped, 52 deselected, exit 0;
+- offscreen: 2382 passed, 3 skipped, 52 deselected, exit 0.
+
+The slow suite was not re-run after the window, because that change touched only `ui/app.py` and
+the UI tests. The suite collects 2,385 tests, and that count is in all four files. Lint finds nothing new: the same 7 pre-existing
+findings in `core.py` and `ui/app.py`.
+
+**Not done (owner):** domain r2 P3s other than N-2–N-4, and `SH_FINAL_NONE`'s wording.
