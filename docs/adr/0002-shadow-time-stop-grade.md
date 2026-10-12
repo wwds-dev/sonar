@@ -213,8 +213,9 @@ is small and contained to code.
 6. Build after the QA-11/QA-13 work lands (recommended, because both edit `calibration.py`), or
    build the primary readout now without the reference split?
 
-## Amendment 1 (2026-10-12, proposed)
-- Status: **proposed**, at the owner's gate. Spec: [`docs/specs/shadow-ledger.md`](../specs/shadow-ledger.md).
+## Amendment 1 (2026-10-12, accepted)
+- Status: **accepted** (owner, 2026-10-12: "Yes" to G1, G2 (a) the robust rule, G3 manual reset,
+  and the pre-registration statement below). Spec: [`docs/specs/shadow-ledger.md`](../specs/shadow-ledger.md).
   Gate reviews: `docs/audit/shadow-ledger-model-validator.md`, `docs/audit/shadow-ledger-domain-finance.md`.
 - Answers the spec's open owner questions 1 and 2 (model-validator P1-1 option b, P2-2).
 - **Pre-registration.** No shadow look and no time-exit outcome had been computed when this was

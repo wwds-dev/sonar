@@ -1,11 +1,11 @@
 # Spec: a write-once look ledger, and slow resolvers left without a price
 
-- Status: **draft, at the gate** (Define and Architect, 2026-10-12). Revised after the gate reviews:
+- Status: **approved** by the owner 2026-10-12 (G1 yes, G2 (a), G3 manual). Define and Architect, 2026-10-12. Revised after the gate reviews:
   [`shadow-ledger-model-validator.md`](../audit/shadow-ledger-model-validator.md) and
   [`shadow-ledger-domain-finance.md`](../audit/shadow-ledger-domain-finance.md). Every P1 and P2 from
   them is taken in below; the one trade-off left is owner question G2.
 - Parent: [`shadow-time-stop.md`](shadow-time-stop.md), Known limits, open owner questions 1 and 2
-- Decision record: [ADR 0002, Amendment 1](../adr/0002-shadow-time-stop-grade.md#amendment-1-2026-10-12-proposed)
+- Decision record: [ADR 0002, Amendment 1](../adr/0002-shadow-time-stop-grade.md#amendment-1-2026-10-12-accepted)
 - Evidence: [`shadow-time-stop-model-validator.md`](../audit/shadow-time-stop-model-validator.md)
   P1-1 (option b) and P2-2; [`shadow-time-stop-sre-release.md`](../audit/shadow-time-stop-sre-release.md),
   owner question 2
