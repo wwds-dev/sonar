@@ -122,6 +122,21 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       against the 60 s `faulthandler_timeout` (code review r6 P3-2, QA r6). Mark it `slow` or use fewer placebos
       per world (bounds refitted). Also: the step-1 `longest_comparable_horizon` mutant survives (r3 P3-7).
 
+From the v2.190 release (`docs/audit/qa11-qa13-honest-baselines-sre-release.md`):
+
+- [ ] `P2` `infra` `@ai` **`/api/health` does not say what code is running.** No version or commit in the
+      response, so after a kickstart there is no way to confirm the agent picked up a release. Add `version`,
+      `commit` and `dirty` from `sonar/version.py`.
+- [ ] `P3` `bug` `@ai` **The installed app cannot tell whether it is current.** Its build stamp points at the
+      checkout it was built from; a release built from a temporary worktree (to keep another session's uncommitted
+      work out) leaves "No checkout to compare against". Let `scripts/stamp_version.py` record the main checkout,
+      or build from a kept worktree.
+- [ ] `P3` `bug` `@ai` **TERM leaves a stale `engine.lock`.** launchd sends TERM on restart; the next launch takes
+      the lock over, but the process should release it on exit (signal handler or `atexit`).
+- [ ] `P3` `infra` `@me` **The agent runs the main working tree.** A kickstart while any session has uncommitted
+      code there runs that code against the live book (v2.190 release had to wait for it). Option: point the
+      plist at a clean snapshot or the app's `--headless` mode (RUNBOOK §6; the release smoke test shows it works).
+
 ## v3 — only if the research is resumed
 
 - [ ] `P2` `research` `@me` Intraday bars, order flow, or a tone-tagged news archive. Five studies found nothing in daily bars, free news and macro regimes; more features on the same data is not the answer.
