@@ -285,3 +285,25 @@ def test_the_confirmation_stops(window):
     window.hide()
     window._confirm_hidden(0)
     assert not window.isVisible()
+
+
+def test_a_hide_timer_that_outlives_its_window_does_nothing():
+    """The close button's timers fire a quarter second after the hide. A quit,
+    or a test run tearing windows down, can delete the C++ object first, and the
+    callback then raised "Internal C++ object already deleted" — printed after
+    the last test of every run with exit code 0, which is how noise gets
+    learned and a real failure gets missed. A real window, because `isValid` is
+    true for any plain Python stand-in."""
+    import shiboken6
+    from PySide6.QtWidgets import QApplication, QMainWindow
+    QApplication.instance() or QApplication([])
+
+    class Window(QMainWindow):
+        _confirm_hidden = MainWindow._confirm_hidden
+        _hide_after_fullscreen = MainWindow._hide_after_fullscreen
+        _hide_on_leaving_fullscreen = True
+
+    win = Window()
+    shiboken6.delete(win)
+    win._confirm_hidden(HIDE_CONFIRM_TRIES)         # must not raise
+    win._hide_after_fullscreen()                    # nor this one
