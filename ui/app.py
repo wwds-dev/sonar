@@ -547,12 +547,22 @@ SHADOW_WORDS = {
                           "costs, exact fills, one test with a by-design false-alarm rate; "
                           "not a tradeable edge."),
     "SH_FINAL_NONE": ("Three looks, no crossing: not enough evidence that the score ranks "
-                      "{T_adj} results. With 201 entries the test would usually find only a "
-                      "fairly strong link (a correlation of about 0.2 or more); a weaker one "
-                      "could have been missed. The test is finished.",
+                      "{T_adj} results. With {used} entries, this test finds a link of about "
+                      "0.2 or more about 3 times in 4, and a weaker link less often, so a "
+                      "weaker one could have been missed. The test is finished.",
                       "Looks 1-3 not crossed: not enough evidence that the score ranks "
-                      "{T_adj} results. 201 entries would usually show only a link of about "
-                      "0.2 or more. Design closed."),
+                      "{T_adj} results. {used} entries find a link of about 0.2 or more "
+                      "about 3 times in 4. Design closed."),
+    "SH_FINAL_NONE_FEWER": ("Three looks, no crossing: not enough evidence that the score "
+                            "ranks {T_adj} results. Only {used} of the {N} planned entries "
+                            "had a result, so the test was less sensitive than designed (at "
+                            "{N} entries it finds a link of about 0.2 or more about 3 times "
+                            "in 4); a weaker link could have been missed. The test is "
+                            "finished.",
+                            "Looks 1-3 not crossed: not enough evidence that the score "
+                            "ranks {T_adj} results. {used} of {N} entries graded; designed "
+                            "to find a link of about 0.2 or more about 3 times in 4 at {N}. "
+                            "Design closed."),
     "SH_ROW_SPLIT": ("{reached} with a result: {t} at the target ({tp}%) · {s} at the stop "
                      "({sp}%) · {x} at neither, valued at the close after {T} ({xp}%)",
                      "{reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} "
@@ -872,7 +882,10 @@ def _sh_look_status(looks: list[dict], now: float, T: str,
                 + " " + _sh_word("SH_CAVEAT_CROSSED", T=T, used=used))
         return line, _sh_int(crossed.get("k"))
     if looks and len(evaluated) == len(looks):
-        return _sh_word("SH_FINAL_NONE", T_adj=T_adj), None
+        last = looks[-1]
+        used, planned = _sh_int(last.get("used")), _sh_int(last.get("n"))
+        key = "SH_FINAL_NONE" if used >= planned else "SH_FINAL_NONE_FEWER"
+        return _sh_word(key, T_adj=T_adj, used=used, N=planned), None
     due = next((lk for lk in pending if _sh_num(lk.get("due")) is not None
                 and now >= _sh_num(lk.get("due"))), None)
     if due is not None:

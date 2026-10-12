@@ -136,6 +136,11 @@ STATES = {
         looks=[look(1, 45, due=NOW - 90 * DAY, used=45, evaluated=True, z=0.4),
                look(2, 101, due=NOW - 60 * DAY, used=101, evaluated=True, z=1.1),
                look(3, 201, due=NOW - DAY, used=201, evaluated=True, z=-0.3)]),
+    "d closed, 190 graded": readout(
+        n_entered=210, n_reached=190, n_waiting=9,
+        looks=[look(1, 45, due=NOW - 90 * DAY, used=45, evaluated=True, z=0.4),
+               look(2, 101, due=NOW - 60 * DAY, used=101, evaluated=True, z=1.1),
+               look(3, 201, due=NOW - DAY, used=190, evaluated=True, z=-0.3)]),
 }
 
 
@@ -235,9 +240,12 @@ def test_u4_each_state_says_its_own_sentence(window):
         assert "It is not a trading edge." in s[name] and "crossed the line" in s[name]
     d = s["d closed, no crossing"]
     assert "not enough evidence that the score ranks 4-week results." in d
-    assert "With 201 entries the test would usually find only a fairly strong link" in d
-    assert "a correlation of about 0.2 or more" in d and "could have been missed" in d
+    assert "With 201 entries, this test finds a link of about 0.2 or more about 3 times in 4" in d
+    assert "could have been missed" in d and "less sensitive" not in d
     assert "planned size" not in d and "no evidence that" not in d
+    f = s["d closed, 190 graded"]
+    assert "Only 190 of the 201 planned entries had a result" in f
+    assert "less sensitive than designed" in f and "about 3 times in 4" in f
 
 
 def test_u4_not_a_test_yet_until_a_look_is_evaluated(window):
@@ -712,12 +720,17 @@ def test_qa_r3_w02_one_damaged_date_does_not_blank_an_end_of_the_window():
 
 
 def test_final_none_wording_compact_and_honest_about_power():
-    full, compact = SHADOW_WORDS["SH_FINAL_NONE"]
-    for text in (full, compact):
-        assert "not enough evidence that the score ranks {T_adj}" in text
-        assert "0.2 or more" in text
-        assert "planned size" not in text and "no evidence that" not in text
-        for banned in ("edge", "profit", "proves", "certain"):
-            assert banned not in text.lower()
-    assert "could have been missed" in full
-    assert full.startswith("Three looks, no crossing") and compact.startswith("Looks 1-3 not crossed")
+    for key in ("SH_FINAL_NONE", "SH_FINAL_NONE_FEWER"):
+        full, compact = SHADOW_WORDS[key]
+        for text in (full, compact):
+            assert "not enough evidence that the score ranks {T_adj}" in text
+            assert "0.2 or more about 3 times in 4" in text
+            assert "planned size" not in text and "no evidence that" not in text
+            assert "fairly strong" not in text and "usually" not in text
+            for banned in ("edge", "profit", "proves", "certain"):
+                assert banned not in text.lower()
+        assert "could have been missed" in full
+        assert full.startswith("Three looks, no crossing")
+        assert compact.startswith("Looks 1-3 not crossed")
+    assert "{used}" in SHADOW_WORDS["SH_FINAL_NONE"][0]
+    assert "of the {N} planned" in SHADOW_WORDS["SH_FINAL_NONE_FEWER"][0]

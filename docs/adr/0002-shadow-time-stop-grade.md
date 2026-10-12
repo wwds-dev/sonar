@@ -89,8 +89,10 @@ the plan's σ is scaled to (`core.py:341` passes it to `build_plan`; verified in
   - The boundary is **|z| ≥ 2.315 at every look** (Pocock). That holds the false-positive rate of
     the whole design at 5% two-sided (Monte Carlo, 400,000 paths).
   - The first crossing is the result. With no crossing by 201, the readout says "not enough evidence
-    that the score ranks 4-week results; at 201 entries the test would usually find only a link of about
-    0.2 or more" (amended 2026-10-12 on the owner's yes; was "no evidence … at the planned size"). After the third look the design is closed.
+    that the score ranks 4-week results"; at 201 entries it adds that the test finds a link of about 0.2
+    or more about 3 times in 4 (power 0.73), and a weaker one less often. With fewer than 201 graded
+    entries it says how many had a result and that the test was less sensitive than designed (amended
+    2026-10-12 on the owner's yes; was "no evidence … at the planned size"). After the third look the design is closed.
   - Between looks the readout shows the running value, labelled "not a test".
   - At 2.54 protocol entries a day, the expected dates are about 2026-11-06, 2026-11-28 and
     2027-01-07. The 40-position cap can push them later.
