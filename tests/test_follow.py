@@ -683,3 +683,103 @@ def test_the_follow_loop_resets_the_answer_when_the_holder_changes(tmp_path, qui
     finally:
         live.stop()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("url, ok", [
+    ("http://127.0.0.1:8787", True), ("http://localhost:8787", True),
+    ("http://[::1]:8787", True),
+    ("file:///etc/passwd", False), ("https://127.0.0.1:8787", False),
+    ("http://example.com:8787", False), ("http://127.0.0.1.example.com:1", False),
+    ("http://10.0.0.1:8787", False), ("http://127.0.0.1:99999", False),
+    ("", False), (None, False), (8787, False),
+    # Security F3: userinfo, no or zero port, whitespace, a path or query.
+    ("http://x@127.0.0.1:8787", False), ("http://evil.com\\@127.0.0.1:1", False),
+    ("http://127.0.0.1", False), ("http://127.0.0.1:", False),
+    ("http://127.0.0.1:0", False), (" http://127.0.0.1:8787", False),
+    ("http://127.0.0.1:8787\n", False), ("http://127.0.0.1\t:8787", False),
+    ("http://127.0.0.1:8787/x", False), ("http://127.0.0.1:8787/?a=1", False),
+    ("http://127.0.0.1:8787/", True),
+])
+def test_only_a_plain_http_address_on_this_machine_is_followed(url, ok):
+    assert core._loopback_url(url) is ok
+
+
+def test_the_follow_hosts_are_the_ones_the_server_binds_to():
+    from sonar import server
+    assert core.FOLLOW_HOSTS == server.LOOPBACK
+
+
+def test_a_lock_naming_another_address_is_not_followed(tmp_path, quick, monkeypatch):
+    """The lock is the user's own file, but whatever it names is fetched from
+    and sent the window's changes: a file:// or remote URL never is."""
+    _lock_held_by(tmp_path, 1, "file:///etc/passwd")
+    live = _follower(tmp_path, monkeypatch)
+    fetched = []
+    monkeypatch.setattr(Live, "_fetch", staticmethod(lambda url, path: fetched.append(url)))
+    thread = threading.Thread(target=live.run, args=("app",), daemon=True)
+    thread.start()
+    try:
+        assert _wait(lambda: "not on this machine" in
+                     str(live.snapshot.get("detail"))), live.snapshot
+        assert live.following is None
+        assert live.read_only is True
+        assert fetched == []
+    finally:
+        live.stop()
+        thread.join(timeout=5)
+
+
+def test_following_uses_no_proxy(monkeypatch):
+    """Security F1: macOS does not exempt 127.0.0.1 from a system proxy, so
+    the default opener would send the follower's traffic, posts included,
+    through it. Even with a proxy configured, the follow opener has none."""
+    import urllib.request
+    monkeypatch.setenv("http_proxy", "http://proxy.invalid:3128")
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    opener = core._follow_opener()
+    assert not any(isinstance(h, urllib.request.ProxyHandler) and h.proxies
+                   for h in opener.handlers)
+    assert isinstance(core._FOLLOW_OPENER, urllib.request.OpenerDirector)
+
+
+def test_a_redirect_is_not_followed_off_the_machine(loopback):
+    """Security F2: whatever answers on the lock's port cannot send the
+    follower elsewhere."""
+    import urllib.error
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Redirect(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", "http://redirect.invalid/x")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+    srv = HTTPServer(("127.0.0.1", 0), Redirect)
+    threading.Thread(target=srv.handle_request, daemon=True).start()
+    try:
+        with pytest.raises(urllib.error.HTTPError) as err:
+            Live._fetch(f"http://127.0.0.1:{srv.server_address[1]}", "/api/state")
+        assert err.value.code == 302
+    finally:
+        srv.server_close()
+
+
+def test_the_lock_url_brackets_an_ipv6_host():
+    assert server.lock_url("127.0.0.1", 8787) == "http://127.0.0.1:8787"
+    assert server.lock_url("::1", 8787) == "http://[::1]:8787"
+    assert core._loopback_url(server.lock_url("::1", 8787))
+
+
+def test_the_server_binds_ipv6_loopback():
+    """Security F4: --host ::1 passed the loopback check, then failed to bind."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET6) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        pytest.skip("no IPv6 loopback here")
+    srv = server.PaperServer6(("::1", 0), server.Handler)
+    srv.server_close()

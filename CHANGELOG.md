@@ -12,6 +12,8 @@ section lists what the v2 arc shipped.
 
 ## Unreleased (not installed)
 
+- CI: `actions/checkout` and `actions/setup-python` move to v7, which run on Node.js 24
+  (GitHub is retiring Node.js 20 for actions). No change to the app.
 - The launchd agent runs the installed `SONAR.app` headless instead of the checkout's working tree,
   so an edit in the checkout cannot reach it on a restart. `install_agent.sh` checks the app's
   signature, clean build stamp and self-test first; `./build_app.sh --install` stops the agent
@@ -48,6 +50,23 @@ they have checked.
   (closing UX C-2)
 
 ## Unreleased — 2026-10-12
+
+**A window follows only an engine on this machine.** The engine lock names
+the running engine's address; the window now follows it only if it is a plain
+http address on this machine, and says so when it is not. Following never goes
+through a configured proxy (macOS's system proxy does not exempt 127.0.0.1)
+and never follows a redirect. An engine started with `--host ::1` now binds
+and can be followed, and a lock with an unreadable start time no longer stops
+the window's engine thread (`docs/specs/follow-url-localhost.md`).
+
+**Text from outside the app is drawn as text.** Labels are plain text by
+default, so a feed, the Nasdaq calendar or a followed engine cannot style or
+reword the window with markup; the Playmaker and Lab panes escape pasted book
+names, parse errors and backtest text, and no pane follows a link drawn in it.
+Error messages shown in the window are one cleaned line of at most 160
+characters; a failed setting change now names the error type. Books that
+disagree on how many outcomes a market has get "Could not read the prices."
+instead of nothing (`docs/specs/untrusted-text-sweep.md`).
 
 **A followed engine's read answer stays with that engine; error text is never
 markup.** While following another SONAR process, whether a read can run is that

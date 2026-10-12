@@ -18,6 +18,7 @@ import random
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
@@ -27,6 +28,55 @@ from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
 from .engine import Engine
 from .research import hourlyvol
 from . import calibration, events, portfolio, scoring
+
+
+# The hosts a followed engine may be at: the ones sonar.server binds to
+# (server.LOOPBACK; a test keeps the two equal).
+FOLLOW_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _loopback_url(url: object) -> bool:
+    """Is ``url`` a plain http address on this machine? The engine lock names
+    the holder's address, and following it fetches from and posts to it; only
+    the user can write the lock, but a file:// or remote URL in it must never
+    be read or sent the window's changes."""
+    text = str(url)
+    if text != text.strip() or not text.isprintable():
+        return False                    # urlsplit would quietly drop a \t or \n
+    try:
+        parts = urllib.parse.urlsplit(text)
+        port = parts.port               # raises on a port that is not a number
+    except ValueError:
+        return False
+    return (parts.scheme == "http" and parts.hostname in FOLLOW_HOSTS
+            and parts.username is None and parts.password is None
+            and port is not None and 1 <= port <= 65535
+            and parts.path in ("", "/") and not parts.query and not parts.fragment)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A followed engine never redirects; one that does is not followed off
+    the machine (it raises as an HTTP error instead)."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def _follow_opener() -> urllib.request.OpenerDirector:
+    """Following talks to this machine only: no proxy from the environment or
+    the system settings (macOS does not exempt 127.0.0.1 by default), and no
+    redirects."""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                       _NoRedirect)
+
+
+_FOLLOW_OPENER = _follow_opener()
+
+
+def _exc_line(exc: BaseException) -> str:
+    """An exception as one clean, capped line for the window: its text can
+    quote a server body, a feed or a file path, and some labels draw markup."""
+    return llm._clean(f"{type(exc).__name__}: {exc}", 160)
 
 
 def trade_dict(t) -> dict | None:
@@ -317,7 +367,7 @@ class Live:
             # than "fetching" forever; the next good scan replaces the dict.
             with self.lock:
                 self.assets = {**self.assets,
-                               "error": " ".join(f"{type(exc).__name__}: {exc}".split())}
+                               "error": _exc_line(exc)}
         self._scan_at = time.time()
 
     # -- the calibration protocol ------------------------------------------ #
@@ -738,7 +788,7 @@ class Live:
                 # now, so the window can say the setting may not have applied.
                 return {**self.config(), "error":
                         f"the engine at {url.split('//')[-1]} did not confirm it "
-                        f"({type(exc).__name__}: {exc})"}
+                        f"({_exc_line(exc)})"}
             return self.config()
         if self._waiting_without_a_holder_to_follow():
             # A risk change saves the state file and the rescan marks the book;
@@ -937,8 +987,8 @@ class Live:
                     # say why on screen and try again rather than exit silently.
                     with self.lock:
                         self.snapshot = {"status": "read-only", "detail":
-                                         f"could not read the book ({type(exc).__name__}: "
-                                         f"{exc}); trying again"}
+                                         f"could not read the book ({_exc_line(exc)}); "
+                                         "trying again"}
                     if self._stop.wait(LOCK_RETRY_EVERY):
                         return
             self._driving_since = time.time()
@@ -997,7 +1047,7 @@ class Live:
                 # The bitcoin feed failing says nothing about the rest: the
                 # horizon and the macro regime ride along, so Big picture can
                 # still draw (closing UX review C-1).
-                snap = {"status": "error", "detail": str(exc),
+                snap = {"status": "error", "detail": llm._clean(exc, 160),
                         "horizon": self.horizon.as_dict()}
                 if self.horizon.macro and self._macro_snap is not None:
                     snap["macro"] = self._macro_snap.as_dict()
@@ -1011,7 +1061,7 @@ class Live:
 
     def _poll_failed(self, exc: Exception) -> None:
         self._poll_failures += 1
-        self.last_poll_error = " ".join(f"{type(exc).__name__}: {exc}".split())
+        self.last_poll_error = _exc_line(exc)
         if self._poll_failures % POLL_ERROR_LOG_EVERY == 1:
             print(f"SONAR {time.strftime('%Y-%m-%d %H:%M:%S')}: poll failed "
                   f"({self._poll_failures} in a row): {self.last_poll_error}",
@@ -1157,6 +1207,9 @@ class Live:
                 self.read_only = True
                 self.conflict = enginelock.describe_conflict(self.engine_lock)
             url = (holder or {}).get("url")
+            refused = url if url and not _loopback_url(url) else None
+            if refused:
+                url = None
             if url:
                 self._follow(url, (holder or {}).get("pid"))
                 slow = now - last_slow >= FOLLOW_SLOW_EVERY
@@ -1165,8 +1218,13 @@ class Live:
                     last_slow = now
             else:
                 self._follow(None)
+                detail = self.conflict
+                if refused:
+                    detail = (f"{detail} The engine lock gives an address that is "
+                              f"not on this machine ({llm._clean(refused, 80)}); "
+                              "it is not followed.")
                 with self.lock:
-                    self.snapshot = {"status": "read-only", "detail": self.conflict}
+                    self.snapshot = {"status": "read-only", "detail": detail}
             self._stop.wait(FOLLOW_EVERY)
         return False
 
@@ -1215,7 +1273,7 @@ class Live:
                     self.snapshot = {
                         "status": "read-only", "following": url,
                         "detail": f"{self.conflict} It is not answering at "
-                                  f"{url} ({type(exc).__name__}: {exc})."}
+                                  f"{url} ({_exc_line(exc)})."}
 
     def _local_change(self, step: int) -> None:
         """A protocol or knob change starts (+1) or ends (-1) its trip to the
@@ -1279,7 +1337,7 @@ class Live:
 
     @staticmethod
     def _fetch(url: str, path: str):
-        with urllib.request.urlopen(url.rstrip("/") + path, timeout=FOLLOW_TIMEOUT) as r:
+        with _FOLLOW_OPENER.open(url.rstrip("/") + path, timeout=FOLLOW_TIMEOUT) as r:
             return json.loads(r.read())
 
     @staticmethod
@@ -1287,7 +1345,7 @@ class Live:
         req = urllib.request.Request(
             url.rstrip("/") + path, data=json.dumps(payload).encode(),
             method="POST", headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=FOLLOW_TIMEOUT) as r:
+        with _FOLLOW_OPENER.open(req, timeout=FOLLOW_TIMEOUT) as r:
             return json.loads(r.read())
 
     def _forward(self, url: str, path: str, payload: dict,
@@ -1307,7 +1365,7 @@ class Live:
         except Exception as exc:
             return {"ok": False, "position": None,
                     "message": f"the engine at {url} did not take it "
-                               f"({type(exc).__name__}: {exc})"}
+                               f"({_exc_line(exc)})"}
 
     def _sigma(self) -> float:
         """The per-hour volatility the model prices with.

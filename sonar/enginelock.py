@@ -225,8 +225,11 @@ def describe_conflict(lock: EngineLock) -> str:
         return ""
     role = d.get("role", "another process")
     pid = d.get("pid", "?")
-    mins = (time.time() - float(d.get("since", time.time()))) / 60.0
+    try:
+        up = f"{(time.time() - float(d.get('since', time.time()))) / 60.0:.0f}"
+    except (TypeError, ValueError):     # a hand-edited lock must not stop the loop
+        up = "?"
     return (f"Another SONAR engine is already running ({role}, pid {pid}, "
-            f"up {mins:.0f} min). Two engines settling the same hour would "
+            f"up {up} min). Two engines settling the same hour would "
             f"corrupt the portfolio, so this one waits for it to stop and "
             f"takes over then.")

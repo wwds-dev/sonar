@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -322,6 +323,18 @@ class Watchdog:
                 self.log(f"SONAR: watchdog step failed ({type(exc).__name__}: {exc})")
 
 
+class PaperServer6(PaperServer):
+    """The same server on ``::1``: the base class binds IPv4 only."""
+
+    address_family = socket.AF_INET6
+
+
+def lock_url(host: str, port: int) -> str:
+    """The address written into the engine lock for a follower: an IPv6 host
+    is bracketed, or the URL does not parse."""
+    return f"http://[{host}]:{port}" if ":" in host else f"http://{host}:{port}"
+
+
 def main(host: str = "127.0.0.1", port: int = 8787,
          risk_name: str | None = None, horizon_name: str | None = None,
          role: str = "daemon") -> None:
@@ -333,11 +346,11 @@ def main(host: str = "127.0.0.1", port: int = 8787,
     # The address goes into the engine lock, so a window that loses the race
     # for it can follow this engine here rather than open with nothing.
     engine = threading.Thread(target=live.run, args=(role,),
-                              kwargs={"url": f"http://{host}:{port}"}, daemon=True)
+                              kwargs={"url": lock_url(host, port)}, daemon=True)
     engine.start()
     threading.Thread(target=Watchdog(live, engine).run, daemon=True).start()
     Handler.live = live
-    srv = PaperServer((host, port), Handler)
+    srv = (PaperServer6 if ":" in host else PaperServer)((host, port), Handler)
     ok, why = llm.available()
     print(f"SONAR paper terminal  ->  http://{host}:{port}", flush=True)
     print(f"risk={live.risk.name}  horizon={live.horizon.name}", flush=True)

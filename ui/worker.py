@@ -75,7 +75,7 @@ class BacktestThread(QThread):
                 with_catalyst=self.with_catalyst, universe=self.universe,
                 progress=lambda sym, n: self.progress.emit(sym, n)))
         except Exception as exc:
-            self.done.emit({"n": 0, "verdict": f"{type(exc).__name__}: {exc}"})
+            self.done.emit({"n": 0, "verdict": _clean(f"{type(exc).__name__}: {exc}", 160)})
 
 
 class ConfigThread(QThread):
@@ -91,7 +91,7 @@ class ConfigThread(QThread):
         try:
             self.done.emit(self.live.configure(self.risk_name, self.horizon_name))
         except Exception as exc:
-            self.done.emit({"error": str(exc)})
+            self.done.emit({"error": _clean(f"{type(exc).__name__}: {exc}", 160)})
 
 
 class SportsMeasureThread(QThread):
@@ -115,7 +115,7 @@ class SportsMeasureThread(QThread):
         except Exception as exc:           # never take the window down
             self.done.emit({"sport": self.sport_key, "n_games": 0,
                             "verdict": "ERROR",
-                            "summary": f"{type(exc).__name__}: {exc}"})
+                            "summary": _clean(f"{type(exc).__name__}: {exc}", 160)})
 
 
 class PropThread(QThread):

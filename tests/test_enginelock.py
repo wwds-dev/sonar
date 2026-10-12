@@ -114,6 +114,14 @@ def test_conflict_message_names_the_holder(tmp_path):
     assert "agent" in msg and "takes over" in msg
 
 
+def test_a_lock_with_a_bad_start_time_still_reads_as_a_conflict(tmp_path):
+    """Security F5: a hand-edited "since" raised inside the follow loop."""
+    p = tmp_path / "engine.lock"
+    p.write_text(json.dumps({"pid": 1, "role": "agent", "since": "x"}))
+    msg = describe_conflict(EngineLock(p, role="app"))
+    assert "agent" in msg and "up ? min" in msg
+
+
 def test_no_conflict_message_when_free(tmp_path):
     assert describe_conflict(lock(tmp_path)) == ""
 
