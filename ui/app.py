@@ -26,6 +26,7 @@ that boundary is load-bearing.
 
 from __future__ import annotations
 
+import calendar
 import html
 import math
 import os
@@ -517,26 +518,48 @@ SHADOW_WORDS = {
                               "entries are still waiting for a closing price.",
                               "Not a test yet. Look {k} due; {w} of {N} awaiting a final "
                               "close."),
-    "SH_LOOK_NOT_CROSSED": ("Look {k} of 3, first {N} entries ({used} with a result): no "
-                            "link strong enough to cross the line yet. z = {z}; the line is "
-                            "±2.315.",
-                            "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| < "
-                            "2.315, not crossed."),
+    # {date}: the latest t_T + 28 days among the waiting members. The look can
+    # come later: the price attempts may not be used up, or the agent stopped.
+    "SH_LOOK_WAITING_UNTIL": ("It waits for them until {date}; any still without a price "
+                              "then are left out and the look goes ahead.",
+                              "Until {date}, then excluded."),
+    # A look is a result only once the ledger holds it (docs/specs/shadow-ledger.md):
+    # every result line carries the date it was recorded, first.
+    "SH_LOOK_NOT_CROSSED": ("Look {k} of 3, recorded {date}, first {N} entries ({used} with a "
+                            "result): no link strong enough to cross the line yet. z = {z}; "
+                            "the line is ±2.315.",
+                            "Look {k}/3 (rec. {date}), n = {N} ({used} graded): HC3 slope z "
+                            "{z}, |z| < 2.315, not crossed."),
+    "SH_LOOK_NOT_ROBUST": ("Look {k} of 3, recorded {date}, first {N} entries ({used} with a "
+                           "result): z = {z} is past the line, but not in every extreme case "
+                           "for the {x} left out. This look does not count as crossed; the "
+                           "test goes on.",
+                           "Look {k}/3 (rec. {date}), n = {N} ({used} graded): HC3 slope z "
+                           "{z}, |z| ≥ 2.315, extremes not; not crossed ({x} excl.)."),
+    "SH_LOOK_UNRECORDED": ("Look {k} of 3: worked out but not recorded yet, so it is not "
+                           "shown as a result.",
+                           "Look {k}/3: not recorded; no result shown."),
+    "SH_EXTREMES": ("The {x} left out have no usable result. Filled in at the extremes for "
+                    "the score (each at its target or its stop), z would be {lo} at the "
+                    "lowest and {hi} at the highest. These are extreme cases, not estimates.",
+                    "{x} excl.: extreme z {lo} / {hi} (not a bound)"),
     "SH_NEXT_LOOK": ("Next look: the first {N2} entries, on or after {due}.",
                      "Next: n = {N2}, due on or after {due}."),
     "SH_NEXT_LOOK_UNDATED": ("Next look: the first {N2} entries, after {missing} more are "
                              "entered.",
                              "Next: n = {N2}, {missing} not yet entered."),
-    "SH_LOOK_CROSSED_UP": ("Look {k} of 3, first {N} entries ({used} with a result): "
-                           "crossed the line. On these paper entries, higher scores went "
-                           "with higher R on average. z = {z}; the line is ±2.315. The test ends here.",
-                           "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| ≥ "
-                           "2.315, crossed. Design closed."),
-    "SH_LOOK_CROSSED_DOWN": ("Look {k} of 3, first {N} entries ({used} with a result): "
-                             "crossed the line. On these paper entries, higher scores went "
-                             "with lower R on average. z = {z}; the line is ±2.315. The test ends here.",
-                             "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| ≥ "
-                             "2.315, crossed. Design closed."),
+    "SH_LOOK_CROSSED_UP": ("Look {k} of 3, recorded {date}, first {N} entries ({used} with "
+                           "a result): crossed the line. On these paper entries, higher "
+                           "scores went with higher R on average. z = {z}; the line is "
+                           "±2.315. The test ends here.",
+                           "Look {k}/3 (rec. {date}), n = {N} ({used} graded): HC3 slope z "
+                           "{z}, |z| ≥ 2.315, crossed. Design closed."),
+    "SH_LOOK_CROSSED_DOWN": ("Look {k} of 3, recorded {date}, first {N} entries ({used} "
+                             "with a result): crossed the line. On these paper entries, "
+                             "higher scores went with lower R on average. z = {z}; the line "
+                             "is ±2.315. The test ends here.",
+                             "Look {k}/3 (rec. {date}), n = {N} ({used} graded): HC3 slope z "
+                             "{z}, |z| ≥ 2.315, crossed. Design closed."),
     "SH_CAVEAT_CROSSED": ("This says only that the score sorted how these past coin-flip "
                           "paper entries ended after {T}. It does not show that trading "
                           "by score would make money: it is one test on {used} entries, "
@@ -577,10 +600,14 @@ SHADOW_WORDS = {
                   "descriptive only: rank IC {ic} (all at T) vs {icc} (closed only)"),
     "SH_ROW_PAST_LOOK": ("look {k}, first {N}: z = {z}, did not cross the line",
                          "look {k}, n = {N}: z {z}, not crossed"),
+    "SH_ROW_PAST_LOOK_NOT_ROBUST": ("look {k}, first {N}: z = {z}, past the line but not in "
+                                    "every extreme case; not crossed",
+                                    "look {k}, n = {N}: z {z}, extremes not; not crossed"),
     "SH_ROW_LEFT_OUT": ("left out and counted: {m} chosen by hand · {l} closed by hand "
-                        "before {T} · {p} with no closing price",
+                        "before {T} · {p} with no closing price · {r} whose stop was at or "
+                        "past the fill price (no R can be worked out)",
                         "excluded: {m} non-protocol · {l} hand-closed before T · {p} no "
-                        "price"),
+                        "price · {r} risk ≤ 0"),
     "SH_ROW_GAP": ("{g} counted at the target or stop price because a daily close went past "
                    "it between checks (a real fill could have been different, often worse at a stop)",
                    "{g} gap exits, filled at the barrier, not the close beyond it"),
@@ -600,6 +627,35 @@ SHADOW_WORDS = {
                 "a tradeable edge. Paper; before costs, fees and slippage; exact fills."),
     "SH_WORKED_OUT": ("Worked out {when}.", "As of {when}."),
     "SH_STALE": ("Not updated for {h} hours: the agent may be stopped.", "Stale: {h} h old."),
+    # The ledger (docs/specs/shadow-ledger.md, Design): the record line, a
+    # check that differs, a record that cannot be used, and errata. "Record",
+    # not the spec's expert "ledger": the word holds "edge", which U-1 allows
+    # only in its EDGE_ALLOWED phrases.
+    "SH_RECORD": ("Record kept since {date}.", "Record since {date}."),
+    "SH_MISMATCH": ("Worked out again today, look {k} comes out differently ({why}). As fixed "
+                    "in advance, the result recorded on {date} is kept. Either one may rest on "
+                    "a data error.",
+                    "look {k}: check differs ({why}); recorded {date} kept by design"),
+    "SH_WHY_MEMBERS": ("which entries it counts", "members"),
+    "SH_WHY_Z": ("the z figure", "z"),
+    "SH_MISMATCH_CONSTANTS": ("The test's fixed settings have changed since look {k} was "
+                              "recorded on {date}. The recorded result belongs to the old "
+                              "settings, and the new ones need their own record.",
+                              "look {k}: constants changed since {date}; new settings need a "
+                              "new record"),
+    "SH_LEDGER_READ": ("The record of results could not be read ({reason}), so it is left "
+                       "untouched for a person to check. Nothing new is recorded, and no look "
+                       "is shown as a result.",
+                       "record unreadable ({reason}); not recording"),
+    "SH_LEDGER_MISSING": ("The record of results is missing, though this book had one since "
+                          "{date}. It is not started again; restore it from the daily backup.",
+                          "record missing (since {date}); restore from backup"),
+    "SH_LEDGER_WRITE": ("The latest results could not be recorded ({reason}); the next pass "
+                        "tries again.",
+                        "record write failed ({reason}); retrying"),
+    "SH_ERRATUM": ("Erratum {date}: one result in this look was later found wrong ({reason}). "
+                   "The recorded result is kept, as fixed in advance.",
+                   "erratum {date}: {reason}; recorded kept"),
 }
 SHADOW_ORDINALS = {1: "first", 2: "second", 3: "third"}
 #: A daily-close readout, plus slack: older than this, the note says so.
@@ -766,6 +822,32 @@ def _sh_word(key: str, **kw) -> str:
     return words.pick(SHADOW_WORDS[key]).format(**kw)
 
 
+def _sh_day(v, now: float) -> str:
+    """An ISO day from the ledger (an erratum's date) as :func:`_sh_date`
+    shows a timestamp; anything else reads n/a."""
+    try:
+        t = calendar.timegm(time.strptime(v, "%Y-%m-%d")) + 12 * 3600
+    except (TypeError, ValueError, OverflowError):
+        return "n/a"
+    return _sh_date(t, now)
+
+
+#: The ledger states in which no look is a result: the record cannot be used.
+SHADOW_LEDGER_BLOCKED = ("read", "missing")
+
+
+def _sh_ledger(d: dict) -> dict:
+    led = d.get("ledger")
+    return led if isinstance(led, dict) else {}
+
+
+def _sh_shown(lk: dict, blocked: bool) -> bool:
+    """Whether a look is shown as a result: evaluated, and in the ledger.
+    A look worked out but not recorded, or any look while the record cannot
+    be read or found, is not (S4) — however the payload is labelled."""
+    return bool(lk.get("evaluated")) and lk.get("recorded") is True and not blocked
+
+
 def _sh_parts(key: str, parts: list[tuple[int, dict]]) -> str:
     """A row of "·"-separated parts, each dropped when its count is zero. The
     row's lead-in ("left out and counted: ") stays whichever part is first."""
@@ -818,11 +900,14 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
     left_out = _sh_parts("SH_ROW_LEFT_OUT", [
         (_sh_int(d.get("n_nonprotocol")), {"m": _sh_int(d.get("n_nonprotocol"))}),
         (_sh_int(d.get("n_left")), {"l": _sh_int(d.get("n_left")), "T": T}),
-        (n_no_price, {"p": n_no_price})])
+        (n_no_price, {"p": n_no_price}),
+        (_sh_int(d.get("n_no_risk")), {"r": _sh_int(d.get("n_no_risk"))})])
     gap = (_sh_word("SH_ROW_GAP", g=_sh_int(d.get("n_gap")))
            if _sh_int(d.get("n_gap")) else "")
     rows: list[str] = []
     named = None                    # the look the status sentence is about
+    ledger = _sh_ledger(d)
+    blocked = ledger.get("error") in SHADOW_LEDGER_BLOCKED
 
     if entered == 0:
         status.append(_sh_word("SH_EMPTY"))
@@ -831,9 +916,9 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
         status.append(_sh_word("SH_NONE_AT_T", entered=entered, T=T, next_t=next_t))
         rows = [waiting, left_out]
     else:
-        line, named = _sh_look_status(looks, now, T, T_adj)
+        line, named = _sh_look_status(looks, now, T, T_adj, blocked)
         status.append(line)
-        rows = _sh_rows(d, looks, named, detail, T, waiting, left_out, gap)
+        rows = _sh_rows(d, looks, named, detail, T, waiting, left_out, gap, blocked)
 
     window = _sh_window(d.get("entries"), now)
     rows = [window] + rows
@@ -841,7 +926,8 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
                     if entered else "")
     out["status"] = " ".join(status)
     out["rows"] = "\n".join(r for r in rows if r)
-    out["warn"] = "\n".join(_sh_warnings(looks, now))
+    out["warn"] = "\n".join(_sh_ledger_lines(d, looks, now, blocked)
+                            + _sh_warnings(looks, now))
     note = _sh_word("SH_NOTE", rr=f"{rr:g}", T=T)
     at = _sh_ts(d.get("computed_at"))
     if at is not None:
@@ -849,39 +935,89 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
         note += " " + (_sh_word("SH_STALE", h=int(age_h)) if age_h > SHADOW_STALE_H else
                        _sh_word("SH_WORKED_OUT",
                                 when=time.strftime("%-d %b %H:%M", time.localtime(at))))
+    # A restarted record shows (domain P2-6): the date the ledger began.
+    if not blocked and _sh_ts(ledger.get("created_at")) is not None:
+        note += " " + _sh_word("SH_RECORD", date=_sh_date(ledger.get("created_at"), now))
     out["note"] = note
     return out
 
 
-def _sh_look_status(looks: list[dict], now: float, T: str,
-                    T_adj: str) -> tuple[str, int | None]:
+def _sh_ledger_lines(d: dict, looks: list[dict], now: float, blocked: bool) -> list[str]:
+    """The ledger's own lines: why it cannot be used or written, a check that
+    differs from the record, and errata. Text from the payload goes through
+    `_clean`, as SH_ERROR's reason does."""
+    out = []
+    ledger = _sh_ledger(d)
+    err = ledger.get("error")
+    if err == "read":
+        out.append(_sh_word("SH_LEDGER_READ", reason=_clean(ledger.get("reason"), 80)))
+    elif err == "missing":
+        out.append(_sh_word("SH_LEDGER_MISSING", date=_sh_date(ledger.get("created_at"), now)))
+    elif err == "write":
+        out.append(_sh_word("SH_LEDGER_WRITE", reason=_clean(ledger.get("reason"), 80)))
+    if blocked:
+        return out
+    for mm in d.get("mismatches") or []:
+        if not isinstance(mm, dict):
+            continue
+        date = _sh_date(mm.get("recorded_at"), now)
+        if mm.get("why") == "constants":
+            out.append(_sh_word("SH_MISMATCH_CONSTANTS", k=_sh_int(mm.get("k")), date=date))
+        elif mm.get("why") in ("members", "z"):
+            why = _sh_word("SH_WHY_MEMBERS" if mm.get("why") == "members" else "SH_WHY_Z")
+            out.append(_sh_word("SH_MISMATCH", k=_sh_int(mm.get("k")), why=why, date=date))
+    for er in d.get("errata") or []:
+        if isinstance(er, dict):
+            out.append(_sh_word("SH_ERRATUM", date=_sh_day(er.get("date"), now),
+                                reason=_clean(er.get("reason"), 80)))
+    return out
+
+
+def _sh_look_status(looks: list[dict], now: float, T: str, T_adj: str,
+                    blocked: bool = False) -> tuple[str, int | None]:
     """The primary sentence once an entry has a result (D3 a3–d), and the look
-    it names, if one."""
-    crossed = next((lk for lk in looks if lk.get("crossed")), None)
-    evaluated = [lk for lk in looks if lk.get("evaluated")]
+    it names, if one. Only a recorded look is a result (:func:`_sh_shown`);
+    one worked out and not recorded says so, with no z and no crossing."""
+    shown = [lk for lk in looks if _sh_shown(lk, blocked)]
+    unrecorded = [lk for lk in looks if lk.get("evaluated") and not _sh_shown(lk, blocked)]
+    crossed = next((lk for lk in shown if lk.get("crossed")), None)
     pending = [lk for lk in looks if not lk.get("evaluated") and not lk.get("design_closed")]
     if crossed is not None:
         z = _sh_num(crossed.get("z")) or 0.0
         key = "SH_LOOK_CROSSED_UP" if z > 0 else "SH_LOOK_CROSSED_DOWN"
         used = _sh_int(crossed.get("used"))
         line = (_sh_word(key, k=_sh_int(crossed.get("k")), N=_sh_int(crossed.get("n")),
-                         used=used, z=_sh_z(z, True))
+                         used=used, z=_sh_z(z, True),
+                         date=_sh_date(crossed.get("recorded_at"), now))
                 + " " + _sh_word("SH_CAVEAT_CROSSED", T=T, used=used))
         return line, _sh_int(crossed.get("k"))
-    if looks and len(evaluated) == len(looks):
+    if looks and len(shown) == len(looks):
         return _sh_word("SH_FINAL_NONE", T_adj=T_adj), None
     due = next((lk for lk in pending if _sh_num(lk.get("due")) is not None
                 and now >= _sh_num(lk.get("due"))), None)
     if due is not None:
         k = _sh_int(due.get("k"))
-        return _sh_word("SH_LOOK_WAITING_PRICE", ordinal=SHADOW_ORDINALS.get(k, str(k)),
+        line = _sh_word("SH_LOOK_WAITING_PRICE", ordinal=SHADOW_ORDINALS.get(k, str(k)),
                         k=k, w=_sh_int(due.get("n_wait_price")) + _sh_int(due.get("n_waiting")),
-                        N=_sh_int(due.get("n"))), None
-    if evaluated:
-        last = evaluated[-1]
-        line = _sh_word("SH_LOOK_NOT_CROSSED", k=_sh_int(last.get("k")),
-                        N=_sh_int(last.get("n")), used=_sh_int(last.get("used")),
-                        z=_sh_z(last.get("z"), False))
+                        N=_sh_int(due.get("n")))
+        if _sh_int(due.get("n_wait_price")) and _sh_ts(due.get("price_until")) is not None:
+            line += " " + _sh_word("SH_LOOK_WAITING_UNTIL",
+                                   date=_sh_date(due.get("price_until"), now))
+        return line, None
+    if unrecorded:
+        return _sh_word("SH_LOOK_UNRECORDED", k=_sh_int(unrecorded[-1].get("k"))), None
+    if shown:
+        last = shown[-1]
+        kw = {"k": _sh_int(last.get("k")), "N": _sh_int(last.get("n")),
+              "used": _sh_int(last.get("used")), "date": _sh_date(last.get("recorded_at"), now)}
+        if last.get("past_line"):
+            # Past the line, but not robust to the members left out (G2 (a)):
+            # the figure is shown on its own side of the line, with the caveat.
+            line = (_sh_word("SH_LOOK_NOT_ROBUST", z=_sh_z(last.get("z"), True),
+                             x=_sh_int(last.get("n_filled")), **kw)
+                    + " " + _sh_word("SH_CAVEAT_CROSSED", T=T, used=kw["used"]))
+        else:
+            line = _sh_word("SH_LOOK_NOT_CROSSED", z=_sh_z(last.get("z"), False), **kw)
         if pending:
             nxt = pending[0]
             if _sh_num(nxt.get("due")) is not None:
@@ -930,10 +1066,18 @@ def _sh_window(entries, now: float) -> str:
 
 
 def _sh_rows(d: dict, looks: list[dict], named: int | None, detail: bool, T: str,
-             waiting: str, left_out: str, gap: str) -> list[str]:
+             waiting: str, left_out: str, gap: str, blocked: bool = False) -> list[str]:
     """Rows of D4, in order; each omitted when its inputs are absent."""
     reached = _sh_int(d.get("n_reached"))
     rows = []
+    # The extreme fills of the look the sentence names, when it left any
+    # members out for want of a result (Amendment 1 §3).
+    for lk in looks:
+        if (_sh_int(lk.get("k")) == named and _sh_shown(lk, blocked)
+                and _sh_int(lk.get("n_filled")) and _sh_num(lk.get("z_lo")) is not None
+                and _sh_num(lk.get("z_hi")) is not None):
+            rows.append(_sh_word("SH_EXTREMES", x=_sh_int(lk.get("n_filled")),
+                                 lo=_sh_z(lk.get("z_lo")), hi=_sh_z(lk.get("z_hi"))))
     if reached:
         t, s, x = (_sh_int(d.get("n_target")), _sh_int(d.get("n_stop")),
                    _sh_int(d.get("n_time")))
@@ -955,9 +1099,12 @@ def _sh_rows(d: dict, looks: list[dict], named: int | None, detail: bool, T: str
     elif reached:
         rows.append(_sh_word("SH_ROW_RUNNING_WAIT", k=SHADOW_RUNNING_FROM - reached))
     for lk in looks:
-        if lk.get("evaluated") and not lk.get("crossed") and _sh_int(lk.get("k")) != named:
-            rows.append(_sh_word("SH_ROW_PAST_LOOK", k=_sh_int(lk.get("k")),
-                                 N=_sh_int(lk.get("n")), z=_sh_z(lk.get("z"), False)))
+        if (_sh_shown(lk, blocked) and not lk.get("crossed")
+                and _sh_int(lk.get("k")) != named):
+            past = bool(lk.get("past_line"))
+            rows.append(_sh_word("SH_ROW_PAST_LOOK_NOT_ROBUST" if past else "SH_ROW_PAST_LOOK",
+                                 k=_sh_int(lk.get("k")), N=_sh_int(lk.get("n")),
+                                 z=_sh_z(lk.get("z"), past)))
     rows += [left_out, gap]
     if detail:
         for b in d.get("bands") or []:
