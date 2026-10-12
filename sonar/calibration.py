@@ -41,14 +41,24 @@ Only positions that reached a barrier are graded. ``P(profit)`` is the chance
 of touching the target before the stop; a position closed by hand while in
 profit never touched its target, and counting it as a win (it used to be, on
 the sign of its P&L) graded the score on something it does not claim.
+
+A second grade, beside this one
+-------------------------------
+Grading closed positions only lets the score decide what gets graded: how long
+a position takes to close depends on its score, and the slow ones are still
+open. :func:`shadow_time_stop` gives every protocol entry the result it would
+have had under a time stop at entry + T, marked to the daily close
+(docs/adr/0002). It is a readout like :func:`report` — it writes nothing and
+changes no exit, no ``GRADED``, no ``Z_CLAIM`` and no ``P(profit)``.
 """
 
 from __future__ import annotations
 
+import bisect
 import math
 from dataclasses import dataclass
 
-from . import scoring
+from . import horizon, scoring
 
 # Below this, a bucket reports "insufficient data" rather than a hit rate.
 # Not a statistical bound so much as a decency threshold: at n=20 the standard
@@ -223,3 +233,309 @@ def _verdict(enough: bool, overall: float | None,
                 "odds, outside the noise, without the score itself showing "
                 "ranking power yet.")
     return "Insufficient data."
+
+
+# --------------------------------------------------------------------------- #
+# The time-stop shadow (docs/adr/0002)
+# --------------------------------------------------------------------------- #
+# Every protocol entry gets an outcome by a fixed date, so the score cannot
+# decide which entries are graded. The rules are ADR 0002 §4, in order:
+#
+# 1. **Barrier.** Closed at TARGET or STOP before the cut keeps that outcome.
+# 2. **Gap.** Otherwise a daily close after entry, up to the T bar, at or
+#    beyond a barrier is that barrier (the polls missed it; counted).
+# 3. **Time.** Otherwise the T bar's close, once that bar is final.
+# 4. **Waiting.** Otherwise not yet.
+#
+# The *T bar* is the last daily bar stamped at or before t_T = opened_at + T.
+# Yahoo stamps a bar at its session's start, and the newest one can still be
+# trading, so the T bar counts only once a later bar exists; that later bar's
+# stamp is the cut. R is the result in units of the initial risk,
+# d·(exit − entry)/|entry − stop|: +R:R at the target, −1 at the stop. With no
+# edge its mean is 0 whatever σ̂ got wrong (optional stopping), which is why
+# the gate is on R and not on a hit rate.
+#
+# Pre-registered: T, the looks and the boundary are frozen here and pinned by a
+# test. Changing one needs a new ADR and starts new cohorts.
+
+SHADOW_T_HORIZONS = 4             # T = 4 horizons of the entry's preset (ADR 0001's cap)
+SHADOW_LOOKS = (45, 101, 201)     # cohorts: the first N protocol entries by opened_at
+SHADOW_BOUNDARY = 2.315           # Pocock: |z| ≥ this at any look; 5% two-sided overall
+SHADOW_PRICE_GRACE_DAYS = 7       # past t_T with no final close: waiting, then left out
+SHADOW_CRYPTO = "Crypto"          # the asset class that trades on all seven days
+DAY_S = 86_400.0
+
+#: An entry's state in the shadow. The first three are graded; the next two
+#: are not yet; the last two are exclusions, counted and shown.
+SHADOW_GRADED = ("target", "stop", "time")
+SHADOW_PENDING = ("waiting", "wait_price")
+SHADOW_EXCLUDED = ("left", "no_price")
+
+
+def shadow_t_days(preset: str | None) -> float:
+    """T in calendar days: 4 × ``momentum_days`` × 7/5 — 28 on the week
+    preset, 5.6 intraday, 112 month, 336 quarter, 1,400 year (ADR §1)."""
+    return SHADOW_T_HORIZONS * horizon.get(preset).momentum_days * 7 / 5
+
+
+def shadow_due(p) -> float:
+    """t_T: the moment an entry reaches its fixed date."""
+    return p.opened_at + shadow_t_days(p.horizon) * DAY_S
+
+
+def shadow_reference_horizons(p) -> float:
+    """Horizons inside T for the no-edge reference: bars in the window over
+    bars per horizon. Weekday instruments see 4; crypto, whose daily bars run
+    all week, sees 4 × 7/5 = 5.6 (ADR §1)."""
+    if p.asset_class == SHADOW_CRYPTO:
+        return SHADOW_T_HORIZONS * 7 / 5
+    return float(SHADOW_T_HORIZONS)
+
+
+def shadow_needs_bars(p, now: float) -> bool:
+    """Whether an entry's outcome waits on daily closes: a filled protocol
+    entry past t_T that the book did not already settle at or before t_T. The
+    engine fetches only for these; a barrier hit before T needs no price."""
+    if not p.protocol or p.pending:
+        return False
+    t_due = shadow_due(p)
+    if now < t_due:
+        return False
+    return p.closed_at is None or p.closed_at > t_due
+
+
+def hc3_z(x: list[float], y: list[float]) -> float | None:
+    """z of the OLS slope of ``y`` on ``x`` with an HC3 (heteroscedasticity-
+    robust) standard error — the shadow's gate statistic (ADR §3). The same
+    sum as ``hc3_z`` in docs/specs/shadow-time-stop-sims.py; None, never NaN
+    or infinity, when the slope or its error is undefined (fewer than three
+    points, one score for all, or a perfect fit), because it goes into JSON."""
+    n = len(x)
+    if n < 3 or len(y) != n:
+        return None
+    mx, my = sum(x) / n, sum(y) / n
+    sxx = sum((a - mx) ** 2 for a in x)
+    if sxx <= 0:
+        return None
+    b = sum((a - mx) * (c - my) for a, c in zip(x, y, strict=True)) / sxx
+    a0 = my - b * mx
+    v = 0.0
+    for xi, yi in zip(x, y, strict=True):
+        e = yi - a0 - b * xi
+        h = 1 / n + (xi - mx) ** 2 / sxx
+        if h >= 1.0:
+            return None
+        v += (xi - mx) ** 2 * e * e / (1 - h) ** 2
+    if not v > 0:
+        return None
+    z = b / math.sqrt(v / sxx ** 2)
+    return z if math.isfinite(z) else None
+
+
+def _shadow_from_bars(p, series: list[tuple[float, float]] | None, t_due: float,
+                      booked: str | None) -> tuple[str, float | None, bool] | None:
+    """Rules 1–3 for an entry past t_T, from its symbol's daily bars. Returns
+    ``(state, exit price, gap)``, or None when the bars cannot decide yet: no
+    series, one that does not reach back to the entry, no bar after the entry
+    up to t_T, or a T bar that is still the newest (in progress)."""
+    if not series:
+        return None
+    stamps = [t for t, _c in series]
+    if stamps[0] > p.opened_at:
+        return None                          # too short a range to check for gaps
+    i = bisect.bisect_right(stamps, t_due) - 1     # the T bar: never the next one
+    if i < 0 or stamps[i] <= p.opened_at or i + 1 >= len(series):
+        return None
+    t_cut = stamps[i + 1]
+    if booked is not None and p.closed_at < t_cut:
+        if booked in GRADED:
+            return booked.lower(), (p.target if booked == "TARGET" else p.stop), False
+        return "left", None, False
+    # A bar's close comes at its session's end. Only bars that *start* after
+    # the entry are certainly closed after it: the entry day's own close may
+    # predate the entry, and the live polls watched that session anyway.
+    for j in range(bisect.bisect_right(stamps, p.opened_at), i + 1):
+        hit = p.hit(series[j][1])
+        if hit:
+            return hit.lower(), (p.target if hit == "TARGET" else p.stop), True
+    return "time", series[i][1], False
+
+
+def _shadow_entry(p, series, now: float) -> dict:
+    """One protocol entry's shadow outcome. Reads the position; never writes it."""
+    t_due = shadow_due(p)
+    booked = p.outcome if p.closed_at is not None else None
+    state, exit_price, gap = "waiting", None, False
+    if booked is not None and p.closed_at <= t_due:
+        # Settled by the book before T: final, and needs no price. Graded only
+        # from t_T on, like every other entry, so the running figures never
+        # lean on the quick resolvers the closed-only grade leans on.
+        if booked not in GRADED:
+            state = "left"
+        elif now >= t_due:
+            state = booked.lower()
+            exit_price = p.target if booked == "TARGET" else p.stop
+    elif now >= t_due:
+        got = _shadow_from_bars(p, series, t_due, booked)
+        if got is not None:
+            state, exit_price, gap = got
+        elif now >= t_due + SHADOW_PRICE_GRACE_DAYS * DAY_S:
+            state = "no_price"
+        else:
+            state = "wait_price"
+    risk = abs(p.entry - p.stop)
+    r = None
+    if exit_price is not None:
+        if risk > 0:
+            d = 1.0 if p.direction == "LONG" else -1.0
+            r = d * (exit_price - p.entry) / risk
+        else:                               # no stop distance: no R, never a guess
+            state, exit_price, gap = "no_price", None, False
+    ref_t, ref_s = scoring.barrier_probabilities_within(
+        p.rr, 1.0, shadow_reference_horizons(p))
+    return {"id": p.id, "symbol": p.symbol, "direction": p.direction,
+            "confidence": float(p.confidence or 0.0), "opened_at": p.opened_at,
+            "t_due": t_due, "t_days": shadow_t_days(p.horizon), "rr": p.rr,
+            "booked": booked, "state": state, "exit": exit_price, "r": r, "gap": gap,
+            "ref": [ref_t, ref_s]}
+
+
+def shadow_looks(entries: list[dict]) -> list[dict]:
+    """The three pre-registered looks (ADR §3).
+
+    A cohort is the first N entries by ``opened_at`` — membership by entry
+    order, never by resolution, so a look cannot re-select quick resolvers.
+    A look is evaluated once every member has an outcome or a final exclusion,
+    and its value depends on its members alone. |z| ≥ :data:`SHADOW_BOUNDARY`
+    crosses; the first crossing is the result and closes the design, so no
+    later look is evaluated.
+    """
+    order = sorted(entries, key=lambda e: (e["opened_at"], e["id"]))
+    out: list[dict] = []
+    closed_at_look = None
+    for k, n in enumerate(SHADOW_LOOKS, start=1):
+        members = order[:n]
+        graded = [e for e in members if e["state"] in SHADOW_GRADED]
+        excluded = sum(1 for e in members if e["state"] in SHADOW_EXCLUDED)
+        entered = len(members)
+        final = entered == n and len(graded) + excluded == n
+        evaluated = final and closed_at_look is None
+        z = (hc3_z([e["confidence"] for e in graded], [e["r"] for e in graded])
+             if evaluated else None)
+        crossed = bool(evaluated and z is not None and abs(z) >= SHADOW_BOUNDARY)
+        out.append({
+            "k": k, "n": n, "entered": entered, "n_missing": n - entered,
+            "due": max(e["t_due"] for e in members) if entered == n else None,
+            "used": len(graded), "n_excluded": excluded,
+            "n_waiting": sum(1 for e in members if e["state"] == "waiting"),
+            "n_wait_price": sum(1 for e in members if e["state"] == "wait_price"),
+            "evaluated": evaluated, "z": z, "crossed": crossed,
+            "design_closed": closed_at_look is not None,
+        })
+        if crossed:
+            closed_at_look = k
+    return out
+
+
+def _one(values: list) -> float | None:
+    """The value every entry shares, or None when they differ (or none exist)."""
+    distinct = set(values)
+    return distinct.pop() if len(distinct) == 1 else None
+
+
+def _ref_split(rows: list[dict]) -> dict | None:
+    """What no edge would give: the mean per-entry target / stop / neither
+    split by T, from :func:`scoring.barrier_probabilities_within`."""
+    if not rows:
+        return None
+    t = sum(e["ref"][0] for e in rows) / len(rows)
+    s = sum(e["ref"][1] for e in rows) / len(rows)
+    return {"target": t, "stop": s, "neither": max(0.0, 1.0 - t - s)}
+
+
+def _split(rows: list[dict]) -> dict:
+    return {"target": sum(1 for e in rows if e["state"] == "target"),
+            "stop": sum(1 for e in rows if e["state"] == "stop"),
+            "time": sum(1 for e in rows if e["state"] == "time")}
+
+
+def shadow_time_stop(open, closed, bars, now: float) -> dict:
+    """The time-stop shadow of the score grade, for every protocol entry.
+
+    ``open`` and ``closed`` are :class:`sonar.portfolio.Position` lists (the
+    engine passes copies); ``bars`` maps a symbol to its daily
+    ``(timestamp, close)`` pairs as :func:`sonar.assets.fetch_bars` returns
+    them. Pure: it reads its inputs and returns a new dict of plain numbers,
+    ready for JSON. Pending orders are not positions and are skipped; manual
+    entries are counted and never graded.
+    """
+    from .research import stats as _stats
+
+    series: dict[str, list[tuple[float, float]]] = {}
+    for sym, rows in (bars or {}).items():
+        clean = []
+        for t, c in rows or ():
+            t, c = float(t), float(c)
+            if math.isfinite(t) and math.isfinite(c):
+                clean.append((t, c))
+        series[sym] = sorted(clean)
+
+    entries: list[dict] = []
+    n_nonprotocol = 0
+    for p in list(open) + list(closed):
+        if p.pending:
+            continue
+        if not p.protocol:
+            n_nonprotocol += 1
+            continue
+        entries.append(_shadow_entry(p, series.get(p.symbol), now))
+    entries.sort(key=lambda e: (e["opened_at"], e["id"]))
+
+    graded = [e for e in entries if e["state"] in SHADOW_GRADED]
+    conf = [e["confidence"] for e in graded]
+    rs = [e["r"] for e in graded]
+    n = len(graded)
+    mean_r = sum(rs) / n if n else None
+    lo = hi = None
+    if n >= 2:
+        sd = math.sqrt(sum((v - mean_r) ** 2 for v in rs) / (n - 1))
+        lo, hi = mean_r - Z95 * sd / math.sqrt(n), mean_r + Z95 * sd / math.sqrt(n)
+    # report()'s statistic on the same entries: of those the book closed at a
+    # barrier, confidence against TARGET = 1 / STOP = 0. Descriptive only.
+    shut = [e for e in graded if e["booked"] in GRADED]
+    ic_closed = _stats.spearman([e["confidence"] for e in shut],
+                                [1.0 if e["booked"] == "TARGET" else 0.0 for e in shut])
+    waiting = [e["t_due"] for e in entries if e["state"] == "waiting"]
+    bands = []
+    for b_lo, b_hi in BUCKETS:
+        rows = [e for e in graded if b_lo <= e["confidence"] < b_hi]
+        if rows:
+            bands.append({"lo": b_lo, "hi": b_hi, "n": len(rows), **_split(rows),
+                          "ref": _ref_split(rows)})
+    split = _split(graded)
+    return {
+        "n_entered": len(entries),
+        "n_reached": n,
+        "n_target": split["target"], "n_stop": split["stop"], "n_time": split["time"],
+        "n_waiting": len(waiting),
+        "next_t": min(waiting) if waiting else None,
+        "n_wait_price": sum(1 for e in entries if e["state"] == "wait_price"),
+        "n_nonprotocol": n_nonprotocol,
+        "n_left": sum(1 for e in entries if e["state"] == "left"),
+        "n_no_price": sum(1 for e in entries if e["state"] == "no_price"),
+        "n_gap": sum(1 for e in graded if e["gap"]),
+        "z": hc3_z(conf, rs),
+        "ic": _stats.spearman(conf, rs),
+        "ic_closed": ic_closed,
+        "n_closed_same": len(shut),
+        "mean_r": mean_r, "mean_r_lo": lo, "mean_r_hi": hi,
+        "ref": _ref_split(graded),
+        "t_days": _one([e["t_days"] for e in entries]),
+        "rr": _one([e["rr"] for e in entries]),
+        "boundary": SHADOW_BOUNDARY,
+        "looks": shadow_looks(entries),
+        "bands": bands,
+        "entries": entries,
+        "computed_at": now,
+        "error": None,
+    }
