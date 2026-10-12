@@ -16,8 +16,10 @@ built. A test that wants a fetch to succeed has to say so by patching the layer
 it is exercising, which is what the provider tests already do.
 """
 
+import os
 import socket
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -31,8 +33,54 @@ _REAL_URLOPEN = urllib.request.urlopen
 # The real poll body, kept before the fixtures below stub it out for every
 # test. A test that drives one poll against stubbed feeds asks for `real_poll`.
 from sonar import core as _core  # noqa: E402
+from sonar import paths as _paths  # noqa: E402
 _REAL_POLL = _core.Live._poll
 _REAL_BACKGROUND_STEP = _core.Live._background_step
+# The real lookup, which honours $SONAR_DATA: see `scratch_data`.
+_REAL_USER_DATA_BASE = _paths.user_data_base
+
+#: The live data directory: the user's own book, and the shadow ledger the
+#: pre-registration rule keeps every test away from (S8 of
+#: docs/specs/shadow-ledger.md).
+LIVE_DATA = Path.home() / "Library" / "Application Support" / "SONAR"
+
+
+class LiveDataRefused(RuntimeError):
+    """A test was about to use the live data directory."""
+
+
+def refuse_live_data(path) -> Path:
+    """``path`` as an absolute path, or LiveDataRefused when it is the live
+    data directory or anything under it. Paths are compared as text first,
+    so the live directory is never listed, read, created or even looked up;
+    only a candidate that is not under it is resolved, to catch a symlink
+    into it."""
+    live = Path(os.path.abspath(str(LIVE_DATA)))
+    p = Path(os.path.abspath(os.path.expanduser(str(path))))
+    if p == live or live in p.parents:
+        raise LiveDataRefused(f"refusing the live data directory for a test: {p}")
+    real = Path(os.path.realpath(p))
+    if real == live or live in real.parents:
+        raise LiveDataRefused(f"refusing the live data directory for a test: {p} -> {real}")
+    return p
+
+
+def use_scratch_data(path, monkeypatch) -> Path:
+    """Point SONAR_DATA at ``path`` — refused first if it is the live
+    directory — and put back the real lookup, so the code under test finds
+    its data the way the agent does."""
+    p = refuse_live_data(path)
+    monkeypatch.setenv(_paths.DATA_ENV, str(p))
+    # A backup made in the scratch directory is not copied off it.
+    monkeypatch.delenv(_paths.BACKUP_DIR_ENV, raising=False)
+    monkeypatch.setattr(_paths, "user_data_base", _REAL_USER_DATA_BASE)
+    return p
+
+
+@pytest.fixture
+def scratch_data(tmp_path, monkeypatch):
+    """A scratch SONAR_DATA in this test's tmp_path (shadow ledger L-18)."""
+    return use_scratch_data(tmp_path, monkeypatch)
 
 
 @pytest.fixture
@@ -137,7 +185,9 @@ def isolated_state(monkeypatch, tmp_path):
     Only `test_refresh` and `test_enginelock` did this for themselves, so the
     other window tests were writing to — and taking the engine lock in — the
     real application directory while the user's own app might be running.
+    A temporary directory under it (a stray --basetemp) is refused.
     """
+    refuse_live_data(tmp_path)
     monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
 
 
