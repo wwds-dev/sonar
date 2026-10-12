@@ -300,20 +300,20 @@ zero.
 | `SH_NEXT_LOOK_UNDATED` | Next look: the first {N2} entries, after {missing} more are entered. | Next: n = {N2}, {missing} not yet entered. |
 | `SH_LOOK_CROSSED_UP` | Look {k} of 3, first {N} entries ({used} with a result): crossed the line. On these paper entries, higher scores went with higher R on average. z = {z}; the line is ±2.315. The test ends here. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| ≥ 2.315, crossed. Design closed. |
 | `SH_LOOK_CROSSED_DOWN` | *(as above, with "lower R on average")* | *(same as UP)* |
-| `SH_CAVEAT_CROSSED` | This says only that the score sorted how these past coin-flip paper entries ended after {T}. It does not show that trading high scores would make money: it is one test on {used} entries, before costs, fees and slippage, with exact fills, and a test like this can cross by chance even when there is no link. It is not a trading edge. | Ranks past random-direction paper outcomes at T only; before costs, exact fills, one test with a by-design false-alarm rate; not a tradeable edge. |
+| `SH_CAVEAT_CROSSED` | This says only that the score sorted how these past coin-flip paper entries ended after {T}. It does not show that trading by score would make money: it is one test on {used} entries, before costs, fees and slippage, with exact fills, and a test like this can cross by chance even when there is no link. It is not a trading edge. | Ranks past random-direction paper outcomes at T only; before costs, exact fills, one test with a by-design false-alarm rate; not a tradeable edge. |
 | `SH_FINAL_NONE` | Three looks, no crossing: no evidence that the score ranks {T_adj} results, at the planned size. The test is finished. | Looks 1-3 not crossed: no evidence that the score ranks {T_adj} results, at the planned size. Design closed. |
 | `SH_ROW_SPLIT` | {reached} with a result: {t} at the target ({tp}%) · {s} at the stop ({sp}%) · {x} at neither, valued at the close after {T} ({xp}%) | {reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} ({xp}%) |
 | `SH_ROW_WAITING` | still waiting: {w} not yet at {T} (the next on {next_t}) · {wp} waiting for a closing price | waiting: {w} before T (next {next_t}) · {wp} awaiting a final close |
-| `SH_ROW_REF` | what no edge would give after {T}, if the volatility estimate was right: about {a}% at the target · {b}% at the stop · {c}% at neither. A different split mostly means the volatility estimate was off. With no edge the average result is 0R whatever the volatility. | what no edge would give at planned σ: {a}% / {b}% / {c}% (a σ̂ check); mean 0R at any σ |
-| `SH_ROW_RUNNING` | running, not a test: average result {m}R (95% range {lo} to {hi}R) · link z = {z} · no costs | running, not a test: mean R {m} [{lo}, {hi}] · HC3 slope z {z} · no costs |
+| `SH_ROW_REF` | what no edge would give after {T}, if the volatility estimate was right: about {a}% at the target · {b}% at the stop · {c}% at neither. A different split can mean the volatility estimate was off. With no edge, exact fills and randomly wandering prices, the average result would be about 0R. | what no edge would give at planned σ: {a}% / {b}% / {c}% (a σ̂ check); mean ≈0R at any σ (exact fills) |
+| `SH_ROW_RUNNING` | running, not a test: paper average {m}R (95% range for the average {lo} to {hi}R) · link z = {z} · before costs; an average above 0 here is not a trading edge | running, not a test: mean R {m} [{lo}, {hi}] · HC3 slope z {z} · pre-cost; mean > 0 is not a tradeable edge |
 | `SH_ROW_RUNNING_WAIT` | running figures start at 20 results; {k} to go | running stats from n = 20; {k} to go |
 | `SH_ROW_IC` | for comparison only, not a test: rank correlation {ic} on these entries at {T}, {icc} on the closed ones alone | descriptive only: rank IC {ic} (all at T) vs {icc} (closed only) |
 | `SH_ROW_PAST_LOOK` | look {k}, first {N}: z = {z}, did not cross the line | look {k}, n = {N}: z {z}, not crossed |
 | `SH_ROW_LEFT_OUT` | left out and counted: {m} chosen by hand · {l} closed by hand before {T} · {p} with no closing price | excluded: {m} non-protocol · {l} hand-closed before T · {p} no price |
-| `SH_ROW_GAP` | {g} graded at the target or stop because a daily close went past it between checks | {g} gap exits (daily close beyond a barrier) |
+| `SH_ROW_GAP` | {g} counted at the target or stop price because a daily close went past it between checks (a real fill there could have been worse) | {g} gap exits, filled at the barrier, not the close beyond it |
 | `SH_ROW_BAND` | scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} neither · what no edge would give if the volatility estimate was right: {a}% / {b}% / {c}% | score {lo}-{hi}  n={n}  T/S/N {t}/{s}/{x}  no edge @σ̂ {a}/{b}/{c}% |
 | `SH_WARN` | Note: {x} of the first {N} entries were left out ({pct}%). This look rests on the other {used}. | Note: {x}/{N} excluded ({pct}%) at look {k}. |
-| `SH_NOTE` | R is the result in units of the amount risked: -1R lost the amount risked, +{rr}R reached the target. This grade asks only whether the score sorts how coin-flip entries end after {T}. These are paper entries with a random direction, before costs, fees and slippage. Even a crossed line is not a trading edge and says nothing about how future entries end. | R = result / initial risk. Ranks random-direction outcomes at T only; not a tradeable edge. No costs. |
+| `SH_NOTE` | R is the result in units of the amount risked: -1R lost the amount risked, +{rr}R reached the target. This grade asks only whether the score sorts how coin-flip entries end after {T}. These are paper entries with a random direction, before costs, fees and slippage. Even a crossed line is not a trading edge and says nothing about how future entries end. | R = result / initial risk. Ranks random-direction outcomes at T only; not a tradeable edge. Paper; before costs, fees and slippage; exact fills. |
 | `SH_WORKED_OUT` | Worked out {when}. | As of {when}. |
 | `SH_STALE` | Not updated for {h} hours: the agent may be stopped. | Stale: {h} h old. |
 
@@ -336,8 +336,19 @@ with three departures:
 No copy states a false-alarm rate. The caveat says only that a test like this "can cross by chance".
 
 `{ordinal}` is first / second / third. The word "edge" appears only in the mandated reference
-phrase "what no edge would give" and in the two negated caveats. A test that greps for edge claims
-should allow exactly those strings.
+phrase "what no edge would give" (band form "no edge @σ̂"), in the reference's condition "with no
+edge, exact fills and randomly wandering prices", and in negations ("not a trading edge", "not a
+tradeable edge"). `EDGE_ALLOWED` in `tests/test_shadow_ui.py` lists exactly these (fix loop 2,
+domain r2 N-4).
+
+Fix loop 2 (domain r2 P2-1, N-1, N-2, N-3):
+- The running row says "paper average", "95% range for the average", "before costs" (expert:
+  "pre-cost") and "an average above 0 here is not a trading edge".
+- The expert note replaces "No costs." with "Paper; before costs, fees and slippage; exact fills."
+- `SH_ROW_GAP` says gap exits are counted at the barrier price.
+- `SH_ROW_REF` states the conditions for its 0R ("with no edge, exact fills and randomly wandering
+  prices … about 0R"), and its "mostly means" is now "can mean".
+- The crossed caveat negates "trading by score", which covers a downward crossing too.
 
 ### D7. Tests the design adds (for the qa-engineer's plan)
 - **U-1.** Every `SHADOW_WORDS` string, in both modes, plus the rendered text of `shadow_status`,
@@ -478,15 +489,32 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
 
     **Owner decision 2026-10-12:** the measured size (5.9–6.2% over 20,000 null books, the excess
     from look 1) is accepted. ADR 0002 is not amended, and the boundary stays 2.315 with the looks at
-    45 / 101 / 201. The V-12 test keeps its 5% ± 1.5 pt bar. No user-facing copy states a
+    45 / 101 / 201. The 2,000-book test
+    (`test_v12_the_design_holds_its_size_where_the_closed_only_grade_does_not`) keeps the spec's
+    5% ± 1.5 pt bar. The 20,000-book precision mean is held to the measured 5.7–6.7% (note 24). No user-facing copy states a
     false-alarm rate.
-16. **The newest bar decides nothing** (fix loop 1, code review P1-2). Yahoo stamps the
-    in-progress bar with the fetch time, not its session's start (EURCHF=X read `10-12 11:17`). So
-    `_shadow_from_bars` drops the newest bar before it picks the T bar or the cut. Both must be
-    older than the newest, which costs at most one more day of waiting. In the reviewer's FX case
-    (opened Sunday 23:30 UTC), the entry waits through Monday and Tuesday and is graded on Wednesday
-    at Monday's close, never at Friday's. I chose this over snapping stamps to the session start,
-    because it needs no per-market session table and is right for every stamp convention.
+16. **The newest bar is trusted only when it is a finished session** (fix loop 1, code review P1-2;
+    rewritten in fix loop 2 for code review r2 P2-B). Yahoo can stamp the in-progress bar with the
+    fetch time, not its session's start (EURCHF=X read `10-12 11:17`).
+    - The engine stores each series with the time it was fetched. On a failed day, the kept series
+      keeps its own fetch time.
+    - The newest bar counts only when its stamp is at least 24 h (`SHADOW_FINAL_AFTER_S`) before
+      that fetch, because no session is longer than a day. It is never compared with `now`, or a
+      kept series would turn final.
+    - An untrusted newest bar still bounds its session start to after `stamp − 24 h`. When that is
+      already past t_T, the T bar is the last trusted bar at or before t_T, and it is finished.
+    - The cut then lies in `(stamp − 24 h, stamp]`. A booked close inside that window waits; one
+      outside it is decided by rule 1 as usual.
+    - Without a fetch time (the pure function called alone), the newest bar is never trusted.
+    - **Measured** (`test_r2_latency_*`, US-session bars, one fetch a day at 00:01 UTC): a
+      Monday–Thursday T is decided **2.4 days** after t_T, and a Friday T **3.4 days** after. A
+      holiday after T adds a day. Fix loop 1 took 4.4 days for a Thursday or Friday T, and the
+      reviewer measured up to 5.4 with a holiday. The worst ordinary case now leaves **2.6 days**
+      before the 7-day grace makes an entry "no price".
+    - The FX Sunday case is graded on Tuesday at Monday's close, never at Friday's. B1, B2 and B3 do
+      not flip.
+    - I chose this over snapping stamps to the session start, because it needs no per-market session
+      table.
 17. **Bars stamped after `now` are ignored** (security P2-2), so a future stamp cannot make an
     in-progress bar look final.
 18. **Payload timestamps** (security P2-1, code review P2-2). The UI reads a timestamp only within
@@ -497,21 +525,25 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
     - Bars are validated row by row: a row that cannot be read (a stamp of 10**400, a missing field) is
       dropped on its own, so it no longer fails the whole readout.
     - Closes at or below zero are dropped, as non-finite ones already were.
-    - **Split guard,** `SHADOW_SPLIT_GUARD = 2.0`, pinned by a test. A series is unusable for an entry
-      when its last close at or before `opened_at` is more than 2 stop distances from `p.entry`.
-      Yahoo split-adjusts old closes after the fact, so a split at any time after the entry rescales
-      that close.
-      - Why 2 stop distances: one stop distance is one horizon-σ (about √5 daily moves on the week
-        preset), and the entry is at most a session away from that close, so 2 is more than four
-        daily σ.
-      - Why not a ratio band: the guard catches a 3:2 split for any instrument moving less than about
-        7% a day. A ratio band such as [0.5, 2] would let 3:2 through, and even an exact 2:1.
+    - **Split guard,** `SHADOW_SPLIT_GUARD = 4.5` **daily σ**, pinned by a test, including the
+      comparison at exactly the bound. A series is unusable for an entry when its last close at or
+      before `opened_at` is more than 4.5 · |entry − stop| / √momentum_days from `p.entry`. Yahoo
+      split-adjusts old closes after the fact, so a split at any time after the entry rescales that
+      close.
+      - Why daily σ: fix loop 1 used 2 stop distances. A stop distance is daily σ × √momentum_days,
+        so that bound grew with the preset, to 31.6 daily σ on year. It missed a 2:1 split on quarter
+        at 3.5% a day (code review r2 P2-A), and on intraday it was only about 2 daily σ (QA r2 P3-6).
+      - Why 4.5: it equals week's former 2 stop distances (2√5 ≈ 4.47). The entry is at most a
+        session from that close, so a false alarm needs a rare gap, and a false alarm is counted.
+      - On every preset it catches a 2:1 split below about 11% daily σ and a 3:2 split below about
+        7%. This is tested for all five presets at 3.5%.
+      - Why not a ratio band: a band such as [0.5, 2] would let 3:2 through, and even an exact 2:1.
+      - `events=split` is not requested: `fetch_bars` does not support it and its other callers stay
+        unchanged.
     - An entry with an unusable series is `wait_price` and then `no_price`: counted, never guessed. An
       entry decided before a split keeps its outcome through the memo of note 6.
     - **Residual:** a single wrong close mid-series that stays positive and plausible, such as a bad
       tick through a barrier, still grades a gap exit. It cannot be told from a real move.
-    - `events=split` is not requested, because `fetch_bars` does not support it and its other callers
-      stay unchanged.
     - **Free side effect:** decided entries are no longer fetched (note 6), so the daily request count
       no longer grows with every entry graded. This eases security P3-4 but does not cap it.
 20. **Checked against the model-validator's cases** (`docs/audit/shadow-time-stop-model-validator.md`,
@@ -556,6 +588,21 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
     - New tests kill QA's surviving mutants M11–M14, C03, C06, U01, U04, U05, U08 and U09. None was
       equivalent, and none showed a spec rule to be wrong.
     - U-2 now also covers an existing grade with a verdict (25 graded).
+25. **Fix loop 2, the rest** (code review r2 P3s, QA r2).
+    - A memo entry is deep-copied when it is stored and when it is handed back. Its `booked` field
+      is refreshed from the position, so `ic_closed` and `n_closed_same` read the book as it is now.
+    - `_take_the_book` clears the memo and the bar cache.
+    - `_shadow_pass` documents that it runs only under `_rescan_lock`, which serialises it. It does
+      not assert this, because tests call it directly.
+    - `SH_ERROR` shows the reason through `llm._clean(…, 80)`, as the untrusted-text sweep does.
+    - The two slow mean tests skip, with a reason, unless all their chunks ran in the session. Run
+      alone, they used to recompute every chunk and hit the 60 s hang guard (QA r2 P2-A).
+    - New tests cover:
+      - a malformed bar in the middle of a series (QA r2 N17);
+      - the guard at exactly its bound (N14);
+      - a negative payload timestamp reading n/a (N20);
+      - a full listing of the data directory, with every file's size and mtime, being unchanged by
+        a pass (P3-4).
 
 ## Risks and open questions
 - **The rank IC is not exactly zero-centred under no edge.** Barrier R-multiples are skewed: the

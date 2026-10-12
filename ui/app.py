@@ -472,8 +472,11 @@ ATTRIBUTION_VERDICTS = {
 
 #: The time-stop shadow of the score grade (docs/specs/shadow-time-stop.md,
 #: Design D6), as (plain, expert). "Promised" and "advertised" stay with the
-#: row P(profit); "edge" appears only in "what no edge would give" and the two
-#: negated caveats. Both modes keep the same rows in the same order.
+#: row P(profit). "edge" appears only in the reference phrase "what no edge
+#: would give" (and its band form "no edge @σ̂"), in the reference's condition
+#: "with no edge, exact fills and randomly wandering prices", and in negations
+#: ("not a trading edge", "not a tradeable edge"). tests/test_shadow_ui.py
+#: EDGE_ALLOWED lists exactly these. Both modes keep the same rows in order.
 _SH_TIP = ("A second grade, beside the one above, which counts only closed positions. "
            "Here every protocol entry gets a result a fixed time after it opened (4 weeks "
            "on the week profile): at the target, at the stop, or at that day's close if it "
@@ -531,7 +534,7 @@ SHADOW_WORDS = {
                              "2.315, crossed. Design closed."),
     "SH_CAVEAT_CROSSED": ("This says only that the score sorted how these past coin-flip "
                           "paper entries ended after {T}. It does not show that trading "
-                          "high scores would make money: it is one test on {used} entries, "
+                          "by score would make money: it is one test on {used} entries, "
                           "before costs, fees and slippage, with exact fills, and a test "
                           "like this can cross by chance even when there is no link. It is "
                           "not a trading edge.",
@@ -552,14 +555,16 @@ SHADOW_WORDS = {
                        "close"),
     "SH_ROW_REF": ("what no edge would give after {T}, if the volatility estimate was right: "
                    "about {a}% at the target · {b}% at the stop · {c}% at neither. A "
-                   "different split mostly means the volatility estimate was off. With no "
-                   "edge the average result is 0R whatever the volatility.",
+                   "different split can mean the volatility estimate was off. With no "
+                   "edge, exact fills and randomly wandering prices, the average result "
+                   "would be about 0R.",
                    "what no edge would give at planned σ: {a}% / {b}% / {c}% (a σ̂ check); "
-                   "mean 0R at any σ"),
-    "SH_ROW_RUNNING": ("running, not a test: average result {m}R (95% range {lo} to {hi}R) "
-                       "· link z = {z} · no costs",
+                   "mean ≈0R at any σ (exact fills)"),
+    "SH_ROW_RUNNING": ("running, not a test: paper average {m}R (95% range for the average "
+                       "{lo} to {hi}R) · link z = {z} · before costs; an average above 0 "
+                       "here is not a trading edge",
                        "running, not a test: mean R {m} [{lo}, {hi}] · HC3 slope z {z} · "
-                       "no costs"),
+                       "pre-cost; mean > 0 is not a tradeable edge"),
     "SH_ROW_RUNNING_WAIT": ("running figures start at 20 results; {k} to go",
                             "running stats from n = 20; {k} to go"),
     "SH_ROW_IC": ("for comparison only, not a test: rank correlation {ic} on these entries "
@@ -571,9 +576,9 @@ SHADOW_WORDS = {
                         "before {T} · {p} with no closing price",
                         "excluded: {m} non-protocol · {l} hand-closed before T · {p} no "
                         "price"),
-    "SH_ROW_GAP": ("{g} graded at the target or stop because a daily close went past it "
-                   "between checks",
-                   "{g} gap exits (daily close beyond a barrier)"),
+    "SH_ROW_GAP": ("{g} counted at the target or stop price because a daily close went past "
+                   "it between checks (a real fill there could have been worse)",
+                   "{g} gap exits, filled at the barrier, not the close beyond it"),
     "SH_ROW_BAND": ("scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} "
                     "neither · what no edge would give if the volatility estimate was right: "
                     "{a}% / {b}% / {c}%",
@@ -587,7 +592,7 @@ SHADOW_WORDS = {
                 "direction, before costs, fees and slippage. Even a crossed line is not a "
                 "trading edge and says nothing about how future entries end.",
                 "R = result / initial risk. Ranks random-direction outcomes at T only; not "
-                "a tradeable edge. No costs."),
+                "a tradeable edge. Paper; before costs, fees and slippage; exact fills."),
     "SH_WORKED_OUT": ("Worked out {when}.", "As of {when}."),
     "SH_STALE": ("Not updated for {h} hours: the agent may be stopped.", "Stale: {h} h old."),
 }
@@ -788,7 +793,7 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
     d = shadow
     status: list[str] = []
     if d.get("error"):
-        status.append(_sh_word("SH_ERROR", reason=str(d["error"])[:80]))
+        status.append(_sh_word("SH_ERROR", reason=_clean(d["error"], 80)))
     if "n_entered" not in d:                 # failed before a first readout
         out["status"] = " ".join(status) or _sh_word("SH_LOADING")
         out["note"] = _sh_word("SH_NOTE", rr=f"{rr:g}", T=_sh_t_words(t_default)[0])

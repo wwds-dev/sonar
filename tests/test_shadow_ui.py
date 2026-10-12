@@ -35,8 +35,10 @@ SCREEN = {"day_change": 0.01, "momentum": 0.05, "momentum_days": 5, "lean": "Nor
           "comp": {"momentum": .5, "volatility": .3, "news": .8, "catalyst": .2},
           "data_age_s": 60.0, "plan": {"rr": 1.5, "p_profit": 0.4, "calibrated": False}}
 BANNED = ("promised", "advertised", "profit", "certain", "guarantee")
-EDGE_ALLOWED = ("what no edge would give", "not a trading edge", "not a tradeable edge",
-                "no edge ")
+#: Exactly the phrases SHADOW_WORDS may use "edge" in (domain review r2 N-4).
+EDGE_ALLOWED = ("with no edge, exact fills and randomly wandering prices",
+                "what no edge would give", "no edge @σ̂", "not a trading edge",
+                "not a tradeable edge")
 
 
 @pytest.fixture(scope="module")
@@ -259,8 +261,10 @@ def test_u4_running_figures_wait_for_twenty_results(window):
     assert "running figures start at 20 results; 8 to go" in rows
     assert "rank correlation" not in rows
     rows = show(window, STATES["c not crossed"])["landing"]["rows"]
-    assert "running, not a test: average result +0.12R (95% range -0.31 to +0.55R)" in rows
-    assert "link z = +0.84 · no costs" in rows
+    assert ("running, not a test: paper average +0.12R (95% range for the average -0.31 to "
+            "+0.55R)") in rows
+    assert ("link z = +0.84 · before costs; an average above 0 here is not a trading edge"
+            in rows)
     assert "rank correlation +0.11 on these entries at 4 weeks, -0.32 on the closed ones" in rows
 
 
@@ -275,7 +279,8 @@ def test_u4_past_looks_are_listed_under_the_sentence(window):
 @pytest.mark.parametrize("field,text", [
     ("n_nonprotocol", "3 chosen by hand"), ("n_left", "3 closed by hand before 4 weeks"),
     ("n_no_price", "3 with no closing price"),
-    ("n_gap", "3 graded at the target or stop because a daily close went past it"),
+    ("n_gap", "3 counted at the target or stop price because a daily close went past it "
+              "between checks (a real fill there could have been worse)"),
 ])
 def test_u5_every_exclusion_is_shown(window, field, text):
     """U-5. Kills: hiding a non-zero exclusion or gap count."""
@@ -312,8 +317,9 @@ def test_u6_the_reference_and_the_bands_when_present(window):
     t = show(window, readout())
     assert ("what no edge would give after 4 weeks, if the volatility estimate was right: "
             "about 37% at the target · 57% at the stop · 5% at neither. A different split "
-            "mostly means the volatility estimate was off. With no edge the average result "
-            "is 0R whatever the volatility.") in t["landing"]["rows"]
+            "can mean the volatility estimate was off. With no edge, exact fills and "
+            "randomly wandering prices, the average result would be about 0R.") \
+        in t["landing"]["rows"]
     assert ("· what no edge would give if the volatility estimate was right: 37% / 57% / 5%"
             in t["book"]["rows"])
     assert "scores 80-100:" in t["book"]["rows"] and "scores" not in t["landing"]["rows"]
@@ -367,10 +373,14 @@ def test_the_note_says_when_and_goes_stale(window):
 
 
 def test_payload_text_is_never_markup(window):
-    """The dict can come from another process: its one string is shown as
-    text, and labels never interpret markup."""
-    t = show(window, readout(error="<b>bold</b><img src=x>"))
-    assert "<b>bold</b>" in t["landing"]["status"]
+    """The dict can come from another process: its one string is cleaned as
+    the untrusted-text sweep cleans every such string (no angle brackets, no
+    control characters, 80 at most — code review r2 P3-5), and labels never
+    interpret markup."""
+    t = show(window, readout(error="<b>bold</b><img src=x>\n" + "y" * 200))
+    status = t["landing"]["status"]
+    assert "bold" in status and "<" not in status and "\n" not in status
+    assert "y" * 81 not in status
     for w in (window.shadow_grade, window.book_shadow):
         for lb in (w.shadow_count, w.shadow_status, w.shadow_rows, w.shadow_warn,
                    w.shadow_note):
@@ -403,7 +413,7 @@ def test_both_wordings_keep_the_same_rows(window, monkeypatch, name):
     assert len(plain["rows"].splitlines()) == len(expert["rows"].splitlines())
     assert bool(plain["warn"]) == bool(expert["warn"])
     assert "before costs, fees and slippage" in plain["note"]
-    assert "No costs" in expert["note"]
+    assert "before costs, fees and slippage; exact fills" in expert["note"]
 
 
 def test_the_block_is_announced_and_its_heading_links_to_the_manual(window):
@@ -575,3 +585,18 @@ def test_u2_a_grade_with_a_verdict_reads_the_same_with_the_shadow_present(window
     finally:
         with window.live.lock:
             window.live.calibration = saved
+
+
+def test_qa_n20_a_negative_timestamp_reads_n_a():
+    """QA r2 N20: the clamp's lower bound. Without it, -1 is 31 Dec 1969."""
+    from ui.app import _sh_date
+    assert _sh_date(-1.0, NOW) == "n/a" and _sh_date(0.0, NOW) != "n/a"
+
+
+def test_domain_n2_the_caveat_covers_a_downward_crossing_too(window):
+    """Domain r2 N-2: one caveat for both directions, so it negates trading
+    by score, not only trading high scores."""
+    for name in ("c crossed up", "c crossed down"):
+        status = show(window, STATES[name])["landing"]["status"]
+        assert "trading by score would make money" in status
+        assert "high scores would make money" not in status
