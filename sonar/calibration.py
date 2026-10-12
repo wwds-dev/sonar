@@ -260,8 +260,20 @@ def _verdict(enough: bool, overall: float | None,
 
 SHADOW_T_HORIZONS = 4             # T = 4 horizons of the entry's preset (ADR 0001's cap)
 SHADOW_LOOKS = (45, 101, 201)     # cohorts: the first N protocol entries by opened_at
-SHADOW_BOUNDARY = 2.315           # Pocock: |z| ≥ this at any look; 5% two-sided overall
+# Pocock: |z| ≥ this at any look. Nominal 5% (Pocock); measured ~6% at these
+# sizes (V-12), accepted by the owner 2026-10-12.
+SHADOW_BOUNDARY = 2.315
 SHADOW_PRICE_GRACE_DAYS = 7       # past t_T with no final close: waiting, then left out
+# A series whose last close at or before the entry is more than this many
+# stop distances from the entry price is not that entry's price history:
+# Yahoo split-adjusts old closes after the fact, so a split after the entry
+# rescales everything before it (security P2-2, code review P2-1). One stop
+# distance is one horizon-σ, about √5 daily moves on the week preset, and the
+# entry is at most a session away from that close, so 2 is over four daily σ:
+# a false alarm needs a rare gap, and is counted, never guessed. A 3:2 split
+# (−33%) trips it for any instrument moving under ~7% a day; a ratio band
+# such as [0.5, 2] would let it through.
+SHADOW_SPLIT_GUARD = 2.0
 SHADOW_CRYPTO = "Crypto"          # the asset class that trades on all seven days
 DAY_S = 86_400.0
 
@@ -337,13 +349,24 @@ def _shadow_from_bars(p, series: list[tuple[float, float]] | None, t_due: float,
     """Rules 1–3 for an entry past t_T, from its symbol's daily bars. Returns
     ``(state, exit price, gap)``, or None when the bars cannot decide yet: no
     series, one that does not reach back to the entry, no bar after the entry
-    up to t_T, or a T bar that is still the newest (in progress)."""
+    up to t_T, or no final T bar and cut bar.
+
+    The newest bar never takes part. It may still be trading, and Yahoo
+    stamps it with the *fetch time*, not its session's start (EURCHF=X read
+    `11:17` on 2026-10-12, code review P1-2), so its stamp can neither pick the
+    T bar nor serve as the cut. Both must be older than the newest bar: at
+    most a day more of waiting, and never a wrong close taken as final."""
+    series = (series or [])[:-1]
     if not series:
         return None
     stamps = [t for t, _c in series]
     if stamps[0] > p.opened_at:
         return None                          # too short a range to check for gaps
+    before = series[bisect.bisect_right(stamps, p.opened_at) - 1][1]
+    if abs(before - p.entry) > SHADOW_SPLIT_GUARD * abs(p.entry - p.stop):
+        return None                          # rescaled (a split?) or wrong: not this price
     i = bisect.bisect_right(stamps, t_due) - 1     # the T bar: never the next one
+    # The cut bar must exist below the newest, which was dropped above.
     if i < 0 or stamps[i] <= p.opened_at or i + 1 >= len(series):
         return None
     t_cut = stamps[i + 1]
@@ -359,6 +382,18 @@ def _shadow_from_bars(p, series: list[tuple[float, float]] | None, t_due: float,
         if hit:
             return hit.lower(), (p.target if hit == "TARGET" else p.stop), True
     return "time", series[i][1], False
+
+
+def shadow_decided(result: dict) -> dict[str, dict]:
+    """The entries of a readout whose outcome is settled for good — graded
+    (barrier, gap, or TIME on a final T bar) or left out by a hand close — by
+    position id. The engine keeps these in memory and hands them back, so an
+    outcome once decided cannot change within the process: not when a fetch
+    fails, and not when the provider rewrites old closes (code review P1-1,
+    P2-1). "No price" is not settled: closes may still come. Nothing here is
+    persisted (ADR 0002 §7)."""
+    return {e["id"]: e for e in result.get("entries", ())
+            if e["state"] in SHADOW_GRADED or e["state"] == "left"}
 
 
 def _shadow_entry(p, series, now: float) -> dict:
@@ -459,7 +494,8 @@ def _split(rows: list[dict]) -> dict:
             "time": sum(1 for e in rows if e["state"] == "time")}
 
 
-def shadow_time_stop(open, closed, bars, now: float) -> dict:
+def shadow_time_stop(open, closed, bars, now: float,
+                     decided: dict[str, dict] | None = None) -> dict:
     """The time-stop shadow of the score grade, for every protocol entry.
 
     ``open`` and ``closed`` are :class:`sonar.portfolio.Position` lists (the
@@ -467,16 +503,25 @@ def shadow_time_stop(open, closed, bars, now: float) -> dict:
     ``(timestamp, close)`` pairs as :func:`sonar.assets.fetch_bars` returns
     them. Pure: it reads its inputs and returns a new dict of plain numbers,
     ready for JSON. Pending orders are not positions and are skipped; manual
-    entries are counted and never graded.
+    entries are counted and never graded. Bars stamped after ``now`` are
+    ignored: a future stamp would make an in-progress bar look final.
+
+    ``decided`` is :func:`shadow_decided` of earlier readouts: an entry found
+    there keeps that outcome (copied, never recomputed). Only an entry still
+    protocol and filled is looked up, so the book stays the population.
     """
     from .research import stats as _stats
 
     series: dict[str, list[tuple[float, float]]] = {}
     for sym, rows in (bars or {}).items():
         clean = []
-        for t, c in rows or ():
-            t, c = float(t), float(c)
-            if math.isfinite(t) and math.isfinite(c):
+        for row in rows or ():
+            # Row by row: one malformed bar drops that bar, never the readout.
+            try:
+                t, c = float(row[0]), float(row[1])
+            except (TypeError, ValueError, OverflowError, IndexError):
+                continue
+            if math.isfinite(t) and math.isfinite(c) and c > 0 and t <= now:
                 clean.append((t, c))
         series[sym] = sorted(clean)
 
@@ -487,6 +532,9 @@ def shadow_time_stop(open, closed, bars, now: float) -> dict:
             continue
         if not p.protocol:
             n_nonprotocol += 1
+            continue
+        if decided and p.id in decided:
+            entries.append(dict(decided[p.id]))
             continue
         entries.append(_shadow_entry(p, series.get(p.symbol), now))
     entries.sort(key=lambda e: (e["opened_at"], e["id"]))

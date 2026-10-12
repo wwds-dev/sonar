@@ -114,7 +114,8 @@ def test_only_entries_past_t_without_an_earlier_barrier_are_fetched(live, monkey
 
 @pytest.mark.parametrize("answer", ["bars", None, "raise"])
 def test_one_request_per_symbol_per_utc_day_failures_included(live, monkeypatch, answer):
-    """Kills: a request per scan (every 90 s), or a failure retried at once."""
+    """Kills: a request per scan (every 90 s), or a failure retried at once.
+    Once the closes have decided both entries, nothing more is asked for."""
     _twin(live, _enter(live, "AAA", 40), 41)
     log = FetchLog(live, answer)
     monkeypatch.setattr(core.assets, "fetch_bars", log)
@@ -122,13 +123,13 @@ def test_one_request_per_symbol_per_utc_day_failures_included(live, monkeypatch,
     live._shadow_pass(NOW + 3600)
     assert len(log.calls) == 1
     live._shadow_pass(_utc(2026, 10, 13, 0) + 60)                 # the next UTC day
-    assert len(log.calls) == 2
+    assert len(log.calls) == (1 if answer == "bars" else 2)
     if answer != "bars":
         # 12 days past T with no close: left out and counted, never guessed.
         assert live.shadow["n_no_price"] == 2 and live.shadow["n_reached"] == 0
 
 
-@pytest.mark.parametrize("age,rng", [(40, "3mo"), (100, "6mo"), (300, "1y"), (700, "2y"),
+@pytest.mark.parametrize("age,rng", [(40, "3mo"), (83, "3mo"), (85, "6mo"), (100, "6mo"), (300, "1y"), (700, "2y"),
                                      (1500, "5y"), (4000, "5y")])
 def test_the_range_reaches_back_past_the_oldest_entry(live, monkeypatch, age, rng):
     _twin(live, _enter(live, "AAA", 35), age)
@@ -171,9 +172,9 @@ def test_the_pass_reads_copies_and_writes_nothing(live, monkeypatch):
     seen = []
     real = calibration.shadow_time_stop
 
-    def spy(held, done, bars, now):
+    def spy(held, done, bars, now, decided=None):
         seen.extend(held + done)
-        return real(held, done, bars, now)
+        return real(held, done, bars, now, decided)
 
     monkeypatch.setattr(calibration, "shadow_time_stop", spy)
     monkeypatch.setattr(core.assets, "fetch_bars", FetchLog(live))
@@ -277,3 +278,156 @@ def test_the_engine_never_holds_the_engine_lock_while_computing(live, monkeypatc
     t.start()
     t.join(5)
     assert held == [] and isinstance(live.shadow, dict)
+
+
+# --------------------------------------------------------------------------- #
+# Fix loop 1 (code review P1-1): a decided outcome never changes in-process
+# --------------------------------------------------------------------------- #
+def _wavy(first_ts, days=120, scale=1.0):
+    """Closes that differ day to day, inside both barriers."""
+    return [(first_ts + i * DAY, scale * (100.0 + ((i * 7) % 11 - 5) * 0.3))
+            for i in range(days)]
+
+
+def _cohort(lv, n=45, symbols=("AAA",)):
+    """``n`` protocol entries 31-75 days old, one score each, spread over
+    ``symbols``: every one past T with a final T bar."""
+    model = _enter(lv, symbols[0], 75)               # one real entry; the rest are copies
+    lv.book.open.remove(model)
+    for i in range(n):
+        pos = replace(model, id=f"{symbols[i % len(symbols)]}-{i:02d}",
+                      symbol=symbols[i % len(symbols)], opened_at=NOW - (75 - i) * DAY,
+                      confidence=1.5 * i)
+        lv.book.open.append(pos)
+
+
+class Days:
+    """A fetch stub that answers by UTC day: ``plan[day](symbol)``."""
+
+    def __init__(self, plan):
+        self.plan, self.calls = plan, []
+
+    def __call__(self, symbol, rng=None):
+        self.calls.append(symbol)
+        return self.plan[self.day](symbol)
+
+
+def _readout_without_time(shadow):
+    return {k: v for k, v in shadow.items() if k != "computed_at"}
+
+
+def test_a_failed_day_after_a_good_one_changes_nothing(live, monkeypatch):
+    """P1-1. A good fetch, then a failed one: the readout and look 1 are as
+    they were. Kills: dropping the memo of decided outcomes, with the
+    failure then taking the closes away."""
+    _cohort(live)
+    stub = Days({1: lambda s: _wavy(NOW - 100 * DAY), 2: lambda s: None})
+    monkeypatch.setattr(core.assets, "fetch_bars", stub)
+    stub.day = 1
+    live._shadow_pass(NOW)
+    before = live.shadow
+    assert before["looks"][0]["evaluated"] is True and before["n_reached"] == 45
+    stub.day = 2
+    live._shadow_pass(NOW + DAY)
+    assert _readout_without_time(live.shadow) == _readout_without_time(before)
+
+
+def test_rewritten_closes_do_not_regrade_a_decided_entry(live, monkeypatch):
+    """P1-1 / P2-1: Yahoo rescales old closes after a split. An entry
+    already graded keeps its outcome; it is not asked about again. Kills:
+    dropping the memo."""
+    _cohort(live)
+    stub = Days({1: lambda s: _wavy(NOW - 100 * DAY),
+                 2: lambda s: _wavy(NOW - 100 * DAY, scale=0.5)})
+    monkeypatch.setattr(core.assets, "fetch_bars", stub)
+    stub.day = 1
+    live._shadow_pass(NOW)
+    before = live.shadow
+    assert {e["state"] for e in before["entries"]} == {"time"}
+    stub.day = 2
+    live._shadow_pass(NOW + DAY)
+    assert _readout_without_time(live.shadow) == _readout_without_time(before)
+    assert stub.calls == ["AAA"]                     # decided: no second request
+    # Undecided, the same rescaled series is refused, not graded.
+    fresh = calibration.shadow_time_stop(live.book.open, [], {"AAA": _wavy(NOW - 100 * DAY,
+                                                                           scale=0.5)}, NOW)
+    assert fresh["n_reached"] == 0 and fresh["n_no_price"] + fresh["n_wait_price"] == 45
+
+
+def test_one_symbol_failing_leaves_an_evaluated_look_alone(live, monkeypatch):
+    """P1-1, reproduced by the reviewer: two symbols, one failing for a day,
+    used to re-evaluate look 1 on a different subset (used 45 → 22)."""
+    _cohort(live, symbols=("AAA", "BBB"))
+    stub = Days({1: lambda s: _wavy(NOW - 100 * DAY),
+                 2: lambda s: None if s == "BBB" else _wavy(NOW - 100 * DAY)})
+    monkeypatch.setattr(core.assets, "fetch_bars", stub)
+    stub.day = 1
+    live._shadow_pass(NOW)
+    look = live.shadow["looks"][0]
+    assert look["evaluated"] is True and look["used"] == 45
+    stub.day = 2
+    live._shadow_pass(NOW + DAY)
+    assert live.shadow["looks"][0] == look
+
+
+def test_a_failed_request_keeps_the_series_already_held(live, monkeypatch):
+    """P1-1, the cache itself. Kills: a failure overwriting yesterday's
+    good closes with nothing."""
+    pos = _enter(live, "AAA", 40)
+    good = _wavy(NOW - 100 * DAY)
+    stub = Days({1: lambda s: good, 2: lambda s: None})
+    monkeypatch.setattr(core.assets, "fetch_bars", stub)
+    stub.day = 1
+    assert live._shadow_fetch([pos], NOW) == {"AAA": good}
+    stub.day = 2
+    assert live._shadow_fetch([pos], NOW + DAY) == {"AAA": good}
+    assert len(stub.calls) == 2                     # still one request a day
+
+
+def test_the_memo_lives_in_memory_and_keeps_the_first_decision(live, monkeypatch):
+    _cohort(live, n=3)
+    monkeypatch.setattr(core.assets, "fetch_bars", lambda s, rng=None: _wavy(NOW - 100 * DAY))
+    live._shadow_pass(NOW)
+    assert set(live._shadow_decided) == {e["id"] for e in live.shadow["entries"]}
+    first = {k: dict(v) for k, v in live._shadow_decided.items()}
+    live._shadow_pass(NOW + DAY)
+    assert live._shadow_decided == first
+    assert not any(p.name.startswith("shadow") for p in live.book.path.parent.iterdir())
+
+
+def test_qa_c03_a_waiting_window_never_computes(live, monkeypatch):
+    """QA C03: read-only with no holder to follow (a second window, or the
+    moment before the book is re-read), a settings change's rescan must not
+    compute or fetch. Kills: dropping the read_only guard."""
+    _enter(live, "AAA", 40)
+    log = FetchLog(live)
+    monkeypatch.setattr(core.assets, "fetch_bars", log)
+    live.read_only, live.following = True, None
+    live._shadow_pass(NOW)
+    assert log.calls == [] and live.shadow is None
+
+
+@pytest.mark.parametrize("failing", ["all", "every third"])
+def test_mv_s1a_failed_fetches_leave_look_1_as_evaluated(live, monkeypatch, failing):
+    """Model-validator P1-1, s1 part A: 45 entries on 45 symbols, some closed
+    at a barrier before T and the rest graded at T. When today's fetches all
+    fail, or one symbol in three does, look 1 keeps its 45 members and its z
+    (it used to drop to the 22 quick resolvers, z −0.36 → −0.98)."""
+    _cohort(live, symbols=tuple(f"S{i}" for i in range(45)))
+    for i, pos in enumerate(list(live.book.open)):
+        if i % 2:                                  # half settled by the book before T
+            live.book.open.remove(pos)
+            live.book.closed.append(replace(pos, closed_at=pos.opened_at + 3 * DAY,
+                                            outcome="TARGET" if i % 4 == 1 else "STOP",
+                                            exit=pos.target, pnl=1.0))
+    fails = (lambda s: True) if failing == "all" else (lambda s: int(s[1:]) % 3 == 0)
+    stub = Days({1: lambda s: _wavy(NOW - 100 * DAY),
+                 2: lambda s: None if fails(s) else _wavy(NOW - 100 * DAY)})
+    monkeypatch.setattr(core.assets, "fetch_bars", stub)
+    stub.day = 1
+    live._shadow_pass(NOW)
+    look = live.shadow["looks"][0]
+    assert look["evaluated"] is True and look["used"] == 45 and look["n_excluded"] == 0
+    stub.day = 2
+    live._shadow_pass(NOW + DAY)
+    assert live.shadow["looks"][0] == look

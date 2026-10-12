@@ -188,6 +188,8 @@ class Live:
         # symbol -> (UTC day, bars or None): one request per symbol per day,
         # a failed one included. In memory only, like the shadow itself.
         self._shadow_bars: dict[str, tuple[str, list | None]] = {}
+        # position id -> its decided shadow outcome (see _shadow_pass).
+        self._shadow_decided: dict[str, dict] = {}
         self._seed_tries = 0        # see _seed_account_history
         self._seed_at = 0.0
         self._scan_at = 0.0
@@ -506,6 +508,12 @@ class Live:
         The pure `calibration.shadow_time_stop` does the rest, and `self.lock`
         covers the assignment and nothing more. A failure keeps the last good
         readout on screen with the reason beside it; nothing is guessed.
+
+        Each entry's outcome, once decided, is kept in `_shadow_decided` and
+        handed back on every later pass, so it never changes within this
+        process — not when a day's fetch fails, not when Yahoo rewrites old
+        closes. A look evaluated once stays as it was (ADR 0002 §3). In
+        memory only: a restart decides again from the book and fresh closes.
         """
         if self.following or self.read_only:
             return
@@ -515,8 +523,12 @@ class Live:
             with book.lock:
                 held = [replace(p) for p in book.open]
                 done = [replace(p) for p in book.closed]
-            bars = self._shadow_fetch(held + done, now)
-            result = calibration.shadow_time_stop(held, done, bars, now)
+            decided = dict(self._shadow_decided)
+            bars = self._shadow_fetch([p for p in held + done if p.id not in decided], now)
+            result = calibration.shadow_time_stop(held, done, bars, now, decided)
+            self._shadow_decided.update(
+                {k: v for k, v in calibration.shadow_decided(result).items()
+                 if k not in self._shadow_decided})
         except Exception as exc:
             with self.lock:
                 last = self.shadow if isinstance(self.shadow, dict) else {}
@@ -530,7 +542,9 @@ class Live:
         their fixed date and not settled by the book before it. At most one
         request per symbol per UTC day — a failed one counts, so an outage costs
         one try a day rather than one a scan — over a range that reaches back to
-        the symbol's oldest such entry, for the gap check."""
+        the symbol's oldest such entry, for the gap check. A failed request
+        keeps the series already held: one bad day must not take away closes
+        that were good yesterday (code review P1-1)."""
         oldest: dict[str, float] = {}
         for p in positions:
             if calibration.shadow_needs_bars(p, now):
@@ -550,7 +564,7 @@ class Live:
             with ThreadPoolExecutor(max_workers=assets.FETCH_WORKERS) as ex:
                 got = dict(zip(due, ex.map(get, due), strict=True))
             for s, b in got.items():
-                cache[s] = (day, b or None)
+                cache[s] = (day, b or cache.get(s, (None, None))[1])
         self._shadow_bars = cache
         return {s: b for s, (_day, b) in cache.items() if b}
 

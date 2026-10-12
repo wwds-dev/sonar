@@ -285,6 +285,187 @@ def test_v6_a_t_bar_still_trading_is_not_a_result():
     assert r["n_reached"] == 0 and r["n_wait_price"] == 1
 
 
+def test_v6_a_newest_bar_stamped_mid_session_decides_nothing():
+    """Code review P1-2. Yahoo stamps the in-progress bar with the fetch time,
+    not its session start. Here the last stamp is day 29 at 11:17: taken at
+    face value it would make day 28's bar final (and day 29 the cut). Kills:
+    deciding from the newest bar."""
+    bars = daily(-5, 28, close=lambda d: 101.0 if d == 28 else 100.0)
+    bars.append((29 * DAY + 11 * 3600 + 17 * 60, 100.4))
+    r, e = one(sp(), bars, now=29 * DAY + 11.5 * 3600)
+    assert e["state"] == "wait_price" and r["n_reached"] == 0
+    bars.append((30 * DAY + 9 * 3600, 100.6))              # a day later
+    _r, e = one(sp(), bars[:-2] + [(29 * DAY + STAMP_H, 100.4), bars[-1]],
+                now=30 * DAY + 9.5 * 3600)
+    assert e["state"] == "time" and e["exit"] == 101.0
+
+
+def test_mv_b1_b2_a_restamped_in_progress_bar_never_flips_the_outcome():
+    """Model-validator P1-2, s1 B1/B2 (t_T = day 28 15:00). B1: the day-28
+    bar, still trading, stamped at fetch time 16:00. Taken at face value it
+    made day 27's close (99.0, before t_T) final: R −0.50. B2: next day it is
+    restamped 13:30 and graded at 101.0: R +0.50 — a flip. Now both wait, and
+    the outcome, when it comes, is day 28's close."""
+    base = daily(-5, 27, close=lambda d: 99.0 if d == 27 else 100.0)
+    b1 = base + [(28 * DAY + 16 * 3600, 101.5)]
+    _r, e = one(sp(), b1, now=28 * DAY + 16 * 3600 + 60)
+    assert e["state"] == "wait_price"
+    b2 = base + [(28 * DAY + STAMP_H, 101.0), (29 * DAY + 16 * 3600, 100.2)]
+    _r, e = one(sp(), b2, now=29 * DAY + 16 * 3600 + 60)
+    assert e["state"] == "wait_price"
+    b3 = base + [(28 * DAY + STAMP_H, 101.0), (29 * DAY + STAMP_H, 100.2),
+                 (30 * DAY + 16 * 3600, 100.4)]
+    _r, e = one(sp(), b3, now=30 * DAY + 16 * 3600 + 60)
+    assert e["state"] == "time" and e["exit"] == 101.0 and e["r"] == pytest.approx(0.5)
+
+
+def test_mv_b3_a_live_row_beside_the_session_row_does_not_make_it_final():
+    """Model-validator P1-2, s1 B3: Yahoo can return the in-progress session
+    row (13:30) and a separate "live" row (16:00) for the same day. The live
+    row is the newest and is dropped; the session row is then the newest
+    left, so nothing after it exists to make it final."""
+    base = daily(-5, 27, close=lambda d: 99.0 if d == 27 else 100.0)
+    dup = base + [(28 * DAY + STAMP_H, 101.2), (28 * DAY + 16 * 3600, 101.5)]
+    _r, e = one(sp(), dup, now=28 * DAY + 16 * 3600 + 60)
+    assert e["state"] == "wait_price" and e["exit"] is None
+
+
+def test_v6_the_fx_sunday_entry_waits_for_mondays_close():
+    """The reviewer's case: an FX LONG opened Sunday 23:30 UTC. Four weeks on,
+    t_T falls inside Monday's session, which Yahoo stamps Sunday 23:00. Read
+    at Monday 00:05 the newest bar is Monday's, stamped 00:05; the old code
+    took Friday's close as final. It must wait, then grade at Monday's close
+    — never Friday's."""
+    sun = 3 * DAY                                           # a Sunday, at 00:00
+    fx = sp("fx", symbol="EURCHF=X", entry=1.0, target=1.03, stop=0.98,
+            opened_at=sun + 23.5 * 3600)
+    t_due = fx.opened_at + 28 * DAY
+
+    def sessions(last_day):                                 # FX: stamped 23:00 the evening before
+        out = []
+        for d in range(-10, last_day):
+            if (d - 3) % 7 in (5, 6):                       # no Friday or Saturday evening bars
+                continue
+            out.append((d * DAY + 23 * 3600, 1.0 + (0.004 if d == 31 else 0.001)))
+        return out
+
+    assert sessions(32)[-1][0] < t_due < sessions(33)[-1][0]
+    monday = 32                                              # the Monday four weeks on
+    read = monday * DAY + 5 * 60                             # Monday 00:05
+    bars = sessions(monday - 1) + [(read, 1.002)]            # Friday's close is 1.001
+    e = calibration.shadow_time_stop([fx], [], {"EURCHF=X": bars}, read)["entries"][0]
+    assert e["state"] == "wait_price" and e["exit"] is None
+    read = (monday + 1) * DAY + 5 * 60                       # Tuesday 00:05: one more day
+    bars = sessions(monday) + [(read, 1.002)]
+    e = calibration.shadow_time_stop([fx], [], {"EURCHF=X": bars}, read)["entries"][0]
+    assert e["state"] == "wait_price"
+    read = (monday + 2) * DAY + 5 * 60                       # Wednesday 00:05
+    bars = sessions(monday + 1) + [(read, 1.002)]
+    e = calibration.shadow_time_stop([fx], [], {"EURCHF=X": bars}, read)["entries"][0]
+    assert e["state"] == "time" and e["exit"] == 1.004
+
+
+def test_a_bar_stamped_after_now_is_ignored():
+    """Security P2-2: a future stamp would make the in-progress T bar look
+    final. Kills: comparing nothing with now."""
+    bars = daily(-5, 28) + [(40 * DAY, 100.0), (41 * DAY, 100.0)]
+    _r, e = one(sp(), bars, now=T_DUE + 3600)
+    assert e["state"] == "wait_price"
+
+
+@pytest.mark.parametrize("ratio", [0.5, 2 / 3, 2.0], ids=["2:1 split", "3:2 split", "1:2 reverse"])
+def test_a_rescaled_history_is_not_this_entrys_price(ratio):
+    """Security P2-2 / code review P2-1: Yahoo split-adjusts old closes, so a
+    split after entry rescales the whole series. Graded as it stands, a LONG
+    at 100 (stop 98) would read a 2:1 split as a gap through the stop. The
+    series is unusable: the entry waits, then is left out — counted, never
+    guessed. Kills: grading from a rescaled series."""
+    bars = [(t, c * ratio) for t, c in daily(-5, 40)]
+    r, e = one(sp(), bars, now=T_DUE + 3 * DAY)
+    assert e["state"] == "wait_price" and r["n_wait_price"] == 1 and r["n_reached"] == 0
+    r, e = one(sp(), bars, now=T_DUE + 8 * DAY)
+    assert e["state"] == "no_price" and r["n_no_price"] == 1 and e["r"] is None
+
+
+def test_an_ordinary_gap_before_entry_is_still_this_entrys_price():
+    """The guard is two stop distances: a close 1.5 stop distances from the
+    entry (3 points at a stop 2 away) still grades."""
+    bars = daily(-5, 40, close=lambda d: 97.0 if d == 0 else 100.0)
+    _r, e = one(sp(), bars)
+    assert e["state"] == "time"
+    bars = daily(-5, 40, close=lambda d: 95.9 if d == 0 else 100.0)
+    _r, e = one(sp(), bars, now=T_DUE + 3 * DAY)
+    assert e["state"] == "wait_price"
+
+
+@pytest.mark.parametrize("bad", [0.0, -5.0])
+def test_a_close_at_or_below_zero_is_dropped_not_graded(bad):
+    """Security P2-2: a 0 or negative close used to grade a gap STOP at −1."""
+    bars = daily(-5, 40, close=lambda d: bad if d == 12 else 100.0)
+    _r, e = one(sp(), bars)
+    assert e["state"] == "time" and e["gap"] is False
+
+
+def test_one_malformed_bar_drops_that_bar_not_the_readout():
+    """Security P3-3: a stamp of 10**400 raised OverflowError and failed the
+    readout for every symbol for the rest of the day."""
+    bars = daily(-5, 40) + [(10 ** 400, 100.0), None, ("x", 1.0), (5,)]
+    r, e = one(sp(), bars)
+    assert e["state"] == "time" and r["error"] is None
+
+
+def test_qa_m14_an_entry_the_book_closed_after_t_still_needs_bars():
+    """QA M14: a TARGET booked after t_T may lie past the cut, where the
+    T-bar close decides. Kills: fetching only for entries still open."""
+    late = closed_as(sp(), "TARGET", T_DUE + DAY)
+    assert calibration.shadow_needs_bars(late, LATER)
+    assert not calibration.shadow_needs_bars(closed_as(sp(), "TARGET", T_DUE - 1), LATER)
+
+
+def test_qa_m11_the_t_bars_own_close_is_gap_checked():
+    """QA M11: a T-bar close beyond the stop is a STOP at −1 (filled at the
+    stop), never TIME with R below −1."""
+    bars = daily(-5, 40, close=lambda d: 97.5 if d == 28 else 100.0)
+    _r, e = one(sp(), bars)
+    assert e["state"] == "stop" and e["gap"] is True and e["r"] == pytest.approx(-1.0)
+
+
+def test_qa_m12_the_booked_barrier_wins_over_an_earlier_gap():
+    """QA M12, ADR §4 order: rule 1 (the book's own barrier close before the
+    cut) comes before rule 2, even if a daily close crossed the other
+    barrier first."""
+    bars = daily(-5, 40, close=lambda d: 97.5 if d == 12 else 100.0)
+    _r, e = one(closed_as(sp(), "TARGET", T_CUT - 1), bars)
+    assert e["state"] == "target" and e["gap"] is False and e["r"] == pytest.approx(1.5)
+
+
+def test_qa_m13_a_hand_close_before_t_is_counted_as_it_happens():
+    """QA M13, Build note 4: excluded at once, not only from t_T."""
+    r, e = one(closed_as(sp(), "MANUAL", 5 * DAY), now=10 * DAY)
+    assert e["state"] == "left" and r["n_left"] == 1 and r["n_waiting"] == 0
+
+
+def test_the_split_guard_is_pinned():
+    assert calibration.SHADOW_SPLIT_GUARD == 2.0
+
+
+def test_a_decided_outcome_is_kept_not_recomputed():
+    """Fix loop 1: the engine hands back what it already decided. The pure
+    function copies it and does not touch the memo."""
+    bars = daily(-5, 40, close=lambda d: 101.0 if d == 28 else 100.0)
+    r, e = one(sp(), bars)
+    memo = calibration.shadow_decided(r)
+    assert set(memo) == {"a"}
+    frozen = copy.deepcopy(memo)
+    worse = daily(-5, 40, close=lambda d: 50.0)              # rescaled after a split
+    r2 = calibration.shadow_time_stop([sp()], [], {"AAA": worse}, LATER, memo)
+    assert r2["entries"][0] == e and memo == frozen
+    assert calibration.shadow_decided({"entries": [dict(e, state="no_price"),
+                                                   dict(e, id="b", state="left"),
+                                                   dict(e, id="c", state="waiting")]}) \
+        == {"b": dict(e, id="b", state="left")}
+
+
 def test_v7_a_holiday_takes_the_session_before_never_the_one_after():
     """V-7. Kills: look-ahead to the next bar."""
     bars = daily(-5, 40, close=lambda d: {27: 100.7, 29: 101.9}.get(d, 100.0), skip={28})
@@ -795,17 +976,42 @@ def test_v12_the_design_holds_its_size_where_the_closed_only_grade_does_not():
     assert abs(power - V12_POWER) <= 3 * math.sqrt(V12_POWER * (1 - V12_POWER) / V12_BOOKS)
 
 
+#: The precision run's ten chunks, each its own test so that none comes near
+#: the 60 s faulthandler limit under load (code review P2-3: one 20,000-book
+#: test took 59 s). Each chunk records its rate; the check after them averages.
+V12_PRECISION_CHUNKS = 10
+_v12_rates: dict[int, float] = {}
+
+
+def _v12_chunk(k: int) -> float:
+    if k not in _v12_rates:
+        _v12_rates[k] = _v12_null(V12_BOOKS, 2_000 + k,
+                                  _walk_library(V12_QUICK_LIBRARY[0], 100 + k),
+                                  closed_only=False)[0]
+    return _v12_rates[k]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("k", range(V12_PRECISION_CHUNKS))
+def test_v12_slow_size_chunk(k):
+    """One 2,000-book chunk of the precision run. On its own it only has to
+    be a plausible rate (Monte-Carlo SE 0.53 pt); the bar is on the mean."""
+    assert 0.02 <= _v12_chunk(k) <= 0.10
+
+
 @pytest.mark.slow
 def test_v12_slow_the_design_size_to_a_fifth_of_a_point():
-    """V-12 at precision: 20,000 null books over ten independent libraries (MC
-    standard error 0.17 pt). Measured at build, 2026-10-12: 6.2% here, 5.9%
-    with 50,000-path libraries and 5.8% with fresh walks — inside 5 ± 1.5, and
-    above 5 because the HC3 z has slightly heavy tails at n = 45: look 1 alone
-    rejects 2.7% against Pocock's 2.1% (docs/audit/shadow-time-stop-engineer.md)."""
-    rates = [_v12_null(V12_BOOKS, 2_000 + k, _walk_library(V12_QUICK_LIBRARY[0], 100 + k),
-                       closed_only=False)[0] for k in range(10)]
+    """V-12 at precision: the mean of the ten chunks above, 20,000 null books
+    (MC standard error 0.17 pt). Measured at build, 2026-10-12: 6.19% here,
+    5.9% with 50,000-path libraries and 5.8% with fresh walks. The excess over
+    5% comes from look 1, where the HC3 z has slightly heavy tails at n = 45;
+    the owner accepted it on 2026-10-12 (spec Build note 15). The bar is the
+    measured value ± 3 SE (QA P1-1), so a regression either way shows; the
+    spec's 5 ± 1.5 pt test is the 2,000-book one above. Run with the chunks
+    (``-m slow``): alone, it computes them itself and takes about a minute."""
+    rates = [_v12_chunk(k) for k in range(V12_PRECISION_CHUNKS)]
     size = sum(rates) / len(rates)
-    assert 0.035 <= size <= 0.065, size
+    assert 0.057 <= size <= 0.067, size
 
 
 @pytest.mark.slow
@@ -816,3 +1022,94 @@ def test_v12_slow_the_design_power_to_two_points():
               for k in range(5)]
     power = sum(powers) / len(powers)
     assert abs(power - V12_POWER) <= 0.02, power
+
+
+# --------------------------------------------------------------------------- #
+# V-12 end to end (model-validator P3-1): the null through shadow_time_stop
+# --------------------------------------------------------------------------- #
+# V-12 above runs the gate on hand-built {state, r} dicts. This one builds
+# whole synthetic books — Positions marked at a few polls a day (a day's polls
+# missed now and then, as when the agent stalls), overnight gaps, weekends,
+# daily bars stamped at the session start — and runs them through the
+# production `shadow_time_stop`: rules 1–3, the gap check, the cut, the newest
+# bar dropped, the split guard. No edge; realised / planned vol falls 1.3 → 0.5
+# with score. A stdlib port of the validator's mv/s7_end2end.py, coarser (4
+# polls a day, not 13) so a book takes ~14 ms.
+E2E_POLLS, E2E_GAP, E2E_STALL = 4, 0.3, 0.05
+E2E_CHUNKS, E2E_BOOKS = 8, 500
+#: Measured at build (fix loop 1): 6.095% over 40,000 books (seeds 9000-9039,
+#: 1,000 each; Monte-Carlo SE 0.12 pt), every look evaluated in every book.
+E2E_MEASURED = 0.06095
+_e2e_hits: dict[int, int] = {}
+
+
+def _e2e_book(rng: random.Random) -> dict:
+    held, done, bars = [], [], {}
+    for i in range(calibration.SHADOW_LOOKS[-1]):
+        conf = rng.uniform(0, 80)
+        s, d0, long_ = _steep(conf), 7 * i, rng.random() < 0.5         # each its own Monday
+        p = sp(f"{i:04d}", conf=conf, day=float(d0), symbol=f"S{i}",
+               direction="LONG" if long_ else "SHORT")
+        v = (s * 2.0) ** 2 / 5                    # daily variance; the stop is 1 horizon-σ away
+        sd_gap, sd_poll = math.sqrt(E2E_GAP * v), math.sqrt((1 - E2E_GAP) * v / E2E_POLLS)
+        x, shut = 100.0, None
+        ser = [(d * DAY + STAMP_H, 100.0) for d in range(d0 - 7, d0) if d % 7 < 5]
+        for d in range(d0, d0 + 41):
+            if d % 7 >= 5:
+                continue
+            first = d == d0
+            if not first:
+                x += rng.gauss(0.0, sd_gap)
+            watched = shut is None and (first or rng.random() >= E2E_STALL)
+            for j in range(2 if first else E2E_POLLS):
+                x += rng.gauss(0.0, sd_poll)
+                if watched and shut is None and p.hit(x):
+                    shut = (p.hit(x), d * DAY + STAMP_H + (j + 1) * 5400.0)
+            ser.append((d * DAY + STAMP_H, x))
+        bars[p.symbol] = ser
+        if shut:
+            done.append(closed_as(p, shut[0], shut[1]))
+        else:
+            held.append(p)
+    return calibration.shadow_time_stop(held, done, bars, (7 * 200 + 41) * DAY)
+
+
+def _e2e_chunk(k: int) -> int:
+    if k not in _e2e_hits:
+        rng = random.Random(9_100 + k)
+        hits = 0
+        for _ in range(E2E_BOOKS):
+            r = _e2e_book(rng)
+            assert all(lk["evaluated"] or lk["design_closed"] for lk in r["looks"])
+            hits += any(lk["crossed"] for lk in r["looks"])
+        _e2e_hits[k] = hits
+    return _e2e_hits[k]
+
+
+def test_e2e_one_book_is_whole():
+    """Always on: one synthetic book through the production function grades
+    every entry, evaluates the looks, and leaves nothing out."""
+    r = _e2e_book(random.Random(3))
+    assert r["n_entered"] == r["n_reached"] == 201
+    assert r["n_wait_price"] == r["n_no_price"] == r["n_left"] == 0
+    assert all(lk["evaluated"] or lk["design_closed"] for lk in r["looks"])
+    assert r["n_target"] and r["n_stop"] and r["n_time"]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("k", range(E2E_CHUNKS))
+def test_v12_slow_e2e_chunk(k):
+    """One 500-book chunk (~7 s), so none nears the 60 s hang guard."""
+    assert 0.01 <= _e2e_chunk(k) / E2E_BOOKS <= 0.15
+
+
+@pytest.mark.slow
+def test_v12_slow_e2e_the_whole_pipeline_holds_the_measured_size():
+    """Model-validator P3-1: 4,000 books end to end reject within three
+    Monte-Carlo SE (±1.1 pt) of the 6.1% measured on 40,000. Kills what the
+    dict-level V-12 cannot see: a rule in `shadow_time_stop` that bends the
+    null (the validator's run gave 6.13% end to end)."""
+    hits = sum(_e2e_chunk(k) for k in range(E2E_CHUNKS))
+    n = E2E_CHUNKS * E2E_BOOKS
+    se = math.sqrt(E2E_MEASURED * (1 - E2E_MEASURED) / n)
+    assert abs(hits / n - E2E_MEASURED) <= 3 * se, hits / n
