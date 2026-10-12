@@ -458,6 +458,9 @@ ATTRIBUTION_VERDICTS = {
     "UNCLEAR": "unclear", "not judged": "not judged",
     # Internal name only: no reader sees it, in either wording (domain P2-A).
     "UNCONFIRMED": "not told apart from chance",
+    # Internal name too: the check could not run, which is not the same as
+    # read as chance (domain P3-2).
+    "UNTESTED": "not tested",
 }
 
 
@@ -2941,7 +2944,8 @@ class MainWindow(QMainWindow):
     _VERDICT_COLOUR = {"KEEP": "#98c379", "INVERTED": "#e06c75",
                        "DROP": "#e06c75", "WEAK": "#e5c07b",
                        "UNCLEAR": "#7c8798", "not measured": "#5c6370",
-                       "not judged": "#7c8798", "UNCONFIRMED": "#7c8798"}
+                       "not judged": "#7c8798", "UNCONFIRMED": "#7c8798",
+                       "UNTESTED": "#7c8798"}
 
     @staticmethod
     def _verdict_word(verdict: str | None) -> str:
@@ -2949,7 +2953,7 @@ class MainWindow(QMainWindow):
         lookup keeps the raw key; only the displayed word changes."""
         if verdict is None:
             return "—"
-        if verdict == "UNCONFIRMED":                 # an internal name only
+        if verdict in ("UNCONFIRMED", "UNTESTED"):   # internal names only
             return ATTRIBUTION_VERDICTS[verdict]
         return ATTRIBUTION_VERDICTS.get(verdict, verdict) if words.plain() \
             else verdict
@@ -2972,6 +2976,11 @@ class MainWindow(QMainWindow):
         head = "".join(
             f"<th style='text-align:left;padding-right:14px'>{words.pick(h)}</th>"
             for h in ATTRIBUTION_HEADS.values())
+        # The components the randomisation's Benjamini-Hochberg ran over:
+        # those measured, usually two (domain P2-2).
+        n_bh = (a.get("randomisation") or {}).get("measured")
+        if n_bh is None:
+            n_bh = sum(1 for c in rows if c.get("ic") is not None)
         body = []
         for c in rows:
             sp = c.get("spread") or {}
@@ -2986,7 +2995,8 @@ class MainWindow(QMainWindow):
                 ic += f" (p {c['p']:.4f}"
                 if c.get("p_rand") is not None:
                     ic += (f"; vs random stretches {c['p_rand']:.4f}, before "
-                           "the correction for testing four components")
+                           f"the correction for the {n_bh} component"
+                           f"{'' if n_bh == 1 else 's'} measured")
                 ic += ")"
             cells = (
                 c.get("component", "?"),
@@ -3021,7 +3031,8 @@ class MainWindow(QMainWindow):
                 "that the readings disagree; <b>not told apart from chance</b> "
                 "that it would read keep or backwards, but a meaningless "
                 "reading held for stretches of time ranked setups this well "
-                "often enough to explain it. Keep grades a piece of the score "
+                "often enough to explain it; <b>not tested</b> that the check "
+                "against random stretches could not run on it. Keep grades a piece of the score "
                 "against past setups, before costs, from one replay of past "
                 "prices. It does not mean the piece makes money.</p>")
         # In both wordings (domain P2-2): the volatility grade's own "why"

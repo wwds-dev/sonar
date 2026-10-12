@@ -885,7 +885,8 @@ def test_a_component_not_told_apart_from_chance_reads_so_in_grey(monkeypatch):
            "well often enough that this is not told apart from chance. Before "
            "costs, from one replay of past prices.")
     a = {"n": 3200, "fdr_q": 0.1, "withheld": None, "blend_ic": None,
-         "randomisation": {"q": 8, "draws": 256, "block_days": 32},
+         "randomisation": {"q": 8, "draws": 256, "block_days": 32,
+                           "measured": 2},
          "components": [{"component": "momentum", "n": 3200, "ic": 0.137,
                          "p": 0.0022, "p_rand": 0.2109, "weight": 0.3,
                          "spread": {"spread": 0.2031, "se": 0.0643},
@@ -901,13 +902,51 @@ def test_a_component_not_told_apart_from_chance_reads_so_in_grey(monkeypatch):
         assert "#98c379" not in html and why in html
         assert ("vs random stretches 0.2109" in html) is (not plain)
         # the randomisation's p is shown raw, beside BH-based grades
-        # (domain P3-2)
+        # (domain P3-2), over the components BH ran over (domain P2-2)
         assert ("vs random stretches 0.2109, before the correction for "
-                "testing four components" in html) is (not plain)
+                "the 2 components measured" in html) is (not plain)
+        assert "correction for testing four components" not in html
         # in both wordings: what the check cannot see (domain P2-2)
         assert ("The check against random stretches does not cover traits "
                 "fixed per instrument, such as volatility.") in html
         assert html.count("fixed per instrument") == 1
+    # one component measured reads in the singular; a summary without the
+    # count falls back to the components with an IC
+    monkeypatch.setattr(words, "plain", lambda: False)
+    one = dict(a, randomisation={"q": 8, "draws": 256, "block_days": 32,
+                                 "measured": 1})
+    assert "the 1 component measured" in MainWindow._attribution_html(one)
+    bare = dict(a, randomisation={"q": 8, "draws": 256, "block_days": 32})
+    assert "the 1 component measured" in MainWindow._attribution_html(bare)
     # a run not held to the randomisation does not claim the check ran
     assert "fixed per instrument" not in MainWindow._attribution_html(
         dict(a, randomisation=None))
+
+
+def test_a_component_the_check_could_not_test_reads_not_tested(monkeypatch):
+    """Domain P3-2: a component the randomisation could not run on is not
+    'not told apart from chance' — its why says the check did not run — so
+    both wordings label it 'not tested', in grey, never the internal name.
+    Mutation it catches: the untested label folded back into the
+    reshuffle's, or the raw name shown in expert wording."""
+    from sonar import backtest
+    from ui import words
+    row = {"component": "momentum", "n": 3200, "ic": 0.137, "p": 0.0022,
+           "p_rand": None, "weight": 0.3, "survives_fdr": True,
+           "confirmed": False, "blend_ic_without": None,
+           "spread": {"spread": 0.2031, "se": 0.0643}}
+    row.update(backtest._verdict_for(row))
+    assert row["verdict"] == "UNTESTED"
+    a = {"n": 3200, "fdr_q": 0.1, "withheld": None, "blend_ic": None,
+         "randomisation": {"q": 8, "draws": 256, "block_days": 32,
+                           "measured": 1},
+         "components": [row]}
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = MainWindow._attribution_html(a)
+        assert "<b style='color:#7c8798'>not tested</b>" in html, html
+        assert "<b style='color:#7c8798'>not told apart" not in html
+        assert "UNTESTED" not in html and "could not run" in html
+        # the plain legend says what the label means
+        assert ("<b>not tested</b> that the check against random stretches "
+                "could not run on it" in html) is plain

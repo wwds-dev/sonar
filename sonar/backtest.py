@@ -1364,8 +1364,10 @@ def attribute(trials: list[dict], q: float = 0.10,
     internal name users read as "not told apart from chance". "Ranks
     backwards" also needs the blend's ``blend_p_rand`` at the claim bar. The
     quintile spread keeps its date-clustered bar. A component the
-    randomisation could not test (``p_rand`` None) is not confirmed either,
-    and says so. It does not cover a component that is a fixed trait of
+    randomisation could not test (``p_rand`` None) is not confirmed either:
+    it is ``"UNTESTED"``, read "not tested", and says so. The top-level
+    ``randomisation`` carries ``measured``, the number of components its
+    BH ran over. It does not cover a component that is a fixed trait of
     each instrument, such as volatility: no time-block randomisation can
     (docs/adr/0003).
 
@@ -1468,11 +1470,13 @@ def attribute(trials: list[dict], q: float = 0.10,
            "blend_ranks_backwards": backwards,
            "blend_p_rand": (None if blend_p_rand is None
                             else round(blend_p_rand, 4)),
+           # ``measured``: the components the randomisation's BH ran over.
            "randomisation": ({"q": q_all,
                               "draws": (2 ** q_all
                                         if q_all <= rnd.ENUMERATE_MAX
                                         else rnd.B_DRAWS),
-                              "block_days": block_days} if gated else None),
+                              "block_days": block_days,
+                              "measured": len(measured)} if gated else None),
            "fdr_q": q, "withheld": withheld,
            # Kept as an explicit line either way: an untested component must
            # not read as a passing one, and once tested the note says so.
@@ -1597,8 +1601,9 @@ def _verdict_for(row: dict) -> dict:
         # internal name (domain P3-B): the reading, then why it is not one.
         backwards = " backwards" if (ic or 0) < 0 else ""
         if row.get("p_rand") is None:
-            # Untested, not outread: no reshuffle ran (code review P3-4).
-            return {"verdict": "UNCONFIRMED",
+            # Untested, not outread: no reshuffle ran (code review P3-4), so
+            # it has a label of its own (domain P3-2).
+            return {"verdict": "UNTESTED",
                     "why": f"IC {ic:+.3f}: it looks like it ranks setups"
                            f"{backwards} on this replay, but the check "
                            "against random stretches of time could not run "
@@ -1616,12 +1621,13 @@ def _verdict_for(row: dict) -> dict:
                 "why": f"IC {ic:+.3f} is significant and *negative* — {phrase()}. "
                        "Added with a positive weight, this component would push "
                        "the wrong instruments up the board. Worth testing with "
-                       "its sign flipped, or dropped. From one replay of past "
-                       "prices: a reason to look closer, not a finding."}
+                       "its sign flipped, or dropped. Before costs, from one "
+                       "replay of past prices: a reason to look closer, not a "
+                       "finding."}
     if significant and strong_spread:
         return {"verdict": "KEEP",
-                "why": f"IC {ic:+.3f} survives FDR and {phrase()} — from one "
-                       "replay of past prices"}
+                "why": f"IC {ic:+.3f} survives FDR and {phrase()} — before "
+                       "costs, from one replay of past prices"}
     if loo is not None and loo <= 0:
         return {"verdict": "DROP",
                 "why": "removing it does not lower the blend's IC — the weight "

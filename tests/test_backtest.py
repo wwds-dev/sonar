@@ -1216,7 +1216,8 @@ def _rigged_run(monkeypatch, rows, **kw) -> dict:
     return backtest.run(["AAPL"], step=3, **kw)
 
 
-_JUDGED = {"KEEP", "DROP", "INVERTED", "WEAK", "UNCLEAR", "UNCONFIRMED"}
+_JUDGED = {"KEEP", "DROP", "INVERTED", "WEAK", "UNCLEAR", "UNCONFIRMED",
+           "UNTESTED"}
 
 
 def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
@@ -1225,7 +1226,7 @@ def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
     without a verdict still printed 'A news spike shifts the odds … beyond
     two standard errors' and attribution KEEP/DROP/INVERTED on the same page.
     Now, whatever the reason — a 121-day horizon, one class, 99 setups, a
-    short span, too few stretches — every attention bucket is not
+    short span, too few stretches, ten years — every attention bucket is not
     significant, the attention
     sentence says there is no reading, and every measured component is 'not
     judged'. The numbers stay. The control, judged, shows both findings,
@@ -1248,16 +1249,17 @@ def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
     assert spread > 0
     assert mom["why"] == (f"IC {mom['ic']:+.3f} survives FDR and the top "
                           f"quintile beats the bottom by {spread * 100:.1f} "
-                          "points — from one replay of past prices"), mom
+                          "points — before costs, from one replay of past "
+                          "prices"), mom
     inv = backtest._verdict_for(dict(mom, ic=-mom["ic"],
                                      spread=dict(mom["spread"], spread=-spread)))
     assert inv == {"verdict": "INVERTED", "why": (
         f"IC {-mom['ic']:+.3f} is significant and *negative* — the top "
         f"quintile trails the bottom by {spread * 100:.1f} points. Added with "
         "a positive weight, this component would push the wrong instruments "
-        "up the board. Worth testing with its sign flipped, or dropped. From "
-        "one replay of past prices: a reason to look closer, not a "
-        "finding.")}, inv
+        "up the board. Worth testing with its sign flipped, or dropped. "
+        "Before costs, from one replay of past prices: a reason to look "
+        "closer, not a finding.")}, inv
     for why in (mom["why"], inv["why"]):
         for banned in ("edge", "profit", "money", "guarantee", "certain",
                        "flip its sign or drop"):
@@ -1270,6 +1272,7 @@ def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
         "span": (_rigged_rows(1000, dates=30, every=1), {"horizon_days": 5}),
         "few_clusters": (_rigged_rows(1000, dates=100, every=1),
                          {"horizon_days": 5}),
+        "drift": (_rigged_rows(1000), {"horizon_days": 5, "rng": "10y"}),
     }
     for why, (rows, kw) in cases.items():
         r = _rigged_run(monkeypatch, rows, **kw)
@@ -1785,7 +1788,8 @@ def test_a_component_not_told_apart_from_chance_is_not_graded():
     # the one measured component: BH at q = 0.10 asks p_rand ≤ 0.10
     assert gated["survives_fdr"] is True and gated["p_rand"] > 0.10
     assert gated["confirmed"] is False and gated["verdict"] == "UNCONFIRMED"
-    assert gated_a["randomisation"] == {"q": 8, "draws": 256, "block_days": 32}
+    assert gated_a["randomisation"] == {"q": 8, "draws": 256, "block_days": 32,
+                                        "measured": 1}
     why = gated["why"]
     assert why.startswith(f"IC {gated['ic']:+.3f}: it looks like it ranks "
                           "setups on this replay, but a meaningless reading "
@@ -1801,6 +1805,7 @@ def test_a_component_not_told_apart_from_chance_is_not_graded():
                                horizon_days=5)["components"][0]
     assert every["verdict"] == "KEEP" and every["confirmed"] is True
     assert every["p_rand"] <= 0.10
+    assert "before costs" in every["why"]
     # the same reading the other way round is 'ranks setups backwards'
     inv = backtest._verdict_for(dict(gated, ic=-gated["ic"], spread=dict(
         gated["spread"], spread=-gated["spread"]["spread"])))
@@ -1812,15 +1817,16 @@ def test_a_component_the_randomisation_could_not_test_says_so():
     """Code review P3-4, QA P3-4: a component whose setups include one
     without an entry time cannot be put through the sign change
     (_ic_rand_p gives None). It counts as p = 1, so it is not graded — and
-    its sentence says the check could not run, not that a reshuffle read it
-    as chance. The same component with every entry time is KEEP.
+    its label and sentence say the check could not run, not that a
+    reshuffle read it as chance: 'UNTESTED', an internal name read "not
+    tested" (domain P3-2). The same component with every entry time is KEEP.
     Mutation it catches: the untested component graded, or given the
-    reshuffle's sentence."""
+    reshuffle's label or sentence."""
     rows = _two_stretch_component(strong=tuple(range(8)))
     rows[5] = dict(rows[5], t=None)
     c = backtest.attribute(rows, horizon_days=5)["components"][0]
     assert c["p_rand"] is None and c["survives_fdr"] is True
-    assert c["confirmed"] is False and c["verdict"] == "UNCONFIRMED"
+    assert c["confirmed"] is False and c["verdict"] == "UNTESTED"
     assert c["why"] == (
         f"IC {c['ic']:+.3f}: it looks like it ranks setups on this replay, "
         "but the check against random stretches of time could not run on it "
@@ -1831,7 +1837,9 @@ def test_a_component_the_randomisation_could_not_test_says_so():
 
 def test_no_keep_or_inverted_sentence_says_confirmed_or_verified():
     """Measure 11: a grade that passed the randomisation still reads as one
-    replay's reading, never 'confirmed' or 'verified'."""
+    replay's reading, never 'confirmed' or 'verified', and says it is before
+    costs (domain P3-3).
+    Mutation it catches: 'before costs' dropped from either why line."""
     keep = backtest._verdict_for({"ic": 0.05, "survives_fdr": True,
                                   "confirmed": True, "loo_cost": 0.01,
                                   "spread": {"spread": 0.06, "se": 0.01}})
@@ -1839,9 +1847,25 @@ def test_no_keep_or_inverted_sentence_says_confirmed_or_verified():
                                  "confirmed": True, "loo_cost": 0.01,
                                  "spread": {"spread": -0.06, "se": 0.01}})
     assert keep["verdict"] == "KEEP" and inv["verdict"] == "INVERTED"
+    assert "before costs, from one replay of past prices" in keep["why"]
+    assert "Before costs, from one replay of past prices" in inv["why"]
     for text in (keep["why"], inv["why"], backtest._verdict(0.03, 0.01, "beats"),
                  backtest._verdict(-0.03, 0.01, "below")):
         assert "confirmed" not in text.lower() and "verified" not in text.lower()
+
+
+def test_a_caller_that_opts_out_of_the_gate_grades_on_todays_rule():
+    """[A11], code review P3-5, QA P3-A: attribute(rows, horizon_days=h,
+    gate=False) grades on today's rule even with a horizon — the
+    two-stretch component that the gate would not grade is KEEP, with no
+    p_rand and no randomisation block.
+    Mutation it catches (G3): the horizon alone switching the gate on."""
+    a = backtest.attribute(_two_stretch_component(), horizon_days=5,
+                           gate=False)
+    c = a["components"][0]
+    assert c["verdict"] == "KEEP" and c["confirmed"] is True
+    assert c["p_rand"] is None and a["randomisation"] is None
+    assert a["blend_p_rand"] is None and a["withheld"] is None
 
 
 def test_ranking_backwards_needs_ten_stretches_under_the_gate():
