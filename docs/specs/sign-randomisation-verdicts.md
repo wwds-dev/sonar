@@ -573,3 +573,34 @@ significant   = verdict_state in ("beats", "below")
   - `range_for_horizon` (used by the Terminal) picks the shortest of 2y, 5y and 10y that gives at least 8 blocks: **2y for h ≤ 10, 5y for h ≤ 30, 10y for h ≤ 80** (margins from the measured map). Without it, the Terminal's 20-day and 60-day lines are always withheld.
   - The cost is a larger fetch on those two profiles, and 10y fetches have hit Yahoo rate limits before (validator r5).
   - The Lab keeps the user's range and shows the `few_clusters` reason with its fix.
+
+### 14. Build notes (engineer)
+
+Deviations from the sections above, recorded at fix loop 1 (2026-10-12) so a reader of the
+architecture finds them here:
+
+- **Suite budget 300 s → 600 s** (`run-tests.sh`; QA P3-6, code review P3-8). [A4] holds for the
+  per-test cap: pytest's 60 s `faulthandler_timeout` is not raised, and every rate test stays
+  under it alone and in suite order. The whole-suite watchdog budget was raised instead: offscreen
+  runs took 445 s and 534 s on a loaded machine (QA). `docs/company/tooling-baseline.md` records
+  the same cap for the coverage step. After fix loop 1 it is still needed: native runs took
+  181 s and 190 s, offscreen 471 s and 546 s (load 38–102 on 8 cores), with each offscreen rate
+  test at 15–36 s in suite order. 546 s is close to 600; raising it further is the owner's call.
+- **The exactness test reads the randomisation alone** (code review P2-4): the same stretches and
+  p as `summarise` (`_direction_clusters`, `_randomisation`, checked equal on three runs), not the
+  whole summary, so it is not "inside the headline tests" by cache any more but over the same
+  600 runs. All rate tests share one session cache of worlds 0–29.
+- **Guards:** the market-wide four-horizon coin is now nested with the test's own rounding
+  (`MAX_HOLD_MULTIPLE × ceil(h·365/252)` = 88 days at h15); the 87-day coin is kept as a
+  separate off-grid guard (code review P2-3, validator r7 P2-1). Every guard asserts q = 8 on all
+  300 runs. Measure 2 is accepted as not met (owner, after r7), so the 8h and off-grid guards are
+  regression guards; their docstrings say what they cannot tell apart.
+- **Fail closed, explicitly:** `summarise` over a universe without its `timeouts` (now `None` by
+  default), a pair, an entry time or a horizon is withheld `"unpaired"` with its own sentence
+  (code review P3-3, validator r7 P2-2). `attribute` without a horizon grades nothing unless the
+  caller says `gate=False` (code review P3-5); `run()` always passes its horizon.
+- **Copy:** beats and below share one caveat that quotes `CHANCE_VERDICT_RATE` ("about 1 run in
+  10", any verdict) and `CHANCE_VERDICT_RATE_WORST` ("about 1 in 5" at some settings), names
+  directions held up to eight holding periods, says the rate is per run and that nearby settings
+  can disagree, and ends with the fixed-per-instrument residual, which the unconfirmed sentence
+  carries too (owner decisions after r7).

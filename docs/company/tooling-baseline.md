@@ -26,9 +26,14 @@ Re-verified 2026-10-12 on the resumed run. Worktree had other sessions' uncommit
 | Secrets, history (matches CI) | `gitleaks detect --redact -c .gitleaks.toml` | no leaks found (315 commits, 4.75 MB) |
 | Secrets, working tree | `gitleaks detect --no-git --redact -c <scratch config excluding build, dist*, .venv, __pycache__, .git>` | no leaks found (17.7 MB) |
 | Dependencies | `uvx pip-audit -r requirements.txt` | no known vulnerabilities (requirements.txt lists only `PySide6>=6.6`; `anthropic` is commented out, so it was not audited) |
-| Tests + coverage | `QT_QPA_PLATFORM=offscreen COVERAGE_FILE=<tmp> .venv/bin/python -m coverage run --branch --source=sonar,ui -m pytest tests/ -q` (cap 300 s) | 1861 passed, 30 deselected, 87 s; total branch coverage 84% (10370 statements, 2662 branches) |
+| Tests + coverage | `QT_QPA_PLATFORM=offscreen COVERAGE_FILE=<tmp> .venv/bin/python -m coverage run --branch --source=sonar,ui -m pytest tests/ -q` (cap 600 s; 300 s when measured) | 1861 passed, 30 deselected, 87 s; total branch coverage 84% (10370 statements, 2662 branches) |
 
 Coverage floor: **83%** (measured 84 minus 1). The project's own bar is 80% branch.
+The cap went from 300 s to 600 s on 2026-10-12 with `run-tests.sh`'s budget (spec
+`sign-randomisation-verdicts.md`, Build notes): the slow-marked randomisation rate tests replay
+hundreds of runs. Each stays under pytest's 60 s per-test cap natively (about 22 s at most, load
+~85), but under coverage on a loaded machine one hit the cap and aborted the run (QA P2-2); if it
+recurs, measure coverage with `-m 'not network and not release and not slow'`.
 Not wired into CI: the existing `tests.yml` was left alone, so no floor step runs yet.
 
 ## Branch triggers
@@ -37,7 +42,7 @@ runs on every branch; no mismatch with the real branch (`master`, remote `origin
 `security.yml` has the same unfiltered triggers.
 
 ## Contradictions with app-context.md
-- None in commands. The "30 deselected" tests are the `network`-marked tests (`addopts = "-m 'not network'"` in pyproject.toml).
+- None in commands. The "30 deselected" tests are the `network`-marked tests (`addopts = "-m 'not network'"` in pyproject.toml); since 2026-10-12 the one `release`-marked test is deselected too (`addopts = "-m 'not network and not release'"`).
 
 ## UNVERIFIED
 - Native (non-offscreen) run: only the offscreen run was done; app-context requires both to pass.
