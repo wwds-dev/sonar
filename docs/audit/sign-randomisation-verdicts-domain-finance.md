@@ -149,3 +149,36 @@ None.
 
 ### Verdict
 No P0. One P1: the placeholder, which needs a release-blocking check. The new copy holds. P2s: the rate-slot semantics, the expert-mode residual, and A15 survivorship.
+
+## Pass 4: Review of fix loop 1 (`git diff a0b4fdf..HEAD -- sonar ui`)
+
+The reviewer ran 32 targeted non-slow tests offscreen; all passed.
+
+### P0 / P1
+None.
+
+### P2
+- **P2-1. The Lab still judges 10y**, where r7 measured the fixed-direction residual at its worst:
+  - per-symbol coin at 10y h20–h60: 22.5–31% on r5, 10–12.5% on held-out;
+  - long-only reads "beats" at 10y h20.
+
+  The Lab's `few_clusters` fix also says "A longer range…" (`backtest.py:1009`), and the Lab has no survivorship line.
+  - The owner must say whether "withhold 10y" covers the Lab.
+  - Then either withhold 10y in `summarise`, or caveat it with the r7 figures and a survivorship line.
+  - Either way, reword the Lab's `few_clusters` fix.
+- **P2-2. The expert attribution line says "four components"**, but BH runs over the components actually measured, usually two (`ui/app.py:2988-2989`; pinned at `tests/test_lab_tab.py:880`). Use "{n} components measured".
+- **P2-3. The Learn tab and CONFIDENCE.md still carry the old rule and the r5 figure** (`static/docs.html:650-656`; `CONFIDENCE.md:617-625`). Must land in Document before Release, with:
+  - the r7 provenance;
+  - the measure-2 disclosure;
+  - the slower-pattern residual;
+  - "nearby settings can disagree";
+  - the fixed-per-instrument line.
+
+### P3
+- **P3-1.** The fixed-per-instrument line uses the wrong verb after "below", and can read as a buy-and-hold tip. Suggested: "A direction fixed per instrument, such as always long, can also land outside the bar, because the list holds today's survivors; this check cannot see that."
+- **P3-2.** An untested component is labelled "not told apart from chance", but its "why" text says the check did not run. Give it a separate label.
+- **P3-3.** The KEEP/INVERTED "why" lines lack "before costs" (`backtest.py:1585-1596`).
+- **P3-4.** Spec :161 and :298 still say "independent stretches".
+
+### Verdict
+No P0/P1. Every headline string traces to r7. Before merge: fix P2-2, and get the owner's answer on P2-1. P2-3 belongs to Document.

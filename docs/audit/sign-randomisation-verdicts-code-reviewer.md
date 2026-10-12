@@ -51,3 +51,28 @@
 
 ## Verdict
 No P0 or P1. The statistics, the clusters and the composition are correct and pinned. Before release, fix the placeholder (P2-1), the "below" copy (P2-2) and the 55 s exactness test (P2-4). The 87-day coin reading 8.0% goes to the validator (P2-3).
+
+## Re-review after fix loop 1 (`a0b4fdf..HEAD`)
+
+**Ran**
+- `tests/test_backtest.py` and `tests/test_attribution.py`: 94 passed in 302 s.
+- Lab copy tests, both modes.
+- `-m release`, and the suite-size test (2,203).
+- Ruff 0.17.0 on clean exports.
+- The full suite was not run.
+
+**Status of earlier findings**
+- All earlier P2/P3 findings are resolved, except **P3-8** (the 600 s budget), which waits on the owner.
+- These are correct and pinned: the `unpaired` path, `attribute(gate=True)` failing closed, `range_for_horizon` returning 2y/5y only, the `_cached_world` cache (deterministic, never mutated), exactness equal to `summarise` (full dict equality), the release marker override, and the copy constants (no `{`).
+
+### Findings
+No P0, P1 or P2.
+- **P3-1.** Nothing runs the release check. Neither the `sre-release` agent nor the app-context release checklist mentions `-m release`, and CI deselects it. Either drop the marker (the test takes ~0 s) or add it to the release checklist.
+- **P3-2.** The headline rate tests take 28 s alone and up to 50 s in file order at load ~56, against the 60 s cap that aborts the run. This contradicts the build note ("≤ 22 s"). Split them into 150-run tests or share precomputed runs, and record the worst case honestly.
+- **P3-3.** The residual says "can beat the bar too" under a "below" reading (`backtest.py:169-170`, `:1028`, `:1054`). Use "land outside the bar".
+- **P3-4.** Session caches hold about 225 MB for the rest of the suite. Clear them on module teardown.
+- **P3-5.** The branch adds **7 ruff findings**: B905 in `sonar/randomisation.py:142,148,149,154,155,162,203` (049b930 = 97, HEAD = 104). They are not bugs, but they break the definition of done; add `strict=True`. The gap from 86 to 97 is drift on master.
+- **P3-6.** The Lab still judges 10y. The owner has since decided: withhold 10y in the Lab too.
+
+### Verdict
+Ready for Verify. P3-1, P3-3 and P3-5 are cheap to fix before merge.
