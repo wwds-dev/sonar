@@ -10,7 +10,10 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## Unreleased (not installed)
+## v2.260 — 2026-10-12
+
+Installed 2026-10-12 from the commit that carries this entry, built in a clean detached worktree
+(stamp `dirty: false`). Release record: `docs/audit/shadow-time-stop-sre-release.md`.
 
 - **A second score grade that leaves no entry out.** The existing grade (*Is the score right?* on
   the landing page, the calibration panel on My trades) counts only positions closed at their

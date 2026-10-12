@@ -28,3 +28,5 @@
 {"ts": "2026-10-12T10:18:16", "phase": "release", "state": "start", "spec": "qa11-qa13-honest-baselines"}
 {"ts": "2026-10-12T10:29:02", "phase": "release", "state": "blocked", "spec": "qa11-qa13-honest-baselines"}
 {"ts": "2026-10-12T10:30:05", "phase": "release", "state": "blocked", "spec": "qa11-qa13-honest-baselines"}
+{"ts": "2026-10-12T19:56:30", "phase": "release", "state": "start", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T20:21:52", "phase": "release", "state": "blocked", "spec": "shadow-time-stop"}
