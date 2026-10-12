@@ -45,6 +45,7 @@ realised outcomes. Nothing here guesses it.
 
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass
 
@@ -103,6 +104,118 @@ def barrier_probability(k_target: float, k_stop: float,
     except OverflowError:
         return 1.0 if m > 0 else 0.0
     return max(0.0, min(1.0, p))
+
+
+# --------------------------------------------------------------------------- #
+# The same question with a clock on it
+# --------------------------------------------------------------------------- #
+# The backtest watches a setup for a limited number of bars, then gives up on
+# it. ``barrier_probability`` is the answer with no time limit; a far target
+# that has not been reached yet when the window closes is not a loss, it is a
+# setup that never resolved — and those are mostly far-target setups, so the
+# resolved ones hit their target *less* often than ``1/(1+R:R)``. Comparing a
+# resolved hit rate against the untimed figure reads a market with nothing in
+# it as a signal that loses (docs/adr/0001).
+#
+# Units: the walk starts at 0 with unit variance per horizon, the target sits
+# at +k_target and the stop at −k_stop, and the window lasts ``horizons``
+# horizons. The two-sided first-passage probabilities come from the image
+# (method-of-reflections) series, which converges fast at the short windows a
+# backtest uses — the eigenfunction series cancels catastrophically there and
+# returned negative probabilities at T = 0.004.
+
+_SQRT2 = math.sqrt(2.0)
+_LOG_SQRT_2PI = 0.5 * math.log(2.0 * math.pi)
+
+
+def _log_ncdf(z: float) -> float:
+    """log Φ(z), finite far into the lower tail."""
+    if z > -30.0:
+        return math.log(0.5 * math.erfc(-z / _SQRT2))
+    # Mills-ratio expansion: erfc underflows long before the tail is useless.
+    return (-0.5 * z * z - math.log(-z) - _LOG_SQRT_2PI
+            + math.log1p(-1.0 / (z * z) + 3.0 / z ** 4))
+
+
+def _exp_ncdf(a: float, z: float) -> float:
+    """e^a · Φ(z) without overflowing either factor."""
+    x = a + _log_ncdf(z)
+    return math.exp(x) if x > -745.0 else 0.0
+
+
+def _exit_first_by(x: float, width: float, mu: float, horizons: float) -> float:
+    """P(a unit-variance walk with drift ``mu``, started at ``x`` in
+    (0, ``width``), leaves through ``width`` before 0, by time ``horizons``).
+
+    Image series for the driftless first-passage density, tilted by Girsanov:
+    ``e^{mu(width−x)} Σ_j [G((2j+1)width − x) − G((2j+1)width + x)]`` with
+    ``G(d) = e^{−|mu|d} Φ((|mu|T − d)/√T) + e^{|mu|d} Φ((−|mu|T − d)/√T)``.
+    """
+    rt = math.sqrt(horizons)
+    a = abs(mu)
+    tilt = mu * (width - x)
+
+    def g(d: float) -> float:
+        return (_exp_ncdf(tilt - a * d, (a * horizons - d) / rt)
+                + _exp_ncdf(tilt + a * d, (-a * horizons - d) / rt))
+
+    total = 0.0
+    for j in range(100_000):
+        near = g((2 * j + 1) * width - x)
+        total += near - g((2 * j + 1) * width + x)
+        if near < 1e-15:
+            break
+    return total
+
+
+def barrier_probabilities_within(k_target: float, k_stop: float,
+                                 horizons: float,
+                                 edge_sigma: float = 0.0) -> tuple[float, float]:
+    """``(P(target first by the deadline), P(stop first by the deadline))``.
+
+    ``horizons`` is the window in horizons (bars watched / horizon days). Their
+    sum is below one by the chance that neither barrier is touched in time.
+    ``horizons=math.inf`` gives the untimed :func:`barrier_probability` split.
+    """
+    if k_target <= 0 or k_stop <= 0:
+        return 0.0, 0.0
+    m = max(-_M_CLAMP, min(_M_CLAMP, edge_sigma))
+    if math.isinf(horizons):
+        p = barrier_probability(k_target, k_stop, m)
+        return p, 1.0 - p
+    if horizons <= 0:
+        return 0.0, 0.0
+    return _barrier_probabilities_within(float(k_target), float(k_stop),
+                                         float(horizons), float(m))
+
+
+@functools.lru_cache(maxsize=8192)
+def _barrier_probabilities_within(k_target: float, k_stop: float,
+                                  horizons: float,
+                                  m: float) -> tuple[float, float]:
+    width = k_target + k_stop
+    p_target = _exit_first_by(k_stop, width, m, horizons)
+    p_stop = _exit_first_by(k_target, width, -m, horizons)
+    return (max(0.0, min(1.0, p_target)), max(0.0, min(1.0, p_stop)))
+
+
+def resolved_hit_probability(k_target: float, k_stop: float, horizons: float,
+                             edge_sigma: float = 0.0) -> float:
+    """P(target first | one of the barriers is touched within ``horizons``).
+
+    The honest baseline for a hit rate counted over resolved setups only.
+    At ``horizons=math.inf`` it is :func:`barrier_probability`; at the
+    backtest's four-horizon window and 1.5:1 it is 39.46%, not 40%.
+    """
+    p_t, p_s = barrier_probabilities_within(k_target, k_stop, horizons,
+                                            edge_sigma)
+    if p_t + p_s <= 0.0:
+        # Too short a window for either barrier to register: in the limit the
+        # nearer barrier is the one that gets touched.
+        if k_target > k_stop:
+            return 0.0
+        return 1.0 if k_target < k_stop else 0.5
+    return p_t / (p_t + p_s)
 
 
 def expected_value(p_profit: float, k_target: float, k_stop: float) -> float:

@@ -854,13 +854,19 @@ def _priced(model_up, bid, ask, outcome):
 
 def test_a_right_and_cheap_model_shows_positive_ev(engine):
     """Model says 0.70, the ask sells UP at 0.50, UP happens: one stake
-    returns (1-0.505)/0.505. The gate reads the *executable* edge."""
+    returns (1-0.505)/0.505. The gate reads the *executable* edge.
+
+    Every return identical, so se and the robust se are both exactly 0 — and
+    a zero error bar must read as cleared, not as noise (QA-11 / T11-7: the
+    copy is now the 'measured' sentence at three standard errors)."""
     engine.scorelog = [_priced(0.70, 0.49, 0.50, 1.0)] * 120
     r = engine.buyability()
     g = next(g for g in r["gates"] if g["gate"] == 0.04)
     assert g["n"] == 120
     assert g["ev_per_stake"] == pytest.approx((1 - 0.505) / 0.505, abs=1e-4)
-    assert "beyond two standard errors and surviving leave-one-out" in r["verdict"]
+    assert g["se"] == 0.0 and g["robust_se"] == 0.0
+    assert "measured" in r["verdict"]
+    assert "three standard errors" in r["verdict"]
 
 
 def test_a_wrong_model_loses_its_stake(engine):
@@ -972,17 +978,246 @@ def test_a_settlement_state_book_is_excluded_and_counted(engine):
 
 
 def test_one_whale_cannot_carry_a_positive_verdict(engine):
-    """Leave-one-out is the gate: many small losses and one huge win can
-    clear 2se on the mean while the strategy is a lottery ticket."""
+    """Two +21x longshot hits on 120 steady losers (QA-11 / T11-7).
+
+    This test used to credit leave-one-out with refusing the log. It never
+    did: the mean here is −64% per stake, so no positive reading was ever on
+    the table, and a few huge wins on a losing base can never clear the
+    significance bar on their own (t ≤ √k for k such wins). What refuses it is
+    the three-standard-error gate — at two it read LOST, at three it is within
+    noise. The robustness rule's own tests are the two 'resting on' tests
+    below, which build logs the gate *does* pass."""
     rows = [_priced(0.30, 0.03, 0.04, 1.0)]                # +21x longshot hit
     rows += [_priced(0.60, 0.49, 0.50, 0.0)] * 60          # steady losers
     engine.scorelog = rows * 2
     r = engine.buyability()
     g = next(g for g in r["gates"] if g["gate"] == 0.04)
     assert g["top_share"] > 0.4
-    assert "whale" in r["verdict"] or "within noise" in r["verdict"] \
-        or "LOST" in r["verdict"], r["verdict"]
-    assert "surviving leave-one-out" not in r["verdict"]
+    assert "within noise" in r["verdict"], r["verdict"]
+    assert "measured" not in r["verdict"]
+
+
+# The QA-11 constructions (docs/specs/qa11-qa13-honest-baselines.md,
+# Architecture → verified constructions). W wins +0.9802 at a 0.505 buy, L
+# loses the stake, M buys UP at 0.205 and wins +3.878 — an ordinary longshot,
+# not a whale. `_base(76)` is 76 W / 44 L spread evenly over 120 hours.
+_W = _priced(0.60, 0.49, 0.50, 1.0)
+_L = _priced(0.60, 0.49, 0.50, 0.0)
+_M = _priced(0.30, 0.19, 0.20, 1.0)
+
+
+def _base(wins: int, n: int = 120) -> list[dict]:
+    return [_W if (i * wins) // n != ((i + 1) * wins) // n else _L
+            for i in range(n)]
+
+
+def _at_gate(r: dict) -> dict:
+    return next(g for g in r["gates"] if g["gate"] == 0.04)
+
+
+def test_a_result_resting_on_its_best_hour_is_refused(engine):
+    """T11-1. t = 3.10 on the full log — it clears three standard errors —
+    but 2.82 without its best two hours, and the one carrying hour holds only
+    5% of gross profit. Refused as 'carried', never 'measured'.
+    Mutation it catches: deleting the robustness condition (robust_up)."""
+    base = _base(76)
+    engine.scorelog = base[:60] + [_M] + base[60:]
+    r = engine.buyability()
+    g = _at_gate(r)
+    assert g["ev_per_stake"] > 3 * g["se"]                 # the gate passes it
+    assert g["robust_ev"] < 3 * g["robust_se"]             # the rule does not
+    assert "without its two best hours" in r["verdict"]
+    assert "not demonstrated" in r["verdict"]
+    assert "measured" not in r["verdict"], r["verdict"]
+
+
+def test_a_result_resting_on_its_two_best_hours_is_refused(engine):
+    """T11-2 (owner D1′: k = 2). t = 3.28 full, 3.10 without its best hour —
+    so a leave-*one*-out rule would pass it — and 2.90 without its best two.
+    Mutation it catches: BUYABILITY_ROBUST_DROP 2 → 1."""
+    base = _base(76)
+    engine.scorelog = base[:40] + [_M] + base[40:80] + [_M] + base[80:]
+    r = engine.buyability()
+    g = _at_gate(r)
+    assert g["robust_drop"] == 2 and g["robust_n"] == g["n"] - 2
+    assert g["ev_per_stake"] > 3 * g["se"]
+    assert "not demonstrated" in r["verdict"], r["verdict"]
+    assert "measured" not in r["verdict"]
+
+
+def test_three_standard_errors_are_needed(engine):
+    """T11-3. The broad base alone reads t = 2.90: beyond two standard
+    errors, inside three. The verdict is re-read every hour, so two is not
+    the 5% it looks like (T1-1).
+    Mutation it catches: Z_CLAIM 3 → 2 in the positive claim."""
+    engine.scorelog = _base(76)
+    r = engine.buyability()
+    g = _at_gate(r)
+    assert 2 * g["se"] < g["ev_per_stake"] < 3 * g["se"]
+    assert "within noise" in r["verdict"], r["verdict"]
+    assert r["z_claim"] == 3.0
+
+
+def test_a_broad_result_is_measured(engine):
+    """T11-4. 78 W / 42 L spread evenly: t = 3.32 full, 3.23 and 3.14 without
+    its best one and two hours, top share 1.3%. The rule must not refuse a
+    result that does not rest on a few hours.
+    Mutation it catches: a robustness rule that can never pass (e.g. the
+    robust se left at the full-sample value times √n, or k taken from n)."""
+    engine.scorelog = _base(78)
+    r = engine.buyability()
+    g = _at_gate(r)
+    assert "measured" in r["verdict"], r["verdict"]
+    assert "three standard errors" in r["verdict"]
+    assert "without its two best hours" in r["verdict"]
+    for key in ("robust_ev", "robust_se", "robust_n", "robust_drop"):
+        assert g[key] is not None and g[key] > 0, key
+    assert g["robust_ev"] > 3 * g["robust_se"]
+
+
+def test_the_rest_is_judged_by_its_own_error_bar(engine):
+    """A broad 79 W / 41 L log plus two wins bought at 10.5c. The longshots
+    widen the full-sample error bar; without them the rest clears three
+    standard errors on its *own* bar (t = 3.53) — but would not against the
+    full sample's (2.39). The spec recomputes se on the rest, so this is a
+    measurement, and the longshots do not get a broad result refused.
+    Mutation it catches: the rest judged against the full-sample se."""
+    longshot = _priced(0.30, 0.09, 0.10, 1.0)          # buys UP at 0.105
+    base = _base(79)
+    engine.scorelog = base[:30] + [longshot] + base[30:69] + [longshot] + base[69:]
+    r = engine.buyability()
+    g = _at_gate(r)
+    assert g["n"] == 122
+    assert g["robust_ev"] < 3 * g["se"]                # the full bar would refuse
+    assert g["robust_ev"] > 3 * g["robust_se"]
+    assert "measured" in r["verdict"], r["verdict"]
+
+
+def _plain_se(rets: list[float]) -> float:
+    """The textbook standard error of a mean, which assumes independent hours."""
+    n = len(rets)
+    mean = sum(rets) / n
+    return (sum((x - mean) ** 2 for x in rets) / (n - 1) / n) ** 0.5
+
+
+def _clustered(pattern: str, run: int = 10) -> list[dict]:
+    """Hours in runs of ``run`` that all win (W) or all lose (L): qualifying
+    hours share a volatility regime, so their results cluster."""
+    return [_W if c == "W" else _L for c in pattern for _ in range(run)]
+
+
+def test_clustered_hours_need_the_wider_error_bar(engine):
+    """QA-11 / code-review P2-2. 120 hours in runs of ten, 80 winning: on the
+    textbook error bar the mean is 3.74 standard errors above zero, but the
+    runs make it a dozen readings, not 120, and on the Newey-West bar it is
+    2.73. The wider bar is the one used, so this is within noise.
+    Mutation it catches: _mean_se without Newey-West (reads 'measured')."""
+    engine.scorelog = _clustered("LWWLWWLWWLWW")
+    r = engine.buyability()
+    g = _at_gate(r)
+    rets = [(1 - 0.505) / 0.505 if row is _W else -1.0
+            for row in engine.scorelog]
+    assert g["n"] == 120
+    assert g["ev_per_stake"] > 3 * _plain_se(rets)          # textbook: clears
+    assert g["ev_per_stake"] < 3 * g["se"]                  # clustered: does not
+    assert "within noise" in r["verdict"], r["verdict"]
+
+
+def test_the_rest_gets_the_wider_error_bar_too(engine):
+    """QA-11 / code-review P2-2. The clustered log above plus two wins bought
+    at 10.5c. With them the mean clears three standard errors even on the
+    Newey-West bar (t = 3.38). Without its two best hours it is the clustered
+    log again: 3.74 on the textbook bar, 2.73 on the Newey-West one. The rest
+    is judged on its own *wider* bar, so this is 'carried', not 'measured'.
+    Mutation it catches: the rest's se taken plain, without Newey-West."""
+    longshot = _priced(0.30, 0.09, 0.10, 1.0)          # buys UP at 0.105
+    base = _clustered("LWWLWWLWWLWW")
+    engine.scorelog = base[:30] + [longshot] + base[30:90] + [longshot] + base[90:]
+    r = engine.buyability()
+    g = _at_gate(r)
+    rest = [(1 - 0.505) / 0.505 if row is _W else -1.0 for row in base]
+    assert g["n"] == 122 and g["robust_n"] == 120
+    assert g["ev_per_stake"] > 3 * g["se"]                  # the gate passes it
+    assert g["robust_ev"] == pytest.approx(sum(rest) / 120, abs=1e-4)
+    assert g["robust_ev"] > 3 * _plain_se(rest)             # textbook: clears
+    assert g["robust_ev"] < 3 * g["robust_se"]              # clustered: does not
+    assert "not demonstrated" in r["verdict"], r["verdict"]
+    assert "measured" not in r["verdict"]
+
+
+def test_the_robustness_rule_can_go_either_way():
+    """T11-5 (success measure 3: no unreachable branch). 3,000 seeded logs at
+    the return level, through the same function the gate loop calls. Among
+    those that clear three standard errors, both outcomes of the robustness
+    rule must be well populated — the old leave-one-out never failed once in
+    3,000 logs that cleared its gate.
+    Mutation it catches: a robustness condition implied by the gate (the old
+    `loo_ev > 0`), which leaves 'carried' empty."""
+    import random
+    rng = random.Random(1)
+    seen = {"measured": 0, "carried": 0, "noise": 0, "lost": 0}
+    for _ in range(3000):
+        n = rng.randint(100, 160)
+        edge = rng.uniform(0.0, 0.25)
+        floor = rng.choice((0.05, 0.2, 0.4))
+        rets = []
+        for _ in range(n):
+            p = rng.uniform(floor, 0.6) + 0.005
+            rets.append((1 - p) / p if rng.random() < p + edge else -1.0)
+        seen[eng._gate_reading(rets, 3.0, eng.Engine.BUYABILITY_ROBUST_DROP)
+             ["reading"]] += 1
+    assert seen["measured"] >= 20 and seen["carried"] >= 20, seen
+    assert seen["noise"] >= 20, seen
+
+
+def test_a_loss_needs_three_standard_errors_too(engine):
+    """T11-6 (owner D5: symmetric). 47 W / 73 L reads t = −2.53: a LOSS at two
+    standard errors, within noise at three.
+    Mutation it catches: Z 3 → 2 in the negative claim."""
+    engine.scorelog = _base(47)
+    r = engine.buyability()
+    g = _at_gate(r)
+    assert -3 * g["se"] < g["ev_per_stake"] < -2 * g["se"]
+    assert "within noise" in r["verdict"], r["verdict"]
+    assert "LOST" not in r["verdict"]
+
+
+def test_the_verdict_is_called_on_unrounded_values():
+    """The rows round to 4 dp for display; the call must not. A t a hair
+    under the bar is under it, whatever the rounded figures say.
+    Mutation it catches: rounding ev / se to 4 dp before the comparison in
+    the classifier the verdict reads."""
+    rets = [0.30001] * 50 + [-0.0999] * 50          # mean 0.100055
+    rd = eng._gate_reading(rets, 3.0, 0)
+    z = rd["ev"] / rd["se"]
+    # Pick a bar a hair above the true t, which 4-dp rounding of ev and se
+    # would land on the other side of.
+    bar = z * (1 + 1e-7)
+    assert eng._gate_reading(rets, bar, 0)["reading"] == "noise"
+    assert eng._gate_reading(rets, z * (1 - 1e-7), 0)["reading"] == "measured"
+
+
+def test_no_verdict_promises_anything(engine):
+    """T11-8 copy guard (success measure 7): every branch, in words a reader
+    without finance training takes at face value. No 'edge', no 'profit', no
+    'whale', no 'leave-one-out'."""
+    logs = {
+        "too few": [_W] * 30,
+        "measured": _base(78),
+        "carried": _base(76)[:60] + [_M] + _base(76)[60:],
+        "LOST": [_L] * 120,
+        "within noise": _base(76),
+    }
+    for marker, log in logs.items():
+        engine.scorelog = log
+        verdict = engine.buyability()["verdict"]
+        assert (marker in verdict) or (marker == "carried"
+                                       and "not demonstrated" in verdict), \
+            (marker, verdict)
+        low = verdict.lower()
+        for banned in ("edge", "profit", "whale", "leave-one-out",
+                       "guarantee", "certain"):
+            assert banned not in low, (marker, banned, verdict)
 
 
 def test_the_active_profiles_gate_always_has_a_row(engine):

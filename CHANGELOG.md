@@ -10,7 +10,7 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## v2.198 — 2026-10-11 (not installed)
+## Unreleased (not installed) — 2026-10-11
 
 - `/api/health` says which code the agent loaded: `build: {version, commit, dirty, source,
   nested}`, read at start, nested repos included; unknown is reported as `null`, not clean.
@@ -26,6 +26,39 @@ section lists what the v2 arc shipped.
   rewritten within a second; "applying — rescanning…" stays until the rescan is done, without
   hiding warnings. A setting a read-only window cannot change now says so.
   (closing UX C-2)
+
+## Unreleased — 2026-10-12
+
+**The docs say what broker the book actually uses.** README, the Learn tab,
+`GOING_LIVE.md` and `.env.example` said that adding Alpaca paper keys made the
+book use Alpaca, and that Alpaca was the more honest mode. No code path did
+that: the book always uses the built-in simulator. They now say so, keep the
+cost disclosure (no spread, slippage or fees, polled prices, so an optimistic
+bound, not a forecast), and call the Alpaca adapter "not connected yet". A new
+test reads the source of `sonar/`, `ui/` and `main.py` and fails on a
+`Portfolio(` call given a broker, any reference to `default_broker` (aliased
+imports resolved), an `AlpacaPaperBroker(` built outside `default_broker`, or a
+`broker` attribute assigned outside the book's and the order guard's
+constructors, so the docs have to change with the code. It is a source scan,
+not a runtime check (`docs/specs/book-broker-truth.md`).
+
+**Honest baselines for the backtest and the buyability verdict (QA-11, QA-13).**
+The buyability line's "survives leave-one-out" check could never fail. A claim
+either way now needs the mean return per stake beyond three standard errors,
+and a positive one the same again without its two best hours; otherwise it reads
+"not demonstrated". The backtest compares each setup with the chance of the
+target first *given it resolved in time* (39.44% on the default run, not the
+untimed 40%), counts and shows setups that ran out of time, and leaves out
+setups with under two horizons of data after them. Its error bar is the widest of
+the binomial, Newey-West and a bar that counts setups entered on the same day
+together; attention and attribution use the same bar. No verdict above a
+120-day horizon, on one asset class, under 100 setups or 20 entry dates, or on
+entries spanning under five horizons. Re-measured default run (2y, h = 5, 129
+instruments): 39.55% against 39.44%, +0.11 points, error bar ±1.8, n 18,973.
+The bar is not a calibrated 5% test: a random direction per asset class still
+got a verdict on about 1 run in 10 (11.4%), and the verdict copy says so. The
+Learn tab §7–§8, `CONFIDENCE.md`, ADR 0001, `TESTPLAN.md` §2 and §7 and the
+backlog are restated (`docs/specs/qa11-qa13-honest-baselines.md`).
 
 ## v2.187 — 2026-10-11
 
@@ -43,6 +76,7 @@ carries the same open counts and caveat. Only the readout changed:
 `calibration.report()`, its verdict text and the book are as they were, and the
 grade-by-cohort and time-stop options in the audit note remain the owner's
 call.
+
 
 ## v2.180 — 2026-10-10
 
