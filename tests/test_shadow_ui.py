@@ -655,7 +655,8 @@ def test_window_across_the_new_year_carries_the_year():
 def test_window_reads_n_a_for_a_bad_date_never_raises(bad):
     from ui.app import shadow_texts
     t = shadow_texts(readout(entries=_entries((bad, "time"))), False, NOW, 28.0)
-    assert t["rows"].splitlines()[0] == "the 1 with a result opened n/a to n/a"
+    assert t["rows"].splitlines()[0] == ("the 1 with a result opened n/a to n/a "
+                                         "(1 with no readable date)")
 
 
 def test_window_is_hidden_with_no_entries(window):
@@ -693,4 +694,15 @@ def test_qa_r3_w02_one_damaged_date_does_not_blank_an_end_of_the_window():
         entries = _entries((_noon(2026, 9, 22), "time"), (bad, "stop"),
                            (_noon(2026, 10, 3), "target"))
         rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
-        assert rows[0] == "the 3 with a result opened 22 Sep to 3 Oct", bad
+        # Code review r4 P3-B: the damaged one is said, not counted inside the period.
+        assert rows[0] == ("the 3 with a result opened 22 Sep to 3 Oct "
+                           "(1 with no readable date)"), bad
+    words._mode, keep = words.EXPERT, words._mode
+    try:
+        rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
+    finally:
+        words._mode = keep
+    assert rows[0] == "3 graded: opened 22 Sep to 3 Oct (1 undated)"
+    entries = _entries((_noon(2026, 9, 22), "time"), (_noon(2026, 10, 3), "target"))
+    rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
+    assert "readable" not in rows[0]

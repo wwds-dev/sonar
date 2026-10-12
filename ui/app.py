@@ -490,6 +490,7 @@ SHADOW_WORDS = {
                       "{n} graded: opened {first} to {last}"),
     "SH_ROW_WINDOW_NONE": ("entries opened {first} to {last} (none has a result yet)",
                            "opened {first} to {last} (none graded yet)"),
+    "SH_ROW_WINDOW_UNDATED": ("({k} with no readable date)", "({k} undated)"),
     "SH_NOT_AVAILABLE": (
         "Not available from the running agent. It is an older version than this window.",
         "Not available from the running agent (older version)."),
@@ -919,8 +920,13 @@ def _sh_window(entries, now: float) -> str:
     # It names what it covers (domain r3 N-6): the graded entries, or, before
     # any is graded, every entry.
     if graded:
-        return _sh_word("SH_ROW_WINDOW", n=len(graded), first=first, last=last)
-    return _sh_word("SH_ROW_WINDOW_NONE", first=first, last=last)
+        line = _sh_word("SH_ROW_WINDOW", n=len(graded), first=first, last=last)
+    else:
+        line = _sh_word("SH_ROW_WINDOW_NONE", first=first, last=last)
+    # A date that cannot be read is said, not silently counted inside the
+    # period (code review r4 P3-B).
+    undated = len(stamps) - len(good)
+    return f"{line} {_sh_word('SH_ROW_WINDOW_UNDATED', k=undated)}" if undated else line
 
 
 def _sh_rows(d: dict, looks: list[dict], named: int | None, detail: bool, T: str,

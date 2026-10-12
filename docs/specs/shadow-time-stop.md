@@ -293,6 +293,7 @@ zero.
 | `SH_COUNT` | {reached} of {entered} at {T} | {reached}/{entered} past T |
 | `SH_ROW_WINDOW` | the {n} with a result opened {first} to {last} | {n} graded: opened {first} to {last} |
 | `SH_ROW_WINDOW_NONE` | entries opened {first} to {last} (none has a result yet) | opened {first} to {last} (none graded yet) |
+| `SH_ROW_WINDOW_UNDATED` | ({k} with no readable date) | ({k} undated) |
 | `SH_NOT_AVAILABLE` | Not available from the running agent. It is an older version than this window. | Not available from the running agent (older version). |
 | `SH_LOADING` | Working it out: this needs a scan and a few daily closes. | Computing: waits for a scan and daily closes. |
 | `SH_ERROR` | Could not work it out this time ({reason}). Nothing is guessed; the next scan tries again. | Error: {reason}. Nothing guessed; retried next scan. |
@@ -627,7 +628,10 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
     - `SH_ROW_WINDOW` is the first row on both pages, in both wordings. Fix loop 3 (domain r3 N-6)
       makes it name what it covers: "the {n} with a result opened {first} to {last}" (expert "{n}
       graded: opened …") once any entry is graded, and `SH_ROW_WINDOW_NONE`, "entries opened {first}
-      to {last} (none has a result yet)" (expert "… (none graded yet)"), before that.
+      to {last} (none has a result yet)" (expert "… (none graded yet)"), before that. Fix loop 4
+      (code review r4 P3-B): when some of those entries have no readable date, the row adds
+      `SH_ROW_WINDOW_UNDATED`, "({k} with no readable date)" (expert "({k} undated)"), so the
+      period is not read as covering them.
     - The UI computes it from the readout's `entries[*].opened_at`, so a follower shows the holder's
       period. It counts the graded protocol entries when there are any, and otherwise every protocol
       entry entered. It is hidden when there are no entries.
