@@ -55,6 +55,7 @@ changes no exit, no ``GRADED``, no ``Z_CLAIM`` and no ``P(profit)``.
 from __future__ import annotations
 
 import bisect
+import copy
 import math
 from dataclasses import dataclass
 
@@ -265,15 +266,24 @@ SHADOW_LOOKS = (45, 101, 201)     # cohorts: the first N protocol entries by ope
 SHADOW_BOUNDARY = 2.315
 SHADOW_PRICE_GRACE_DAYS = 7       # past t_T with no final close: waiting, then left out
 # A series whose last close at or before the entry is more than this many
-# stop distances from the entry price is not that entry's price history:
-# Yahoo split-adjusts old closes after the fact, so a split after the entry
-# rescales everything before it (security P2-2, code review P2-1). One stop
-# distance is one horizon-σ, about √5 daily moves on the week preset, and the
-# entry is at most a session away from that close, so 2 is over four daily σ:
-# a false alarm needs a rare gap, and is counted, never guessed. A 3:2 split
-# (−33%) trips it for any instrument moving under ~7% a day; a ratio band
-# such as [0.5, 2] would let it through.
-SHADOW_SPLIT_GUARD = 2.0
+# *daily* σ from the entry price is not that entry's price history: Yahoo
+# split-adjusts old closes after the fact, so a split after the entry rescales
+# everything before it (security P2-2, code review P2-1). The plan's stop
+# distance is one horizon-σ = daily σ × √momentum_days, so one daily σ is
+# |entry − stop| / √momentum_days, the same yardstick on every preset (fix
+# loop 2, code review P2-A: in stop distances the bound grew to 31 daily σ on
+# the year preset and let 2:1 splits through). The entry is at most a session
+# from that close, so 4.5 daily σ (the week preset's old 2 stop distances)
+# needs a rare gap to false-alarm, and a false alarm is counted, never
+# guessed. It catches a 2:1 split below ~11% daily σ and a 3:2 split below
+# ~7%, on any preset; a ratio band such as [0.5, 2] would let 3:2 through.
+SHADOW_SPLIT_GUARD = 4.5
+# The newest bar of a fetch counts as a finished session only when its stamp
+# is at least this long before that fetch: no session runs longer than a day,
+# and an in-progress bar carries a recent stamp (its session start, or the
+# fetch time itself, code review P1-2). Measured against the fetch, never
+# against now, so a series kept from a failed day does not turn final.
+SHADOW_FINAL_AFTER_S = 86_400.0
 SHADOW_CRYPTO = "Crypto"          # the asset class that trades on all seven days
 DAY_S = 86_400.0
 
@@ -345,35 +355,64 @@ def hc3_z(x: list[float], y: list[float]) -> float | None:
 
 
 def _shadow_from_bars(p, series: list[tuple[float, float]] | None, t_due: float,
-                      booked: str | None) -> tuple[str, float | None, bool] | None:
+                      booked: str | None,
+                      fetched: float | None = None) -> tuple[str, float | None, bool] | None:
     """Rules 1–3 for an entry past t_T, from its symbol's daily bars. Returns
     ``(state, exit price, gap)``, or None when the bars cannot decide yet: no
     series, one that does not reach back to the entry, no bar after the entry
     up to t_T, or no final T bar and cut bar.
 
-    The newest bar never takes part. It may still be trading, and Yahoo
-    stamps it with the *fetch time*, not its session's start (EURCHF=X read
-    `11:17` on 2026-10-12, code review P1-2), so its stamp can neither pick the
-    T bar nor serve as the cut. Both must be older than the newest bar: at
-    most a day more of waiting, and never a wrong close taken as final."""
-    series = (series or [])[:-1]
+    The newest bar is trusted only when it is a finished session: stamped at
+    least :data:`SHADOW_FINAL_AFTER_S` before ``fetched``, the time of the
+    fetch that returned it (without a fetch time, never). Otherwise it may
+    still be trading, and Yahoo may stamp it with the fetch time rather than
+    its session's start (EURCHF=X read `11:17` on 2026-10-12, code review
+    P1-2): its close is never used, and its stamp neither picks the T bar nor
+    serves as the cut. What it still proves is bounded: its session started
+    after ``stamp − 24 h`` (no session is longer, and its stamp is its start
+    or later). When that bound is already past t_T, the T bar is the last
+    trusted bar at or before t_T and is finished, and the cut lies in
+    ``(stamp − 24 h, stamp]`` — enough for rule 1 unless a booked close falls
+    inside that window, which then waits.
+
+    Measured, US-session bars and one fetch a day at 00:01 UTC (code review
+    r2 P2-B; `test_r2_latency_*`): a T on Monday–Thursday is decided 2.4 days
+    after t_T, a Friday T 3.4 days after (round 1: Thursday and Friday 4.4), a
+    holiday after T adds a day — at least 2.6 days inside the 7-day grace
+    before "no price"."""
+    series = list(series or [])
+    pending = None                           # the newest bar, if not trusted
+    if series and (fetched is None or series[-1][0] > fetched - SHADOW_FINAL_AFTER_S):
+        pending = series.pop()[0]
     if not series:
         return None
     stamps = [t for t, _c in series]
     if stamps[0] > p.opened_at:
         return None                          # too short a range to check for gaps
     before = series[bisect.bisect_right(stamps, p.opened_at) - 1][1]
-    if abs(before - p.entry) > SHADOW_SPLIT_GUARD * abs(p.entry - p.stop):
+    daily_sigma = abs(p.entry - p.stop) / math.sqrt(horizon.get(p.horizon).momentum_days)
+    if abs(before - p.entry) > SHADOW_SPLIT_GUARD * daily_sigma:
         return None                          # rescaled (a split?) or wrong: not this price
     i = bisect.bisect_right(stamps, t_due) - 1     # the T bar: never the next one
-    # The cut bar must exist below the newest, which was dropped above.
-    if i < 0 or stamps[i] <= p.opened_at or i + 1 >= len(series):
+    if i < 0 or stamps[i] <= p.opened_at:
         return None
-    t_cut = stamps[i + 1]
-    if booked is not None and p.closed_at < t_cut:
-        if booked in GRADED:
-            return booked.lower(), (p.target if booked == "TARGET" else p.stop), False
-        return "left", None, False
+    if i + 1 < len(series):
+        cut_lo = cut_hi = stamps[i + 1]      # a trusted later bar: the cut is its stamp
+    elif pending is not None and pending - SHADOW_FINAL_AFTER_S > t_due:
+        cut_lo, cut_hi = pending - SHADOW_FINAL_AFTER_S, pending
+    else:
+        return None                          # nothing yet shows the T bar is finished
+    if booked is not None:                   # rule 1: closed before the cut?
+        if cut_lo == cut_hi:
+            before_cut = p.closed_at < cut_hi
+        elif p.closed_at <= cut_lo or p.closed_at >= cut_hi:
+            before_cut = p.closed_at <= cut_lo
+        else:
+            return None                      # closed inside the window the cut may lie in
+        if before_cut:
+            if booked in GRADED:
+                return booked.lower(), (p.target if booked == "TARGET" else p.stop), False
+            return "left", None, False
     # A bar's close comes at its session's end. Only bars that *start* after
     # the entry are certainly closed after it: the entry day's own close may
     # predate the entry, and the live polls watched that session anyway.
@@ -396,7 +435,7 @@ def shadow_decided(result: dict) -> dict[str, dict]:
             if e["state"] in SHADOW_GRADED or e["state"] == "left"}
 
 
-def _shadow_entry(p, series, now: float) -> dict:
+def _shadow_entry(p, series, now: float, fetched: float | None = None) -> dict:
     """One protocol entry's shadow outcome. Reads the position; never writes it."""
     t_due = shadow_due(p)
     booked = p.outcome if p.closed_at is not None else None
@@ -411,7 +450,7 @@ def _shadow_entry(p, series, now: float) -> dict:
             state = booked.lower()
             exit_price = p.target if booked == "TARGET" else p.stop
     elif now >= t_due:
-        got = _shadow_from_bars(p, series, t_due, booked)
+        got = _shadow_from_bars(p, series, t_due, booked, fetched)
         if got is not None:
             state, exit_price, gap = got
         elif now >= t_due + SHADOW_PRICE_GRACE_DAYS * DAY_S:
@@ -495,7 +534,8 @@ def _split(rows: list[dict]) -> dict:
 
 
 def shadow_time_stop(open, closed, bars, now: float,
-                     decided: dict[str, dict] | None = None) -> dict:
+                     decided: dict[str, dict] | None = None,
+                     fetched_at: dict[str, float] | None = None) -> dict:
     """The time-stop shadow of the score grade, for every protocol entry.
 
     ``open`` and ``closed`` are :class:`sonar.portfolio.Position` lists (the
@@ -507,8 +547,14 @@ def shadow_time_stop(open, closed, bars, now: float,
     ignored: a future stamp would make an in-progress bar look final.
 
     ``decided`` is :func:`shadow_decided` of earlier readouts: an entry found
-    there keeps that outcome (copied, never recomputed). Only an entry still
-    protocol and filled is looked up, so the book stays the population.
+    there keeps that outcome (deep-copied, never recomputed). Only an entry
+    still protocol and filled is looked up, so the book stays the population;
+    its ``booked`` outcome is refreshed from the position, so ``ic_closed``
+    reads the book as it is now (code review r2 P3-1).
+
+    ``fetched_at`` maps a symbol to the time its bars were fetched; with it,
+    a newest bar old enough to be a finished session can be used (see
+    :func:`_shadow_from_bars`). Without it the newest bar never is.
     """
     from .research import stats as _stats
 
@@ -534,9 +580,12 @@ def shadow_time_stop(open, closed, bars, now: float,
             n_nonprotocol += 1
             continue
         if decided and p.id in decided:
-            entries.append(dict(decided[p.id]))
+            kept = copy.deepcopy(decided[p.id])
+            kept["booked"] = p.outcome if p.closed_at is not None else None
+            entries.append(kept)
             continue
-        entries.append(_shadow_entry(p, series.get(p.symbol), now))
+        entries.append(_shadow_entry(p, series.get(p.symbol), now,
+                                     (fetched_at or {}).get(p.symbol)))
     entries.sort(key=lambda e: (e["opened_at"], e["id"]))
 
     graded = [e for e in entries if e["state"] in SHADOW_GRADED]

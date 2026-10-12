@@ -172,9 +172,9 @@ def test_the_pass_reads_copies_and_writes_nothing(live, monkeypatch):
     seen = []
     real = calibration.shadow_time_stop
 
-    def spy(held, done, bars, now, decided=None):
+    def spy(held, done, bars, now, decided=None, fetched_at=None):
         seen.extend(held + done)
-        return real(held, done, bars, now, decided)
+        return real(held, done, bars, now, decided, fetched_at)
 
     monkeypatch.setattr(calibration, "shadow_time_stop", spy)
     monkeypatch.setattr(core.assets, "fetch_bars", FetchLog(live))
@@ -395,6 +395,24 @@ def test_the_memo_lives_in_memory_and_keeps_the_first_decision(live, monkeypatch
     assert not any(p.name.startswith("shadow") for p in live.book.path.parent.iterdir())
 
 
+def _tree(root):
+    return {str(p.relative_to(root)): (p.stat().st_size, p.stat().st_mtime_ns)
+            for p in root.rglob("*") if p.is_file()}
+
+
+def test_r2_a_pass_writes_nothing_at_all(live, monkeypatch, tmp_path):
+    """QA r2 P3-4: "nothing persisted", checked on the whole data directory
+    — every file, its size and its mtime — before and after two passes."""
+    _cohort(live, n=3)
+    live.book.save()
+    monkeypatch.setattr(core.assets, "fetch_bars", lambda s, rng=None: _wavy(NOW - 100 * DAY))
+    before = _tree(tmp_path)
+    live._shadow_pass(NOW)
+    live._shadow_pass(NOW + DAY)
+    assert live.shadow["n_reached"] == 3
+    assert _tree(tmp_path) == before
+
+
 def test_qa_c03_a_waiting_window_never_computes(live, monkeypatch):
     """QA C03: read-only with no holder to follow (a second window, or the
     moment before the book is re-read), a settings change's rescan must not
@@ -431,3 +449,46 @@ def test_mv_s1a_failed_fetches_leave_look_1_as_evaluated(live, monkeypatch, fail
     stub.day = 2
     live._shadow_pass(NOW + DAY)
     assert live.shadow["looks"][0] == look
+
+
+# --------------------------------------------------------------------------- #
+# Fix loop 2 (code review r2): fetch-time trust, memo hygiene
+# --------------------------------------------------------------------------- #
+def test_r2_a_kept_series_is_judged_at_its_own_fetch_time(live, monkeypatch):
+    """P2-B: the newest bar is trusted against the fetch that returned it,
+    never against now. Day 1's newest bar is 10 h old at its fetch, so it is
+    not trusted; day 2's fetch fails and keeps that series. Judged against
+    now it would be 34 h old and trusted. Kills: comparing with now; storing
+    the failed day's time with the kept series."""
+    pos = _enter(live, "AAA", 40)
+    pos.opened_at = NOW - 20 * 3600 - 28 * DAY             # t_T = NOW − 20 h
+    series = [(NOW - 10 * 3600 - k * DAY, 100.0) for k in range(100)][::-1]
+    stub = Days({1: lambda s: series, 2: lambda s: None})
+    monkeypatch.setattr(core.assets, "fetch_bars", stub)
+    stub.day = 1
+    live._shadow_pass(NOW)
+    assert live.shadow["n_wait_price"] == 1
+    stub.day = 2
+    live._shadow_pass(NOW + DAY)
+    assert live.shadow["n_wait_price"] == 1 and live.shadow["n_reached"] == 0
+    assert live._shadow_bars["AAA"][2] == NOW
+
+
+def test_r2_the_memo_shares_nothing_with_the_published_readout(live, monkeypatch):
+    """P3-2: a reader that changed the readout must not change the memo."""
+    _cohort(live, n=2)
+    monkeypatch.setattr(core.assets, "fetch_bars", lambda s, rng=None: _wavy(NOW - 100 * DAY))
+    live._shadow_pass(NOW)
+    entry = live.shadow["entries"][0]
+    entry["ref"].append("x")
+    entry["state"] = "stop"
+    kept = live._shadow_decided[entry["id"]]
+    assert kept["state"] == "time" and "x" not in kept["ref"]
+
+
+def test_r2_taking_the_book_forgets_the_memo_and_the_closes(live):
+    """P3-3: the memo and the bar cache belong to the book just replaced."""
+    live._shadow_decided = {"x": {"state": "time"}}
+    live._shadow_bars = {"AAA": ("2026-10-12", [(0.0, 1.0)], 0.0)}
+    live._take_the_book()
+    assert live._shadow_decided == {} and live._shadow_bars == {}
