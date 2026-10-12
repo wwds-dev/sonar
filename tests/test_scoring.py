@@ -88,6 +88,26 @@ def test_uncalibrated_plans_never_claim_an_edge():
     assert scoring.grade(p.p_profit, p.rr, p.calibrated) == "unproven"
 
 
+@pytest.mark.parametrize("rr, label", [
+    (2.0, "favourable"),        # ev +0.50
+    (1.52, "favourable"),       # ev +0.26
+    (1.5, "slight edge"),       # ev +0.25 exactly: the bar is strict
+    (1.48, "slight edge"),      # ev +0.24
+    (1.12, "slight edge"),      # ev +0.06
+    (1.08, "even"),             # ev +0.04
+    (1.0, "even"),              # ev  0
+    (0.92, "even"),             # ev -0.04
+    (0.88, "negative"),         # ev -0.06
+])
+def test_a_calibrated_grade_follows_the_expected_value(rr, label):
+    """QA P3 (M5). No caller passes calibrated=True today (assets builds every
+    plan uncalibrated, so the screener only ever shows "unproven"); this pins
+    the labels for the day a measured edge feeds them. At p = 0.5 the EV per
+    unit risked is 0.5 * rr - 0.5."""
+    assert scoring.grade(0.5, rr, calibrated=True) == label
+    assert scoring.grade(0.5, rr, calibrated=False) == "unproven"
+
+
 def test_risk_based_sizing_equalises_the_loss():
     """Two very different instruments must risk the same cash at their stops."""
     calm = scoring.build_plan(100.0, 0.005, 4, "LONG")

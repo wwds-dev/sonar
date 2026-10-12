@@ -102,3 +102,20 @@ def test_feed_text_on_labels_is_never_markup(window):
     window._refresh_institutions()
     assert window.inst_list.textFormat() == Qt.PlainText
     assert "<img" in window.inst_list.text(), "kept as characters"
+
+
+@pytest.mark.parametrize("reply", [
+    {"subject": "<b>BTC</b>", "direction": "UP", "conviction": 60,
+     "summary": "<a href='https://x.test'>buy now</a>",
+     "catalysts": ["<img src='file:///etc/x'>"], "risks": ["<i>none</i>"]},
+    {"subject": "<b>BTC</b>", "error": "<a href='https://x.test'>retry</a>"},
+], ids=["read", "error"])
+def test_the_read_panel_draws_a_reply_as_text(window, reply):
+    """Security S1: the model's summary, catalysts and risks (steerable by a
+    headline) and the subject are shown as characters, never as rich text."""
+    from PySide6.QtCore import Qt
+    from ui.app import ReadPanel
+    panel = ReadPanel()
+    panel.show_read(reply, long_horizon=False)
+    for lb in (panel.badge, panel.subject, panel.body):
+        assert lb.textFormat() == Qt.PlainText

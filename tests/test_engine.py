@@ -578,12 +578,25 @@ def test_an_old_state_file_has_the_warm_up_taken_out_once(tmp_path):
     assert json.loads(path.read_text())["bankroll"] == 10_050.0
     kept = json.loads((tmp_path / "state.json.before-warmup-fix").read_text())
     assert kept["bankroll"] == 10_044.0, "the record as it was is kept"
+
+
+def test_a_second_correction_never_overwrites_the_kept_record(tmp_path):
+    """QA X6. An older build can write the uncorrected book back over the
+    corrected one; the correction then fires again on the next load. The copy
+    kept the first time is the owner's original record and must survive it."""
+    path = tmp_path / "state.json"
+    _old_state(path)
+    original = path.read_text()
+    eng.Engine(path).save()
+    _old_state(path)                            # the older build's rewrite
+    d = json.loads(path.read_text())
+    d["current_hour"] = 12_345                  # ...which differs from the original
+    path.write_text(json.dumps(d))
     again = eng.Engine(path)
-    assert again.bankroll == 10_050.0, "corrected twice"
-    again.bankroll = 1.0
+    assert again.bankroll == 10_050.0, "the correction must fire a second time"
     again.save()
-    kept = json.loads((tmp_path / "state.json.before-warmup-fix").read_text())
-    assert kept["bankroll"] == 10_044.0, "the kept copy was overwritten"
+    kept = (tmp_path / "state.json.before-warmup-fix").read_text()
+    assert kept == original, "the kept copy was overwritten"
 
 
 def test_an_older_build_saving_the_corrected_book_does_not_get_it_corrected_twice(tmp_path):
@@ -683,6 +696,18 @@ def test_the_hour_is_scored_even_when_no_trade_is_taken(engine, clock):
     row = engine.scorelog[0]
     assert row["outcome"] == 1.0
     assert row["market_up"] == 0.5
+
+
+def test_an_hour_that_closes_at_its_open_is_scored_up(engine, clock):
+    """QA M7. Polymarket's hourly market resolves UP when the close is at or
+    above the open, and so does finalize(); the score log must agree, or every
+    flat hour counts against whichever side said UP."""
+    engine.tick(Candle(HOUR, 100.0, 100.0),
+                market_at(clock, 0.5, implied_up=0.50), 0.0045)
+    engine.tick(Candle(HOUR * 2, 100.0, 100.0), market_at(clock, 0.9), 0.0045)
+    row = engine.scorelog[0]
+    assert row["close"] == row["open"] == 100.0
+    assert row["outcome"] == 1.0
 
 
 def test_no_snapshot_before_the_scoring_point(engine, clock):
@@ -905,6 +930,31 @@ def test_unpriced_hours_are_left_out_not_guessed(engine):
 def test_too_few_qualifying_hours_is_a_refusal(engine):
     engine.scorelog = [_priced(0.70, 0.49, 0.50, 1.0)] * 30
     assert "too few" in engine.buyability()["verdict"]
+
+
+def test_a_fill_outside_the_price_band_is_a_resolution_state_not_a_trade(engine):
+    """QA M4. A book that is open and uncrossed can still be resolving: UP
+    bought at 0.015 (0.01 ask plus slippage) returns 65x a stake, so one such
+    hour would swamp the mean. Both ends are excluded, and counted."""
+    cheap = _priced(0.30, 0.009, 0.010, 1.0)        # UP filled at 0.015
+    edge = _priced(0.30, 0.013, 0.014, 1.0)         # UP filled at 0.019
+    dear = _priced(0.999, 0.984, 0.985, 1.0)        # UP filled at 0.99
+    fair = _priced(0.70, 0.49, 0.50, 1.0)
+    engine.scorelog = [cheap] * 10 + [edge] * 10 + [dear] * 10 + [fair] * 5
+    r = engine.buyability()
+    assert r["n_priced"] == 5, "only the in-band hours are priced"
+    assert r["n_bad_book"] == 30
+    g = next(g for g in r["gates"] if g["gate"] == 0.04)
+    assert g["ev_per_stake"] == pytest.approx((1 - 0.505) / 0.505, abs=1e-4)
+
+
+def test_a_fill_exactly_at_the_band_edge_is_priced(engine):
+    """The band is inclusive: fills at 0.02 and 0.98 are trades (QA P3)."""
+    low = _priced(0.30, 0.014, 0.015, 1.0)          # UP filled at 0.02
+    high = _priced(0.999, 0.974, 0.975, 1.0)        # UP filled at 0.98
+    engine.scorelog = [low, high]
+    r = engine.buyability()
+    assert (r["n_priced"], r["n_bad_book"]) == (2, 0)
 
 
 # --------------------------------------------------------------------------- #

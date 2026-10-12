@@ -1031,6 +1031,10 @@ class ReadPanel(QFrame):
         self.body = label("Select an opportunity and press “LLM read”.",
                           "muted", theme.text(11))
         self.body.setWordWrap(True)
+        # The model's reply (steerable by a headline) and the subject are
+        # never markup: an <a> or <img> must show as text (security S1).
+        for lb in (self.badge, self.subject, self.body):
+            lb.setTextFormat(Qt.PlainText)
         lay.addWidget(self.body)
         self.caveat = label("", "faint", theme.figure(9))
         self.caveat.setWordWrap(True)

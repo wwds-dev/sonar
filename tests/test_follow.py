@@ -149,8 +149,14 @@ def following(agent, quick, tmp_path, monkeypatch):
     live = _follower(tmp_path, monkeypatch)
     thread = threading.Thread(target=live.run, args=("app",), daemon=True)
     thread.start()
+    # The holder's config, read answer included, is mirrored just after the
+    # book: wait for it too, so a test starts after one whole slow round and
+    # never races the round's tail (QA closing review P1-4). The longer
+    # timeout only matters on a loaded machine; a pass returns at once.
     assert _wait(lambda: live.snapshot.get("following") == url
-                 and live.positions.get("open")), "never followed the agent"
+                 and live.positions.get("open")
+                 and live._holder_llm is not None, timeout=15.0), \
+        "never followed the agent"
     try:
         yield live, fake, url
     finally:
@@ -585,7 +591,22 @@ def test_a_holder_that_can_read_lets_a_follower_without_the_sdk_ask(following, m
     monkeypatch.setattr("sonar.llm.available",
                         lambda: (False, "anthropic SDK not installed"))
     fake.llm = {"available": True, "detail": "ready"}
-    assert _wait(lambda: live.llm_available() == (True, "ready"))
+    # The answer arrives with the next slow round, not the fixture's: give it
+    # the fixture's budget (code review P3-1).
+    assert _wait(lambda: live.llm_available() == (True, "ready"), timeout=15.0)
+
+
+def test_until_the_holder_answers_a_follower_says_so(tmp_path, monkeypatch):
+    """The window between the book and the holder's config: the follower must
+    neither guess from its own SDK nor go quiet (code review P3-2)."""
+    monkeypatch.setattr("sonar.llm.available", lambda: (True, "ready"))
+    live = _follower(tmp_path, monkeypatch)
+    live.following = "http://127.0.0.1:1"
+    assert live._holder_llm is None
+    ok, why = live.llm_available()
+    assert ok is False
+    assert why == ("the engine at 127.0.0.1:1 runs the read, "
+                   "and has not said yet whether it can")
 
 
 def test_an_engine_that_drives_answers_for_itself(tmp_path, monkeypatch):

@@ -12,6 +12,22 @@ section lists what the v2 arc shipped.
 
 ## Unreleased — 2026-10-12
 
+**The LLM read fails plainly, and its reply is drawn as text.** A refused,
+truncated, unparseable or wrongly shaped reply, and every API error (one fixed
+line per status, a timeout, a full context window), now becomes a plain error
+line in the read panel instead of a half-answer or an exception; the server's
+raw error body is never shown (`docs/specs/llm-read-hardening.md`). The panel's
+subject, verdict and body are plain text, so a reply steered by a headline
+cannot draw its own link or image (security S1).
+
+**Tests for what the closing QA found unpinned** (`docs/specs/closing-qa-fixes.md`):
+an hour closing at its open is scored UP (M7); fills outside the 0.02-0.98
+buyability band are excluded and counted, the edges included (M4); a second
+warm-up correction never overwrites the kept original record (X6, replacing a
+test that could not fail); the calibrated grade labels (M5, unreachable today);
+and the follow tests wait for the holder's whole first round, which removes a
+flake on a loaded machine.
+
 **The docs say what broker the book actually uses.** README, the Learn tab,
 `GOING_LIVE.md` and `.env.example` said that adding Alpaca paper keys made the
 book use Alpaca, and that Alpaca was the more honest mode. No code path did
