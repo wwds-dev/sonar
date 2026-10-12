@@ -10,7 +10,14 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## Unreleased (not installed) — 2026-10-11
+## v2.215 — 2026-10-12
+
+Installed 2026-10-12 from `5b34235`, built in a clean detached worktree so the stamp reads
+`dirty: false` (the main checkout always carries other sessions' tracked edits and the activity
+log). The previous v2.190 is kept at `~/Library/Application Support/SONAR-rollback.noindex/`.
+The agent was **not** restarted: it runs the checkout's working tree, so it still runs the code
+it loaded at 10:56 (no `build` field in `/api/health`) until someone restarts it on a tree
+they have checked.
 
 - The launchd agent runs the installed `SONAR.app` headless instead of the checkout's working tree,
   so an edit in the checkout cannot reach it on a restart. `install_agent.sh` checks the app's
