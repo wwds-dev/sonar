@@ -268,7 +268,7 @@ is saved with the state; delete the state file to reset to a clean $10,000.
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 2,068 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 2,111 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -296,7 +296,9 @@ were priced for. The full notes are in [docs/history/uptime-notes.md](docs/histo
 - **Nothing the window waits on may fetch**, and no background thread may hold the shared lock across a network
   call (`tests/test_ui_thread.py` checks it).
 - **A launchd agent** keeps it running when you are not logged into the app: `./scripts/install_agent.sh`
-  (`--status`, `--uninstall`). It writes `SONAR_DATA` into the plist so the agent and the app share one directory.
+  (`--status`, `--uninstall`). It runs the installed `SONAR.app` headless, so checkout edits never reach it;
+  `./build_app.sh --install` restarts it on the new build (`--checkout` runs the working tree instead, for
+  development). It writes `SONAR_DATA` into the plist so the agent and the app share one directory.
 - **One engine per state file** (`sonar/enginelock.py`). Whoever starts first drives; the other **follows**,
   mirroring the agent's snapshot over localhost and handing every write to it, and takes over the moment the lock
   is free. The status line says *following the engine at 127.0.0.1:8787* while this is so.
@@ -347,7 +349,7 @@ sonar/         the engine and models (each module's docstring says what it is fo
 ui/              app.py (the window), tabs.py (rail + page header), words.py (plain/expert), learn.py,
                  charts.py, theme.py, worker.py (QThreads), tray.py, icons.py
 static/          index.html (BTC terminal), docs.html (the manual), testplan.html (generated)
-tests/           the suite (see TESTING.md)      scripts/   build_testplan.py, install_agent.sh, stamp_version.py
+tests/           the suite (see TESTING.md)      scripts/   build_testplan.py, install_agent.sh, install_app.sh, stamp_version.py
 packaging/       the launchd plist              docs/      specs, ADRs, audit reports, playbooks, ROADMAP, history
 research_results/, docs_attention_study.json     outputs of the studies, kept as their record
 AGENTS.md      agent instructions: the engineering pipeline (roles, gates, definition of done)

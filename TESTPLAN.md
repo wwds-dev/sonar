@@ -17,7 +17,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **2,068 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **2,111 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -38,7 +38,7 @@ running even when short of time — the list doubles as this project's bug histo
 | # | Step | Expected |
 |---|---|---|
 | 0.1 | `./run-tests.sh tests/ -q` | No failures — the count is in the header table — in well under a minute. The suite is deterministic since 2026-09-19 — a wedge or a hang is a regression now, not a known issue. |
-| 0.2 | `./build_app.sh --install` | Ends with `All checks passed.` then `Installed:` |
+| 0.2 | `./build_app.sh --install` | `All checks passed.`, then `Installed:`. If the agent runs the app, it is checked, stopped, and started again on the new build (its `--status` follows). A build stamped dirty is refused while the agent runs the app (`ALLOW_DIRTY=1 ./build_app.sh --install` overrides). |
 | 0.3 | `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` | `All checks passed.` Reports 7 sports, 5 rated, cycling with no feed. |
 | 0.4 | Note the bankroll before you start | You will compare against it in 5.x |
 | 0.5 | `QT_QPA_PLATFORM=offscreen ./run-tests.sh -q` | Also no failures. This is how CI runs the suite, and the two disagree on font metrics: CI was red for two days in Oct 2026 while the native run above was green. |

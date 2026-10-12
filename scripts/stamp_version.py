@@ -18,8 +18,23 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from sonar import version  # noqa: E402
 from sonar.version import (BUILD_INFO_NAME, BUILD_DIGITS,  # noqa: E402
                            _git_build, _read_major)
+
+
+def nested_state() -> tuple[dict, bool | None]:
+    """The nested repos (sonar/macro, sonar/playmaker) are bundled code the
+    outer `git status` cannot see. Their state, and whether any is dirty:
+    True if one is, None if one cannot be read, else False."""
+    nested = version._nested()
+    dirty: bool | None = False
+    for repo in nested.values():
+        if repo["dirty"] is True:
+            dirty = True
+        elif repo["dirty"] is None and dirty is False:
+            dirty = None
+    return nested, dirty
 
 
 def main() -> int:
@@ -30,7 +45,11 @@ def main() -> int:
         return 0
 
     major = _read_major()
-    if found.get("dirty"):
+    nested, nested_dirty = nested_state()
+    # Unknown counts as dirty here: the stamp is a yes/no that install
+    # scripts trust, and a bundle with an unreadable nested repo is not clean.
+    dirty = bool(found.get("dirty")) or nested_dirty is not False
+    if dirty:
         # Not refused: the build regenerates static/testplan.html before this
         # runs, so a legitimately edited TESTPLAN.md shows up here too. But
         # said loudly, and carried in the stamp, because a bundle stamped from
@@ -44,7 +63,8 @@ def main() -> int:
         "build": found["build"],
         "commit": found["commit"],
         "date": found["date"],
-        "dirty": bool(found.get("dirty")),
+        "dirty": dirty,
+        "nested": nested,
         "source": "baked",
         # Where to look for the checkout later. A bundle has no .git, so this is
         # the only way staleness() can compare against anything. Git-ignored

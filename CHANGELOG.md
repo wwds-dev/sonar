@@ -12,6 +12,13 @@ section lists what the v2 arc shipped.
 
 ## Unreleased (not installed) — 2026-10-11
 
+- The launchd agent runs the installed `SONAR.app` headless instead of the checkout's working tree,
+  so an edit in the checkout cannot reach it on a restart. `install_agent.sh` checks the app's
+  signature, clean build stamp and self-test first; `./build_app.sh --install` stops the agent
+  around the copy and starts it on the new build, and refuses a dirty build while the agent runs
+  the app. Agent logs move to `~/Library/Logs/SONAR`. `--checkout` keeps the old way.
+  (closing-sre-release P1-2, part 2, option A)
+
 - `/api/health` says which code the agent loaded: `build: {version, commit, dirty, source,
   nested}`, read at start, nested repos included; unknown is reported as `null`, not clean.
 - `scripts/install_agent.sh` refuses a tree with uncommitted tracked changes (its own or a
