@@ -37,7 +37,10 @@ on a loaded machine they took 57–77 s and aborted a one-pass run (QA P2-2, P2-
 measured in two passes appended to one data file (row above; `COVERAGE=1` in `run-tests.sh`):
 the fast pass under the usual caps, then the slow pass with the per-test cap lifted
 (`-o faulthandler_timeout=0`) and the external watchdog at 1200 s. QA's equivalent fallback plus
-slow pass read 87% branch (fix loop 1).
+slow pass read 87% branch (fix loop 1). Fix loop 2 ran the documented command once, natively at
+load 136–181: fast pass exit 0 in 324 s (2195 passed), slow pass exit 0 in 629 s (17 passed; the
+slowest rate test 62 s under coverage, 14 s at most without), total branch coverage **87%**
+(10888 statements, 2872 branches). The slow pass ran past 600 s, hence its 1200 s budget.
 Not wired into CI: the existing `tests.yml` was left alone, so no floor step runs yet.
 
 ## Branch triggers
