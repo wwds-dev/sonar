@@ -212,3 +212,54 @@ is small and contained to code.
    (recommended)?
 6. Build after the QA-11/QA-13 work lands (recommended, because both edit `calibration.py`), or
    build the primary readout now without the reference split?
+
+## Amendment 1 (2026-10-12, proposed)
+- Status: **proposed**, at the owner's gate. Spec: [`docs/specs/shadow-ledger.md`](../specs/shadow-ledger.md).
+  Gate reviews: `docs/audit/shadow-ledger-model-validator.md`, `docs/audit/shadow-ledger-domain-finance.md`.
+- Answers the spec's open owner questions 1 and 2 (model-validator P1-1 option b, P2-2).
+- **Pre-registration.** No shadow look and no time-exit outcome had been computed when this was
+  written; the first entry reaches T on 2026-10-20. Book outcomes of entries closed before T,
+  including hand closes, are visible in the paper book and were not consulted.
+
+**§3, "each look is evaluated once", now holds across restarts.**
+- The holder writes each decided outcome and each evaluated look to `<SONAR_DATA>/shadow_ledger.json`
+  the first time it exists, and never rewrites either. A look is shown as a result only once it is
+  recorded, and then as recorded, with the date it was first evaluated.
+- A marker in `portfolio.json` records that a ledger exists. A missing, unreadable or foreign ledger
+  is an error, never a fresh start: nothing is written and no look is shown as a result.
+- A check compares each recorded look's membership and the constants with today's. It is not a
+  re-grade. A difference is shown, and the recorded value is kept.
+- **Corrections:** a recorded result is never changed. A wrong outcome found later gets an erratum
+  (id, reason, corrected R, date), added by a person under a written note and shown beside the look.
+  It never changes `crossed` or `design_closed`.
+- The ledger is not tamper-evident; the marker and the daily and off-site backups are the cross-checks.
+
+**§3, a crossing must survive the excluded members.**
+- When a look is evaluated with k > 0 members excluded for `no_price` or `left`, each such member is
+  filled in at its own R at the stop and at the target (both known at fill). For k ≤ 12, z is computed
+  at all 2^k fills; for larger k, at the two fills that give the slope's exact extremes.
+- A crossing counts only when z and every fill are beyond the boundary on the same side. With k = 0
+  nothing changes.
+- **Cost, stated:** the rule lowers power when exclusions occur. On synthetic books with about 3
+  exclusions per 201, power at a correlation of 0.2 is about 0.63 instead of 0.70, and the size is
+  3.8% instead of 5.5%; with about 7, power is 0.49. The power table in §3 holds for no exclusions.
+
+**§4, `no_price` is final only after 28 days and 3 tries.**
+- An entry past t_T with no usable closes stays `wait_price`, which holds its looks. It becomes
+  `no_price` only when 28 days have passed since t_T **and** fetches on at least 3 distinct UTC days
+  after t_T + 7 days could not decide it. The tries are counted in the ledger, so a restart cannot
+  skip them.
+- A missing price is usually transient, so a held look is then graded on every member, and the
+  selection by outcome speed disappears rather than being measured. The limit exists because a
+  delisted symbol never gets a price.
+- An entry whose signed stop distance d·(entry − stop) is ≤ 0 is `no_risk`: a final exclusion,
+  decided at fill, kept out of the fills above (it has no R).
+
+**§7, reversal, replaced.** State is now persisted: the ledger and its marker. Reverting means
+removing the ledger code and stopping the writes. The file stays as the record of what was shown,
+and must not be edited. Changing T, the looks, the boundary, the grace or the rules needs a new ADR.
+The ledger stores those constants, and a ledger written under other constants shows a "constants"
+mismatch.
+
+**Unchanged:** T, the cohorts, the gate statistic, the boundary, the rule order, the population and
+the live book.
