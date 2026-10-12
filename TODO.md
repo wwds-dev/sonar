@@ -81,16 +81,29 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       branch `claude/zealous-mclaren-8985d0` (`docs/audit/shadow-time-stop-engineer.md`). Next: Review
       (code-reviewer, plus domain-finance and model-validator on the gate), Verify, Secure (the payload is
       untrusted input on a follower), Document (manual §10 sub-heading, Design D8; CHANGELOG), Release.
-- [ ] `P2` `research` `@me` **The shadow's real false-positive rate is about 6%, not 5%.** V-12 measured
-      5.9–6.2% over 20,000 no-edge books: inside the spec's 5 ± 1.5, but the HC3 z has heavy tails at
-      n = 45 (look 1 rejects 2.7% against Pocock's 2.06%). Boundary left at 2.315 as pre-registered;
-      decide before the first look (about 2026-11-06) whether to accept it or amend ADR 0002.
+- [x] `P2` `research` `@me` ~~The shadow's real false-positive rate is about 6%, not 5%.~~ **Decided
+      2026-10-12:** the owner accepts the measured 5.9–6.2%; ADR 0002 is not amended and the boundary stays
+      2.315 (spec Build note 15).
 - [ ] `P2` `testing` `@ai` **Run `./run-tests.sh tests/ -m slow` at release** and on any change to the
       shadow's gate code (V-12 at 2,000 and 20,000 books, about a minute). The default suite runs a cheaper
       version.
-- [ ] `P3` `research` `@ai` **`n_no_price` is not sticky.** A look that counted an entry as "no price"
-      changes if closes for it arrive more than 7 days after its T. Nothing is persisted, so it cannot be
-      frozen; it needs a week-long outage. For the reviewer (spec Build note 6).
+- [ ] `P2` `research` `@me` **Persist the shadow's decided outcomes and evaluated looks across restarts?**
+      Fix loop 1 keeps decided outcomes in memory, so within one process a look evaluated once never
+      changes; a failed fetch keeps the closes already held. A holder restart still decides again from
+      fresh closes, and an entry counted as "no price" can still be graded later. Persisting needs an ADR
+      0002 §7 change (spec Build note 6).
+- [ ] `P2` `research` `@me` **Shadow exclusions select by outcome speed** (model-validator P2-2,
+      `docs/audit/shadow-time-stop-model-validator.md`). `no_price` can only hit entries not settled before T
+      (slow resolvers), and delisting is outcome-related. Options: hold a look with any `no_price` member
+      unevaluated, or show a sensitivity bound (excluded members at R = −1 and at +1.5).
+- [ ] `P3` `research` `@me` **Shadow rule 1 before rule 2 is not a stopping rule** (model-validator P3-4): a
+      missed stop-crossing daily close is overridden if the book later books a TARGET before the cut. Tiny
+      bias; a fix changes ADR 0002 §4.
+- [ ] `P3` `research` `@ai` **A late fill keeps its acceptance `opened_at`** (model-validator P3-6) and could
+      join an evaluated cohort. Latent: the internal paper broker fills at once.
+- [ ] `P3` `docs` `@me` **ADR 0002 §3's numbers** (model-validator P3-7): "HC3 2.8–3.3% at n = 400" reads
+      about 4.6% at 10,000 books; the rank-IC bias is stronger than stated (7.7%). The ADR file is the
+      owner's to amend.
 - [ ] `P2` `research` `@ai` **Sign-randomisation test for the backtest's error bar.** The date-clustered bar still
       lets a direction picked at random per class and block get a verdict on 11.4% of judged real-bar runs (target
       ≤ 5%; validator r5 (a), r6 (d)). The same test should calibrate the attribution grades (meaningless

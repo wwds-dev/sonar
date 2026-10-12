@@ -295,32 +295,45 @@ zero.
 | `SH_BEFORE_LOOK` | Not a test yet. {have} of the first {N} entries have a result; the {ordinal} look is on or after {due}. | Not a test yet. {have}/{N} graded for look {k}; due on or after {due}. |
 | `SH_BEFORE_LOOK_UNDATED` | Not a test yet. {have} of the first {N} entries have a result; {missing} of them are not entered yet. | Not a test yet. {have}/{N} graded for look {k}; {missing} not yet entered. |
 | `SH_LOOK_WAITING_PRICE` | Not a test yet. The {ordinal} look is due; {w} of its {N} entries are still waiting for a closing price. | Not a test yet. Look {k} due; {w} of {N} awaiting a final close. |
-| `SH_LOOK_NOT_CROSSED` | Look {k} of 3, first {N} entries ({used} with a result): no clear link between score and result. z = {z}; the line is ±2.315. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| < 2.315, not crossed. |
+| `SH_LOOK_NOT_CROSSED` | Look {k} of 3, first {N} entries ({used} with a result): no link strong enough to cross the line yet. z = {z}; the line is ±2.315. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| < 2.315, not crossed. |
 | `SH_NEXT_LOOK` | Next look: the first {N2} entries, on or after {due}. | Next: n = {N2}, due on or after {due}. |
 | `SH_NEXT_LOOK_UNDATED` | Next look: the first {N2} entries, after {missing} more are entered. | Next: n = {N2}, {missing} not yet entered. |
-| `SH_LOOK_CROSSED_UP` | Look {k} of 3, first {N} entries ({used} with a result): crossed the line. Entries with higher scores had larger results. z = {z}; the line is ±2.315. The test ends here. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| ≥ 2.315, crossed. Design closed. |
-| `SH_LOOK_CROSSED_DOWN` | *(as above, with "smaller results")* | *(same as UP)* |
-| `SH_CAVEAT_CROSSED` | This means only that the score sorts how coin-flip entries end after {T}. It is not a trading edge. | Ranks random-direction outcomes at T only; not a tradeable edge. |
+| `SH_LOOK_CROSSED_UP` | Look {k} of 3, first {N} entries ({used} with a result): crossed the line. On these paper entries, higher scores went with higher R on average. z = {z}; the line is ±2.315. The test ends here. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| ≥ 2.315, crossed. Design closed. |
+| `SH_LOOK_CROSSED_DOWN` | *(as above, with "lower R on average")* | *(same as UP)* |
+| `SH_CAVEAT_CROSSED` | This says only that the score sorted how these past coin-flip paper entries ended after {T}. It does not show that trading high scores would make money: it is one test on {used} entries, before costs, fees and slippage, with exact fills, and a test like this can cross by chance even when there is no link. It is not a trading edge. | Ranks past random-direction paper outcomes at T only; before costs, exact fills, one test with a by-design false-alarm rate; not a tradeable edge. |
 | `SH_FINAL_NONE` | Three looks, no crossing: no evidence that the score ranks {T_adj} results, at the planned size. The test is finished. | Looks 1-3 not crossed: no evidence that the score ranks {T_adj} results, at the planned size. Design closed. |
 | `SH_ROW_SPLIT` | {reached} with a result: {t} at the target ({tp}%) · {s} at the stop ({sp}%) · {x} at neither, valued at the close after {T} ({xp}%) | {reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} ({xp}%) |
 | `SH_ROW_WAITING` | still waiting: {w} not yet at {T} (the next on {next_t}) · {wp} waiting for a closing price | waiting: {w} before T (next {next_t}) · {wp} awaiting a final close |
-| `SH_ROW_REF` | what no edge would give after {T}: about {a}% at the target · {b}% at the stop · {c}% at neither, and an average result of 0R | what no edge would give: {a}% / {b}% / {c}%, mean 0R |
+| `SH_ROW_REF` | what no edge would give after {T}, if the volatility estimate was right: about {a}% at the target · {b}% at the stop · {c}% at neither. A different split mostly means the volatility estimate was off. With no edge the average result is 0R whatever the volatility. | what no edge would give at planned σ: {a}% / {b}% / {c}% (a σ̂ check); mean 0R at any σ |
 | `SH_ROW_RUNNING` | running, not a test: average result {m}R (95% range {lo} to {hi}R) · link z = {z} · no costs | running, not a test: mean R {m} [{lo}, {hi}] · HC3 slope z {z} · no costs |
 | `SH_ROW_RUNNING_WAIT` | running figures start at 20 results; {k} to go | running stats from n = 20; {k} to go |
 | `SH_ROW_IC` | for comparison only, not a test: rank correlation {ic} on these entries at {T}, {icc} on the closed ones alone | descriptive only: rank IC {ic} (all at T) vs {icc} (closed only) |
 | `SH_ROW_PAST_LOOK` | look {k}, first {N}: z = {z}, did not cross the line | look {k}, n = {N}: z {z}, not crossed |
 | `SH_ROW_LEFT_OUT` | left out and counted: {m} chosen by hand · {l} closed by hand before {T} · {p} with no closing price | excluded: {m} non-protocol · {l} hand-closed before T · {p} no price |
 | `SH_ROW_GAP` | {g} graded at the target or stop because a daily close went past it between checks | {g} gap exits (daily close beyond a barrier) |
-| `SH_ROW_BAND` | scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} neither · what no edge would give {a}% / {b}% / {c}% | score {lo}-{hi}  n={n}  T/S/N {t}/{s}/{x}  no edge {a}/{b}/{c}% |
+| `SH_ROW_BAND` | scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} neither · what no edge would give if the volatility estimate was right: {a}% / {b}% / {c}% | score {lo}-{hi}  n={n}  T/S/N {t}/{s}/{x}  no edge @σ̂ {a}/{b}/{c}% |
 | `SH_WARN` | Note: {x} of the first {N} entries were left out ({pct}%). This look rests on the other {used}. | Note: {x}/{N} excluded ({pct}%) at look {k}. |
-| `SH_NOTE` | R is the result in units of the amount risked: -1R lost the amount risked, +{rr}R reached the target. This grade asks only whether the score sorts how coin-flip entries end after {T}. Even a crossed line is not a trading edge: the direction was random, and there are no costs. | R = result / initial risk. Ranks random-direction outcomes at T only; not a tradeable edge. No costs. |
+| `SH_NOTE` | R is the result in units of the amount risked: -1R lost the amount risked, +{rr}R reached the target. This grade asks only whether the score sorts how coin-flip entries end after {T}. These are paper entries with a random direction, before costs, fees and slippage. Even a crossed line is not a trading edge and says nothing about how future entries end. | R = result / initial risk. Ranks random-direction outcomes at T only; not a tradeable edge. No costs. |
 | `SH_WORKED_OUT` | Worked out {when}. | As of {when}. |
 | `SH_STALE` | Not updated for {h} hours: the agent may be stopped. | Stale: {h} h old. |
 
 Build changes to this table (engineer, 2026-10-12): `SH_ROW_SPLIT` plain read "valued at the {T}
 close", which renders as "the 4 weeks close"; it now reads "valued at the close after {T}".
 `SH_LOOK_WAITING_PRICE` used `{k}` twice (the look and the count) in both modes; the count is now
-`{w}`, the members of that look not yet final. No other string changed.
+`{w}`, the members of that look not yet final.
+
+Fix loop 1 (engineer, 2026-10-12, from `docs/audit/shadow-time-stop-domain-finance.md` P1-1 and
+P1-2): `SH_LOOK_CROSSED_UP`/`_DOWN` (plain), `SH_CAVEAT_CROSSED` (both modes), the last sentence of
+`SH_NOTE` (plain), `SH_ROW_REF` and the `SH_ROW_BAND` tail (both modes) take the reviewer's wording,
+with three departures:
+- The `SH_NOTE` sentence ends "says nothing about how future entries end", not "will end", because
+  "will " is a banned forecast word (U-1).
+- `SH_ROW_REF` expert keeps the owner-mandated phrase "what no edge would give" ("…at planned σ"),
+  where the reviewer wrote "no-edge split".
+- The plain `SH_ROW_BAND` tail keeps "what no edge would give" with the condition after it ("…if the
+  volatility estimate was right"), so the phrase and U-6's omission rule both hold.
+
+No copy states a false-alarm rate. The caveat says only that a test like this "can cross by chance".
 
 `{ordinal}` is first / second / third. The word "edge" appears only in the mandated reference
 phrase "what no edge would give" and in the two negated caveats. A test that greps for edge claims
@@ -400,10 +413,26 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
 5. **R** = d·(exit − entry)/|entry − stop|, with the exit at the barrier for barrier and gap
    outcomes. This equals +R:R and −1 whenever the fill was at the planned entry, which is always
    true on the internal paper book. A worse broker fill moves the entry, not the barriers.
-6. **`n_no_price` is not sticky.** It is a function of the bars available when it is computed. If
-   closes arrive more than 7 days after t_T, the entry is graded, and a look that had counted it as
-   excluded changes. Nothing is persisted (ADR §7), so this cannot be frozen. It needs an outage of
-   more than a week past an entry's T, and the engine retries daily. **For the reviewer.**
+6. **Decided outcomes, and what can still move** (rewritten in fix loop 1; the first version was
+   wrong). Before the fix, the readout was recomputed from that day's bars on every pass. **One
+   failed request on any day was enough** to take away every graded entry of a symbol and
+   re-evaluate a look on a different subset (code review P1-1), not "an outage of more than a week".
+   Rewritten old closes, for example Yahoo's split adjustment, could likewise re-grade an entry. Now:
+   - A failed request keeps the series already held, instead of replacing it with nothing.
+   - The engine keeps each entry's outcome in memory once it is decided (`calibration.
+     shadow_decided`: target, stop, time, or left), keyed by position id. It hands the outcome back on
+     every later pass, and the pure function copies it instead of recomputing.
+   - Decided entries need no more bars, so they are no longer fetched.
+
+   Within one process, a decided outcome and an evaluated look therefore never change. Two exposures
+   remain, both by design:
+   - **"No price" is not memoised**, because closes may still come. A look that counted a member as
+     no price changes if that member's closes arrive later.
+   - **The memo is in memory only** (ADR §7 unchanged): a holder restart decides again from the book
+     and fresh closes, so an outage or a split at restart time can still move an outcome.
+
+   **Owner question, not built:** whether to persist decided outcomes and evaluated looks across
+   restarts.
 7. **Looks.** `due` is the latest t_T among the N members, which is the Nth entry's t_T when T is
    the same for all. `n_missing` is the number of members not yet entered. A look also reports
    `entered`, `used` (graded), `n_excluded`, `n_waiting`, `n_wait_price`, `crossed` and
@@ -445,8 +474,88 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
       the design calculation of 0.73.
 
     The real size is about **6%, inside 5 ± 1.5 but above 5**. The HC3 z has slightly heavy tails
-    at n = 45: look 1 alone rejects 2.7%, against Pocock's 2.06%. The boundary and the test bar are
-    unchanged. **For the owner** (see the engineer's report).
+    at n = 45: look 1 alone rejects 2.7%, against Pocock's 2.06%.
+
+    **Owner decision 2026-10-12:** the measured size (5.9–6.2% over 20,000 null books, the excess
+    from look 1) is accepted. ADR 0002 is not amended, and the boundary stays 2.315 with the looks at
+    45 / 101 / 201. The V-12 test keeps its 5% ± 1.5 pt bar. No user-facing copy states a
+    false-alarm rate.
+16. **The newest bar decides nothing** (fix loop 1, code review P1-2). Yahoo stamps the
+    in-progress bar with the fetch time, not its session's start (EURCHF=X read `10-12 11:17`). So
+    `_shadow_from_bars` drops the newest bar before it picks the T bar or the cut. Both must be
+    older than the newest, which costs at most one more day of waiting. In the reviewer's FX case
+    (opened Sunday 23:30 UTC), the entry waits through Monday and Tuesday and is graded on Wednesday
+    at Monday's close, never at Friday's. I chose this over snapping stamps to the session start,
+    because it needs no per-market session table and is right for every stamp convention.
+17. **Bars stamped after `now` are ignored** (security P2-2), so a future stamp cannot make an
+    in-progress bar look final.
+18. **Payload timestamps** (security P2-1, code review P2-2). The UI reads a timestamp only within
+    0 to 4e10 seconds (1970 to about 3237); outside that range it shows n/a. `ShadowGrade.render`
+    also catches `OSError`. Both pages refresh the shadow block after the existing grade, so nothing
+    in the block can hold that grade up.
+19. **Wrong closes, not only missing ones** (security P2-2 and P3-3, code review P2-1).
+    - Bars are validated row by row: a row that cannot be read (a stamp of 10**400, a missing field) is
+      dropped on its own, so it no longer fails the whole readout.
+    - Closes at or below zero are dropped, as non-finite ones already were.
+    - **Split guard,** `SHADOW_SPLIT_GUARD = 2.0`, pinned by a test. A series is unusable for an entry
+      when its last close at or before `opened_at` is more than 2 stop distances from `p.entry`.
+      Yahoo split-adjusts old closes after the fact, so a split at any time after the entry rescales
+      that close.
+      - Why 2 stop distances: one stop distance is one horizon-σ (about √5 daily moves on the week
+        preset), and the entry is at most a session away from that close, so 2 is more than four
+        daily σ.
+      - Why not a ratio band: the guard catches a 3:2 split for any instrument moving less than about
+        7% a day. A ratio band such as [0.5, 2] would let 3:2 through, and even an exact 2:1.
+    - An entry with an unusable series is `wait_price` and then `no_price`: counted, never guessed. An
+      entry decided before a split keeps its outcome through the memo of note 6.
+    - **Residual:** a single wrong close mid-series that stays positive and plausible, such as a bad
+      tick through a barrier, still grades a gap exit. It cannot be told from a real move.
+    - `events=split` is not requested, because `fetch_bars` does not support it and its other callers
+      stay unchanged.
+    - **Free side effect:** decided entries are no longer fetched (note 6), so the daily request count
+      no longer grows with every entry graded. This eases security P3-4 but does not cap it.
+20. **Checked against the model-validator's cases** (`docs/audit/shadow-time-stop-model-validator.md`,
+    P1-1 and P1-2; its script `mv/s1_instability.py`, run on this tree).
+    - **Part A** (all of today's fetches fail, or one symbol in three): look 1 keeps its 45 members and
+      its z through the engine, because of the memo and the kept series. Covered by
+      `test_mv_s1a_failed_fetches_leave_look_1_as_evaluated[all, every third]`. The pure function
+      called with no bars and no memo still drops to the quick resolvers, as the script shows. That
+      is expected: the protection is in the engine.
+    - **B1 and B2** (an in-progress day-28 bar stamped 16:00, then restamped 13:30): the entry waits
+      on both days, then is graded at day 28's close. There is no flip.
+    - **B3** (a session row plus a separate live row for the same day): the live row is the newest
+      and is dropped. The session row is then the newest left, so nothing makes it final, and no second
+      dedup rule is needed.
+    - **Open owner question, not built:** the validator recommends a persisted write-once ledger of
+      evaluated looks. It would make "evaluated once" hold across restarts, but needs an ADR 0002 §7
+      amendment. See note 6 and TODO.
+21. **Wording** (model-validator P2-4). `SH_LOOK_NOT_CROSSED` plain now reads "no link strong enough to
+    cross the line yet", and `SH_LOOK_CROSSED_UP`/`_DOWN` add "on average". `SH_CAVEAT_CROSSED` keeps
+    the domain review's "can cross by chance even when there is no link". `SH_FINAL_NONE` is
+    unchanged: ADR 0002 §3 fixes that sentence, so it is the owner's call.
+22. **End-to-end null** (model-validator P3-1). Slow tests now run whole synthetic books through
+    `shadow_time_stop` itself: Positions marked at 4 polls a day, with stalled days, overnight gaps,
+    weekends and session-start stamps. It is a stdlib port of `mv/s7_end2end.py`, in 8 chunks of 500
+    books, about 7 s each.
+    - Measured: **6.095%** over 40,000 books (seeds 9000–9039, SE 0.12 pt), with every look evaluated.
+      The test holds the chunks to that value ± 3 SE.
+    - Naive (homoscedastic) OLS SE survives V-12, as the validator found. It is killed by
+      `test_the_gate_is_the_hc3_slope_of_the_evidence_script`, which I planted and confirmed in fix
+      loop 1.
+23. **Not done: grading barrier-before-T entries from the cut** (model-validator P3-5). The cut is a
+    bar's stamp, so these entries would then need bars. That contradicts ADR §4 rule 1 ("no price is
+    needed when closed_at ≤ t_T"). It would also expose already-final outcomes to `wait_price` and
+    `no_price`, which is the selection the validator's P2-2 warns about. It affects only the running
+    line, which is labelled "not a test", for the 1–7 days an open entry waits for its final bar.
+    Looks are unaffected.
+24. **QA and code review P2-3.**
+    - The 20,000-book precision run is split into 10 chunk tests of a few seconds each; the 59 s
+      single test sat against the 60 s hang guard.
+    - Its bar is tightened to the measured value ± 3 SE, 5.7–6.7% (QA P1-1), so a regression either
+      way shows. The spec's 2,000-book test keeps 5% ± 1.5 pt.
+    - New tests kill QA's surviving mutants M11–M14, C03, C06, U01, U04, U05, U08 and U09. None was
+      equivalent, and none showed a spec rule to be wrong.
+    - U-2 now also covers an existing grade with a verdict (25 graded).
 
 ## Risks and open questions
 - **The rank IC is not exactly zero-centred under no edge.** Barrier R-multiples are skewed: the

@@ -219,3 +219,82 @@ libraries they ranged from 5.4% to 6.75%, with two of ten above 6.5%.
 - A real holder-follower pair across two processes with the new key. `test_follow` uses one real
   HTTP server and a fake holder; `test_two_processes.py` was not extended.
 - The live success measure (TESTPLAN 11.21). It is due on or after the first look.
+
+## Fix loop 1 (2026-10-12, on top of `cca9428`)
+Inputs: `shadow-time-stop-code-reviewer.md`, `-domain-finance.md`, `-security-engineer.md`,
+`-qa-engineer.md` and `-model-validator.md`, plus owner decisions relayed by the coordinator.
+Synthetic books only; nothing ran against the real book or the live data directory. Commits:
+`564515c` (calibration and engine), `1c34432` (UI, copy, suite counts), and a last docs commit
+(spec, TODO, this section).
+
+### What changed
+| Finding | Fix | Where |
+|---|---|---|
+| Code review P1-1 / validator P1-1: one failed fetch rewrote evaluated looks | A failed request keeps the series already held. The engine memoises decided outcomes (target, stop, time, left) by position id, hands them back, and stops fetching for them. Not persisted. Build note 6 is rewritten: one failed request was enough, not a week-long outage. | `core.py` `_shadow_pass`, `_shadow_fetch`; `calibration.shadow_decided`, the `decided=` argument |
+| Code review P1-2 / validator B1–B3: the newest bar is stamped at fetch time | The newest bar never picks the T bar or the cut. Bars stamped after `now` are ignored. Validator s1 B1/B2/B3 all wait, then grade at day 28's close. | `_shadow_from_bars`; the cleaning loop in `shadow_time_stop` |
+| Security P2-2 / P3-3 and code review P2-1: wrong closes and splits | Closes ≤ 0 are dropped, and rows are validated one at a time. `SHADOW_SPLIT_GUARD = 2.0` (stop distances between the last close at or before entry and `p.entry`) marks a rescaled series unusable, so the entry waits and then counts as no price. It is σ-based rather than a [0.5, 2] ratio, which would pass 3:2 and even an exact 2:1 split. Build note 19. | `calibration.py` |
+| Domain P1-1 | Crossed wording: "On these paper entries, higher scores went with higher R on average". The caveat says: past paper entries, before costs, fees and slippage, exact fills, one test that can cross by chance, not a trading edge. The `SH_NOTE` last sentence no longer says "the direction was random". No false-alarm rate appears anywhere. | `SHADOW_WORDS`, spec D6 |
+| Domain P1-2 | `SH_ROW_REF` and the band tail are conditional on the volatility estimate. Both modes keep "what no edge would give", and U-6 still holds. | same |
+| Security P2-1 / code review P2-2 | Payload timestamps outside 0..4e10 show n/a, `render` catches `OSError`, and both pages render the shadow after the existing grade. | `ui/app.py` `_sh_ts`, `_refresh_book`, `_refresh_portfolio` |
+| Validator P2-4 | "no link strong enough to cross the line yet"; "on average". `SH_FINAL_NONE` is unchanged (ADR-fixed, the owner's call). | `SHADOW_WORDS` |
+| Owner decision on the size | The boundary comment now reads "nominal 5% (Pocock); measured ~6% … accepted by the owner 2026-10-12". Build note 15 records the decision, and the TODO item is closed. ADR untouched. | `calibration.py:263` |
+| QA P1-1 and code review P2-3 | The precision run is 10 chunk tests plus a mean check, with the bar tightened to 5.7–6.7%. The 2,000-book test keeps 5 ± 1.5. TESTPLAN 0.9 states that the measured size is about 6%, accepted by the owner. | `test_calibration.py` |
+| Validator P3-1 | A slow end-to-end null through `shadow_time_stop`: 8 chunks × 500 books, each about 7 s. | `test_v12_slow_e2e_*` |
+| Validator P3-5 | **Not done**, for the reasons in Build note 23: it would contradict ADR rule 1 and expose final outcomes to `no_price`. Looks are unaffected. | |
+
+Left for the owner, with TODO items:
+- A persisted ledger of decided outcomes and evaluated looks (needs ADR §7).
+- Validator P2-2: exclusions select slow resolvers.
+- Validator P3-4, P3-6 and P3-7.
+- Security P3-1, P3-2 and P3-4 are not built. P3-4 is eased for free, because decided entries are no
+  longer fetched.
+- The residual: one plausible but wrong close mid-series still grades a gap.
+
+### Mutation checks (fix loop)
+Each mutant was planted alone, the named tests were run, and the original restored. All are killed:
+
+| Mutant | Killed by |
+|---|---|
+| Drop keep-previous-series | `test_a_failed_request_keeps_the_series_already_held` |
+| Drop the memo (not handed back / not stored / ignored by the pure function / dropped with a split) | `test_a_failed_day_after_a_good_one_changes_nothing`, `test_one_request_per_symbol…[bars]`, `test_a_decided_outcome_is_kept_not_recomputed`, `test_rewritten_closes_do_not_regrade_a_decided_entry` |
+| Memo and kept series both dropped | `test_mv_s1a_failed_fetches_leave_look_1_as_evaluated[all]` |
+| `no_price` memoised | `test_a_decided_outcome_is_kept_not_recomputed` |
+| Use the newest bar | `test_v6_a_newest_bar_stamped_mid_session_decides_nothing`, `test_mv_b3_…` |
+| Future stamps kept | `test_a_bar_stamped_after_now_is_ignored` (survived at first, because the one future bar was also the newest; now two) |
+| Split guard removed; replaced by a [0.5, 2] ratio | `test_a_rescaled_history_is_not_this_entrys_price[2:1 split]` |
+| Closes ≤ 0 kept; per-row validation removed | `test_a_close_at_or_below_zero…[0.0]`, `test_one_malformed_bar_drops_that_bar_not_the_readout` |
+| Timestamp clamp removed | `test_an_impossible_date_reads_as_n_a_not_as_a_failure` (survived at first behind the `OSError` catch, which showed "unreadable"; the test now requires a normal render) |
+| Render before the existing grade | `test_the_existing_grade_is_refreshed_before_the_shadow` |
+| Caveat without costs | `test_domain_p1_the_crossing_says_what_it_does_not_show[before costs…]` |
+| QA M11, M12, M13, M14, C03, C06, U01, U04, U05, U08, U09 | `test_qa_m11_…` … `test_qa_u09_…`, and the `[85-6mo]` range case. None was equivalent. |
+| Validator: naive OLS SE | `test_the_gate_is_the_hc3_slope_of_the_evidence_script`. It survives V-12, as the validator found, but this test kills it. |
+
+### Runs (final tree before the docs commit)
+```
+./run-tests.sh tests/ -q -p no:cacheprovider                          exit 0
+2291 passed, 3 skipped, 52 deselected in 111.76s
+QT_QPA_PLATFORM=offscreen ./run-tests.sh tests/ -q -p no:cacheprovider exit 0
+2291 passed, 3 skipped, 52 deselected in 94.53s
+TEST_BUDGET_S=600 ./run-tests.sh tests/ -m slow -q                    exit 0
+22 passed, 2324 deselected in 86.58s (longest test 8.7 s)
+```
+- The suite collects 2,294 tests: 2,291 passed plus 3 skipped. That count is in TESTPLAN, TESTING,
+  README and `testplan.html`.
+- The 52 deselected tests are 30 network and 22 slow.
+- Lint: nothing new in the changed files. The remaining findings were already there at HEAD (5 in
+  `ui/app.py`, 2 in `core.py`).
+
+V-12 numbers in this loop:
+- **Precision null:** 6.19% over 20,000 books, inside the new 5.7–6.7% bar.
+- **End to end through `shadow_time_stop`:** 6.095% over 40,000 books (seeds 9000–9039, SE 0.12 pt,
+  every look evaluated). The test's own 4,000 books (seeds 9100–9107) gave 5.43%, within its ±3 SE
+  bar of 4.96–7.23%.
+- The validator's `mv/s1_instability.py` on this tree:
+  - Part A (the pure function with no bars and no memo) still shows the drop. That is expected: the
+    protection is in the engine, and the s1-A engine test passes.
+  - B1, B2 and B3 now all give `wait_price`.
+  - Part C now ends in `wait_price` (the split guard), so the script's `r` format crashes on None.
+
+### Not verified
+Live Yahoo stamps for US equities during the session, Yahoo's split adjustment itself, and a restart
+during an outage. The memo is per process, so a restart still decides again.
