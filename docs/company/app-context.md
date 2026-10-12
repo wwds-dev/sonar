@@ -17,8 +17,8 @@ Python 3, PySide6 >= 6.6 (optional `anthropic` for the LLM read panel), pytest, 
 - Coverage: `coverage run --branch --source=sonar,ui -m pytest tests/`
 - Build: `./build_app.sh`
 - Release smoke test: launch the bundle, run one scan, place one paper trade, quit, relaunch
-  with state intact; confirm the headless agent (`python main.py --headless`) is running and
-  healthy.
+  with state intact; confirm the headless agent (the installed app with `--headless`, `./scripts/install_agent.sh
+  --status`) is running the new build and healthy.
 
 ## Docs and process files
 `README.md`, `static/docs.html` (rendered by `ui/learn.py`), `CHANGELOG.md`, `VERSIONING.md`

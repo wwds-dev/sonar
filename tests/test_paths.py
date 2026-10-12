@@ -68,4 +68,6 @@ def test_the_agents_plist_points_at_the_apps_directory():
     assert "<key>SONAR_DATA</key>" in plist and "__DATA_DIR__" in plist
     script = (root / "scripts" / "install_agent.sh").read_text()
     assert 'DATA_DIR="$HOME/Library/Application Support/SONAR"' in script
-    assert "s|__DATA_DIR__|$DATA_DIR|g" in script
+    # Filled with plistlib since t2-1 part 2 (sed mangled paths with & or |);
+    # the generated plist itself is checked in test_agent_from_bundle.py.
+    assert 'p["EnvironmentVariables"]["SONAR_DATA"] = data' in script
