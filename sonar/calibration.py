@@ -19,7 +19,10 @@ protocol entries take a coin-flip direction, so a pooled hit rate above the
 baseline reflects barrier and jump geometry — a driftless walk watched at
 discrete marks already lands at 40.6–41.3% — not a drift a LONG plan could
 use; and a gate re-checked after every close trips on a book with no edge
-23–37% of the time. :func:`implied_edge` stays for the backtest's readout.
+23–37% of the time. :func:`implied_edge` inverts the *untimed* barrier
+maths and has no production caller left: the backtest's implied drift now
+inverts its own time-aware baseline (docs/adr/0001). It stays as the
+reference that inversion reproduces for untimed trials.
 
 The gates that matter
 ---------------------

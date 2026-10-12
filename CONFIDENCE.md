@@ -571,22 +571,70 @@ bars only, then walk forward through actual highs and lows. A bar spanning both 
 Over **25,504 setups** — 5 years, 113 instruments (the set the study ran on; the board lists 129 today). (An earlier version of this section
 called them *independent*; at a replay step shorter than the holding time, neighbouring
 setups share the bars that decide them, so they are not. The Lab's error bars now carry a
-Newey-West correction for that overlap. A wider error bar makes a null result *less*
-informative, not more: these studies can rule out large effects, not small ones — at this sample
-an effect of about 3 points on the hit rate, or an IC of 0.04–0.07, would usually go undetected.)
+Newey-West correction for that overlap and, since 2026-10-12, a date-clustered one that counts
+setups entered on the same day across instruments as one reading. A wider error bar makes a null
+result *less* informative, not more: these studies can rule out large effects, not small ones — at
+this sample an effect of about 3 points on the hit rate, or an IC of 0.04–0.07, would usually go
+undetected.)
 
-| momentum bucket | hit rate | | attention | hit rate | vs baseline | ±2 s.e. |
+| momentum bucket | hit rate | | attention | hit rate | vs baseline | error bar (±) |
 |---|---|---|---|---|---|---|
 | 0–2% | 39.5% | | below normal | 38.7% | −1.3 | 1.2 |
 | 2–5% | 39.7% | | normal | 39.0% | −1.0 | 1.1 |
 | 5–10% | 39.8% | | elevated | 40.8% | +0.8 | 2.0 |
-| 10%+ | 38.7% | | **spike** | **40.8%** | **+0.8** | 3.1 |
+| 10–100% | 38.7% | | **spike** | **40.8%** | **+0.8** | 3.1 |
 
-Baseline is 40.0%. **Neither momentum nor news showed a detectable edge** — +0.8 ± 3.1 points for
-a news spike leaves room for an effect of about 3 points either way, but not for a large one.
-Overall hit rate is 39.58% against a 39.99% prediction. (The replay itself scores a bar that spans
-both barriers as a loss and drops trials that time out, which biases it about 0.3–0.9 points low
-on a driftless walk — so "matches the barrier maths" is consistent with no edge, not proof of it.)
+Baseline is 40.0%, the study's untimed one (see below). The error bars are the study's own: two
+binomial standard errors, which treat every setup as independent, so by today's rule they are too
+narrow. **Neither momentum nor news showed a detectable edge** — +0.8 ± 3.1 points for a news spike
+leaves room for an effect of about 3 points either way, but not for a large one. The top momentum
+bucket runs from 10% up to, not including, 100% (the code's bucket edges since 2026-08-06); a setup
+with a larger move is in the total but in no bucket.
+
+**Re-measured 2026-10-12, with the time-aware baseline (QA-13, `docs/adr/0001-…`).** The Lab's
+default run — whole watchlist, 2 years, 5-day horizon, step 3, bars to 2026-10-12 — compares
+**18,973** setups across **129** instruments (50 equity, 21 crypto, 20 forex, 20 index, 18
+commodity), entered on 572 days from 2024-11-11 to 2026-09-29. Hit rate **39.55%** against a
+predicted **39.44%** (40% with unlimited time): **Δ +0.11 points, error bar ±1.8.** The bar is twice
+a standard error of 0.88 points, set by the date-clustered estimate at an 11-day lag; the same
+trials read as independent would give ±0.7. Verdict: within its error bar, no edge detected. A
+further 2,574 setups (12%) ran out of time and 373 were too near the end of the data to compare;
+both are counted and shown, never compared. Momentum buckets on that run, against the prediction:
+0–2% +0.5 points (n 9,313), 2–5% +0.1 (5,392), 5–10% −0.5 (2,772), 10–100% −1.2 (1,493); no bucket
+is tested on its own. (Figures: `docs/audit/qa11-qa13-honest-baselines-qa-engineer-r6.md` §4,
+reproduced from raw trials in `…-model-validator-r6.md` (d).)
+
+Why the prediction moved: setups that touch neither barrier within four horizons are left out of
+the hit rate, and those are mostly ones whose far target had not been reached yet. So each resolved
+setup is compared with the driftless chance of the target first *given it resolved within its own
+window* — 39.46% for a full window at 1.5:1 — not the untimed `1/(1+R:R)` = 40%. The old line,
+"39.58% against a 39.99% prediction", compared against the untimed figure; most of the 0.3–0.9
+points of low bias it noted came from those dropped timeouts. What remains is a bar that spans both
+barriers scoring as a loss, plus the gap between daily bars and a smooth walk: on driftless walks
+at a 5-day horizon the comparison stays within about ±0.6 points. So "matches the barrier maths" is
+consistent with no edge, not proof of it.
+
+**How often the error bar is wrong, measured (2026-10-12).** A verdict needs the difference outside
+twice the widest of three standard errors (independent, Newey-West overlap, date-clustered). That is
+not a calibrated 5% test. On real prices, 1 to 10 years, horizons up to 120 days, whole watchlist
+(`…-model-validator-r5.md` (a), re-checked in r6):
+- a direction picked at random for a whole asset class over ~one-horizon blocks (the *clustered
+  coin*) got a verdict on **11.4%** of 2,040 judged runs (cluster-bootstrap interval 9.9–13.0%):
+  "beats" 3.0%, "below" 8.3%, and up to about 1 in 5 at some range-and-horizon settings. The
+  target is 5% or less; it is open and needs a sign-randomisation test. The in-app copy says
+  "about 1 run in 10";
+- a direction picked at random per setup (the *independent coin*) got one on **1.6%**;
+- real momentum got none, in 102 judged runs.
+
+The component grades are not calibrated either: a meaningless component that moved with a whole
+class, or stayed fixed per instrument, was graded KEEP or INVERTED on 4.6–7.1% of judged runs,
+against 0.4% when it was independent per setup (`…-model-validator-r6.md` (a)). DROP has no error
+bar. On the hourly model, the buyability verdict needs three standard errors, and a positive one the
+same again without its two best hours. With nothing to find and the verdict re-read every hour, a
+false "measured" came up at most 0.13% of the time, but a false **"LOST"** 2.9–3.5% over hours
+100–300 and 4.0% over 100–1,500 — more than "three standard errors" implies, because per-stake
+returns are lopsided (`…-model-validator.md` P2-2). The owner chose to record that rate rather than
+change the rule.
 
 **Survivorship.** The instruments studied are the ones listed today — companies that survived and
 mostly grew, coins still trading. That flatters any long or trend-following test (momentum, the

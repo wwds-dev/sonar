@@ -533,10 +533,11 @@ APCA_API_SECRET_KEY=...</code></pre>
   <h3>Simulate</h3>
   <p>Pick a universe, a range, a horizon and a sampling step, and the model is
     replayed over every decision point in that window. The result reports the
-    realised hit rate <em>beside</em> what the barrier maths predicted, with the
-    two-standard-error band — because a hit rate on its own means nothing. When
+    realised hit rate <em>beside</em> what the barrier maths predicted, with
+    its error bar — because a hit rate on its own means nothing. When
     the difference sits inside its error bar the tab says so plainly: that is
-    the result, not a failure to find one.</p>
+    the result, not a failure to find one. Some runs get the numbers and no
+    verdict at all, and the tab says why; §8 lists when.</p>
 
   <h3>Attribute</h3>
   <p>A hit rate tells you whether the model worked. It cannot tell you
@@ -552,12 +553,22 @@ APCA_API_SECRET_KEY=...</code></pre>
     <tr><td>Leave-one-out</td><td>The blend's IC without this component. If
       dropping it does not lower the blend, the weight is buying nothing.</td></tr>
   </table>
-  <p>The verdicts are <b>KEEP</b>, <b>WEAK</b>, <b>DROP</b> and
-    <b class="down">INVERTED</b>. The last one matters most: a component with a
-    significant <em>negative</em> IC is not merely useless — carried with a
-    positive weight it actively pushes the wrong instruments up the board.
+  <p>The verdicts are <b>KEEP</b>, <b>WEAK</b>, <b>DROP</b>, <b>UNCLEAR</b>
+    and <b class="down">INVERTED</b>. The last one is the one to look at first:
+    a component with a significant <em>negative</em> IC, carried with a
+    positive weight, would push the wrong instruments up the board.
     p-values go through Benjamini-Hochberg together, because testing four
-    components and reporting the best one is how noise gets published.</p>
+    components and reporting the best one is how noise gets published. The
+    IC's p-value and the spread's error bar both count setups entered on the
+    same day, across instruments, as one reading — the same rule as the
+    headline's error bar in §8.</p>
+  <p>Read the grades as a reason to look closer, never as a finding. They are
+    not calibrated tests: in our tests on real prices, a component that meant
+    nothing but moved with a whole asset class, or stayed fixed per instrument,
+    was still graded KEEP or INVERTED on about 5–7% of runs. DROP has no error
+    bar at all — it is read from one number, how much the blend's IC falls
+    without the component. And a run that gets no verdict grades nothing: every
+    component reads <b>not judged</b>.</p>
   <p>The catalyst component spent a year reporting <b>not measured</b> — an
     untested component must not read as a validated one. In September 2026 it
     got its trial: a historical earnings calendar built from EDGAR's own
@@ -618,10 +629,22 @@ APCA_API_SECRET_KEY=...</code></pre>
       hundred, stop reading — see the table below.</td></tr>
     <tr><td>Realised hit rate</td><td>How often the target was reached before
       the stop. <b>Meaningless alone.</b></td></tr>
-    <tr><td>Predicted rate</td><td>What the barrier maths says it should be:
-      <code>1/(1+R:R)</code>. At R:R 1.50 that is <b>40%</b>.</td></tr>
-    <tr><td>Error bar</td><td>Two standard errors on the difference. <b>This is
-      the number that decides.</b></td></tr>
+    <tr><td>Predicted rate</td><td>What the barrier maths says it should be for a
+      market with nothing in it, <em>given the setup resolved in time</em>. A
+      setup that touches neither barrier within four horizons has run out of
+      time: it is left out of the hit rate, counted, and shown. Those are mostly
+      setups whose far target had not been reached yet, so the prediction for
+      the ones that did resolve sits a little under <code>1/(1+R:R)</code>: at
+      R:R 1.50, about <b>39.4%</b> rather than 40% (39.44% on the default
+      two-year run; the Lab shows the 40% beside it as "with unlimited
+      time").</td></tr>
+    <tr><td>Error bar</td><td>Two standard errors on the difference (a standard
+      error is how far the rate typically wanders by chance alone), with
+      setups entered on the same day across instruments counted together,
+      because instruments move together. Even so, a direction that means
+      nothing lands outside it about 1 run in 10 on real prices (validator
+      tests, 2026-10-12, 2,040 runs), not 1 in 20. This is the number that
+      decides, and it is not a guarantee.</td></tr>
   </table>
   <div class="callout"><b>The only question that matters on the first pass.</b>
     Is the realised rate outside its error bar from the predicted rate? If it
@@ -629,25 +652,67 @@ APCA_API_SECRET_KEY=...</code></pre>
     result, not a failure. SONAR prints it that way deliberately.</div>
 
   <h3>How much data before a number means anything</h3>
-  <p>At a 40% baseline, the two-standard-error band on the hit rate is:</p>
+  <p>At a 40% baseline, if every trial were an independent reading, the error
+    bar on the hit rate — two standard errors, the Lab's rule — would be
+    (the textbook 95% band uses 1.96 and reads a little narrower, ±21.5 at 20
+    trials):</p>
   <table>
-    <tr><th>Trials</th><th>Band</th><th>What it can detect</th></tr>
-    <tr><td>20</td><td class="down">±21.5 points</td><td>Essentially nothing. 19% and 61% are both "no edge".</td></tr>
-    <tr><td>50</td><td class="down">±13.6 points</td><td>Only an enormous effect.</td></tr>
-    <tr><td>100</td><td class="gold">±9.6 points</td><td>A large effect.</td></tr>
-    <tr><td>400</td><td class="up">±4.8 points</td><td>A realistic one.</td></tr>
-    <tr><td>2,000</td><td class="up">±2.1 points</td><td>A small one.</td></tr>
+    <tr><th>Trials</th><th>Bar if independent</th><th>What it can detect</th></tr>
+    <tr><td>20</td><td class="down">±21.9 points</td><td>Essentially nothing — and the Lab gives no verdict under 100.</td></tr>
+    <tr><td>50</td><td class="down">±13.9 points</td><td>Only an enormous effect. Still no verdict.</td></tr>
+    <tr><td>100</td><td class="gold">±9.8 points</td><td>A large effect.</td></tr>
+    <tr><td>400</td><td class="up">±4.9 points</td><td>A realistic one.</td></tr>
+    <tr><td>2,000</td><td class="up">±2.2 points</td><td>A small one.</td></tr>
   </table>
-  <p>Run the whole watchlist over five years and you will be in the thousands.
-    Run one asset class over one year and you will not.</p>
-  <p>One refinement the bar now carries: at a small replay step, neighbouring
-    trials <em>overlap</em> — a position opened Monday and one opened Thursday
-    can be decided by the same Friday move, so a thousand trials are fewer than
-    a thousand independent readings. The Lab corrects its error bar for that
-    (a Newey-West adjustment), and the correction only ever <b>widens</b> it.
-    An earlier version of these docs called the replay's setups independent;
-    they were not, and the bars were too tight — the null results survive,
-    because a wider bar makes a null <em>stronger</em>.</p>
+  <p>That column is the <em>narrowest</em> the bar can be, and on a real run
+    the bar is wider. The default run — whole watchlist, two years, a 5-day
+    horizon — compares <b>18,973</b> trials, which would give ±0.7 points if
+    they were independent. Its actual bar is <b>±1.8</b>. Two things make the
+    difference:</p>
+  <ul>
+    <li><b>Overlap.</b> At a small replay step, a position opened Monday and one
+      opened Thursday can be decided by the same Friday move, so a thousand
+      trials are fewer than a thousand independent readings. The Lab corrects
+      for that (a Newey-West adjustment).</li>
+    <li><b>Instruments move together.</b> Momentum points a whole asset class
+      the same way on the same day, so fifty stocks entered on one Monday are
+      closer to one reading than fifty. The Lab adds up the setups entered on
+      each day, across every instrument, and lets that reading run on through
+      the days their holds share (a date-clustered, or Driscoll–Kraay, error
+      bar). On the whole watchlist it is usually this one that sets the bar —
+      so what counts is how many different days you have, not how many
+      trials.</li>
+  </ul>
+  <p>The Lab uses whichever of the three bars is widest — independent, overlap
+    or same-day — so a correction can only ever <b>widen</b> it. An earlier
+    version of these docs called the replay's setups independent; they were
+    not, and the bars were too tight. The null results survive, because a
+    wider bar makes a null <em>stronger</em>.</p>
+
+  <h3>When a run gets no verdict</h3>
+  <p>Some runs show the numbers and say why there is no verdict, instead of
+    giving one. Each rule is there because a direction picked at random got
+    "beats the prediction" too often without it:</p>
+  <table>
+    <tr><th>The run</th><th>Why no verdict</th></tr>
+    <tr><td>A horizon above <b>120 days</b></td><td>Over holds that long an
+      instrument's own trend dominates the comparison, so even a coin-flip
+      direction can read above the prediction.</td></tr>
+    <tr><td><b>One asset class</b> instead of the whole watchlist</td><td>The
+      instruments in one class tend to move together on one trend, so however
+      many setups it holds, it is a few correlated moves.</td></tr>
+    <tr><td>Under <b>100</b> compared setups, or setups entered on under
+      <b>20</b> different days</td><td>Too few to judge.</td></tr>
+    <tr><td>Setups entered within <b>5 horizons</b> of each other</td><td>Setups
+      entered close together mostly share one market move. A longer range or a
+      shorter horizon spreads them out.</td></tr>
+  </table>
+  <p>Separately, a setup decided less than <b>2 horizons</b> before the end of
+    the data is never compared, only counted ("too near the end of the data"):
+    over a window that short the barrier maths calls a far target nearly
+    unreachable, and real prices, which jump, reach it far more often. A run
+    with no verdict also makes no finding on attention and grades no
+    component.</p>
 
   <h3>Reading the model-vs-market line</h3>
   <p>The hourly model's self-grading line (§4) is the number to watch during a
@@ -678,6 +743,19 @@ APCA_API_SECRET_KEY=...</code></pre>
     which is the only version you can act on. Three readings per component:</p>
   <table>
     <tr><th>Reading</th><th>Good looks like</th><th>The trap</th></tr>
+  <p>That buyability line is strict on purpose, because it is read again every
+    hour and each new look is another chance to be fooled. A result either way
+    needs the average return per stake beyond <b>three</b> standard errors of
+    zero, not two. A positive one must also stay beyond three standard errors
+    with its <b>two best hours</b> taken out and the error bar worked out again
+    on the rest; if it does not, the line says the result rests on a couple of
+    hours and is not demonstrated. In tests with nothing to find, read again
+    hour after hour, a false positive came up well under 1 time in 500 — but a
+    false <b>LOST</b> about 3–4 times in 100 (per-stake returns are lopsided:
+    cheap longshot buys win big and rarely), which is more than "three standard
+    errors" suggests. The flip side of that strictness: a real but modest
+    advantage would usually not be called "measured" in the first few hundred
+    hours.</p>
     <tr><td>IC</td><td>Consistently non-zero, same sign</td>
       <td>An IC of 0.02 is normal even for real factors. Tiny is not the same as absent.</td></tr>
     <tr><td>Quintile spread</td><td>Top fifth beats bottom fifth, outside the error bar</td>
@@ -685,10 +763,20 @@ APCA_API_SECRET_KEY=...</code></pre>
     <tr><td>Leave-one-out</td><td>Dropping it makes the blend worse</td>
       <td>If dropping it changes nothing, its weight is buying nothing — however good its own IC looks.</td></tr>
   </table>
-  <p>Then a verdict: <b>KEEP</b>, <b>WEAK</b>, <b>DROP</b>, <b>INVERTED</b>.
-    <span class="down">INVERTED is the one to act on</span> — a component with a
-    significant <em>negative</em> IC, carried with a positive weight, is actively
-    pushing the wrong instruments up the board. It is worse than useless.</p>
+  <p>Then a verdict: <b>KEEP</b>, <b>WEAK</b>, <b>DROP</b>, <b>UNCLEAR</b>,
+    <b>INVERTED</b>. <span class="down">INVERTED is the one to look at
+    first</span> — a component with a significant <em>negative</em> IC, carried
+    with a positive weight, would push the wrong instruments up the board. The
+    Lab says it is worth testing with its sign flipped, or dropped; from one
+    replay of past prices that is a reason to look closer, not a finding. Even
+    a meaningless component gets KEEP or INVERTED on about 5–7% of runs (§7),
+    and a grade only counts on a run that gets a verdict.</p>
+  <p>The same goes for the attention table, when the run includes attention.
+    Only some instruments have an attention series, so each attention level is
+    read against the setups that carry one ("vs setups with attention"), not
+    against the whole run, with the same-day error bar and the four levels
+    judged together (Benjamini-Hochberg). When none stands apart, the Lab says
+    no effect was detected — which is not the same as none.</p>
 
   <h3>Five ways to fool yourself, each of which happened here</h3>
   <table>
@@ -714,14 +802,18 @@ APCA_API_SECRET_KEY=...</code></pre>
   <ol>
     <li><b>Whole watchlist, 5y, your usual horizon.</b> Read the hit rate against
       the predicted rate and the error bar. Expect them to overlap.</li>
-    <li><b>Change R:R and re-run.</b> The realised rate should move toward
-      <code>1/(1+R:R)</code>. If it does not, something is wrong with the replay,
-      not with the market — this identity is the claim everything rests on.</li>
+    <li><b>Check the baseline.</b> At the shipped 1.5:1 the predicted rate sits
+      just under <code>1/(1+R:R)</code> = 40% (39.44% on the default two-year
+      run), and the realised rate should sit near it. The identity is the claim
+      everything rests on. There is no R:R control in the Lab to vary it;
+      instead a test checks it on walks with no drift at 1:1, 1.5:1, 2:1 and
+      3:1.</li>
     <li><b>Read attribution.</b> Note which components are KEEP and which are
       WEAK. Write them down before the next step.</li>
-    <li><b>Re-run on one asset class.</b> Do the same components survive? A
-      component that is KEEP for crypto and DROP for forex is describing crypto,
-      not markets.</li>
+    <li><b>Re-run on one asset class.</b> It gets the numbers but no verdict and
+      no grades (one class moves on one trend), so compare the component
+      readings by eye. A component that ranks one way for crypto and the other
+      way for forex is describing crypto, not markets.</li>
     <li><b>Re-run on a different 5-year window.</b> Same answer? If a component
       flips sign between windows, it was never there.</li>
   </ol>
@@ -732,7 +824,8 @@ APCA_API_SECRET_KEY=...</code></pre>
   <p>Concretely, so it can be checked rather than felt:</p>
   <ul>
     <li>Realised hit rate <b>above</b> the predicted rate by more than its error
-      bar, on thousands of trials.</li>
+      bar, on thousands of trials over the whole watchlist — and, because that
+      bar is not a guarantee, the same again on another range.</li>
     <li>The same sign in <b>at least 5 of 6</b> time blocks.</li>
     <li>At least one component surviving Benjamini-Hochberg, with a quintile
       spread whose error bar excludes zero.</li>

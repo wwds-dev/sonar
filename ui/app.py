@@ -444,7 +444,7 @@ ATTRIBUTION_HEADS = {
 }
 ATTRIBUTION_VERDICTS = {
     "KEEP": "keep", "WEAK": "weak", "DROP": "drop", "INVERTED": "backwards",
-    "UNCLEAR": "unclear",
+    "UNCLEAR": "unclear", "not judged": "not judged",
 }
 
 
@@ -1886,7 +1886,8 @@ class MainWindow(QMainWindow):
         self.bt_btn = QPushButton("run backtest")
         self.bt_btn.setFont(theme.figure(9))
         self.bt_btn.setToolTip(
-            "Replay the same plan over two years of real bars.\n"
+            "Replay the same plan over two years of real bars — five on the\n"
+            "year profile, whose horizon two years are too short to test.\n"
             "Live positions take months to grade; this answers today —\n"
             "for the price half of the score, which is all history can test.")
         self.bt_btn.clicked.connect(self._run_backtest)
@@ -2652,11 +2653,14 @@ class MainWindow(QMainWindow):
             return
         self.lab_btn.setEnabled(False)
         self.lab_status.setText(f"replaying {len(symbols)} instruments…")
+        # The universe is passed, not guessed from the symbols: only the
+        # whole watchlist gets a verdict (owner decision P1-C).
         self._lab_thread = BacktestThread(
             symbols, self.lab_horizon.value(), self,
             rng=self.lab_range.currentData(), step=self.lab_step.value(),
             with_news=self.lab_news.isChecked(),
-            with_catalyst=self.lab_catalyst.isChecked())
+            with_catalyst=self.lab_catalyst.isChecked(),
+            universe=self.lab_universe.currentData())
         self._lab_thread.progress.connect(
             lambda sym, n: self.lab_status.setText(f"{sym} — {n} setups so far"))
         self._lab_thread.done.connect(self._lab_done)
@@ -2670,20 +2674,86 @@ class MainWindow(QMainWindow):
         self.lab_out.setHtml(self._lab_html(r))
 
     @staticmethod
+    def _short_window_reason(r: dict) -> str:
+        """Why a run compared nothing, and what would leave room — the same
+        sentence on the Lab and the Terminal."""
+        text = ("A setup is compared only when at least two horizons of bars "
+                "follow it. A longer range or a shorter horizon leaves room for "
+                "that.")
+        if r.get("longest_comparable_horizon"):
+            text += (" On this range the longest series can compare a horizon "
+                     f"of up to {r['longest_comparable_horizon']} days.")
+        return text
+
+    @staticmethod
     def _lab_html(r: dict) -> str:
         if not r.get("n"):
-            return (f"<p style='color:#e06c75'>{r.get('verdict', 'nothing resolved')}"
-                    "</p>")
+            out = (f"<p style='color:#e06c75'>{r.get('verdict', 'nothing resolved')}"
+                   "</p>")
+            # Nothing to compare is still a count: how many ran out of time or
+            # of data is the reason, and a run where every setup did must say
+            # so rather than look empty.
+            left = []
+            if r.get("n_timeout"):
+                left.append(f"{r['n_timeout']:,} ran out of time")
+            if r.get("n_short_window"):
+                left.append(f"{r['n_short_window']:,} too near the end of the data")
+            if left:
+                out += f"<p style='color:#7c8798'>{' · '.join(left)}.</p>"
+            if r.get("n_short_window"):
+                out += (f"<p style='color:#7c8798'>"
+                        f"{MainWindow._short_window_reason(r)}</p>")
+            return out
         hit, pred = r["hit_rate"], r["predicted"]
         se, delta = r["std_error"], r["delta"]
-        within = abs(delta) <= 2 * se
-        colour = "#7c8798" if within else "#e5c07b"
-        rows = [
-            ("Resolved setups", f"{r['n']:,} across {r.get('symbols', 0)} instruments"),
+        # A run shown without a verdict (horizon too long, or too few setups)
+        # is neither a finding nor "no edge": the reason is the verdict.
+        withheld = r.get("withheld")
+        # The colour follows the verdict summarise reached on unrounded
+        # figures, not a re-derivation from the rounded ones (code review r5
+        # P3-5); a hand-built summary without the flag falls back to them.
+        within = (not r["significant"] if "significant" in r
+                  else abs(delta) <= 2 * se) and not withheld
+        colour = "#7c8798" if within or withheld else "#e5c07b"
+        # Setups that touched neither barrier in time are out of the hit rate,
+        # so the prediction is the one for setups that resolved in time — and
+        # how many ran out is shown, not hidden (docs/adr/0001). Hand-built
+        # and older summaries lack these fields and render without them.
+        # The instruments are those that reached the comparison, which a long
+        # horizon can make far fewer than those fetched.
+        compared = r.get("symbols_compared", r.get("symbols", 0))
+        resolved = f"{r['n']:,} across {compared} instruments"
+        if "symbols_compared" in r and (r.get("symbols") or 0) > compared:
+            resolved += f" (of {r['symbols']} fetched)"
+        if r.get("n_timeout") is not None:
+            resolved += (f" · {r['n_timeout']:,} ran out of time "
+                         f"({r.get('timeout_share', 0.0):.1%})")
+        # Setups with under two horizons of data left are counted, not compared.
+        if r.get("n_short_window"):
+            resolved += f" · {r['n_short_window']:,} too near the end of the data"
+        predicted = f"{pred * 100:.2f}%"
+        if r.get("baseline_untimed") is not None:
+            predicted += f" ({r['baseline_untimed']:.0%} with unlimited time)"
+        if r.get("expectancy_vs_null_r") is not None:
+            expectancy = (words.pick(("Expectancy beyond a no-edge market",
+                                      "Excess expectancy")),
+                          f"{r['expectancy_vs_null_r']:+.3f} R per setup")
+        else:
+            expectancy = ("Expectancy", f"{r['expectancy_r']:+.3f} R per setup")
+        rows = [("Resolved setups", resolved)]
+        if r.get("compared_by_class"):
+            rows.append(("Instruments compared", " · ".join(
+                f"{k} {cls}" for cls, k in r["compared_by_class"].items())))
+        if r.get("first_entry"):
+            rows.append(("Entry dates", f"{r['first_entry']} to "
+                                        f"{r['last_entry']} · "
+                                        f"{r.get('n_entry_dates', 0):,} dates"))
+        rows += [
             ("Realised hit rate", f"{hit * 100:.2f}%"),
-            ("Predicted by the barrier maths", f"{pred * 100:.2f}%"),
-            ("Difference", f"{delta * 100:+.2f} pts  (±{2 * se * 100:.2f} at 2 s.e.)"),
-            ("Expectancy", f"{r['expectancy_r']:+.3f} R per setup"),
+            ("Predicted, for setups that resolved in time", predicted),
+            ("Difference", f"{delta * 100:+.2f} pts  (error bar ±{2 * se * 100:.2f}; "
+                           "setups entered on the same day counted together)"),
+            expectancy,
             (words.pick(("Average drift, in normal-move units", "Implied drift")),
              f"{r['implied_edge_sigma']:+.4f} σ"),
             ("Average hold", f"{r['avg_bars_held']:.1f} bars"),
@@ -2704,14 +2774,22 @@ class MainWindow(QMainWindow):
             bk = r.get(key) or []
             if not bk:
                 continue
+            # An attention bucket is judged against the run (`vs_run`), so its
+            # table shows that figure under that name; momentum buckets, and
+            # older attention buckets without it, show the gap to the
+            # prediction (code review r5 P3-1).
+            gap, gap_head = "delta", "vs baseline"
+            if key == "attention_buckets" and all("vs_run" in b for b in bk):
+                gap, gap_head = "vs_run", "vs setups with attention"
             head = "".join(f"<th style='text-align:left;padding-right:16px'>{h}</th>"
-                           for h in ("bucket", "n", "hit rate", "vs baseline"))
+                           for h in ("bucket", "n", "hit rate", gap_head))
             body = "".join(
                 "<tr>" + "".join(
                     f"<td style='padding-right:16px'>{c}</td>" for c in (
-                        b.get("label", "?"), f"{b.get('n', 0):,}",
+                        b.get("label") or b.get("name") or "?",
+                        f"{b.get('n', 0):,}",
                         f"{b.get('hit_rate', 0) * 100:.1f}%",
-                        f"{b.get('delta', 0) * 100:+.1f}")) + "</tr>"
+                        f"{b.get(gap, 0) * 100:+.1f}")) + "</tr>"
                 for b in bk)
             out.append(f"<h4 style='margin:14px 0 4px'>{title}</h4>"
                        f"<table>{head}{body}</table>")
@@ -2725,7 +2803,8 @@ class MainWindow(QMainWindow):
     # component is the problem one.
     _VERDICT_COLOUR = {"KEEP": "#98c379", "INVERTED": "#e06c75",
                        "DROP": "#e06c75", "WEAK": "#e5c07b",
-                       "UNCLEAR": "#7c8798", "not measured": "#5c6370"}
+                       "UNCLEAR": "#7c8798", "not measured": "#5c6370",
+                       "not judged": "#7c8798"}
 
     @staticmethod
     def _verdict_word(verdict: str | None) -> str:
@@ -2794,7 +2873,12 @@ class MainWindow(QMainWindow):
 
         blend = a.get("blend_ic")
         if blend is not None:
-            note = ("" if blend > 0 else
+            # "Ranking the wrong way round" is a finding, so it needs one: a
+            # run that gets a verdict, and a blend IC that clears the claim
+            # bar (attribute's blend_ranks_backwards). Otherwise the number
+            # stands alone (code-review r4 P2-1).
+            backwards = a.get("blend_ranks_backwards") and not a.get("withheld")
+            note = ("" if not backwards else
                     f" — a negative blend {words.pick(('ranking skill', 'IC'))} "
                     "means the score as a whole is ranking the wrong way round, "
                     "not merely failing to rank")
@@ -2803,8 +2887,13 @@ class MainWindow(QMainWindow):
                        f"<b>{blend:+.3f}</b> over {a.get('n', 0):,} resolved "
                        f"setups{note}.</p>")
 
+        # A run without a verdict grades no component: one line says so, in
+        # place of a verdict line per component.
+        if a.get("withheld") and a.get("note"):
+            out.append(f"<p style='color:#7c8798'>{a['note']}</p>")
         for c in rows:
-            if c.get("why") and c.get("verdict") not in ("not measured",):
+            if c.get("why") and c.get("verdict") not in ("not measured",
+                                                         "not judged"):
                 colour = MainWindow._VERDICT_COLOUR.get(c["verdict"], "#7c8798")
                 out.append(f"<p style='color:{colour};margin:2px 0'><b>"
                            f"{c['component']}</b> — {c['why']}</p>")
@@ -3364,26 +3453,53 @@ class MainWindow(QMainWindow):
         if self._bt_thread is not None and self._bt_thread.isRunning():
             return
         self.bt_btn.setEnabled(False)
-        self.bt_result.setText("replaying two years of bars…")
+        from sonar import backtest
         from sonar.assets import WATCHLIST
+        # Two years, unless the profile's horizon needs more history than that
+        # to compare anything (the 250-day profile does).
+        days = self.live.horizon.momentum_days
+        rng = backtest.range_for_horizon(days)
+        span = {"2y": "two years", "5y": "five years"}.get(rng, rng)
+        self.bt_result.setText(f"replaying {span} of bars…")
         self._bt_thread = BacktestThread(
-            [s for s, _n, _c, _k in WATCHLIST],
-            self.live.horizon.momentum_days, self)
+            [s for s, _n, _c, _k in WATCHLIST], days, self, rng=rng,
+            universe=backtest.WHOLE_WATCHLIST)
         self._bt_thread.done.connect(self._backtest_done)
         self._bt_thread.start()
 
     def _backtest_done(self, r: dict) -> None:
         self.bt_btn.setEnabled(True)
+        left = (f' · {r["n_timeout"]:,} timed out'
+                if r.get("n_timeout") is not None else '')
+        if r.get("n_short_window"):
+            left += f' · {r["n_short_window"]:,} too near the end of the data'
         if not r.get("n"):
-            self.bt_result.setText(f'backtest: {r.get("verdict", "no result")}')
+            # Every setup ran out of time or of data: say how many, not just
+            # "nothing" — and, if the data was too short, why, as the Lab does.
+            self.bt_result.setText(
+                f'backtest: {r.get("verdict", "no result")}'
+                + (left if r.get("n_timeout") or r.get("n_short_window") else '')
+                + ("\n  " + self._short_window_reason(r)
+                   if r.get("n_short_window") else ''))
             return
+        # The same figures the Lab shows (D7): beyond a market with nothing in
+        # it, which the raw expectancy over resolved setups is not — that one
+        # reads negative on no edge. Older summaries fall back to the raw one.
+        if r.get("expectancy_vs_null_r") is not None:
+            expectancy = (words.pick(("expectancy beyond a no-edge market",
+                                      "excess expectancy"))
+                          + f' {r["expectancy_vs_null_r"]:+.3f}R')
+        else:
+            expectancy = f'expectancy {r["expectancy_r"]:+.3f}R'
         lines = [
-            f'BACKTEST · {r["n"]:,} resolved trials across {r["symbols"]} '
-            f'instruments, {r["range"]} of daily bars, {r["horizon_days"]}d horizon',
+            f'BACKTEST · {r["n"]:,} resolved trials across '
+            f'{r.get("symbols_compared", r.get("symbols", 0))} '
+            f'instruments, {r["range"]} of daily bars, {r["horizon_days"]}d horizon'
+            + left,
             f'  realised {r["hit_rate"]*100:.2f}%   '
-            f'predicted {r["predicted"]*100:.2f}%   '
+            f'predicted {r["predicted"]*100:.2f}% for setups that resolved in time   '
             f'delta {r["delta"]*100:+.2f} pts (± {r["std_error"]*100*2:.1f})   '
-            f'expectancy {r["expectancy_r"]:+.3f}R',
+            + expectancy,
         ]
         for b in r.get("buckets", []):
             lines.append(f'    |momentum| {b["lo"]*100:>3.0f}–{b["hi"]*100:<4.0f}%  '

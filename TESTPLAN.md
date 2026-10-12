@@ -17,13 +17,13 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **1,763 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **1,879 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
 **Run it from inside the app.** The **Test plan** button, next to *Learn*, opens
 this as a page that remembers which cases you have passed or failed — a hundred
-and forty-five of them is more than one sitting. The daemon serves it at `/testplan` too.
+and forty-nine of them is more than one sitting. The daemon serves it at `/testplan` too.
 
 That page is *generated* from this file by `scripts/build_testplan.py`, which
 `build_app.sh` runs before packaging. Edit the markdown, never the HTML.
@@ -85,6 +85,7 @@ unchanged, at the foot of **Practice** now — open that page and scroll down.
 | 2.7 | | Hover every number in the stat row | Each has a tooltip explaining it in plain words |
 | 2.8 | | Read the **model vs market** line in the ledger panel under the equity curve | States how many hours are scored and refuses a verdict below **100** — below the threshold it must not favour either side. |
 | 2.9 | | Read the same line's health tail after a few hours of running | `coverage`, `voided` and `last settle` are present; coverage sits near 100% on an uninterrupted run; no ⚠ STALLED while hours are settling. |
+| 2.10 | | Hover the model-vs-market line and read the **buyability** verdict | Below 100 qualifying hours at the active gate it says **too few**. From 100 on it reads *within noise*, *measured*, *not demonstrated* or *LOST*, and names **three standard errors**; a *measured* one also says it holds **without its two best hours**. No verdict says "leave-one-out", "whale", "edge" or "profit". *A false LOST is more likely than its wording suggests (about 3–4% with nothing to find, re-read hourly; `CONFIDENCE.md`).* |
 
 ---
 
@@ -205,15 +206,18 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 
 | # | ⚠ | Steps | Expected |
 |---|---|---|---|
-| 7.1 | | **Run simulation**, whole watchlist, 2y | Completes; reports trials, hit rate, and an error bar |
-| 7.2 | | Narrow the universe to one class, re-run | Fewer trials, still completes |
-| 7.3 | | Read component attribution | Each component gets **KEEP / WEAK / DROP / INVERTED** |
+| 7.1 | | **Run simulation**, whole watchlist, 2y | Completes; reports trials, hit rate, and an error bar. *Resolved setups* names how many **ran out of time**; *Instruments compared* and *Entry dates* are shown; the *Difference* row reads "error bar ±x; setups entered on the same day counted together" and nowhere says "two standard errors" or "2 s.e." |
+| 7.2 | | Narrow the universe to one class, re-run | Fewer trials, still completes, and **no verdict**: "No verdict on <class> alone…". Every component reads **not judged**. |
+| 7.3 | | Read component attribution on the whole-watchlist run | Each measured component gets **KEEP / WEAK / DROP / UNCLEAR / INVERTED**. A KEEP says "from one replay of past prices"; an INVERTED says "worth testing with its sign flipped, or dropped" and "a reason to look closer, not a finding", never an instruction. |
 | 7.4 | | Find the catalyst component | Says it is **not measured** — the replay has no historical earnings calendar — rather than implying it passed |
-| 7.5 | | Read the run's **predicted** hit rate against the realised one | Predicted reads 40% — `1/(1+R:R)` at the shipped 1.5:1, the identity the app rests on — and realised sits within its error bar of it unless the verdict names a cause. *There is no R:R control in the Lab, whatever its description once said; the identity is pinned by `tests/test_backtest.py` at 1:1 and 1.5:1. At 2:1 and wider the backtest's own baseline is biased by the trials it drops as timeouts (14% realised against 25% at 3:1 on a walk with no drift), so a control must not be added without fixing that first.* |
+| 7.5 | | Read the run's **predicted** hit rate against the realised one | Predicted reads just under 40% with "(40% with unlimited time)" beside it — 39.44% on the default run (whole watchlist, 2y, h 5, step 3; 2026-10-12) — because setups that ran out of time are left out and the prediction is for setups that resolved in time (`docs/adr/0001-…`). Realised sits within its error bar of it unless the verdict says otherwise; a "beats" verdict says the bar is not a guarantee ("about 1 run in 10"). *There is no R:R control in the Lab. The automated driftless test checks the prediction at 1:1, 1.5:1, 2:1 and 3:1. Two acceptance tests, the clustered coin and the attribution placebo, are regression guards fitted to their seeds, not proof that the error bar is a 5% test (`CONFIDENCE.md`).* |
 | 7.6 | | Press **Start replay** | A setup appears |
 | 7.7 | ⚠ | Read the setup line | It does **not** reveal the model's call before you commit |
 | 7.8 | | Press Buy, then Short, then **Skip** on successive setups | All three advance |
 | 7.9 | | Read the scorecard | Shows **your P&L against the model's**, including on setups you skipped |
+| 7.10 | | Whole watchlist, 5y, horizon **150**, run | Numbers shown, **no verdict**: "No verdict at a 150-day horizon…"; components **not judged**. |
+| 7.11 | | Whole watchlist, 1y, horizon **60**, run | Numbers shown, no verdict, and the reason given (entries too close together, or too few); the result count notes setups "too near the end of the data". |
+| 7.12 | | Tick **include attention**, whole watchlist, 2y, run | The attention table's last column is headed **vs setups with attention**; with no level standing apart the text ends "…no effect of a news spike was detected, which is not the same as none." |
 
 ---
 

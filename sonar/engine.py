@@ -98,6 +98,58 @@ def _locked(method):
     return run_locked
 
 
+def _mean_se(rets: list[float]) -> tuple[float, float]:
+    """Mean of hour-ordered per-stake returns, and its standard error: the
+    wider of the plain one and a Newey-West one, because qualifying hours
+    cluster through shared volatility regimes."""
+    from .research import stats as _stats
+    n = len(rets)
+    mean = sum(rets) / n
+    var = (sum((x - mean) ** 2 for x in rets) / (n - 1)) if n > 1 else 0.0
+    plain = (var / n) ** 0.5
+    hac = _stats.newey_west_t(rets, lags=min(24, n - 1))[1] if n >= 10 else 0.0
+    return mean, max(plain, hac)
+
+
+def _without_best(rets: list[float], k: int) -> list[float]:
+    """``rets`` with its ``k`` largest values taken out (first occurrence of
+    the maximum, ``k`` times), the rest left in hour order."""
+    rest = list(rets)
+    for _ in range(min(k, len(rest))):
+        rest.remove(max(rest))
+    return rest
+
+
+def _gate_reading(rets: list[float], z: float, k: int) -> dict:
+    """The buyability call for one gate's returns, on unrounded values.
+
+    ``measured`` needs the mean beyond ``z`` standard errors above zero, and
+    the same again once its ``k`` best hours are taken out (se recomputed on
+    what is left). ``carried`` is a mean that clears the bar only with those
+    hours in. ``lost`` is the mirror claim — no robustness test, because a
+    per-stake return is bounded below at −1 and one hour cannot carry a loss.
+    """
+    ev, se = _mean_se(rets)
+    rest = _without_best(rets, k)
+    robust_ev, robust_se = _mean_se(rest) if len(rest) >= 2 else (None, None)
+    # se can be exactly 0.0 when every return is identical — the comparison
+    # must not read that as noise (model_vs_market learned this the same way).
+    claims_up = ev > z * se and ev > 0
+    robust_up = (robust_ev is not None and robust_ev > z * robust_se
+                 and robust_ev > 0)
+    claims_down = ev < -z * se and ev < 0
+    if claims_up and robust_up:
+        reading = "measured"
+    elif claims_up:
+        reading = "carried"
+    elif claims_down:
+        reading = "lost"
+    else:
+        reading = "noise"
+    return {"ev": ev, "se": se, "robust_n": len(rest), "robust_ev": robust_ev,
+            "robust_se": robust_se, "reading": reading}
+
+
 class Engine:
     def __init__(self, state_path: str | Path,
                  starting_bankroll: float = STARTING_BANKROLL,
@@ -605,6 +657,11 @@ class Engine:
     #: believable quotes would otherwise dominate the mean.
     BUYABILITY_PRICE_BAND = (0.02, 0.98)
 
+    #: How many of its best hours a positive buyability reading must survive
+    #: losing (owner decision D1′, 2026-10-11). Two, because a near-threshold
+    #: result can rest on a couple of ordinary wins as easily as on one.
+    BUYABILITY_ROBUST_DROP = 2
+
     @_locked
     def buyability(self) -> dict:
         """Was the model's disagreement ever worth buying — at the touch?
@@ -629,15 +686,23 @@ class Engine:
         * the standard error is the wider of the plain one and a Newey-West
           one over the hour-ordered returns, because qualifying hours cluster
           through shared volatility regimes;
-        * each gate carries ``loo_ev`` (the mean without its single best
-          return) and ``top_share`` (that return's share of gross profit), and
-          a positive verdict must survive the leave-one-out — one whale is a
-          story, not an edge.
+        * a claim either way needs the mean beyond three standard errors
+          (:data:`calibration.Z_CLAIM`), not two: the verdict is re-read every
+          hour, and a gate checked again after every new result trips on a
+          book with nothing in it far more often than its nominal 5%;
+        * a positive reading must also clear that bar with its
+          :data:`BUYABILITY_ROBUST_DROP` best hours taken out and the standard
+          error recomputed on the rest (``robust_ev`` / ``robust_se``), so a
+          margin that rests on a couple of hours is reported as not
+          demonstrated. A few very large wins on a losing base never get that
+          far — their own spread keeps the full mean inside three standard
+          errors. ``loo_ev`` and ``top_share`` stay on each row as
+          disclosures, not gates.
 
         Still assumed, still named: fills of one stake at the touch, size
         unrecorded, one snapshot per hour.
         """
-        from .research import stats as _stats
+        from .calibration import Z_CLAIM
 
         lo, hi = self.BUYABILITY_PRICE_BAND
         priced, n_unpriced, n_out_of_window, n_bad_book = [], 0, 0, 0
@@ -673,66 +738,71 @@ class Engine:
         out: dict = {"n_priced": len(priced), "n_unpriced": n_unpriced,
                      "n_out_of_window": n_out_of_window,
                      "n_bad_book": n_bad_book, "gates": [],
-                     "min_sample": self.SCORE_MIN_SAMPLE}
+                     "min_sample": self.SCORE_MIN_SAMPLE, "z_claim": Z_CLAIM}
+        k = self.BUYABILITY_ROBUST_DROP
         gates = sorted(set(self.BUYABILITY_GATES) | {self.risk.edge_threshold})
+        readings: dict[float, dict] = {}
         for gate in gates:
             rets = [ret for edge, ret in priced if edge >= gate]
             n = len(rets)
             row = {"gate": gate, "n": n}
             if n:
-                mean = sum(rets) / n
-                var = (sum((x - mean) ** 2 for x in rets) / (n - 1)) if n > 1 else 0.0
-                plain = (var / n) ** 0.5
-                _t, hac = _stats.newey_west_t(rets, lags=min(24, n - 1)) \
-                    if n >= 10 else (0.0, 0.0)
+                rd = readings[gate] = _gate_reading(rets, Z_CLAIM, k)
                 best = max(rets)
                 gross = sum(x for x in rets if x > 0)
                 row.update({
-                    "ev_per_stake": round(mean, 4),
-                    "se": round(max(plain, hac), 4),
+                    "ev_per_stake": round(rd["ev"], 4),
+                    "se": round(rd["se"], 4),
                     "hit_rate": round(sum(1 for x in rets if x > 0) / n, 4),
                     "loo_ev": round((sum(rets) - best) / (n - 1), 4)
                     if n > 1 else None,
                     "top_share": round(best / gross, 4) if gross > 0 and best > 0
                     else 0.0,
+                    "robust_drop": k,
+                    "robust_n": rd["robust_n"],
+                    "robust_ev": None if rd["robust_ev"] is None
+                    else round(rd["robust_ev"], 4),
+                    "robust_se": None if rd["robust_se"] is None
+                    else round(rd["robust_se"], 4),
                 })
             out["gates"].append(row)
 
         at_gate = next(g for g in out["gates"]
                        if abs(g["gate"] - self.risk.edge_threshold) < 1e-9)
         gate_pct = f"{self.risk.edge_threshold * 100:g}c"
-        if at_gate["n"] < self.SCORE_MIN_SAMPLE:
-            out["verdict"] = (f'{at_gate["n"]} of {self.SCORE_MIN_SAMPLE} '
-                              f"qualifying hours at the {gate_pct} gate — too "
-                              "few to price the edge.")
+        n = at_gate["n"]
+        if n < self.SCORE_MIN_SAMPLE:
+            out["verdict"] = (f"{n} of {self.SCORE_MIN_SAMPLE} qualifying "
+                              f"hours at the {gate_pct} gate — too few to "
+                              "price buying the model's side.")
+            return out
+        # The call is made on unrounded values; the rows round for display.
+        rd = readings[at_gate["gate"]]
+        ev = rd["ev"]
+        best = "best hour" if k == 1 else (
+            "two best hours" if k == 2 else f"{k} best hours")
+        where = f"over {n} hours at the {gate_pct} gate"
+        if rd["reading"] == "measured":
+            out["verdict"] = (
+                f"Buying the model's side at the touch measured {ev:+.1%} per "
+                f"stake {where}. That is more than three standard errors above "
+                f"zero, and it still is without its {best}. It is one past "
+                "stretch of one market, before size limits: a measurement to "
+                "watch, not a forecast.")
+        elif rd["reading"] == "carried":
+            out["verdict"] = (
+                f"{ev:+.1%} per stake {where}, but without its {best} it is "
+                f"{rd['robust_ev']:+.1%}, inside three standard errors. A "
+                "result that rests on a couple of hours is not demonstrated.")
+        elif rd["reading"] == "lost":
+            out["verdict"] = (
+                f"Buying the model's side at the touch LOST {ev:+.1%} per stake "
+                f"{where}, more than three standard errors below zero. On these "
+                "hours the market's price was the better one.")
         else:
-            # se can be exactly 0.0 when every return is identical — the
-            # comparison must not read that as noise (model_vs_market learned
-            # this the same way).
-            ev, se = at_gate["ev_per_stake"], at_gate["se"] or 0.0
-            loo = at_gate.get("loo_ev")
-            if ev > 2 * se and ev > 0 and loo is not None and loo > 0:
-                out["verdict"] = (f"Buying the model's side at the touch "
-                                  f"returned {ev:+.1%} per stake at the "
-                                  f"{gate_pct} gate, beyond two standard "
-                                  "errors and surviving leave-one-out — "
-                                  "before size limits, and deserving of "
-                                  "suspicion before belief.")
-            elif ev > 2 * se and ev > 0:
-                out["verdict"] = (f"{ev:+.1%} per stake at the {gate_pct} "
-                                  "gate, but a single hour carries it — "
-                                  f"without that hour: {loo:+.1%}. One whale "
-                                  "is a story, not an edge.")
-            elif ev < -2 * se and ev < 0:
-                out["verdict"] = (f"Buying the model's side at the touch "
-                                  f"LOST {ev:+.1%} per stake at the "
-                                  f"{gate_pct} gate, beyond two standard "
-                                  "errors — the disagreements were the "
-                                  "market being right.")
-            else:
-                out["verdict"] = (f"{ev:+.1%} per stake at the {gate_pct} "
-                                  "gate, within noise of zero — no buyable "
-                                  "edge demonstrated either way.")
+            out["verdict"] = (
+                f"{ev:+.1%} per stake {where}, within noise of zero (three "
+                "standard errors). Nothing buyable shown either way.")
         return out
 
     @_locked

@@ -71,6 +71,57 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       2026-10-10's wording and docs changes; none of them touch the engine, so leaving it keeps the 30-day clean run
       (day 1 = 2026-10-10, due 2026-11-09) undisturbed. Restarting puts agent and app on one build.
 
+### After QA-11 / QA-13 (honest baselines) — recorded 2026-10-12, not built
+
+From the review, QA and validation rounds in `docs/audit/qa11-qa13-honest-baselines-*` and the
+spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
+
+- [ ] `P1` `research` `@me` **Calibration is right-censored by score — needs its own owner decision.** The
+      calibration table grades closed positions only, and the book has no time stop, so high-score positions are
+      the ones still open (60–80 band: 1 of 7 closed on 2026-10-11). The rank IC and the 2σ gate are not
+      interpretable until this is handled (`docs/audit/calibration-censoring-by-score.md`).
+- [ ] `P2` `research` `@ai` **Sign-randomisation test for the backtest's error bar.** The date-clustered bar still
+      lets a direction picked at random per class and block get a verdict on 11.4% of judged real-bar runs (target
+      ≤ 5%; validator r5 (a), r6 (d)). The same test should calibrate the attribution grades (meaningless
+      components graded KEEP/INVERTED on 4.6–7.1%, validator r6 (a)) and settle the component IC's lag (its IC
+      z² still runs 1.4–1.5× nominal; QA r6 P2-1, mutant E4). The two acceptance tests are regression guards fitted
+      to their seeds, not proof of the target. Owner signs off the method.
+- [ ] `P2` `research` `@me` **The h = 1 Terminal verdict sits on the daily-bar tie residual.** At a 1-day horizon a
+      bar that touches both barriers scores a loss; a coin-flip direction read "below" on 11 of 38 seeds in QA r4
+      (P2-A). Live 2y h = 1 now reads Δ −0.99 within ±1.4 (QA r6 §4). Options: a placebo baseline, or no verdict
+      at h = 1.
+- [ ] `P2` `research` `@me` **`model_vs_market` still claims at 2 se on an hourly re-checked log**
+      (`sonar/engine.py:634-641`), the T1-1 problem buyability was moved off. Decide whether it moves to
+      `Z_CLAIM` = 3 (architect, spec "Open questions, answered").
+- [ ] `P3` `research` `@me` **2y h = 60 is one regime.** QA r4 P2-B: a 2y "beats" at h = 60 was not confirmed on 5y
+      (long-only +8.7 pt), and the coin was clean. Option: the Terminal reads 5y at h ≥ 40.
+- [ ] `P3` `research` `@ai` **DROP has no error bar.** It is read from the point estimate of the leave-one-out cost
+      (as small as −0.0018 on the Lab default), fires on 18–28% of noise, is now the main real-run grade
+      (volatility on 10 of 12 settings) and is shown in red (validator r6 P3).
+- [ ] `P3` `research` `@ai` **Same-day pageviews include hours after the US close** (`sonar/backtest.py`
+      `attention_z`), a minor look-ahead in the attention series (validator r5 P3).
+- [ ] `P3` `research` `@ai` **`replay.py` still compares against the untimed `1/(1+R:R)`** (`Session.scorecard`),
+      the same −0.5 to −0.6 pt bias at 1.5:1 that QA-13 fixed in the backtest; invisible at its n ≥ 20 but worth
+      reusing `scoring.resolved_hit_probability` (architect, spec "Open questions, answered").
+- [ ] `P3` `bug` `@ai` **The single-class gate looks at the universe asked for, not the instruments compared.** If
+      only one class's bars come back (a partial outage), a `universe="all"` run is judged anyway;
+      `compared_by_class` is computed but unused (code review r4 P3-2).
+- [ ] `P3` `bug` `@ai` **`universe` defaults fail open** (`backtest.run(universe=WHOLE_WATCHLIST)`,
+      `ui/worker.py` `"all"`). Latent, both callers pass it; make it a required keyword (code review r4 P3-3).
+- [ ] `P3` `bug` `@ai` **The top momentum bucket is 10–100%, so a move of 100% or more lands in no bucket** (3 of
+      18,973 setups on the Lab default). Top edge to infinity, label "10%+" (code review r4 P3-4).
+- [ ] `P3` `design` `@ai` **Small copy and display items the owner left out of loops 3–5:** "Horizons up to 120
+      days get one" over-promises (a 2y run is judged only to about h = 71 by the span rule; code review r4 P3-1);
+      the n = 0 hint can point at a crypto-only, verdict-less horizon (r3 P3-2); the Terminal prints "· 0 timed out"
+      (r3 P3-3); entry dates are UTC, so a forex Monday can date Sunday (r3 P3-4); the Terminal shows no class mix
+      or entry span (r3 P3-5); `std_error` can display 0.0000; "beats by 2.0 points, outside its error bar (±2.0)"
+      can appear at the rounding boundary (QA r6 P3).
+- [ ] `P3` `bug` `@ai` **`assets._daily_vol` guards only the earlier close**, so a non-positive close raises in the
+      live scan's fallback path (code review r3 P3-6; the backtest's guard landed in loop 2).
+- [ ] `P3` `testing` `@ai` **The attribution placebo test is the slowest in the suite** — about 16–18 s under load
+      against the 60 s `faulthandler_timeout` (code review r6 P3-2, QA r6). Mark it `slow` or use fewer placebos
+      per world (bounds refitted). Also: the step-1 `longest_comparable_horizon` mutant survives (r3 P3-7).
+
 ## v3 — only if the research is resumed
 
 - [ ] `P2` `research` `@me` Intraday bars, order flow, or a tone-tagged news archive. Five studies found nothing in daily bars, free news and macro regimes; more features on the same data is not the answer.
@@ -247,8 +298,15 @@ need an account and time rather than code are under **Open** above.
       first version: side chosen against `market_up` as the entry path does
       (not a recomputed book mid), only hours inside the profile's entry
       window, settlement-state books excluded and counted, the wider of
-      plain and Newey-West errors, and a positive verdict that must survive
-      leave-one-out — one whale is a story, not an edge. The active profile's
+      plain and Newey-West errors, and ~~a positive verdict that must survive
+      leave-one-out — one whale is a story, not an edge~~ *(corrected
+      2026-10-12, QA-11: that check could never fail — a mean beyond 2 se
+      already implies a positive leave-one-out mean. Since then a claim either
+      way needs the mean beyond three standard errors, se = max(plain,
+      Newey-West), and a positive one the same again with its two best hours
+      taken out and se recomputed on the rest, or it reads "not
+      demonstrated"; `loo_ev` and `top_share` stay as disclosures,
+      `docs/specs/qa11-qa13-honest-baselines.md`)*. The active profile's
       own gate always has a row, so an aggressive book is never silently
       graded at 4¢.
 - [x] `P2` `infra` `@ai` **CI made portable** (9a1ddb1): the dashboard test
@@ -488,7 +546,7 @@ need an account and time rather than code are under **Open** above.
 
 ### Testing the algorithm
 
-- [x] `P1` `feature` `@ai` ~~Lab tab.~~ Replays the plan over real bars with universe, range, horizon and step exposed, reporting the realised hit rate beside what the barrier maths predicted with its 2 s.e. band.
+- [x] `P1` `feature` `@ai` ~~Lab tab.~~ Replays the plan over real bars with universe, range, horizon and step exposed, reporting the realised hit rate beside what the barrier maths predicted with its 2 s.e. band. *(Since 2026-10-12 the prediction is for setups that resolved in time and the bar is the widest of three, including a date-clustered one; QA-11/QA-13.)*
 - [x] `P1` `feature` `@ai` ~~Component attribution.~~ Asks of each component the question its weight is a claim about — does ranking on it sort winners from losers? — three ways: IC, quintile spread, and leave-one-out. Verdicts are KEEP / WEAK / DROP / **INVERTED**, p-values through Benjamini-Hochberg together. Catalyst reports *not measured* rather than passing.
 - [x] `P1` `feature` `@ai` ~~Replay mode.~~ `sonar/replay.py` grades **you**: one setup at a time on real history with everything after the cursor withheld, no rewind, the model scored on the same setups whether you skip or not, and risk-sized P&L so a coin and a currency pair cost the same to be wrong about.
 - [x] `P2` `bug` `@ai` ~~The window tests wedged about one run in three.~~ Same root cause as the blank window, and the reason it resisted a long search: the conftest guards were `autouse=True` at **function** scope, but pytest builds fixtures highest-scope-first, so for the three tests that take a **module**-scoped `window` fixture none of them was in force when the window was built. "The poll thread (no-op'd, still hangs)" had been ruled out against a patch that was not yet applied. Those tests were starting the real `Live.run()`, taking the engine lock in the user's real application directory and going to the network; the thread never finished, so the fixture's teardown reached `terminate()`. The guards are session-scoped now, with the function-scoped ones kept for per-test `tmp_path` and for naming the test in the network error. Three consecutive full runs: 1,182 passed in 9.3s, deterministic.

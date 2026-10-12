@@ -226,6 +226,113 @@ def test_the_protocol_switch_is_handed_to_the_holder(following):
     assert live.protocol_on is False
 
 
+class _Race:
+    """One of the follow thread's mirror fetches of ``path`` that answers with
+    what the holder said before a local change, and lands later than that.
+
+    ``begin``: the fetch is made ``"before"`` the change, or ``"during"`` its
+    forward to the holder (which has not taken it yet). ``land``: the answer
+    is applied ``"after"`` the change returns, or ``"during"`` the forward.
+    The follow thread's next fetch after the held one records what the
+    follower showed then (``seen``) — once the old answer was applied or
+    dropped, before anything newer could be mirrored."""
+
+    def __init__(self, live, monkeypatch, path, begin="before", land="after"):
+        self.held, self.release = threading.Event(), threading.Event()
+        self.recorded, posting = threading.Event(), threading.Event()
+        self.seen: list[tuple] = []
+        done = threading.Event()
+        real_fetch, real_post = Live._fetch, Live._post
+
+        def fetch(url, p):
+            follow = threading.current_thread() is not threading.main_thread()
+            if follow and done.is_set():
+                self.seen.append((live.protocol_on, live.risk.name))
+                self.recorded.set()
+            out = real_fetch(url, p)
+            if (p == path and follow and not self.held.is_set()
+                    and (begin == "before" or posting.is_set())):
+                self.held.set()
+                self.release.wait(5)
+                done.set()
+            return out
+
+        def post(url, p, body):
+            if threading.current_thread() is threading.main_thread():
+                posting.set()
+                if begin == "during":
+                    assert self.held.wait(5), "no mirror fetch during the forward"
+                if land == "during":
+                    self.release.set()
+                    assert self.recorded.wait(5), "the follow loop stopped"
+            return real_post(url, p, body)
+
+        monkeypatch.setattr(Live, "_fetch", staticmethod(fetch))
+        monkeypatch.setattr(Live, "_post", staticmethod(post))
+        if begin == "before":
+            assert self.held.wait(5), f"the follow thread never fetched {path}"
+
+    def first_seen(self):
+        self.release.set()
+        assert _wait(lambda: self.seen), "the follow loop stopped"
+        return self.seen[0]
+
+
+_TIMINGS = [("before", "after"), ("before", "during"), ("during", "after"),
+            ("during", "during")]
+
+
+@pytest.mark.parametrize("begin,land", _TIMINGS)
+@pytest.mark.parametrize("path", ["/api/config", "/api/book"])
+def test_a_stale_mirror_does_not_undo_the_protocol_switch(
+        following, monkeypatch, path, begin, land):
+    """QA r3 §1: a stale-mirror race. The follow thread fetched the holder's
+    config (or book) while the protocol was still on; the user switched it
+    off; the old answer then landed and turned it back on until the next
+    slow mirror — 2 in 100 runs of the test above, every run with a delay.
+    A mirror fetched before the switch, or while it was being handed over,
+    is not applied to the protocol.
+    Mutation it catches: the generation check removed (before/after), the
+    bump before the forward removed (before/during), the bump after it
+    removed (during/after), the in-flight check removed (during/during)."""
+    live, fake, _ = following
+    assert live.protocol_on is True
+    race = _Race(live, monkeypatch, path, begin, land)
+    live.set_protocol(False)
+    assert fake.protocol_on is False
+    assert race.first_seen()[0] is False, "a stale mirror turned the protocol back on"
+    assert live.protocol_on is False
+
+
+@pytest.mark.parametrize("begin", ["before", "during"])
+def test_a_stale_mirror_does_not_undo_a_knob_change(following, monkeypatch, begin):
+    """The same race through configure(): the risk the holder had before the
+    change came back after it. configure() shows nothing before the holder
+    answers, so only an answer landing after the post can be stale.
+    Mutation it catches: the bump after the post, or the check, removed."""
+    live, fake, _ = following
+    assert live.risk.name == "moderate"
+    race = _Race(live, monkeypatch, "/api/config", begin, "after")
+    live.configure("aggressive", None)
+    assert fake.risk_name == "aggressive" and live.risk.name == "aggressive"
+    assert race.first_seen()[1] == "aggressive", "a stale mirror put the old risk back"
+
+
+def test_the_holders_own_changes_are_still_mirrored(following):
+    """The guard drops only answers older than a local change: once a knob
+    change and a protocol switch have been handed over, a change made on the
+    holder still reaches the follower.
+    Mutation it catches: any one bump removed (the generation is left odd,
+    as if a change were in flight for ever)."""
+    live, fake, _ = following
+    live.configure("aggressive", None)
+    live.set_protocol(False)
+    fake.protocol_on = True
+    fake.risk_name = "conservative"
+    assert _wait(lambda: live.protocol_on is True
+                 and live.risk.name == "conservative")
+
+
 def test_an_llm_read_is_run_by_the_holder(following):
     live, fake, _ = following
     read = live.read("btc", "")
@@ -460,6 +567,12 @@ def test_whether_a_read_can_run_is_the_holders_answer(following, monkeypatch):
     says nothing about the process that will."""
     live, fake, url = following
     monkeypatch.setattr("sonar.llm.available", lambda: (True, "ready"))
+    # The fixture waits for the book, and the holder's config (with its read
+    # answer) is mirrored just after it — so for one round trip the follower
+    # truthfully says the holder has not answered yet. Wait for the answer,
+    # as the test below does (QA r2 P2-2).
+    assert _wait(lambda: "anthropic SDK not installed" in live.llm_available()[1]), \
+        live.llm_available()
     ok, why = live.llm_available()
     assert ok is False, "the follower's own SDK answered for the holder"
     assert "anthropic SDK not installed" in why

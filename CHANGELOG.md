@@ -10,6 +10,26 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## Unreleased — 2026-10-12
+
+**Honest baselines for the backtest and the buyability verdict (QA-11, QA-13).**
+The buyability line's "survives leave-one-out" check could never fail. A claim
+either way now needs the mean return per stake beyond three standard errors,
+and a positive one the same again without its two best hours; otherwise it reads
+"not demonstrated". The backtest compares each setup with the chance of the
+target first *given it resolved in time* (39.44% on the default run, not the
+untimed 40%), counts and shows setups that ran out of time, and leaves out
+setups with under two horizons of data after them. Its error bar is the widest of
+the binomial, Newey-West and a bar that counts setups entered on the same day
+together; attention and attribution use the same bar. No verdict above a
+120-day horizon, on one asset class, under 100 setups or 20 entry dates, or on
+entries spanning under five horizons. Re-measured default run (2y, h = 5, 129
+instruments): 39.55% against 39.44%, +0.11 points, error bar ±1.8, n 18,973.
+The bar is not a calibrated 5% test: a random direction per asset class still
+got a verdict on about 1 run in 10 (11.4%), and the verdict copy says so. The
+Learn tab §7–§8, `CONFIDENCE.md`, ADR 0001, `TESTPLAN.md` §2 and §7 and the
+backlog are restated (`docs/specs/qa11-qa13-honest-baselines.md`).
+
 ## v2.180 — 2026-10-10
 
 **One day of review, then the fixes.** Builds v2.132 to v2.180 were all made

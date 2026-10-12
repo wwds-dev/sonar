@@ -266,7 +266,7 @@ is saved with the state; delete the state file to reset to a clean $10,000.
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 1,763 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,879 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -280,7 +280,9 @@ run against the installed bundle, shown in the app by the **Test plan** button; 
 
 The **Learn** tab *is* the manual: a plain-English primer with a 25-term glossary (§1), and **§8, the one to read
 before trusting a Practice run** — how to read an error bar, what the attribution verdicts mean, and how many
-trials a number needs before it means anything (at 20 trials the band is ±21.5 points).
+trials a number needs before it means anything (the Practice backtest gives no verdict under 100 setups or 20
+entry dates, and setups entered on the same day count together, so 18,973 trials on the default run give ±1.8
+points, not ±0.7).
 
 ### Uptime
 
