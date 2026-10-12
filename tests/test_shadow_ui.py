@@ -734,3 +734,11 @@ def test_final_none_wording_compact_and_honest_about_power():
         assert compact.startswith("Looks 1-3 not crossed")
     assert "{used}" in SHADOW_WORDS["SH_FINAL_NONE"][0]
     assert "of the {N} planned" in SHADOW_WORDS["SH_FINAL_NONE_FEWER"][0]
+
+
+def test_final_none_power_figure_is_tied_to_the_201_entry_design():
+    """The "about 3 times in 4" in SH_FINAL_NONE is ADR 0002 §3's power (0.73 at a
+    link of 0.2) for the Pocock design at 45/101/201. If the looks change, the
+    sentence must be re-derived, not silently kept."""
+    from sonar.calibration import SHADOW_BOUNDARY, SHADOW_LOOKS
+    assert SHADOW_LOOKS == (45, 101, 201) and SHADOW_BOUNDARY == 2.315
