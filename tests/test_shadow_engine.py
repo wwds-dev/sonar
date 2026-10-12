@@ -491,3 +491,23 @@ def test_r2_taking_the_book_forgets_the_memo_and_the_closes(live):
     live._shadow_bars = {"AAA": ("2026-10-12", [(0.0, 1.0)], 0.0)}
     live._take_the_book()
     assert live._shadow_decided == {} and live._shadow_bars == {}
+
+
+def test_qa_r4_c08_a_good_fetch_replaces_yesterdays_series(live, monkeypatch):
+    """QA r4 C08: day 1's closes are good but not decisive (the T bar is the
+    newest), day 2's are good and decisive. Day 2's series must replace day
+    1's — kept only on a failure — and the entry is graded. Kills:
+    preferring yesterday's series over today's."""
+    pos = _enter(live, "AAA", 40)
+    stamp0 = (NOW // DAY) * DAY + 13.5 * 3600 - DAY       # yesterday 13:30 UTC
+    pos.opened_at = stamp0 - 28 * DAY - 3600              # t_T: yesterday 12:30 → T bar the day before
+    day1 = [(stamp0 - k * DAY, 100.0) for k in range(1, 100)][::-1]
+    day2 = day1 + [(stamp0, 100.0)]
+    stub = Days({1: lambda s: day1, 2: lambda s: day2})
+    monkeypatch.setattr(core.assets, "fetch_bars", stub)
+    stub.day = 1
+    live._shadow_pass(NOW)
+    assert live.shadow["n_reached"] == 0 and live.shadow["n_wait_price"] == 1
+    stub.day = 2
+    live._shadow_pass(NOW + DAY)
+    assert live.shadow["n_reached"] == 1 and live._shadow_bars["AAA"][1] == day2

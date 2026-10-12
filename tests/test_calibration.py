@@ -556,6 +556,18 @@ def test_r3_a_dst_shift_costs_a_day_and_nothing_else():
     assert e["state"] == "time" and e["exit"] == 101.0
 
 
+def test_qa_r4_p05_a_shift_long_ago_is_not_held_against_the_newest_bar():
+    """QA r4 P05: the session pattern compares the newest bar with the one
+    before it, not with an older one. Stamps moved from 13:30 to 14:30 on day
+    20; a week later the newest bar (day 29, 14:30) is on the pattern and
+    is the cut. Kills: comparing with the oldest bar (an extra day of
+    waiting after every DST change)."""
+    shifted = [(d * DAY + (STAMP_H if d < 20 else STAMP_H + 3600),
+                101.0 if d == 28 else 100.0) for d in range(-5, 30)]
+    _r, e = one(sp(), shifted, now=29 * DAY + 20 * 3600)
+    assert e["state"] == "time" and e["exit"] == 101.0
+
+
 def _us_bars(first, last, holidays=(), close=lambda d: 100.0):
     """US-session daily bars, 13:30 UTC, Monday to Friday (day 0 = Thursday
     1 January 1970), with no bar on ``holidays``."""
@@ -735,6 +747,42 @@ def test_qa_r3_m20_no_bar_between_entry_and_t_is_never_a_time_exit():
     for now, state in ((T_DUE + 3 * DAY, "wait_price"), (T_DUE + 8 * DAY, "no_price")):
         _r, e = one(sp(), bars, now=now)
         assert e["state"] == state and e["r"] is None
+
+
+def test_qa_r4_u02_the_gap_scan_never_reads_the_newest_close():
+    """QA r4 U02: the newest bar, on the session pattern, is the cut; its
+    close (97.0, through the stop at 98) is still trading and must not be
+    gap-checked. TIME at the T bar's close, no gap. Kills: a gap scan that
+    runs one bar too far."""
+    bars = daily(-5, 29, close=lambda d: {28: 101.0, 29: 97.0}.get(d, 100.0))
+    _r, e = one(sp(), bars, now=29 * DAY + 20 * 3600)
+    assert e["state"] == "time" and e["exit"] == 101.0 and e["gap"] is False
+
+
+@pytest.mark.parametrize("opened_h", [15.0, 13.5], ids=["entry after the session start",
+                                                         "entry at the stamp itself"])
+def test_qa_r4_m21_m22_the_entry_days_own_bar_is_never_the_t_bar(opened_h):
+    """QA r4 M21/M22: the last bar at or before t_T is the entry day's own
+    bar — stamped at or before the entry — and a halt follows. Its close is
+    not this position's; the entry waits, then is no price, never TIME.
+    Kills: `<` for `<=` against opened_at, or a day's slack in that check."""
+    p = sp(opened_at=opened_h * 3600)
+    bars = daily(-5, 0) + daily(30, 40)
+    t_due = calibration.shadow_due(p)
+    for now, state in ((t_due + 3 * DAY, "wait_price"), (t_due + 8 * DAY, "no_price")):
+        r = calibration.shadow_time_stop([p], [], {"AAA": bars}, now)
+        assert r["entries"][0]["state"] == state and r["entries"][0]["r"] is None
+
+
+def test_qa_r4_p08_a_one_bar_series_waits_and_harms_no_one_else():
+    """QA r4 P08: a symbol with a single bar decides nothing for its own
+    entries and never errors the readout for the others. Kills: dropping
+    the two-bar guard on the session-pattern check (an IndexError)."""
+    mine, other = sp("a"), sp("b", symbol="BBB")
+    bars = {"AAA": [(29 * DAY + STAMP_H, 100.0)], "BBB": daily(-5, 40)}
+    r = calibration.shadow_time_stop([mine, other], [], bars, T_DUE + 3 * DAY)
+    by = {e["id"]: e["state"] for e in r["entries"]}
+    assert by == {"a": "wait_price", "b": "time"} and r["error"] is None
 
 
 def test_a_series_that_does_not_reach_back_to_the_entry_cannot_decide():

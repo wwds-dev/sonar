@@ -395,3 +395,33 @@ a copy with those two keyword arguments deleted and nothing else changed. Result
 
 The suite collects 2,393 tests, and that count is in all four files. Lint finds nothing new: the
 7 findings left in the changed files were there before.
+
+## Fix loop 4 (tests) (2026-10-12, on top of `725f879`)
+Inputs: `shadow-time-stop-qa-engineer-r4.md` and `shadow-time-stop-code-reviewer-r4.md` (both passed, no
+P0/P1/P2 in code). Mostly tests. No test exposed a production bug.
+
+| Item | Test, and the mutant it kills (each planted alone, all killed) |
+|---|---|
+| QA P2-A (U02) | `test_qa_r4_u02_the_gap_scan_never_reads_the_newest_close`: the newest bar on the pattern closes through the stop; result is TIME at the T bar's close, `gap` False. Kills a gap scan running to `i + 2`. |
+| QA P2-B (C08) | `test_qa_r4_c08_a_good_fetch_replaces_yesterdays_series` (engine): day 1 good but not decisive, day 2 good and decisive; day 2's series replaces day 1's and the entry is graded. Kills `cache[s] = (day, old or b)`. |
+| QA P3-1 (M21/M22) | `test_qa_r4_m21_m22_the_entry_days_own_bar_is_never_the_t_bar[entry after the session start, entry at the stamp itself]`: the entry day's own bar is the last one at or before t_T, followed by a halt; the entry waits, then becomes no price, never TIME. Kills `<` for `<=`, and a day of slack. |
+| QA P3-2 (P05) | `test_qa_r4_p05_a_shift_long_ago_is_not_held_against_the_newest_bar`: stamps shift on day 20, and on day 29 the newest bar is the cut. Kills comparing with the oldest bar. |
+| QA P3-3 (P08) | `test_qa_r4_p08_a_one_bar_series_waits_and_harms_no_one_else`: a 1-bar symbol waits, the other symbol grades, and there is no error. Kills dropping the two-bar guard. |
+| CR P3-B (the only production change) | The window row now adds "({k} with no readable date)" (expert "({k} undated)", `SH_ROW_WINDOW_UNDATED`) when some covered entries have no readable `opened_at`. The W02 and n/a tests are updated, and both modes are tested. D6 has 35 rows, matching `SHADOW_WORDS`. Build note 26 is updated. Kills: the undated count dropped. |
+
+The spec's Build note 16 is untouched, and no known limits were added (the tech-writer's part).
+The slow suite was not run: `sonar/calibration.py` and the slow tests are unchanged.
+
+**Runs (final tree):**
+- Native `./run-tests.sh tests/ -q`: 2396 passed, 3 skipped, 52 deselected, exit 0.
+- Offscreen: two runs were killed by the watchdog under a load average of 100–120 (other sessions on
+  the machine).
+  - The first was at the default 300 s budget. The second, at 600 s, had reached 100% with no
+    failure and was killed while it was still destroying windows in `pytest_unconfigure`. The
+    sample shows `~QMainWindowWrapper` inside `sendPostedEvents`, which was slow under load rather
+    than wedged.
+  - Third run with `TEST_BUDGET_S=1500`: **2396 passed, 3 skipped, 52 deselected in 543 s, exit 0**
+    (load 115–148).
+  - No test was weakened, and the default budget was not changed.
+
+The suite collects 2,399 tests, and that count is in all four files. Lint finds nothing new.
