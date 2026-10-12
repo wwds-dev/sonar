@@ -397,10 +397,18 @@ def test_the_memo_lives_in_memory_and_keeps_the_first_decision(live, monkeypatch
     first = {k: dict(v) for k, v in live._shadow_decided.items()}
     live._shadow_pass(NOW + DAY)
     assert live._shadow_decided == first
-    # The memo is in memory; what persists is the ledger alone (Amendment 1:
-    # before it, no shadow file existed at all).
-    assert [p.name for p in live.book.path.parent.iterdir()
-            if p.name.startswith("shadow")] == ["shadow_ledger.json"]
+    # The memo is in memory; what persists is the ledger, its sidecar and the
+    # day's backup (Amendment 1 and fix loop 1: before it, no shadow file
+    # existed at all).
+    assert sorted(p.name for p in live.book.path.parent.iterdir()
+                  if p.name.startswith("shadow")) == [
+        "shadow_ledger.id", "shadow_ledger.json", f"shadow_ledger.json.bak.{_today()}"]
+
+
+def _today():
+    """The local date daily_backup stamps a copy with."""
+    from datetime import date
+    return date.today().isoformat()
 
 
 def _tree(root):
@@ -423,9 +431,9 @@ def test_r2_a_pass_writes_the_ledger_and_its_marker_and_nothing_else(live, monke
     live._shadow_pass(NOW)
     assert live.shadow["n_reached"] == 3
     after = _tree(tmp_path)
-    assert set(after) == set(before) | {"shadow_ledger.json"}
-    assert {k: v for k, v in after.items() if k not in ("shadow_ledger.json",
-                                                        "portfolio.json")} == \
+    ours = {"shadow_ledger.json", "shadow_ledger.id", f"shadow_ledger.json.bak.{_today()}"}
+    assert set(after) == set(before) | ours
+    assert {k: v for k, v in after.items() if k not in ours | {"portfolio.json"}} == \
         {k: v for k, v in before.items() if k != "portfolio.json"}
     book_after = json.loads(live.book.path.read_text())
     assert set(book_after) == set(book_before) | {"shadow_ledger"}

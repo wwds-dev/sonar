@@ -198,7 +198,8 @@ def test_l1_ledger_not_read_a_restart_with_every_fetch_failing_shows_the_same_lo
     live._shadow_pass(NOW)
     look = live.shadow["looks"][0]
     assert look["evaluated"] and look["recorded"] and look["recorded_at"] == NOW
-    assert live.shadow["ledger"] == {"created_at": NOW, "error": None, "reason": None}
+    assert live.shadow["ledger"] == {"created_at": NOW, "error": None, "reason": None,
+                                     "refused": 0}
     recorded = json.loads(_ledger_file().read_text())["looks"]["1"]
 
     _fetch(monkeypatch, lambda s: None)
@@ -208,6 +209,7 @@ def test_l1_ledger_not_read_a_restart_with_every_fetch_failing_shows_the_same_lo
     assert again.shadow["entries"] == live.shadow["entries"]
     assert json.loads(_ledger_file().read_text())["looks"]["1"] == recorded
     assert again.shadow["mismatches"] == [] and again.shadow["ledger"]["error"] is None
+    assert again.shadow["ledger"]["refused"] == 0
 
 
 @pytest.mark.parametrize("closes", [dict(scale=0.5), dict(phase=3)],
@@ -265,14 +267,17 @@ def _random_readout(rng, n):
     entries = [_random_entry(rng, rng.randrange(3 * n)) for _ in range(n)]
     uniq = list({e["id"]: e for e in entries}.values())
     looks = []
-    pair = [calibration._member(member(1, r=rng.gauss(0, 1))),
-            calibration._member(member(2, state="left"))]
-    for k in (1, 2, 3):
+    for k, n_k in enumerate(calibration.SHADOW_LOOKS, start=1):
         ev = rng.random() < 0.5
-        looks.append({"k": k, "n": 2, "evaluated": ev, "recorded": False, "z": rng.gauss(0, 2),
-                      "z_lo": None, "z_hi": None, "method": None, "crossed": rng.random() < .2,
-                      "design_closed": False, "used": 1, "n_excluded": 1,
-                      "members": pair if ev else None})
+        crossed = rng.random() < .2
+        members = ([calibration._member(member(i, r=rng.gauss(0, 1))) for i in range(n_k - 1)]
+                   + [calibration._member(member(n_k, state="left"))])
+        looks.append({"k": k, "n": n_k, "evaluated": ev, "recorded": False,
+                      "z": 3.0 if crossed else rng.gauss(0, 1),
+                      "z_lo": 2.5 if crossed else None, "z_hi": 4.0 if crossed else None,
+                      "method": "vertices" if crossed else None, "crossed": crossed,
+                      "design_closed": False, "used": n_k - 1, "n_excluded": 1,
+                      "members": members if ev else None})
     tries = {f"p{rng.randrange(3 * n)}": sorted(days_after(NOW, *rng.sample(range(9), 2)))
              for _ in range(3)}
     return {"entries": uniq, "looks": looks, "price_tries": tries}
@@ -428,7 +433,8 @@ def test_l6_overwrite_of_a_bad_file_and_result_shown(live, monkeypatch, damage):
     assert all(not lk["recorded"] for lk in again.shadow["looks"])
     assert again.shadow["looks"][0]["evaluated"]      # worked out, and not a result
     t = _no_result_shown(again.shadow)
-    assert t["status"].startswith("Look 1 of 3: worked out but not recorded yet")
+    # Domain r2 P3-1: the look may well be recorded; the record cannot be used.
+    assert t["status"] == "Look 1 of 3: not shown as a result while the record cannot be used."
     assert "could not be read" in t["warn"] and "Record kept since" not in t["note"]
 
 
@@ -514,28 +520,56 @@ def test_l15_silent_fresh_start_a_deleted_ledger_is_missing(live, monkeypatch):
     assert not _ledger_file().exists()
     assert _book_json()["shadow_ledger"] == marker
     assert again.shadow["ledger"] == {"created_at": marker["created_at"], "error": "missing",
-                                      "reason": None}
+                                      "reason": None, "refused": 0}
     assert not any(lk["recorded"] for lk in again.shadow["looks"])
     t = _no_result_shown(again.shadow)
     assert "The record of results is missing, though this book had one since" in t["warn"]
     assert "restore it from the daily backup" in t["warn"]
 
 
+def _crash_after_the_anchors(lv):
+    """What a kill between the anchors and the file leaves: a marker and a
+    sidecar for an empty record, created at NOW, and no file."""
+    anchor = {"ledger_id": "00000000-0000-4000-8000-00000000000a", "created_at": NOW,
+              "looks": 0, "entries": 0}
+    lv.book.shadow_ledger = dict(anchor)
+    lv.book.save()
+    (paths.user_data_base() / core.SHADOW_SIDECAR_FILE).write_text(json.dumps(anchor))
+    return anchor
+
+
+@pytest.mark.parametrize("age,made", [(core.SHADOW_LEDGER_RETRY_S - 1, True),
+                                      (core.SHADOW_LEDGER_RETRY_S + 1, False)])
 def test_l15_a_young_marker_with_no_file_is_a_crash_and_is_made_once_more(live,
-                                                                          monkeypatch):
-    """Failure modes table: a marker under ten minutes old with no file is a
-    crash between the two writes; the file is made with the marker's id."""
+                                                                          monkeypatch,
+                                                                          age, made):
+    """Failure modes table: an anchor under ten minutes old that counts
+    nothing, with no file, is a crash between the writes; the file is made
+    with its id. Older, it is "missing"."""
+    _cohort(live, n=3)
+    anchor = _crash_after_the_anchors(live)
+    _fetch(monkeypatch, lambda s: wavy())
+    again = _restart()
+    again._shadow_pass(NOW + age)
+    assert again.shadow["ledger"]["error"] == (None if made else "missing")
+    assert _ledger_file().exists() is made
+    if made:
+        led = json.loads(_ledger_file().read_text())
+        assert (led["ledger_id"], led["created_at"]) == (anchor["ledger_id"], NOW)
+        assert len(led["entries"]) == 3
+
+
+def test_l15_a_young_marker_that_counts_records_is_missing_not_remade(live, monkeypatch):
+    """Security P3-3 with the 10-minute rule: an anchor that counts recorded
+    entries had a file, so a file gone within ten minutes is "missing"."""
     _cohort(live, n=3)
     _fetch(monkeypatch, lambda s: wavy())
     live._shadow_pass(NOW)
-    marker = _book_json()["shadow_ledger"]
+    assert _book_json()["shadow_ledger"]["entries"] == 3
     _ledger_file().unlink()
     again = _restart()
-    again._shadow_pass(NOW + core.SHADOW_LEDGER_RETRY_S - 1)
-    assert again.shadow["ledger"]["error"] is None
-    led = json.loads(_ledger_file().read_text())
-    assert (led["ledger_id"], led["created_at"]) == (marker["ledger_id"], marker["created_at"])
-    assert len(led["entries"]) == 3
+    again._shadow_pass(NOW + 60)
+    assert again.shadow["ledger"]["error"] == "missing" and not _ledger_file().exists()
 
 
 def test_l15_restoring_the_file_clears_missing(live, monkeypatch):
@@ -556,7 +590,7 @@ def test_l15_restoring_the_file_clears_missing(live, monkeypatch):
 def test_a_ledger_with_no_marker_is_taken_as_this_books(live, monkeypatch):
     """Build note: a file with no marker (a portfolio.json restored from
     before the marker) is read, never replaced, and the marker is written
-    back from it."""
+    back from it: the sidecar names it."""
     _cohort(live, n=3)
     _fetch(monkeypatch, lambda s: wavy())
     live._shadow_pass(NOW)
@@ -568,23 +602,27 @@ def test_a_ledger_with_no_marker_is_taken_as_this_books(live, monkeypatch):
     again._shadow_pass(NOW + DAY)
     assert again.shadow["ledger"]["error"] is None
     assert _book_json()["shadow_ledger"] == {"ledger_id": led["ledger_id"],
-                                             "created_at": led["created_at"]}
+                                             "created_at": led["created_at"],
+                                             "looks": 0, "entries": 3}
     assert json.loads(_ledger_file().read_text())["entries"] == led["entries"]
 
 
 def test_the_day_is_backed_up_before_its_first_overwrite(live, monkeypatch):
     """Architecture: `paths.daily_backup` of the file before a write, as for
-    portfolio.json. The second write of the day finds yesterday's copy
-    taken, here the first version."""
+    portfolio.json. The day's first overwrite is the pass that starts the
+    record (its empty file is written at once, code review P3-2), so the
+    day's copy is that empty file; a later write the same day keeps it."""
     _cohort(live, n=2)
     _fetch(monkeypatch, lambda s: wavy())
     live._shadow_pass(NOW)
-    first = _ledger_file().read_text()
     model = replace(live.book.open[0], id="late", opened_at=NOW - 50 * DAY)
     live.book.open.append(model)
     live._shadow_pass(NOW + 60)
     baks = sorted(paths.user_data_base().glob(core.SHADOW_LEDGER_FILE + ".bak.*"))
-    assert len(baks) == 1 and baks[0].read_text() == first
+    assert len(baks) == 1
+    first = json.loads(baks[0].read_text())
+    assert first["entries"] == {} and first["ledger_id"] == _book_json()["shadow_ledger"][
+        "ledger_id"]
     assert "late" in json.loads(_ledger_file().read_text())["entries"]
 
 
@@ -908,7 +946,9 @@ def test_l16_erratum_rewrites_the_result_never(live, monkeypatch):
     assert "late" in after["entries"]
     t, _all = _texts(sh)
     assert "crossed the line" in t["status"]
-    assert "Erratum 2 Nov" in t["warn"] and "The recorded result is kept" in t["warn"]
+    assert ("Erratum 2 Nov: a result counted in look 1 was later found wrong (bad tick b on "
+            "/b the T bar); corrected R -1.00. As fixed in advance, the recorded look is "
+            "kept, and it may rest on this error.") in t["warn"]
     assert "<" not in t["warn"]                               # through llm._clean
 
 
@@ -927,7 +967,9 @@ def test_l17_cross_look_state_leak_a_late_grade_counts_in_a_later_look_only():
     r1 = calibration.shadow_time_stop(held, done, {}, now1,
                                       tries={"e010": days_after(t_due, 7, 8, 9)})
     assert r1["looks"][0]["evaluated"] and not r1["looks"][1]["evaluated"]
-    led, _ = calibration.ledger_merge(calibration.ledger_new(now1, "v"), r1, now1, "v")
+    refused: list = []
+    led, _ = calibration.ledger_merge(calibration.ledger_new(now1, "v"), r1, now1, "v", refused)
+    assert "e010" not in led["entries"] and refused == []     # no_price: not final
     rec1 = copy.deepcopy(led["looks"]["1"])
     assert {m["id"]: m["state"] for m in rec1["members"]}["e010"] == "no_price"
 
@@ -1005,7 +1047,7 @@ def test_the_marker_is_checked_too(raw, ok):
     if ok is None:
         assert (marker, why) == (None, None)
     elif ok:
-        assert marker == raw and why is None
+        assert marker == {**raw, "looks": 0, "entries": 0} and why is None
     else:
         assert marker is None and why == "LedgerFormatError"
 
@@ -1063,7 +1105,10 @@ def test_the_not_robust_look_line_and_the_extremes(monkeypatch):
     assert "It is not a trading edge." in t["status"]
     assert "crossed the line" not in everything and "The test ends here" not in everything
     assert t["rows"].count("The 2 left out have no usable result.") == 1
-    assert "These are extreme cases, not estimates." in t["rows"]
+    assert ("the lowest z found was +0.92 and the highest +6.43. These are extreme cases, "
+            "not estimates and not limits.") in t["rows"]
+    assert "here it does not hold once the left-out entries are counted" in t["status"]
+    assert "the score sorted how these past" not in t["status"]   # not SH_CAVEAT_CROSSED
     assert "Record kept since" in t["note"]
     monkeypatch.setattr(words, "_mode", words.EXPERT)
     t, _ = _texts(d)
@@ -1122,3 +1167,379 @@ def test_l18_the_scratch_directory_is_what_the_engine_uses(scratch_data):
     assert os.environ[paths.DATA_ENV] == str(scratch_data)
     assert paths.user_data_base() == scratch_data.resolve()
     assert core.Live()._shadow_ledger_path().parent == scratch_data.resolve()
+
+
+# =========================================================================== #
+# Fix loop 1 (docs/audit/shadow-ledger-code-reviewer.md, -security-engineer.md,
+# -domain-finance-r2.md)
+# =========================================================================== #
+def _new_book(lv, prefix="NEW", n=45):
+    """Book B: ``n`` protocol entries with ids book A never had."""
+    model, _ = lv.book.enter(dict(ROW), "LONG", 5, "week", risk_fraction=0.0025, protocol=True)
+    lv.book.open.remove(model)
+    for i in range(n):
+        lv.book.open.append(replace(model, id=f"{prefix}-{i:02d}", symbol=f"S{i}",
+                                    opened_at=NOW - (75 - i) * DAY, confidence=1.5 * i))
+    lv.book.save()
+
+
+def _sidecar():
+    return paths.user_data_base() / core.SHADOW_SIDECAR_FILE
+
+
+@pytest.mark.parametrize("sidecar", ["kept", "removed"])
+def test_cr_p1_1_another_books_ledger_is_never_adopted(live, monkeypatch, sidecar):
+    """Code review P1-1. Book A records a crossing; the book is reset by
+    deleting portfolio.json (README's way), with or without the sidecar; book
+    B's pass finds a ledger whose positions it does not hold. It is a read
+    error naming it as not this book's, and nothing is written. Kills:
+    adopting a marker-less ledger without checking it against the book."""
+    _crossing_holder(live, monkeypatch)
+    (paths.user_data_base() / "portfolio.json").unlink()
+    if sidecar == "removed":
+        _sidecar().unlink()
+    side_before = _stamp(_sidecar()) if _sidecar().exists() else None
+    f = _ledger_file()
+    before = _stamp(f)
+    b = _restart()
+    _new_book(b)
+    _fetch(monkeypatch, lambda s: wavy())
+    b._shadow_pass(NOW + 2 * DAY)
+    assert b.shadow["ledger"]["error"] == "read"
+    assert b.shadow["ledger"]["reason"] == "LedgerIdError"
+    assert _stamp(f) == before and "shadow_ledger" not in _book_json()
+    assert (_stamp(_sidecar()) if _sidecar().exists() else None) == side_before
+    t = _no_result_shown(b.shadow)
+    assert "If the book was reset, the old record has to be moved aside on purpose" in t["warn"]
+
+
+def test_cr_p1_1_a_marker_less_ledger_of_this_book_is_adopted(live, monkeypatch):
+    """The same with this book's own ledger: adopted, and both anchors
+    written back from it."""
+    _cohort(live, n=3)
+    _fetch(monkeypatch, lambda s: wavy())
+    live._shadow_pass(NOW)
+    led = json.loads(_ledger_file().read_text())
+    book = _book_json()
+    del book["shadow_ledger"]
+    (paths.user_data_base() / "portfolio.json").write_text(json.dumps(book))
+    _sidecar().unlink()
+    again = _restart()
+    again._shadow_pass(NOW + DAY)
+    want = {"ledger_id": led["ledger_id"], "created_at": led["created_at"], "looks": 0,
+            "entries": 3}
+    assert again.shadow["ledger"]["error"] is None
+    assert _book_json()["shadow_ledger"] == want and json.loads(_sidecar().read_text()) == want
+
+
+def test_cr_p2_1_an_older_build_drops_the_marker_then_the_file_goes_missing(live,
+                                                                            monkeypatch):
+    """Code review P2-1 / security P2-2: an older build's save strips the
+    marker, then the file is lost. The sidecar still anchors the record:
+    "missing", never a fresh start. Kills: the marker as the only anchor."""
+    _crossing_holder(live, monkeypatch)
+    book = _book_json()
+    book.pop("shadow_ledger")
+    (paths.user_data_base() / "portfolio.json").write_text(json.dumps(book))
+    _ledger_file().unlink()
+    for bak in paths.user_data_base().glob("shadow_ledger.json.bak.*"):
+        bak.unlink()                                  # the sidecar alone anchors it
+    _fetch(monkeypatch, lambda s: wavy())
+    again = _restart()
+    again._shadow_pass(NOW + 3 * DAY)
+    assert again.shadow["ledger"]["error"] == "missing" and not _ledger_file().exists()
+    assert "shadow_ledger" not in _book_json()
+
+
+def test_cr_p2_1_a_backup_alone_is_an_anchor(live, monkeypatch):
+    """No marker, no sidecar, no file, but a daily backup: "missing", with
+    the undated line."""
+    _cohort(live, n=3)
+    _fetch(monkeypatch, lambda s: wavy())
+    live._shadow_pass(NOW)
+    assert list(paths.user_data_base().glob("shadow_ledger.json.bak.*"))
+    book = _book_json()
+    book.pop("shadow_ledger")
+    (paths.user_data_base() / "portfolio.json").write_text(json.dumps(book))
+    _sidecar().unlink()
+    _ledger_file().unlink()
+    again = _restart()
+    again._shadow_pass(NOW + DAY)
+    assert again.shadow["ledger"]["error"] == "missing" and not _ledger_file().exists()
+    t, _ = _texts(again.shadow)
+    assert "The record of results is missing, though backups of it exist." in t["warn"]
+
+
+def test_cr_p2_1_an_off_site_backup_is_an_anchor(scratch_data, tmp_path_factory, monkeypatch):
+    far = tmp_path_factory.mktemp("offsite")
+    (far / "shadow_ledger.json.bak.2026-10-01").write_text("{}")
+    monkeypatch.setenv(paths.BACKUP_DIR_ENV, str(far))
+    lv = core.Live()
+    _cohort(lv, n=1)
+    lv._shadow_pass(NOW)
+    assert lv.shadow["ledger"]["error"] == "missing" and not _ledger_file().exists()
+
+
+def test_sec_p2_2_an_unknown_top_level_key_survives_a_save(tmp_path):
+    """Security P2-2 (b): a key a later build adds is kept by this one."""
+    f = tmp_path / "portfolio.json"
+    f.write_text(json.dumps({"starting_cash": 10_000.0, "cash": 10_000.0, "open": [],
+                             "closed": [], "equity_log": [], "later_key": {"x": [1, 2]}}))
+    book = Portfolio(f)
+    book.enter(dict(ROW), "LONG", 5, "week")
+    assert json.loads(f.read_text())["later_key"] == {"x": [1, 2]}
+
+
+def test_sec_p2_1_an_erratum_added_while_the_holder_runs_survives_its_next_write(
+        live, monkeypatch):
+    """Security P2-1: the holder re-reads a file changed under it and carries
+    a person's erratum over. Kills: writing the tenure's copy over it."""
+    _crossing_holder(live, monkeypatch)
+    f = _ledger_file()
+    led = json.loads(f.read_text())
+    erratum = {"id": led["looks"]["1"]["members"][3]["id"], "reason": "bad tick", "r": -1.0,
+               "date": "2026-11-02"}
+    led["errata"].append(erratum)
+    f.write_text(json.dumps(led, indent=1))
+    live.book.open.append(replace(live.book.open[0], id="late", opened_at=NOW - 40 * DAY))
+    live._shadow_pass(NOW + DAY)
+    after = json.loads(f.read_text())
+    assert "late" in after["entries"] and after["errata"] == [erratum]
+    assert live.shadow["errata"] == [{**erratum, "looks": [1]}]
+
+
+@pytest.mark.parametrize("change", ["another id", "unreadable", "deleted"])
+def test_sec_p2_1_a_file_replaced_under_the_holder_is_never_written_over(live, monkeypatch,
+                                                                         change):
+    _crossing_holder(live, monkeypatch)
+    f = _ledger_file()
+    led = json.loads(f.read_text())
+    if change == "another id":
+        f.write_text(json.dumps({**led, "ledger_id": "00000000-0000-4000-8000-00000000000b"}))
+    elif change == "unreadable":
+        f.write_text("{")
+    else:
+        f.unlink()
+    before = _stamp(f) if f.exists() else None
+    live.book.open.append(replace(live.book.open[0], id="late", opened_at=NOW - 40 * DAY))
+    live._shadow_pass(NOW + DAY)
+    assert (_stamp(f) if f.exists() else None) == before
+    assert live.shadow["ledger"]["error"] == ("missing" if change == "deleted" else "read")
+    _no_result_shown(live.shadow)
+
+
+@pytest.mark.parametrize("bad", [dict(symbol="X" * 65), dict(direction="long"),
+                                 dict(rr=float("nan"))],
+                         ids=["65-character symbol", "lowercase direction", "NaN rr"])
+def test_sec_p2_3_a_record_the_reader_would_refuse_is_left_out_and_counted(live,
+                                                                           monkeypatch, bad):
+    """Security P2-3: one bad entry is refused and counted; the rest are
+    recorded, and the file reads back after a restart. Kills: writing what
+    the strict reader refuses (unreadable for good), or one bad entry
+    blocking every write."""
+    _cohort(live, n=3)
+    live.book.open[0] = replace(live.book.open[0], **bad)
+    live.book.save()
+    _fetch(monkeypatch, lambda s: wavy())
+    live._shadow_pass(NOW)
+    assert live.shadow["ledger"]["error"] is None and live.shadow["ledger"]["refused"] == 1
+    on_disk = json.loads(_ledger_file().read_text())["entries"]
+    assert len(on_disk) == 2 and live.book.open[0].id not in on_disk
+    t, _ = _texts(live.shadow)
+    assert "1 results could not be recorded" in t["warn"]
+    again = _restart()
+    again._shadow_pass(NOW + DAY)
+    assert again.shadow["ledger"]["error"] is None
+
+
+def test_cr_p3_3_what_is_written_is_first_read_back(live, monkeypatch):
+    """Code review P3-3: the serialised text goes through ledger_parse
+    before write_atomically; a refusal is a "write" problem, nothing written."""
+    _cohort(live, n=1)
+    _fetch(monkeypatch, lambda s: wavy())
+    live._shadow_pass(NOW)
+    before = _stamp(_ledger_file())
+    monkeypatch.setattr(calibration, "ledger_parse", lambda raw: (None, "LedgerFormatError"))
+    live.book.open.append(replace(live.book.open[0], id="late", opened_at=NOW - 40 * DAY))
+    live._shadow_pass(NOW + DAY)
+    assert live.shadow["ledger"]["error"] == "write"
+    assert live.shadow["ledger"]["reason"] == "LedgerFormatError"
+    assert _stamp(_ledger_file()) == before
+
+
+@pytest.mark.parametrize("how", ["stop", "lock lost"])
+def test_cr_p3_1_a_pass_stopped_mid_fetch_writes_and_publishes_nothing(live, monkeypatch,
+                                                                       how):
+    """Code review P3-1: a quit, or the engine lock lost, while the fetch is
+    in flight: no marker, sidecar or file, and no readout. Kills: writing
+    after stop or a handover."""
+    _cohort(live, n=3)
+
+    class Lock:
+        held = True
+
+    live.engine_lock = Lock()
+    live._shadow_ledger_open(live.book, NOW)                  # the record exists...
+    before = {p.name: _stamp(p) for p in paths.user_data_base().iterdir() if p.is_file()}
+    live.book.open.append(replace(live.book.open[0], id="late", opened_at=NOW - 40 * DAY))
+
+    def answer(s):
+        if how == "stop":
+            live._stop.set()
+        else:
+            live.engine_lock.held = False
+        return wavy()
+
+    _fetch(monkeypatch, answer)
+    live.shadow = None
+    live._shadow_pass(NOW)                                    # ...and is not touched
+    after = {p.name: _stamp(p) for p in paths.user_data_base().iterdir() if p.is_file()}
+    assert after == before and live.shadow is None
+
+
+def test_cr_p3_2_the_empty_file_is_written_with_the_anchors(live):
+    """Code review P3-2: opening a new record writes the marker, the sidecar
+    and the empty file before any fetch, so a crash later in the pass leaves
+    a file."""
+    _cohort(live, n=1)
+    live._shadow_ledger_open(live.book, NOW)
+    led = json.loads(_ledger_file().read_text())
+    assert led["entries"] == {} and led["looks"] == {}
+    assert _book_json()["shadow_ledger"]["ledger_id"] == led["ledger_id"]
+    assert json.loads(_sidecar().read_text())["ledger_id"] == led["ledger_id"]
+
+
+@pytest.mark.parametrize("edit", ["added", "removed"])
+def test_cr_p3_4_a_changed_constants_key_is_a_mismatch_not_unreadable(edit):
+    led = _recorded(rising())
+    if edit == "added":
+        led["constants"]["new_rule"] = 1
+    else:
+        del led["constants"]["vertex_k_max"]
+    back, why = calibration.ledger_parse(json.dumps(led))
+    assert why is None
+    out = calibration.shadow_with_ledger({"entries": rising()}, back)
+    assert out["mismatches"] == [{"k": 1, "why": "constants", "recorded_at": NOW}]
+
+
+def test_cr_p3_5_no_left_out_warning_for_a_look_that_is_not_a_result():
+    """Code review P3-5: unrecorded, or recorded while the record is
+    blocked: no "This look rests on the other 40"."""
+    es = [member(i, r=0.1 * (i % 5)) for i in range(40)] + \
+         [member(i, state="left") for i in range(40, 45)]
+    unrecorded = _full_readout({"looks": calibration.shadow_looks(es), "entries": es})
+    led = _recorded(es)
+    blocked = {**_full_readout(calibration.shadow_with_ledger({"entries": es}, led)),
+               "ledger": {"created_at": NOW, "error": "read", "reason": "JSONDecodeError"}}
+    shown = _full_readout(calibration.shadow_with_ledger({"entries": es}, led))
+    for d, warned in ((unrecorded, False), (blocked, False), (shown, True)):
+        assert ("This look rests on the other 40" in _texts(d)[0]["warn"]) is warned
+
+
+def test_cr_p3_6_isolated_state_clears_the_data_and_backup_variables():
+    assert paths.BACKUP_DIR_ENV not in os.environ and paths.DATA_ENV not in os.environ
+
+
+def test_sec_p3_1_errata_and_members_are_bounded():
+    led = _valid_ledger()
+    led["errata"] = [dict(led["errata"][0], id=f"{i:04d}") for i in range(1001)]
+    assert calibration.ledger_parse(json.dumps(led))[1] == "LedgerFormatError"
+    led["errata"] = led["errata"][:1000]
+    assert calibration.ledger_parse(json.dumps(led))[1] is None
+    shown = calibration.ledger_errata(led)
+    assert len(shown) == 1000 and shown[1]["looks"] == [1]
+    d = _full_readout({"looks": [], "errata": shown,
+                       "mismatches": [{"k": 1, "why": "z", "recorded_at": NOW}] * 50})
+    warn = _texts(d)[0]["warn"]
+    assert warn.count("Erratum") == 5 and "995 more errata are in the record." in warn
+    assert warn.count("comes out differently") == 3
+
+
+@pytest.mark.parametrize("kind", ["symlink", "fifo", "directory"])
+def test_sec_p3_2_a_link_or_special_file_is_unreadable_never_followed(live, monkeypatch,
+                                                                      tmp_path_factory, kind):
+    """Security P3-2: no symlink is followed and no FIFO is waited on."""
+    _cohort(live, n=1)
+    f = _ledger_file()
+    if kind == "symlink":
+        real = tmp_path_factory.mktemp("elsewhere") / "x.json"
+        real.write_text(json.dumps(calibration.ledger_new(NOW, "v")))
+        f.symlink_to(real)
+    elif kind == "fifo":
+        os.mkfifo(f)
+    else:
+        f.mkdir()
+    _fetch(monkeypatch, lambda s: wavy())
+    live._shadow_pass(NOW)
+    assert live.shadow["ledger"]["error"] == "read"
+
+
+def test_sec_p3_3_a_restored_copy_behind_the_anchors_is_refused(live, monkeypatch):
+    """Security P3-3: the day's backup is taken before the write that records
+    look 1, so restoring it would let look 1 be evaluated again. The anchors
+    count one look: the copy is "older than this book's record"."""
+    _crossing_holder(live, monkeypatch)
+    (bak,) = paths.user_data_base().glob("shadow_ledger.json.bak.*")
+    assert json.loads(bak.read_text())["looks"] == {}
+    _ledger_file().write_text(bak.read_text())
+    again = _restart()
+    again._shadow_pass(NOW + DAY)
+    assert again.shadow["ledger"]["error"] == "read"
+    assert again.shadow["ledger"]["reason"] == "LedgerBehindError"
+    t = _no_result_shown(again.shadow)
+    assert "It is older than this book's record" in t["warn"]
+
+
+@pytest.mark.parametrize("where", ["~/library/application support/sonar",
+                                   "~/Library/Application Support/Sonar/x"])
+def test_l18_sec_p3_4_any_letter_case_of_the_live_directory_is_refused(where, monkeypatch):
+    with pytest.raises(LiveDataRefused):
+        use_scratch_data(where, monkeypatch)
+
+
+def _look_record(k=1, z=3.0, crossed=True, z_lo=None, z_hi=None, filled=False):
+    n = calibration.SHADOW_LOOKS[k - 1]
+    members = [calibration._member(member(i, r=0.1)) for i in range(n - 1)]
+    members.append(calibration._member(member(n, state="left" if filled else "no_risk",
+                                              r_stop=None, r_target=None)))
+    return {"k": k, "n": n, "evaluated_at": NOW, "build": "v", "z": z, "z_lo": z_lo,
+            "z_hi": z_hi, "method": "vertices" if filled else None, "crossed": crossed,
+            "design_closed": False, "used": n - 1, "n_excluded": 1, "members": members}
+
+
+@pytest.mark.parametrize("looks,ok", [
+    ({"1": _look_record()}, True),
+    ({"1": _look_record(z=1.0)}, False),                                 # crossed below the line
+    ({"1": _look_record(filled=True, z_lo=1.0, z_hi=4.0)}, False),       # not robust
+    ({"1": _look_record(filled=True, z_lo=2.4, z_hi=4.0)}, True),
+    ({"1": {**_look_record(), "n": 46}}, False),                         # not look 1's size
+    ({"1": {**_look_record(), "design_closed": True}}, False),
+    ({"1": _look_record(), "2": _look_record(k=2, crossed=False, z=0.1)}, False),  # after a crossing
+], ids=["crossed", "below the line", "not robust", "robust", "wrong n", "design closed",
+        "a look after a crossing"])
+def test_sec_p3_7_a_recorded_verdict_must_follow_from_its_figures(looks, ok):
+    led = {**calibration.ledger_new(NOW, "v"), "looks": looks}
+    assert (calibration.ledger_parse(json.dumps(led))[1] is None) is ok
+
+
+def test_sec_p3_7_only_a_crossed_that_is_true_is_a_crossing():
+    led = _recorded(rising())
+    out = calibration.shadow_with_ledger({"entries": rising()}, led)
+    out["looks"][0]["crossed"] = "yes"
+    t, everything = _texts(_full_readout(out))
+    assert "crossed the line" not in everything
+
+
+def test_domain_r2_p3_3_extremes_that_could_not_be_worked_out_say_so(monkeypatch):
+    pytest.importorskip("PySide6")
+    from ui import words
+    es = _with_filled(0.05, [(5.0, -1.0, None)])          # barriers unknown: no extremes
+    looks = calibration.shadow_looks(es)
+    look = looks[0]
+    assert look["past_line"] and look["z_lo"] is None and look["crossed"] is False
+    out = {"looks": [{**look, "recorded": True, "recorded_at": NOW}] + looks[1:], "entries": es}
+    d = _full_readout(out)
+    status = _texts(d)[0]["status"]
+    assert "but the 1 left out could not be filled in, so it does not count as crossed" in status
+    monkeypatch.setattr(words, "_mode", words.EXPERT)
+    assert "extremes n/a; not crossed (1 excl.)" in _texts(d)[0]["status"]

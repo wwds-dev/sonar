@@ -18,6 +18,7 @@ it is exercising, which is what the provider tests already do.
 
 import os
 import socket
+import unicodedata
 import urllib.request
 from pathlib import Path
 
@@ -49,18 +50,30 @@ class LiveDataRefused(RuntimeError):
     """A test was about to use the live data directory."""
 
 
+def _folded(p) -> str:
+    """A path as APFS compares names by default: case- and
+    normalisation-insensitive (security P3-4: `.../sonar` is the same
+    directory as `.../SONAR`)."""
+    return unicodedata.normalize("NFD", str(p)).casefold()
+
+
+def _under(p, live) -> bool:
+    fp, fl = _folded(p), _folded(live)
+    return fp == fl or fp.startswith(fl.rstrip(os.sep) + os.sep)
+
+
 def refuse_live_data(path) -> Path:
     """``path`` as an absolute path, or LiveDataRefused when it is the live
-    data directory or anything under it. Paths are compared as text first,
-    so the live directory is never listed, read, created or even looked up;
-    only a candidate that is not under it is resolved, to catch a symlink
-    into it."""
+    data directory or anything under it, in any letter case. Paths are
+    compared as text first, so the live directory is never listed, read,
+    created or even looked up; only a candidate that is not under it is
+    resolved, to catch a symlink into it."""
     live = Path(os.path.abspath(str(LIVE_DATA)))
     p = Path(os.path.abspath(os.path.expanduser(str(path))))
-    if p == live or live in p.parents:
+    if _under(p, live):
         raise LiveDataRefused(f"refusing the live data directory for a test: {p}")
     real = Path(os.path.realpath(p))
-    if real == live or live in real.parents:
+    if _under(real, live):
         raise LiveDataRefused(f"refusing the live data directory for a test: {p} -> {real}")
     return p
 
@@ -189,6 +202,11 @@ def isolated_state(monkeypatch, tmp_path):
     """
     refuse_live_data(tmp_path)
     monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
+    # Neither an exported data directory nor an off-site backup directory
+    # reaches a test: a test's backup must never be copied into, or prune,
+    # the real off-site copies (code review P3-6, security P3-5).
+    monkeypatch.delenv(_paths.BACKUP_DIR_ENV, raising=False)
+    monkeypatch.delenv(_paths.DATA_ENV, raising=False)
 
 
 @pytest.fixture(autouse=True)

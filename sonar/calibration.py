@@ -878,6 +878,8 @@ LEDGER_LOOK_FIELDS = ("k", "n", "evaluated_at", "build", "z", "z_lo", "z_hi", "m
 LEDGER_MEMBER_FIELDS = ("id", "state", "r", "confidence", "r_stop", "r_target")
 LEDGER_ERRATUM_FIELDS = ("id", "reason", "r", "date")
 LEDGER_TEXT_MAX = 500             # a reason or a build tag; ids and symbols are shorter
+LEDGER_ID_MAX = 64                # a position id or a symbol
+LEDGER_ERRATA_MAX = 1_000         # far beyond any honest use; bounds every pass's work
 LEDGER_METHODS = (None, "vertices", "slopes")
 
 
@@ -887,8 +889,16 @@ class LedgerFormatError(ValueError):
 
 
 class LedgerIdError(LedgerFormatError):
-    """A ledger whose id is not the one the book's marker names: another
-    book's record, or one put back in place of this one."""
+    """A ledger that is not this book's: its id is not the one the book's
+    marker or sidecar names, or, with neither, it records positions this book
+    does not hold (another book's record, or one put back in place of this
+    one)."""
+
+
+class LedgerBehindError(LedgerFormatError):
+    """A ledger with fewer recorded looks or entries than the book's marker
+    says it had: an older copy, such as a daily backup taken before the
+    day's first write."""
 
 
 def ledger_constants() -> dict:
@@ -911,6 +921,14 @@ def ledger_new(now: float, build: str, ledger_id: str | None = None,
             "created_at": now if created_at is None else created_at, "created_by": build,
             "constants": ledger_constants(), "entries": {}, "looks": {},
             "price_tries": {}, "errata": []}
+
+
+def ledger_anchor(ledger: dict) -> dict:
+    """What the book's marker and the sidecar say about the record: its id,
+    when it began, and how many looks and entries it held at the last write.
+    The counts only grow, so a file behind them is an older copy."""
+    return {"ledger_id": ledger["ledger_id"], "created_at": ledger["created_at"],
+            "looks": len(ledger["looks"]), "entries": len(ledger["entries"])}
 
 
 def _is_num(v) -> bool:
@@ -961,7 +979,7 @@ def _opt_num(v) -> bool:
 
 def _check_entry(pid, e) -> None:
     where = f"entry {pid!r}"
-    _need(_is_text(pid, 64), where)
+    _need(_is_text(pid, LEDGER_ID_MAX), where)
     _fields(e, LEDGER_ENTRY_FIELDS, where)
     _need(e["state"] in SHADOW_FINAL and e["source"] in SHADOW_SOURCES, where)
     _need(_is_num(e["r"]) if e["state"] in SHADOW_GRADED else e["r"] is None, where)
@@ -969,29 +987,66 @@ def _check_entry(pid, e) -> None:
                                        "opened_at", "t_due", "t_days", "decided_at")), where)
     _need(all(_opt_num(e[f]) for f in ("exit", "r_stop", "r_target", "closed_at", "t_bar",
                                         "t_cut")), where)
-    _need(e["direction"] in ("LONG", "SHORT") and _is_text(e["symbol"], 64)
+    _need(e["direction"] in ("LONG", "SHORT") and _is_text(e["symbol"], LEDGER_ID_MAX)
           and _is_text(e["build"]) and isinstance(e["gap"], bool), where)
     _need(isinstance(e["ref"], list) and len(e["ref"]) == 2
           and all(_is_num(v) for v in e["ref"]), where)
 
 
-def _check_look(key, lk) -> None:
+def _check_look(key, lk, boundary: float = SHADOW_BOUNDARY) -> None:
+    """One recorded look: its shape, and a verdict that follows from its own
+    figures (security P3-7) — a cohort of the size its key says, and a
+    crossing only past the line and, with members filled in, robust."""
     where = f"look {key!r}"
     _fields(lk, LEDGER_LOOK_FIELDS, where)
     _need(_is_int(lk["k"]) and str(lk["k"]) == key and 1 <= lk["k"] <= len(SHADOW_LOOKS)
-          and _is_int(lk["n"]) and _is_int(lk["used"]) and _is_int(lk["n_excluded"]), where)
+          and _is_int(lk["n"]) and lk["n"] == SHADOW_LOOKS[lk["k"] - 1]
+          and _is_int(lk["used"]) and _is_int(lk["n_excluded"]), where)
     _need(_is_num(lk["evaluated_at"]) and _is_text(lk["build"]), where)
     _need(all(_opt_num(lk[f]) for f in ("z", "z_lo", "z_hi")), where)
     _need(lk["method"] in LEDGER_METHODS and isinstance(lk["crossed"], bool)
-          and isinstance(lk["design_closed"], bool), where)
+          and lk["design_closed"] is False, where)
     _need(isinstance(lk["members"], list) and len(lk["members"]) == lk["n"]
           and lk["used"] + lk["n_excluded"] == lk["n"], where)
+    filled = 0
     for m in lk["members"]:
         _fields(m, LEDGER_MEMBER_FIELDS, where)
-        _need(_is_text(m["id"], 64) and m["state"] in SHADOW_GRADED + SHADOW_EXCLUDED, where)
+        _need(_is_text(m["id"], LEDGER_ID_MAX)
+              and m["state"] in SHADOW_GRADED + SHADOW_EXCLUDED, where)
         _need(_is_num(m["r"]) if m["state"] in SHADOW_GRADED else m["r"] is None, where)
         _need(_is_num(m["confidence"]) and _opt_num(m["r_stop"]) and _opt_num(m["r_target"]),
               where)
+        filled += m["state"] in SHADOW_FILLED
+    _need(sum(m["state"] in SHADOW_GRADED for m in lk["members"]) == lk["used"], where)
+    if lk["crossed"]:
+        z = lk["z"]
+        _need(z is not None and abs(z) >= boundary, where)
+        if filled:
+            _need(lk["z_lo"] is not None and lk["z_hi"] is not None
+                  and (lk["z_lo"] >= boundary if z > 0 else lk["z_hi"] <= -boundary), where)
+
+
+def _check_looks_order(looks: dict) -> None:
+    """No look is recorded after one that crossed: the first crossing closes
+    the design."""
+    crossed = False
+    for key in sorted(looks, key=int):
+        _need(not crossed, f"look {key!r} after a crossing")
+        crossed = looks[key]["crossed"]
+
+
+def _check_constants(c) -> None:
+    """The constants as a typed mapping. Today's key set is not required: a
+    key added or removed is a "constants" mismatch (ADR §7), not an
+    unreadable file."""
+    _need(isinstance(c, dict), "constants")
+    for k, v in c.items():
+        ok = _is_text(k, LEDGER_ID_MAX) and (
+            _is_num(v)
+            or (isinstance(v, list) and len(v) <= 100 and all(_is_num(x) for x in v))
+            or (isinstance(v, dict) and len(v) <= 100
+                and all(_is_text(a, LEDGER_ID_MAX) and _is_num(b) for a, b in v.items())))
+        _need(ok, "constants")
 
 
 def ledger_parse(raw) -> tuple[dict | None, str | None]:
@@ -1008,31 +1063,26 @@ def ledger_parse(raw) -> tuple[dict | None, str | None]:
         _need(_is_int(d["schema"]) and d["schema"] == LEDGER_SCHEMA, "schema")
         _need(_is_uuid(d["ledger_id"]) and _is_num(d["created_at"])
               and _is_text(d["created_by"]), "header")
-        c = d["constants"]
-        _fields(c, tuple(ledger_constants()), "constants")
-        _need(all(_is_int(c[f]) for f in ("rules", "t_horizons", "grace_tries",
-                                           "vertex_k_max")), "constants")
-        _need(all(_is_num(c[f]) for f in ("boundary", "grace_days", "try_after_days",
-                                           "split_guard")), "constants")
-        _need(isinstance(c["t_days"], dict) and all(
-            _is_text(k, 64) and _is_num(v) for k, v in c["t_days"].items()), "constants")
-        _need(isinstance(c["looks"], list) and all(_is_int(v) for v in c["looks"]),
-              "constants")
+        _check_constants(d["constants"])
+        boundary = d["constants"].get("boundary")
+        boundary = boundary if _is_num(boundary) else SHADOW_BOUNDARY
         _need(isinstance(d["entries"], dict), "entries")
         for pid, e in d["entries"].items():
             _check_entry(pid, e)
         _need(isinstance(d["looks"], dict), "looks")
         for key, lk in d["looks"].items():
-            _check_look(key, lk)
+            _check_look(key, lk, boundary)
+        _check_looks_order(d["looks"])
         _need(isinstance(d["price_tries"], dict), "price_tries")
         for pid, days in d["price_tries"].items():
-            _need(_is_text(pid, 64) and isinstance(days, list)
+            _need(_is_text(pid, LEDGER_ID_MAX) and isinstance(days, list) and len(days) <= 400
                   and all(_is_day(v) for v in days), "price_tries")
-        _need(isinstance(d["errata"], list), "errata")
+        _need(isinstance(d["errata"], list) and len(d["errata"]) <= LEDGER_ERRATA_MAX,
+              "errata")
         for er in d["errata"]:
             _fields(er, LEDGER_ERRATUM_FIELDS, "errata")
-            _need(_is_text(er["id"], 64) and _is_text(er["reason"]) and _opt_num(er["r"])
-                  and _is_day(er["date"]), "errata")
+            _need(_is_text(er["id"], LEDGER_ID_MAX) and _is_text(er["reason"])
+                  and _opt_num(er["r"]) and _is_day(er["date"]), "errata")
     except (ValueError, TypeError, RecursionError) as exc:
         return None, type(exc).__name__
     return d, None
@@ -1043,48 +1093,85 @@ def _no_constant(name: str):
 
 
 def ledger_marker_parse(raw) -> tuple[dict | None, str | None]:
-    """The marker in ``portfolio.json``: ``(None, None)`` when there is none,
-    ``(marker, None)``, or ``(None, reason)`` when it is there but damaged —
-    which is never the same as "no ledger yet"."""
+    """The marker in ``portfolio.json``, or the sidecar beside the ledger:
+    ``(None, None)`` when there is none, ``(marker, None)``, or
+    ``(None, reason)`` when it is there but damaged — which is never the same
+    as "no ledger yet". The counts of looks and entries are 0 when absent."""
     if raw is None:
         return None, None
-    if (isinstance(raw, dict) and set(raw) == {"ledger_id", "created_at"}
-            and _is_uuid(raw["ledger_id"]) and _is_num(raw["created_at"])):
-        return {"ledger_id": raw["ledger_id"], "created_at": raw["created_at"]}, None
+    if (isinstance(raw, dict) and {"ledger_id", "created_at"} <= set(raw)
+            <= {"ledger_id", "created_at", "looks", "entries"}
+            and _is_uuid(raw["ledger_id"]) and _is_num(raw["created_at"])
+            and all(_is_int(raw.get(k, 0)) and raw.get(k, 0) >= 0
+                    for k in ("looks", "entries"))):
+        return {"ledger_id": raw["ledger_id"], "created_at": raw["created_at"],
+                "looks": raw.get("looks", 0), "entries": raw.get("entries", 0)}, None
     return None, LedgerFormatError.__name__
 
 
-def ledger_merge(old: dict, readout: dict, now: float, build: str) -> tuple[dict, int]:
+def ledger_belongs(ledger: dict, book_ids) -> bool:
+    """Whether a ledger found with no marker or sidecar can be this book's:
+    empty, or every recorded entry and every recorded look member is a
+    protocol position the book holds (code review P1-1)."""
+    ids = set(book_ids)
+    return (set(ledger["entries"]) <= ids
+            and all(m["id"] in ids for lk in ledger["looks"].values() for m in lk["members"]))
+
+
+def ledger_merge(old: dict, readout: dict, now: float, build: str,
+                 refused: list | None = None) -> tuple[dict, int]:
     """``old`` plus what ``readout`` has decided or evaluated for the first
     time: ``(new, added)``. Write-once: an entry is added only when its id is
     absent and its state is final (:data:`SHADOW_FINAL`); a look only when its
     key is absent and it was evaluated here. No existing entry, look,
     constant or erratum is ever changed or removed. Only ``price_tries``
     changes: the days are kept and added to, and an entry's are dropped once
-    it is decided. ``old`` is never modified."""
+    it is decided. ``old`` is never modified.
+
+    Each new entry and look is checked as :func:`ledger_parse` would read it
+    back; one that fails is left out (and its id appended to ``refused``),
+    so the file never holds what this build could not read again (security
+    P2-3), and one bad record never blocks the rest."""
     new = copy.deepcopy(old)
     added = 0
     for e in readout.get("entries", ()):
         if e["id"] in new["entries"] or e["state"] not in SHADOW_FINAL:
             continue
-        rec = {f: copy.deepcopy(e[f]) for f in LEDGER_ENTRY_FIELDS
+        rec = {f: copy.deepcopy(e.get(f)) for f in LEDGER_ENTRY_FIELDS
                if f not in ("decided_at", "build")}
-        new["entries"][e["id"]] = {**rec, "decided_at": now, "build": build}
+        rec = {**rec, "decided_at": now, "build": build}
+        try:
+            _check_entry(e["id"], rec)
+            json.dumps(rec, allow_nan=False)
+        except (ValueError, TypeError):
+            if refused is not None:
+                refused.append(e["id"])
+            continue
+        new["entries"][e["id"]] = rec
         added += 1
     for lk in readout.get("looks", ()):
         key = str(lk["k"])
         if key in new["looks"] or not lk.get("evaluated") or lk.get("recorded"):
             continue
-        new["looks"][key] = {
-            "k": lk["k"], "n": lk["n"], "evaluated_at": now, "build": build,
-            "z": lk["z"], "z_lo": lk["z_lo"], "z_hi": lk["z_hi"], "method": lk["method"],
-            "crossed": lk["crossed"], "design_closed": lk["design_closed"],
-            "used": lk["used"], "n_excluded": lk["n_excluded"],
-            "members": copy.deepcopy(lk["members"])}
+        rec = {"k": lk["k"], "n": lk["n"], "evaluated_at": now, "build": build,
+               "z": lk["z"], "z_lo": lk["z_lo"], "z_hi": lk["z_hi"], "method": lk["method"],
+               "crossed": lk["crossed"], "design_closed": lk["design_closed"],
+               "used": lk["used"], "n_excluded": lk["n_excluded"],
+               "members": copy.deepcopy(lk["members"])}
+        try:
+            _check_look(key, rec)
+            _check_looks_order({**new["looks"], key: rec})
+            json.dumps(rec, allow_nan=False)
+        except (ValueError, TypeError, KeyError):
+            if refused is not None:
+                refused.append(f"look {key}")
+            continue
+        new["looks"][key] = rec
         added += 1
     tries = new["price_tries"]
     for pid, days in (readout.get("price_tries") or {}).items():
-        tries[pid] = sorted(set(tries.get(pid, ())) | set(days))
+        if _is_text(pid, LEDGER_ID_MAX):
+            tries[pid] = sorted(set(tries.get(pid, ())) | set(days))
     for pid in [pid for pid in tries if pid in new["entries"]]:
         del tries[pid]
     return new, added
@@ -1125,12 +1212,14 @@ def ledger_check(ledger: dict | None, entries: list[dict]) -> list[dict]:
 
 def ledger_errata(ledger: dict | None) -> list[dict]:
     """The errata, for display, each with the recorded looks its position is
-    a member of. Read-only: nothing here changes a result."""
+    a member of. Read-only: nothing here changes a result. The members are
+    indexed once, so the cost is errata + members, not their product
+    (security P3-1)."""
     if not ledger:
         return []
-    out = []
-    for er in ledger["errata"]:
-        looks = [rec["k"] for key, rec in sorted(ledger["looks"].items(), key=lambda kv: int(kv[0]))
-                 if any(m["id"] == er["id"] for m in rec["members"])]
-        out.append({**er, "looks": looks})
-    return out
+    where: dict[str, list[int]] = {}
+    for key in sorted(ledger["looks"], key=int):
+        rec = ledger["looks"][key]
+        for pid in {m["id"] for m in rec["members"]}:
+            where.setdefault(pid, []).append(rec["k"])
+    return [{**er, "looks": list(where.get(er["id"], ()))} for er in ledger["errata"]]

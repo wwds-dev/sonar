@@ -184,6 +184,10 @@ def _locked(method):
     return run_locked
 
 
+#: The top-level keys of portfolio.json this build reads and writes.
+_BOOK_KEYS = ("starting_cash", "cash", "open", "closed", "equity_log", "shadow_ledger")
+
+
 class Portfolio:
     """The paper book: cash, open positions, and everything already resolved."""
 
@@ -205,6 +209,10 @@ class Portfolio:
         # read and written back on every save. While it is here, a missing
         # ledger is an error, never a fresh start. None: no ledger yet.
         self.shadow_ledger: dict | None = None
+        # Top-level keys this build does not know, kept as read and written
+        # back: a key a later build adds (as the marker was) survives a save
+        # by this one, so a rollback cannot strip it (security P2-2).
+        self._other: dict = {}
         self._load()
 
     # -- persistence ------------------------------------------------------- #
@@ -221,6 +229,7 @@ class Portfolio:
         # As it is, damaged or not: the engine checks it, and only a person
         # removes it (a book reset, Amendment 1).
         self.shadow_ledger = d.get("shadow_ledger")
+        self._other = {k: v for k, v in d.items() if k not in _BOOK_KEYS}
 
     @_locked
     def save(self) -> None:
@@ -228,7 +237,7 @@ class Portfolio:
         # Daily known-good copy before the first overwrite of the day — this
         # file is weeks of resolved positions with no other home.
         paths.daily_backup(self.path)
-        payload = {"starting_cash": self.starting_cash, "cash": self.cash,
+        payload = {**self._other, "starting_cash": self.starting_cash, "cash": self.cash,
                    "open": [asdict(p) for p in self.open],
                    "closed": [asdict(p) for p in self.closed],
                    "equity_log": self.equity_log}

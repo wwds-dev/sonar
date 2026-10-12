@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import random
+import stat
 import sys
 import threading
 import time
@@ -148,6 +150,44 @@ SHADOW_LEDGER_FILE = "shadow_ledger.json"
 SHADOW_LEDGER_RETRY_S = 600.0
 # About 0.36 MB a year (validator P3-4); a file near this is not ours to parse.
 SHADOW_LEDGER_MAX_BYTES = 64 * 1024 * 1024
+# The ledger's second anchor, beside it: its id and counts. No build before
+# the ledger knows the name, so none rewrites it (code review P2-1).
+SHADOW_SIDECAR_FILE = "shadow_ledger.id"
+
+
+def _read_regular(path, limit: int):
+    """``(text, stat)`` of a regular file of at most ``limit`` bytes, or
+    ``(None, None)`` when there is none. A symlink is refused (O_NOFOLLOW), a
+    FIFO or a device neither blocks nor is read (O_NONBLOCK, S_ISREG), and
+    no more than ``limit + 1`` bytes are ever read (security P3-2)."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None, None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise calibration.LedgerFormatError("not a regular file")
+        if st.st_size > limit:
+            raise calibration.LedgerFormatError("too large")
+        chunks, left = [], limit + 1
+        while left > 0:
+            chunk = os.read(fd, min(left, 1 << 20))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            left -= len(chunk)
+        data = b"".join(chunks)
+        if len(data) > limit:
+            raise calibration.LedgerFormatError("too large")
+        return data.decode("utf-8"), st
+    finally:
+        os.close(fd)
+
+
+def _file_key(st) -> tuple:
+    """What says a file changed: its inode, size and modification time."""
+    return (st.st_ino, st.st_size, st.st_mtime_ns)
 
 
 class Live:
@@ -259,6 +299,8 @@ class Live:
         self._ledger_problem: tuple[str, str | None] | None = None
         self._ledger_marker_at: float | None = None
         self._ledger_retried = False
+        # The file as this tenure last read or wrote it (see _file_key).
+        self._ledger_seen: tuple | None = None
         self._shadow_tries: dict[str, list[str]] = {}
         self._seed_tries = 0        # see _seed_account_history
         self._seed_at = 0.0
@@ -598,6 +640,7 @@ class Live:
         if self.following or self.read_only:
             return
         now = time.time() if now is None else now
+        self._ledger_problem = None              # this pass's own, from here on
         try:
             book = self.book
             with book.lock:
@@ -620,12 +663,16 @@ class Live:
                 {k: copy.deepcopy(v) for k, v in calibration.shadow_decided(result).items()
                  if k not in self._shadow_decided})
             self._shadow_tries = copy.deepcopy(result["price_tries"])
-            result = self._shadow_ledger_record(result, now)
+            result = self._shadow_ledger_record(book, result, now)
         except Exception as exc:
+            if not self._may_write_shadow():
+                return
             with self.lock:
                 last = self.shadow if isinstance(self.shadow, dict) else {}
                 self.shadow = {**last, "error": type(exc).__name__}
             return
+        if not self._may_write_shadow():
+            return                              # stopped or handed over: not ours to show
         with self.lock:
             self.shadow = result
 
@@ -633,113 +680,245 @@ class Live:
     def _shadow_ledger_path(self):
         return paths.user_data_base() / SHADOW_LEDGER_FILE
 
+    def _shadow_sidecar_path(self):
+        return paths.user_data_base() / SHADOW_SIDECAR_FILE
+
     def _ledger_build(self) -> str:
         return str((self.build or {}).get("version") or "unknown")[:64]
 
-    def _shadow_ledger_open(self, book, now: float) -> None:
-        """Read the ledger, once per holder tenure; or start it, marker first.
+    def _may_write_shadow(self) -> bool:
+        """Whether this pass may still write the ledger, its anchors or the
+        readout: not once a stop was asked for, and only while this engine
+        drives and holds the engine lock (code review P3-1). A pass still in
+        flight at a quit or a handover ends without writing; the next holder
+        reads the record afresh. No lock at all is a direct call (tests)."""
+        if self._stop.is_set() or self.following or self.read_only:
+            return False
+        lock = self.engine_lock
+        return lock is None or bool(getattr(lock, "held", False))
 
-        | marker | file | outcome |
-        | none | none | a new ledger: the marker is saved in portfolio.json, under the book's lock, and the file is written by this same pass |
-        | yes | none | "missing" — never a fresh start; unless the marker is under SHADOW_LEDGER_RETRY_S old, which is a crash between the two writes: the file is made once more |
-        | none | yes | the file is taken as this book's, and the marker written back from it |
-        | yes | yes | read; another id, schema or shape is "read" |
+    def _shadow_ledger_open(self, book, now: float) -> None:
+        """Read the ledger, once per holder tenure; or start it, anchors first.
+
+        The record is anchored three ways: the marker in portfolio.json, the
+        sidecar `shadow_ledger.id` beside the file (which no older build
+        rewrites, code review P2-1 / security P2-2), and any backup of the
+        file, here or off-site. Both the marker and the sidecar carry the
+        record's id and its counts of looks and entries at the last write.
+
+        | anchor | file | outcome |
+        | none | none | a new ledger: marker, then sidecar, then the empty file, in this pass |
+        | yes | none | "missing" — never a fresh start; unless marker or sidecar is under SHADOW_LEDGER_RETRY_S old and counts nothing, a crash between the writes: the file is made once more |
+        | backups only | none | "missing" |
+        | no marker | yes | taken as this book's only if empty or every recorded id is a protocol position of this book (code review P1-1); else "read" (LedgerIdError) |
+        | yes | yes | read; another id is "read" (LedgerIdError), fewer looks or entries than the anchor counts is "read" (LedgerBehindError), any other shape is "read" |
 
         On "read" or "missing" nothing is written and the file is never
         moved or repaired; the next pass reads again, so a restored file is
-        picked up without a restart. A good ledger is not read again until
-        the next tenure: from then on this process's copy is the record.
+        picked up without a restart. A good ledger is not parsed again in
+        this tenure unless the file changes under it (see
+        `_shadow_ledger_refresh`); otherwise this process's copy is the record.
         """
         if self._ledger is not None:
+            self._shadow_ledger_refresh()
             return
-        self._ledger_problem = None
         path = self._shadow_ledger_path()
         with book.lock:
             raw = copy.deepcopy(book.shadow_ledger)
+            ids = {p.id for p in book.open + book.closed if p.protocol}
         marker, bad = calibration.ledger_marker_parse(raw)
-        self._ledger_marker_at = marker["created_at"] if marker else None
-        if bad:
-            self._ledger_problem = ("read", bad)
+        side, bad_side = (None, None) if bad else self._shadow_sidecar()
+        if bad or bad_side:
+            self._ledger_problem = ("read", bad or bad_side)
             return
+        anchors = [a for a in (marker, side) if a]
+        self._ledger_marker_at = anchors[0]["created_at"] if anchors else None
+        if len({a["ledger_id"] for a in anchors}) > 1:
+            self._ledger_problem = ("read", calibration.LedgerIdError.__name__)
+            return
+        anchor = anchors[0] if anchors else None
+        looks = max((a["looks"] for a in anchors), default=0)
+        entries = max((a["entries"] for a in anchors), default=0)
         try:
             paths.sweep_temp_files(path)
-            if path.stat().st_size > SHADOW_LEDGER_MAX_BYTES:
-                raise calibration.LedgerFormatError("too large")
-            text = path.read_text()
-        except FileNotFoundError:
-            text = None
+            text, st = _read_regular(path, SHADOW_LEDGER_MAX_BYTES)
         except (OSError, ValueError) as exc:
             self._ledger_problem = ("read", type(exc).__name__)
             return
         if text is None:
-            if marker is None:
+            if anchor is None and self._shadow_ledger_backups(path):
+                self._ledger_problem = ("missing", None)
+                return
+            if anchor is None:
                 ledger = calibration.ledger_new(now, self._ledger_build())
-                if not self._shadow_ledger_mark(book, ledger):
-                    return
-            elif (not self._ledger_retried
-                  and 0 <= now - marker["created_at"] < SHADOW_LEDGER_RETRY_S):
+            elif (not self._ledger_retried and looks == entries == 0
+                  and 0 <= now - anchor["created_at"] < SHADOW_LEDGER_RETRY_S):
                 self._ledger_retried = True
                 ledger = calibration.ledger_new(now, self._ledger_build(),
-                                                marker["ledger_id"], marker["created_at"])
+                                                anchor["ledger_id"], anchor["created_at"])
             else:
                 self._ledger_problem = ("missing", None)
                 return
+            if not self._shadow_ledger_anchor(book, ledger):
+                return
+            # The empty file at once, so a crash later in the pass leaves a
+            # file, not "missing" (code review P3-2). A failure is retried.
             self._ledger, self._ledger_unsaved = ledger, True
+            if self._shadow_ledger_write(ledger):
+                self._ledger_unsaved = False
             return
         ledger, why = calibration.ledger_parse(text)
         if why:
             self._ledger_problem = ("read", why)
             return
-        if marker is None:
-            if not self._shadow_ledger_mark(book, ledger):
-                return
-        elif ledger["ledger_id"] != marker["ledger_id"]:
+        if marker is None and not calibration.ledger_belongs(ledger, ids):
+            # No marker in this book (a reset book, or one an older build
+            # saved): the file is taken only if it can be this book's — the
+            # sidecar names the directory's record, not the book's.
             self._ledger_problem = ("read", calibration.LedgerIdError.__name__)
             return
+        if anchor is not None and ledger["ledger_id"] != anchor["ledger_id"]:
+            self._ledger_problem = ("read", calibration.LedgerIdError.__name__)
+            return
+        elif len(ledger["looks"]) < looks or len(ledger["entries"]) < entries:
+            self._ledger_problem = ("read", calibration.LedgerBehindError.__name__)
+            return
         self._ledger, self._ledger_unsaved = ledger, False
+        self._ledger_seen = _file_key(st)
+        # A marker an older build dropped, a missing sidecar, or counts behind
+        # the file: brought up to the record, which is the one source here.
+        self._shadow_ledger_anchor(book, ledger)
 
-    def _shadow_ledger_mark(self, book, ledger: dict) -> bool:
-        """Record in portfolio.json that this book has a ledger. A failed save
-        leaves no marker, and the next pass tries again."""
+    def _shadow_sidecar(self) -> tuple[dict | None, str | None]:
+        """The sidecar, parsed as a marker: (None, None) when there is none."""
+        try:
+            text, _st = _read_regular(self._shadow_sidecar_path(), 4096)
+            raw = None if text is None else json.loads(text)
+        except (OSError, ValueError) as exc:
+            return None, type(exc).__name__
+        if text is not None and raw is None:
+            return None, calibration.LedgerFormatError.__name__
+        return calibration.ledger_marker_parse(raw)
+
+    @staticmethod
+    def _shadow_ledger_backups(path) -> bool:
+        """Whether a backup of the ledger exists, here or off-site: the third
+        anchor, which says a record existed even with no marker or sidecar."""
+        if any(path.parent.glob(f"{path.name}.bak.*")):
+            return True
+        far = paths.offsite_dir()
+        return bool(far is not None and any(far.glob(f"{path.name}.bak.*")))
+
+    def _shadow_ledger_anchor(self, book, ledger: dict) -> bool:
+        """Bring the marker in portfolio.json (saved under the book's lock)
+        and then the sidecar up to `ledger`'s id, start and counts, each only
+        when it differs. Called before the file exists and after every write,
+        so neither ever counts more than the file holds. A failed save leaves
+        the old marker, and the next pass tries again."""
+        want = calibration.ledger_anchor(ledger)
+        if not self._may_write_shadow():
+            return False
         with book.lock:
-            book.shadow_ledger = {"ledger_id": ledger["ledger_id"],
-                                  "created_at": ledger["created_at"]}
-            try:
-                book.save()
-            except Exception as exc:
-                book.shadow_ledger = None
-                self._ledger_problem = ("write", type(exc).__name__)
-                return False
-        self._ledger_marker_at = ledger["created_at"]
+            old = book.shadow_ledger
+            if old != want:
+                book.shadow_ledger = want
+                try:
+                    book.save()
+                except Exception as exc:
+                    book.shadow_ledger = old
+                    self._ledger_problem = ("write", type(exc).__name__)
+                    return False
+        self._ledger_marker_at = want["created_at"]
+        try:
+            side, _bad = self._shadow_sidecar()
+            if side != want:
+                paths.write_atomically(self._shadow_sidecar_path(), json.dumps(want))
+        except Exception as exc:
+            self._ledger_problem = ("write", type(exc).__name__)
+            return False
         return True
 
-    def _shadow_ledger_record(self, result: dict, now: float) -> dict:
+    def _shadow_ledger_refresh(self) -> bool:
+        """Re-read the file if it changed since this tenure last read or wrote
+        it (security P2-1): a person may add an erratum while the holder runs.
+        Same id: its errata are taken over, and nothing else. Gone, unreadable
+        or another id: the tenure's copy is dropped and the next pass reads
+        again — never written over. Returns whether the copy is still good."""
+        if self._ledger_unsaved and self._ledger_seen is None:
+            return True                      # this tenure's new file, not written yet
+        path = self._shadow_ledger_path()
+        try:
+            st = os.stat(path, follow_symlinks=False)
+            if _file_key(st) == self._ledger_seen:
+                return True
+            text, st = _read_regular(path, SHADOW_LEDGER_MAX_BYTES)
+        except (OSError, ValueError) as exc:
+            missing = isinstance(exc, FileNotFoundError)
+            self._ledger_problem = ("missing", None) if missing else ("read",
+                                                                     type(exc).__name__)
+            self._ledger = None
+            return False
+        ledger, why = (None, None) if text is None else calibration.ledger_parse(text)
+        if text is None or why or ledger["ledger_id"] != self._ledger["ledger_id"]:
+            self._ledger_problem = (("missing", None) if text is None else
+                                    ("read", why or calibration.LedgerIdError.__name__))
+            self._ledger = None
+            return False
+        self._ledger = {**self._ledger, "errata": ledger["errata"]}
+        self._ledger_seen = _file_key(st)
+        return True
+
+    def _shadow_ledger_write(self, ledger: dict) -> bool:
+        """Write the whole file: after the day's backup, in one atomic step,
+        and only once the text has been read back by the strict reader (code
+        review P3-3). A refusal or failure is a "write" problem."""
+        if not self._may_write_shadow():
+            return False
+        path = self._shadow_ledger_path()
+        try:
+            text = json.dumps(ledger, indent=1, allow_nan=False)
+            _back, why = calibration.ledger_parse(text)
+            if why:
+                self._ledger_problem = ("write", why)
+                return False
+            paths.daily_backup(path)
+            paths.write_atomically(path, text)
+            self._ledger_seen = _file_key(os.stat(path, follow_symlinks=False))
+        except Exception as exc:
+            self._ledger_problem = ("write", type(exc).__name__)
+            return False
+        return True
+
+    def _shadow_ledger_record(self, book, result: dict, now: float) -> dict:
         """Merge what `result` decided or evaluated for the first time into
-        the ledger and write it — after the day's backup, in one atomic step —
-        when anything was added or a try counted. On success the looks are
+        the ledger and write it when anything was added, a try counted, or
+        this tenure's new file is not on disk yet; then bring the anchors up
+        to it. Before the write the file is checked for a change under it
+        (an erratum added by hand is carried over). On success the looks are
         worked out again against the new record, so what is published is
         what is on disk. On failure the record and the readout's looks stay
         as they were (an unrecorded look shows no result) and the next pass
-        tries again. `result["ledger"]` says which."""
-        problem = self._ledger_problem
-        ledger = self._ledger
-        if ledger is not None:
-            new, added = calibration.ledger_merge(ledger, result, now, self._ledger_build())
+        tries again. Records this build could not read back are left out
+        and counted. `result["ledger"]` says which."""
+        refused: list[str] = []
+        if (self._ledger is not None and self._may_write_shadow()
+                and self._shadow_ledger_refresh()):
+            ledger = self._ledger
+            new, added = calibration.ledger_merge(ledger, result, now, self._ledger_build(),
+                                                  refused)
             if added or self._ledger_unsaved or new["price_tries"] != ledger["price_tries"]:
-                try:
-                    path = self._shadow_ledger_path()
-                    text = json.dumps(new, indent=1, allow_nan=False)
-                    paths.daily_backup(path)
-                    paths.write_atomically(path, text)
-                except Exception as exc:
-                    problem = ("write", type(exc).__name__)
-                else:
+                if self._shadow_ledger_write(new):
                     self._ledger, self._ledger_unsaved = new, False
                     result = calibration.shadow_with_ledger(result, new)
+                    self._shadow_ledger_anchor(book, new)
+            elif result.get("errata") != calibration.ledger_errata(ledger):
+                result = calibration.shadow_with_ledger(result, ledger)
         info = result.get("ledger") or {"created_at": self._ledger_marker_at,
                                         "error": None, "reason": None}
-        if problem:
-            info = {**info, "error": problem[0], "reason": problem[1]}
+        info = {**info, "refused": len(refused)}
+        if self._ledger_problem:
+            info = {**info, "error": self._ledger_problem[0],
+                    "reason": self._ledger_problem[1]}
         return {**result, "ledger": info}
 
     def _shadow_fetch(self, positions: list, now: float) -> dict:
@@ -1322,6 +1501,7 @@ class Live:
         self._ledger_unsaved = False
         self._ledger_problem = None
         self._ledger_retried = False
+        self._ledger_seen = None
         self._shadow_tries = {}
         # Only now may actions write: the book they would write is the one on disk.
         self.read_only = False
