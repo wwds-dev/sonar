@@ -69,9 +69,12 @@ def content_seed(label: str, horizon_days: int | None,
     ``PYTHONHASHSEED`` does not either.
 
     The lines include the observed directions, so a run whose directions are
-    all swapped gets a different stream. That leaves the test valid: the
-    stream is fixed before the reference distribution is drawn, and the
-    observed pattern is counted once whatever the stream."""
+    all swapped gets a different stream. That is harmless in practice: the
+    stream is fixed before the reference distribution is drawn, the observed
+    pattern is counted once whatever the stream, and the p is exact on the
+    enumerated path (q ≤ 12), which uses no stream at all. Above that, a
+    stream that depends on the observed directions makes the Monte Carlo p
+    approximately, not exactly, valid (code review P3-7)."""
     m = hashlib.sha256(f"{_SEED_VERSION}|{label}|{horizon_days}|".encode())
     for line in sorted(lines):
         m.update(line.encode())
