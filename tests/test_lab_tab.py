@@ -589,6 +589,30 @@ def test_a_run_without_a_verdict_shows_the_numbers_and_why(window):
     assert f"  {why}." in window.bt_result.text().splitlines()
 
 
+def test_a_ten_year_run_in_the_lab_shows_numbers_and_the_reason(
+        window, monkeypatch):
+    """Owner, Lab 10y: the Lab still offers ten years, and such a run shows
+    its numbers in grey with the reason — survivors on today's list — and
+    no 'inside its own error bar' paragraph, in both wordings, even when
+    the gap sits outside the bar.
+    Mutation it catches: the drift reason dropped, or the finding colour on
+    a ten-year run."""
+    from sonar import backtest
+    from ui import words
+    assert window.lab_range.findData("10y") >= 0
+    why = backtest._withheld_verdict("drift", 20, 9000, 481)
+    r = _judged(range="10y", horizon_days=20, withheld="drift",
+                verdict_state="withheld", outside_bar=False,
+                delta=0.0237, std_error=0.006, verdict=why)
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = window._lab_html(r)
+        assert "today&#x27;s survivors" in html or "today's survivors" in html
+        assert "before costs, from one replay of past prices" in html
+        assert "+2.37 pts" in html and "#e5c07b" not in html
+        assert _INSIDE not in html
+
+
 def test_the_lab_names_the_error_bar_not_standard_errors(window):
     """Loop 5 (validator r5): the difference line says what the bar is —
     setups entered on the same day counted together — not '2 s.e.'.
@@ -765,8 +789,9 @@ def test_every_headline_reading_names_the_fixed_direction_residual(
     surface."""
     from sonar import backtest
     from ui import words
-    residual = ("A direction fixed per instrument, such as always long on "
-                "today's list, can beat the bar too.")
+    residual = ("A direction fixed per instrument, such as always long, can "
+                "also land outside the bar, because the list holds today's "
+                "survivors; this check cannot see that.")
     for state, delta in (("beats", 0.031), ("below", -0.031),
                          ("unconfirmed", 0.031)):
         r = _judged(delta=delta, std_error=0.014, verdict_state=state,
@@ -808,8 +833,9 @@ def test_the_terminal_says_what_its_backtest_cannot_judge(window, monkeypatch):
     assert ("  The instruments are today's list; ones that fell away are "
             "missing, which favours long trades over long ranges."
             in text.splitlines()), text
-    # the Lab keeps the range advice: its reader picks the range
-    assert "A longer range or a shorter horizon gives more." in (
+    # the Lab keeps the range advice, up to five years: its reader picks
+    # the range, and ten years is not judged (owner, Lab 10y)
+    assert "A shorter horizon gives more, or a longer range up to five years." in (
         window._lab_html(few))
     tip = window.bt_btn.toolTip()
     assert "five for the month" in tip

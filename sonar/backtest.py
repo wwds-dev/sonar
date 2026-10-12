@@ -136,6 +136,15 @@ _TRADING_DAYS_PER_YEAR = 252
 # Commodity at h ≤ 120, the whole watchlist stayed clean (model-validator r3,
 # P1-C). The caller says which universe it ran; it is never inferred.
 WHOLE_WATCHLIST = "all"
+# No verdict on these ranges (owner, Lab 10y, 2026-10-12; domain pass 4
+# P2-1). Over ten years of today's list a direction fixed per instrument
+# landed outside the bar far more often than the rate the verdicts quote: a
+# coin fixed per symbol read 22.5–31% at 10y h20–h60 on the r5 bars and
+# 10–12.5% held out, and always long read "beats" at 10y h20 (validator r7
+# P1-2), because the list holds today's survivors. Swapping whole stretches
+# of time cannot see that, so a run over one is withheld ("drift"), and
+# range_for_horizon never picks one. The caller says which range it read.
+NO_VERDICT_RANGES = ("10y",)
 
 # The direction randomisation (owner decisions at the Build gate, 2026-10-12;
 # docs/adr/0003). A verdict needs Δ outside its error bar *and* the run's
@@ -160,14 +169,18 @@ RANDOMISATION_ALPHA = 0.05
 # docs/audit/sign-randomisation-verdicts-model-validator-r7.md). The worst
 # setting band for that placebo read about 1 in 5 (5y, h30–59). Any verdict,
 # not beats alone (beats alone was 5.12%): the owner picked the pooled figure.
-# A release-marked test fails while either holds a "{" (tests/test_backtest.py).
+# A test fails while either holds a "{" (tests/test_backtest.py).
 CHANCE_VERDICT_RATE = "about 1 run in 10"
 CHANCE_VERDICT_RATE_WORST = "about 1 in 5"
 # The residual the randomisation cannot see, named in every headline sentence
 # that reads outside the bar (owner, after validator r7 P1-2): swapping whole
 # stretches of time leaves a direction fixed per instrument where it was.
+# Worded to fit beats, below and not told apart alike, and not as a tip
+# (code review P3-3, domain P3-1).
 FIXED_PER_INSTRUMENT = ("A direction fixed per instrument, such as always "
-                        "long on today's list, can beat the bar too.")
+                        "long, can also land outside the bar, because the "
+                        "list holds today's survivors; this check cannot see "
+                        "that.")
 
 # What attribution says of every measured component on a run with no verdict.
 NOT_JUDGED = ("Not judged: this run gets no verdict, so no component of the "
@@ -649,7 +662,8 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
               timeouts: list[dict] | tuple | None = None,
               short_windows: list[dict] | tuple = (),
               horizon_days: int | None = None,
-              universe: str | None = None) -> dict:
+              universe: str | None = None,
+              rng: str | None = None) -> dict:
     """Realised hit rate against what the barrier maths predicted for a
     market with nothing in it, given each setup resolved in its own window.
 
@@ -668,15 +682,16 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
     time ``t`` (UTC; a trial without one counts no date), and when those
     entry dates span at least :func:`min_verdict_span_days`, and when the
     compared setups fall in at least :data:`MIN_VERDICT_CLUSTERS` stretches
-    (:func:`randomisation_block_days`). Otherwise ``significant`` is False
-    and ``withheld`` says why — ``"horizon"``, ``"single_class"``,
-    ``"too_few"``, ``"span"``, ``"unpaired"`` or ``"few_clusters"``, the
-    first that applies in that order: the two a reader changes by picking
-    another setting come before those that depend on the sample. A
-    hand-built sample without a ``horizon_days`` or ``universe`` (``None``)
-    is not held to the horizon, span or universe rules, and one without a
-    ``universe`` is not held to the stretch count or the randomisation
-    either.
+    (:func:`randomisation_block_days`), and when the range ``rng`` the bars
+    were read over is not one of :data:`NO_VERDICT_RANGES`. Otherwise
+    ``significant`` is False and ``withheld`` says why — ``"horizon"``,
+    ``"single_class"``, ``"drift"``, ``"too_few"``, ``"span"``,
+    ``"unpaired"`` or ``"few_clusters"``, the first that applies in that
+    order: the three a reader changes by picking another setting come
+    before those that depend on the sample. A hand-built sample without a
+    ``horizon_days``, ``universe`` or ``rng`` (``None``) is not held to the
+    horizon, span, universe or range rules, and one without a ``universe``
+    is not held to the stretch count or the randomisation either.
 
     A judged run reads ``verdict_state``: ``"within"`` its error bar;
     ``"beats"`` or ``"below"`` when Δ is outside it (``outside_bar``) and
@@ -761,6 +776,8 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
         withheld = "horizon"
     elif universe is not None and universe != WHOLE_WATCHLIST:
         withheld = "single_class"
+    elif rng in NO_VERDICT_RANGES:
+        withheld = "drift"
     elif n < MIN_VERDICT_TRIALS or len(days) < MIN_VERDICT_DATES:
         withheld = "too_few"
     elif (horizon_days is not None
@@ -958,6 +975,18 @@ def _withheld_verdict(why: str, horizon_days: int | None, n: int,
                       dates: int, *, universe: str | None = None,
                       span_days: int = 0, clusters: int = 0) -> str:
     """Why a run is shown without a verdict. The numbers stay on screen."""
+    if why == "drift":
+        # The range, which the Lab's reader picks; the Terminal never reads
+        # one (range_for_horizon). The figure it outruns is the one the
+        # beats and below sentences quote (owner, Lab 10y).
+        return ("No verdict on ten years. Over ten years of today's list, a "
+                "direction fixed per instrument, such as always long, lands "
+                "outside the bar far more often than the chance rate a "
+                f"verdict quotes ({CHANCE_VERDICT_RATE}), because the list "
+                "holds only today's survivors: instruments that fell away "
+                "are missing. So ten-year runs are not judged; five years or "
+                "less can be. The numbers are shown without a verdict, "
+                "before costs, from one replay of past prices.")
     if why == "few_clusters":
         return few_clusters_verdict(clusters, horizon_days)
     if why == "unpaired":
@@ -1002,11 +1031,13 @@ def few_clusters_verdict(clusters: int, horizon_days: int | None,
     """The ``few_clusters`` sentence. It names the fix, as the span sentence
     does: the stretches are a property of the range and the horizon. The
     Lab's reader picks both; the Terminal's picks only the profile, whose
-    range is :func:`range_for_horizon`'s (domain P3-5)."""
+    range is :func:`range_for_horizon`'s (domain P3-5). The Lab's longer
+    range stops at five years: ten is never judged (:data:`NO_VERDICT_RANGES`,
+    owner, Lab 10y)."""
     stretch = (f" of {randomisation_block_days(horizon_days):,} days"
                if horizon_days else "")
     fix = ("A shorter profile gives more." if terminal else
-           "A longer range or a shorter horizon gives more.")
+           "A shorter horizon gives more, or a longer range up to five years.")
     return ("Too few separate stretches of time, across asset classes, "
             f"to judge: these setups fall in {clusters} stretch"
             f"{'' if clusters == 1 else 'es'}{stretch} (four holding "
@@ -1132,7 +1163,7 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
 
     summary = summarise(trials, step=step, timeouts=timeouts,
                         short_windows=short, horizon_days=horizon_days,
-                        universe=universe)
+                        universe=universe, rng=rng)
     summary["symbols"] = fetched
     # What the longest series fetched could compare at all: the screen's
     # answer to "nothing to compare — so what would work?"

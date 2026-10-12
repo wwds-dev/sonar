@@ -704,7 +704,8 @@ _CAVEAT = (
     "about 1 run in 10, and about 1 in 5 at some settings. That rate is per "
     "run, so trying many settings makes a chance verdict likely, and nearby "
     "settings can disagree. A direction fixed per instrument, such as "
-    "always long on today's list, can beat the bar too.")
+    "always long, can also land outside the bar, because the list holds "
+    "today's survivors; this check cannot see that.")
 
 
 def test_the_verdicts_name_the_error_bar_and_what_it_misses():
@@ -717,7 +718,9 @@ def test_the_verdicts_name_the_error_bar_and_what_it_misses():
     '1 in 20'. 'within' is not 'no edge'. Outside the bar without the
     randomisation is 'not told apart from chance', never 'within'. Every
     sentence that reads outside the bar names the residual a direction
-    fixed per instrument leaves (owner, after validator r7 P1-2).
+    fixed per instrument leaves (owner, after validator r7 P1-2), in words
+    that fit a 'below' reading too and are not a tip (code review P3-3,
+    domain P3-1).
     Mutation it catches: the old copy back, the bar left out, the scope
     back at four holding periods, or the residual dropped."""
     assert backtest.CHANCE_VERDICT_RATE == "about 1 run in 10"
@@ -744,7 +747,8 @@ def test_the_verdicts_name_the_error_bar_and_what_it_misses():
         "bar (±1.8), but directions picked at random over stretches of time "
         "across the watchlist land this far out often enough that this is "
         "not told apart from chance. A direction fixed per instrument, such "
-        "as always long on today's list, can beat the bar too. From one "
+        "as always long, can also land outside the bar, because the list "
+        "holds today's survivors; this check cannot see that. From one "
         "replay of past prices.")
     assert "can read above the prediction" in backtest._withheld_verdict(
         "horizon", 250, 1234, 300)
@@ -752,18 +756,23 @@ def test_the_verdicts_name_the_error_bar_and_what_it_misses():
 
 def test_too_few_stretches_names_the_fix_the_reader_has():
     """The few_clusters sentence names the fix (domain P3-5): the Lab's
-    reader picks a range and a horizon, the Terminal's only a profile. Both
-    say the numbers are before costs, from one replay of past prices (QA
-    P3-5). A sample that cannot be swapped whole says that instead, and
-    never blames the range or the horizon (code review P3-3).
-    Mutation it catches: the Terminal told to pick a longer range, or the
-    unpaired run given the few-stretches advice."""
+    reader picks a range and a horizon, the Terminal's only a profile. The
+    Lab's longer range stops at five years, which ten-year runs are not
+    judged past (owner, Lab 10y). Both say the numbers are before costs,
+    from one replay of past prices (QA P3-5). A sample that cannot be
+    swapped whole says that instead, and never blames the range or the
+    horizon (code review P3-3).
+    Mutation it catches: the Terminal told to pick a longer range, the Lab
+    pointed at ten years, or the unpaired run given the few-stretches
+    advice."""
     lab = backtest.few_clusters_verdict(3, 60)
     term = backtest.few_clusters_verdict(3, 60, terminal=True)
     assert lab == backtest._withheld_verdict("few_clusters", 60, 4000, 300,
                                              clusters=3)
     assert "3 stretches of 348 days" in lab and "3 stretches of 348" in term
-    assert "A longer range or a shorter horizon gives more." in lab
+    assert ("A shorter horizon gives more, or a longer range up to five "
+            "years.") in lab
+    assert "A longer range or" not in lab
     assert "A shorter profile gives more." in term
     assert "range" not in term
     for v in (lab, term):
@@ -1039,6 +1048,55 @@ def test_a_run_over_one_class_gives_no_verdict(monkeypatch):
     assert one["n"] == whole["n"] and one["delta"] == whole["delta"]
     assert one["significant"] is False and one["withheld"] == "single_class"
     assert one["verdict"].startswith("No verdict on Crypto alone.")
+
+
+def test_a_ten_year_run_shows_its_numbers_without_a_verdict(monkeypatch):
+    """Owner, Lab 10y (domain pass 4 P2-1): the range reaches summarise, and
+    a run over ten years is withheld 'drift' — over ten years of today's
+    list a direction fixed per instrument lands outside the bar far more
+    often than the rate a verdict quotes (validator r7 P1-2), so the run
+    is not judged. The numbers stay; no component is graded, and the
+    attention buckets read as numbers only, as on every withheld run. Five
+    years of the same bars is judged. The sentence says why in plain words,
+    before costs, from one replay of past prices, and gives no tip.
+    Mutation it catches: run() not passing the range on, the rule dropped,
+    or ten years graded in attribution."""
+    walks = {f"D{i}": synthetic(0.004, n=900, seed=7 + i) for i in range(2)}
+    monkeypatch.setattr(backtest, "fetch_bars", lambda sym, rng: walks[sym])
+    assert backtest.NO_VERDICT_RANGES == ("10y",)
+    five = backtest.run(list(walks), horizon_days=20, step=3, rng="5y")
+    assert five["significant"] and five["withheld"] is None
+    assert any(c["verdict"] != "not judged"
+               for c in five["attribution"]["components"]
+               if c.get("ic") is not None)
+    ten = backtest.run(list(walks), horizon_days=20, step=3, rng="10y")
+    assert ten["range"] == "10y"
+    assert ten["n"] == five["n"] and ten["delta"] == five["delta"]
+    assert ten["withheld"] == "drift" and ten["verdict_state"] == "withheld"
+    assert ten["significant"] is False and ten["outside_bar"] is False
+    assert ten["randomisation"]["p_tail"] is None
+    assert ten["attribution"]["withheld"] == "drift"
+    measured = [c for c in ten["attribution"]["components"]
+                if c.get("ic") is not None]
+    assert measured and all(c["verdict"] == "not judged" and
+                            c["why"] == backtest.NOT_JUDGED for c in measured)
+    assert ten["attribution"]["blend_ranks_backwards"] is False
+    assert ten["verdict"] == (
+        "No verdict on ten years. Over ten years of today's list, a direction "
+        "fixed per instrument, such as always long, lands outside the bar far "
+        "more often than the chance rate a verdict quotes (about 1 run in "
+        "10), because the list holds only today's survivors: instruments "
+        "that fell away are missing. So ten-year runs are not judged; five "
+        "years or less can be. The numbers are shown without a verdict, "
+        "before costs, from one replay of past prices.")
+    # the horizon still comes first, and a hand-built sample without a
+    # range is not held to the rule [A11]
+    assert backtest.summarise([], rng="10y")["n"] == 0
+    rows = _rigged_rows(400)
+    assert backtest.summarise(rows, horizon_days=150, rng="10y",
+                              universe="all", timeouts=[])[
+        "withheld"] == "horizon"
+    assert backtest.summarise(rows)["withheld"] is None
 
 
 def test_no_verdict_unless_the_entries_span_five_horizons():
@@ -1556,7 +1614,8 @@ def _in_stretches(trials: list[dict], stretches: int, per: int = 20,
 def test_too_few_stretches_is_withheld_and_says_how_to_get_more():
     """[A2]: under 8 stretches the run is withheld 'few_clusters', after the
     span rule, and the sentence names the fix as the span one does: a
-    longer range or a shorter horizon. 7 stretches is withheld, 8 is
+    shorter horizon, or a longer range up to five years (owner, Lab 10y).
+    7 stretches is withheld, 8 is
     judged. A hand-built sample without a universe is not held to it [A11].
     Mutation it catches: the minimum dropped, `<` turned into `<=`, or the
     hand-built exemption lost."""
@@ -1578,9 +1637,9 @@ def test_too_few_stretches_is_withheld_and_says_how_to_get_more():
         "Too few separate stretches of time, across asset classes, to judge: "
         "these setups fall in 7 stretches of 32 days (four holding periods "
         "each, every asset class together), and a verdict needs at least 8. "
-        "A longer range or a shorter horizon gives more. The numbers are "
-        "shown without a verdict, before costs, from one replay of past "
-        "prices.")
+        "A shorter horizon gives more, or a longer range up to five years. "
+        "The numbers are shown without a verdict, before costs, from one "
+        "replay of past prices.")
     hand = backtest.summarise(_in_stretches(rows, 7), horizon_days=5)
     assert hand["withheld"] is None and hand["randomisation"] is None
     assert hand["verdict_state"] == "beats"
