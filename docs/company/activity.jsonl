@@ -28,3 +28,17 @@
 {"ts": "2026-10-12T10:18:16", "phase": "release", "state": "start", "spec": "qa11-qa13-honest-baselines"}
 {"ts": "2026-10-12T10:29:02", "phase": "release", "state": "blocked", "spec": "qa11-qa13-honest-baselines"}
 {"ts": "2026-10-12T10:30:05", "phase": "release", "state": "blocked", "spec": "qa11-qa13-honest-baselines"}
+{"ts": "2026-10-12T12:12:37", "phase": "build", "state": "done", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T12:12:37", "phase": "review", "state": "start", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T12:12:37", "phase": "verify", "state": "start", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T12:13:50", "phase": "verify", "state": "start", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T12:14:36", "phase": "secure", "state": "start", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T12:43:50", "phase": "verify", "state": "done", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T16:24:48", "phase": "verify", "state": "done", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T16:24:48", "phase": "review", "state": "done", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T16:24:48", "phase": "secure", "state": "done", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T18:26:22", "phase": "document", "state": "start", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T18:28:51", "phase": "document", "state": "start", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T18:34:43", "phase": "document", "state": "done", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T19:18:26", "phase": "document", "state": "done", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T19:18:26", "phase": "release", "state": "blocked", "spec": "shadow-time-stop", "note": "owner gate"}
