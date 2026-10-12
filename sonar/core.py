@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 
 from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
-               institutions, llm, macro, model, news, paths, risk)
+               institutions, llm, macro, model, news, paths, risk, version)
 from .engine import Engine
 from .research import hourlyvol
 from . import calibration, events, portfolio, scoring
@@ -98,6 +98,10 @@ class Live:
                  horizon_name: str | None = None) -> None:
         self.lock = threading.Lock()
         self._rescan_lock = threading.Lock()
+        # Which code this process loaded, read once at start. The agent runs
+        # the checkout's working tree, so a restart can load edits nobody
+        # committed; /api/health carries this so that is visible.
+        self.build = version.provenance()
         # Set by stop() to end run()'s loop. Qt aborts the whole process if a
         # QThread is still running when it is destroyed, so the loop this drives
         # must be able to finish on request — see ui/app.py's shutdown().
@@ -144,7 +148,9 @@ class Live:
         # Whether the engine being followed can run an LLM read, as its own
         # /api/config says. The read runs there, so this process's SDK and
         # key are beside the point while following.
-        self._holder_llm: tuple[bool, str] | None = None
+        # (url asked, ok, detail); _holder_key is the (url, pid) followed.
+        self._holder_llm: tuple[str, bool, str] | None = None
+        self._holder_key: tuple[str | None, int | None] = (None, None)
         self.horizon = horizon.get(horizon_name)
         paths.ensure_dirs()
         self.engine = Engine(paths.state_file(), risk=risk.get(risk_name))
@@ -304,8 +310,12 @@ class Live:
                 self.assets = ap
                 if fired:
                     self.alerts = self.alert_engine.recent()
-        except Exception:
-            pass
+        except Exception as exc:
+            # Kept on the board so the Screener can say why it is empty rather
+            # than "fetching" forever; the next good scan replaces the dict.
+            with self.lock:
+                self.assets = {**self.assets,
+                               "error": " ".join(f"{type(exc).__name__}: {exc}".split())}
         self._scan_at = time.time()
 
     # -- the calibration protocol ------------------------------------------ #
@@ -709,13 +719,18 @@ class Live:
                 if isinstance(board, dict):
                     with self.lock:
                         self.assets = board
-            except Exception:
-                pass                      # the next mirror round shows what took
+            except Exception as exc:
+                # The next mirror round shows what took; the caller is told
+                # now, so the window can say the setting may not have applied.
+                return {**self.config(), "error":
+                        f"the engine at {url.split('//')[-1]} did not confirm it "
+                        f"({type(exc).__name__}: {exc})"}
             return self.config()
         if self._waiting_without_a_holder_to_follow():
             # A risk change saves the state file and the rescan marks the book;
             # neither is this window's to write while another engine drives.
-            return self.config()
+            return {**self.config(), "refused":
+                    "this window is read-only while another SONAR runs the engine"}
         changed = False
         if risk_name and risk.get(risk_name).name != self.risk.name:
             self.risk = risk.get(risk_name)
@@ -740,12 +755,14 @@ class Live:
         have the same SDK. Asking this process instead refused reads the
         holder could run, and misattributed the holder's refusals to this one.
         """
-        if not self.following:
+        # Read once: the follow thread and a configure() can change both.
+        url, answer = self.following, self._holder_llm
+        if not url:
             return llm.available()
-        where = f"the engine at {self.following.split('//')[-1]} runs the read"
-        if self._holder_llm is None:
+        where = f"the engine at {url.split('//')[-1]} runs the read"
+        if answer is None or answer[0] != url:
             return False, f"{where}, and has not said yet whether it can"
-        ok, why = self._holder_llm
+        _, ok, why = answer
         return (True, "ready") if ok else (False, f"{where}: {why}")
 
     def config(self) -> dict:
@@ -963,7 +980,14 @@ class Live:
         except Exception as exc:
             self._poll_failed(exc)
             with self.lock:
-                self.snapshot = {"status": "error", "detail": str(exc)}
+                # The bitcoin feed failing says nothing about the rest: the
+                # horizon and the macro regime ride along, so Big picture can
+                # still draw (closing UX review C-1).
+                snap = {"status": "error", "detail": str(exc),
+                        "horizon": self.horizon.as_dict()}
+                if self.horizon.macro and self._macro_snap is not None:
+                    snap["macro"] = self._macro_snap.as_dict()
+                self.snapshot = snap
             return
         if self._poll_fresh:
             self.last_poll_ok_at = time.time()
@@ -1023,7 +1047,7 @@ class Live:
                                  f"{int(run.get('last_settled_age_s', 0) // 3600)} h"})
         return {"ok": not problems, "mode": mode, "problems": problems,
                 "last_poll_age_s": age, "last_error": self.last_poll_error,
-                "run": run}
+                "run": run, "build": self.build}
 
     def stop(self) -> None:
         """Ask :meth:`run` to finish. Safe to call from another thread, and
@@ -1113,24 +1137,33 @@ class Live:
                     # Still read-only: an action taken now would write the
                     # launch-time book. _take_the_book lifts it once the
                     # record on disk has been re-read.
-                    self.following = None
+                    self._follow(None)
                     self._follow_failures = 0
                     return True
                 self.read_only = True
                 self.conflict = enginelock.describe_conflict(self.engine_lock)
             url = (holder or {}).get("url")
             if url:
-                self.following = url
+                self._follow(url, (holder or {}).get("pid"))
                 slow = now - last_slow >= FOLLOW_SLOW_EVERY
                 self._mirror(url, slow)
                 if slow:
                     last_slow = now
             else:
-                self.following = None
+                self._follow(None)
                 with self.lock:
                     self.snapshot = {"status": "read-only", "detail": self.conflict}
             self._stop.wait(FOLLOW_EVERY)
         return False
+
+    def _follow(self, url: str | None, pid: int | None = None) -> None:
+        """Follow the holder at ``url`` (None: nobody). Another holder, or a
+        new process at the same address, has not said whether it can run a
+        read: the last one's answer is not its."""
+        if (url, pid) != self._holder_key:
+            self._holder_llm = None
+        self._holder_key = (url, pid)
+        self.following = url
 
     def _mirror(self, url: str, slow: bool) -> None:
         """One round of following: the holder's snapshot every time, the
@@ -1225,7 +1258,9 @@ class Live:
                     self.protocol_on = bool(cfg["protocol"]["on"])
         llm_cfg = cfg.get("llm")
         if isinstance(llm_cfg, dict) and "available" in llm_cfg:
-            self._holder_llm = (bool(llm_cfg["available"]),
+            # Keyed by the holder asked: an answer that lands after the
+            # window moved on to another holder is never shown for it.
+            self._holder_llm = (url, bool(llm_cfg["available"]),
                                 str(llm_cfg.get("detail") or ""))
 
     @staticmethod

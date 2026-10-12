@@ -136,6 +136,31 @@ def _err(subject: str, message: str) -> LLMRead:
                    summary="", generated=int(time.time()), error=message)
 
 
+_STATUS = {
+    400: "the API rejected the request",
+    401: "the API key was rejected",
+    403: "this key is not allowed to make this request",
+    413: "the request was too large for the API",
+    529: "the API is overloaded — try again shortly",
+}
+
+
+def _status_message(code: int, model: str, raw: object = "") -> str:
+    """A fixed line per HTTP status. The SDK's own ``message`` is
+    ``Error code: N - {raw error body}``, which is not for a panel; it is only
+    searched, never shown."""
+    if code == 402:
+        what = "the API account has a billing problem — check its credit balance"
+    elif code == 400 and "credit balance" in str(raw).lower():
+        what = "the API account's credit balance is too low"
+    elif code == 404:
+        what = f"model {_clean(model, 60)} was not found"
+    else:
+        what = _STATUS.get(code) or ("the API had a server error" if code >= 500
+                                     else "the API returned an error")
+    return f"{what} (HTTP {code})"
+
+
 def available() -> tuple[bool, str]:
     """Whether a read can be attempted: SDK importable and a key resolvable."""
     try:
@@ -253,11 +278,13 @@ class LLMReader:
         except anthropic.RateLimitError:
             return _err(subject, "rate limited — try again shortly")
         except anthropic.APIStatusError as exc:
-            return _err(subject, f"API error {exc.status_code}: {exc.message}")
+            return _err(subject, _status_message(exc.status_code, self.model, exc.message))
+        except anthropic.APITimeoutError:             # a subclass of APIConnectionError
+            return _err(subject, f"the API did not answer within {self.timeout:g} s")
         except anthropic.APIConnectionError:
             return _err(subject, "could not reach the API (network)")
         except Exception as exc:                      # never take the panel down
-            return _err(subject, f"{type(exc).__name__}: {exc}")
+            return _err(subject, f"{type(exc).__name__}: {_clean(exc, 160)}")
 
         # Safety classifiers can decline; check before touching content.
         if resp.stop_reason == "refusal":
@@ -265,21 +292,39 @@ class LLMReader:
             return _err(subject, f"model declined this request ({cat or 'unspecified'})")
         if resp.stop_reason == "max_tokens":
             return _err(subject, "response truncated — raise MAX_TOKENS")
+        if resp.stop_reason == "model_context_window_exceeded":
+            return _err(subject, "response cut off — the request filled the model's context window")
 
         import json
+        # The schema binds the reply, but a reply of the wrong shape must still
+        # come back as an error read, never as an exception to the caller.
+        # Only the reading of the reply is inside the try: a bug in building the
+        # LLMRead must surface, not be reported as the model's fault.
         try:
             text = next(b.text for b in resp.content if b.type == "text")
             data = json.loads(text)
-        except (StopIteration, ValueError) as exc:
-            return _err(subject, f"unparseable response: {exc}")
+            if not isinstance(data, dict):
+                raise TypeError(f"expected an object, got {type(data).__name__}")
+            lists = {}
+            for key in ("catalysts", "risks"):
+                value = data.get(key, [])
+                if not isinstance(value, list):
+                    raise TypeError(f"{key} is {type(value).__name__}, not a list")
+                lists[key] = [str(x) for x in value][:6]
+            direction = str(data.get("direction", "UNCLEAR"))
+            conviction = max(0, min(100, int(data.get("conviction", 0))))
+            summary = str(data.get("summary", ""))
+        except (StopIteration, ValueError, TypeError, OverflowError, RecursionError) as exc:
+            # str(exc) can quote the model's text back (int("...")): treat it as untrusted.
+            return _err(subject, f"unparseable response: {type(exc).__name__}: {_clean(exc, 160)}")
 
         return LLMRead(
             subject=subject,
-            direction=str(data.get("direction", "UNCLEAR")),
-            conviction=max(0, min(100, int(data.get("conviction", 0)))),
-            summary=str(data.get("summary", "")),
-            catalysts=[str(x) for x in data.get("catalysts", [])][:6],
-            risks=[str(x) for x in data.get("risks", [])][:6],
+            direction=direction,
+            conviction=conviction,
+            summary=summary,
+            catalysts=lists["catalysts"],
+            risks=lists["risks"],
             model=self.model,
             generated=int(started),
             latency_ms=int((time.time() - started) * 1000),
@@ -312,4 +357,5 @@ def complete(system: str, prompt: str, model: str = MODEL,
         text = "\n".join(parts).strip()
         return (text, None) if text else ("", "empty response")
     except Exception as exc:
-        return "", f"{type(exc).__name__}: {exc}"
+        # Exception text can quote the model or a file path: one clean line.
+        return "", _clean(f"{type(exc).__name__}: {exc}", 160)

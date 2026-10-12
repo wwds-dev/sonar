@@ -501,6 +501,10 @@ class AssetScanner:
             "status": "live" if out else "error",
             "generated": int(time.time()),
             "n": len(out),
+            # Rows with a price at all, before the risk filter: 0 means the
+            # source sent nothing, not that the filter hid everything.
+            "priced": sum(1 for symbol, *_ in WATCHLIST
+                          if (symbol, hz.chart_range) in self._bars),
             "classes": sorted({s.cls for s in out}),
             "horizon": hz.as_dict(),
             "risk": profile.as_dict(),

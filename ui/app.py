@@ -29,6 +29,7 @@ from __future__ import annotations
 import html
 import math
 import os
+import statistics
 import sys
 import time
 
@@ -41,6 +42,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
                                QPlainTextEdit, QPushButton, QScrollArea,
                                QSizePolicy, QSpinBox, QTextBrowser,
                                QVBoxLayout, QWidget)
+from shiboken6 import isValid
 
 from sonar import calibration as calibration_mod
 from sonar import horizon as hz_mod
@@ -52,6 +54,7 @@ from sonar.core import Live
 from sonar import assets as asset_mod
 from sonar import news as news_mod
 from sonar import venues
+from sonar.portfolio import PENDING
 from sonar.assets import _W as ASSET_W
 
 from . import learn as learn_mod
@@ -64,6 +67,8 @@ from .worker import (BacktestThread, ConfigThread, PollThread, PropThread,
                      ReadThread, SportsMeasureThread)
 
 REFRESH_MS = 1000
+#: The status line's hold clock (a seam for tests; monotonic, not wall time).
+_now = time.monotonic
 # Opening size, before the screen gets a say. See MainWindow._fit_to_screen.
 # Wider than a 13" laptop on purpose: on a screen that has the room, the rail
 # opens with its names showing; _fit_to_screen clamps it on one that does not,
@@ -596,6 +601,47 @@ def _band_top(bucket: dict) -> int:
     80–101 so a score of exactly 100 falls inside a half-open range; a score
     never exceeds 100, so it reads "80–100" — "101" on screen looks like a bug."""
     return min(bucket["hi"], 100)
+
+
+#: A score band with this share or more of its entered positions still open is
+#: read with a caveat. The book has no time stop, so how long a position takes
+#: to close depends on its score, and the closed ones are the quick ones —
+#: see docs/audit/calibration-censoring-by-score.md.
+CENSORED_SHARE = 0.40
+
+
+def _open_span(seconds: float) -> str:
+    """How long a position has been open, in the unit a book that keeps
+    positions for days is read in. Never "0": under an hour says so."""
+    if seconds < 3600:
+        return "under an hour"
+    if seconds < 86400:
+        hours = round(seconds / 3600)
+        return f"{hours} hour{'' if hours == 1 else 's'}"
+    days = round(seconds / 86400, 1)
+    return "1 day" if days == 1.0 else f"{days:.1f} days"
+
+
+def _open_by_band(buckets: list, open_rows: list) -> list:
+    """For each calibration band, in order: how many open positions were
+    entered on a score inside it, and their median age in seconds (None when
+    there are none). Banded as `calibration.buckets` bands the closed ones
+    (lo <= score < hi), so a band's closed and open counts describe the same
+    set of entries."""
+    ages = [[] for _ in buckets]
+    now = time.time()
+    for row in open_rows:
+        if row.get("status") == PENDING:        # accepted, not filled: nothing is entered yet
+            continue
+        score = row.get("confidence") or 0.0
+        age = row.get("age_s")
+        if age is None:
+            age = now - (row.get("opened_at") or now)
+        for i, b in enumerate(buckets):
+            if b["lo"] <= score < b["hi"]:
+                ages[i].append(float(age))
+                break
+    return [(len(a), statistics.median(a) if a else None) for a in ages]
 
 
 def _money(v: float, signed: bool = False, places: int = 2) -> str:
@@ -1491,6 +1537,10 @@ class ReadPanel(QFrame):
         self.body = label("Select an opportunity and press “LLM read”.",
                           "muted", theme.text(11))
         self.body.setWordWrap(True)
+        # The model's reply (steerable by a headline) and the subject are
+        # never markup: an <a> or <img> must show as text (security S1).
+        for lb in (self.badge, self.subject, self.body):
+            lb.setTextFormat(Qt.PlainText)
         lay.addWidget(self.body)
         self.caveat = label("", "faint", theme.figure(9))
         self.caveat.setWordWrap(True)
@@ -1943,7 +1993,7 @@ class MainWindow(QMainWindow):
         """
         page = paths.resource_base() / "static" / filename
         if not page.exists():
-            self._set_status(f"⚠  {what} not found at {page}")
+            self._set_status(f"⚠  {what} not found at {page}", hold_s=True)
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(page)))
 
@@ -2356,7 +2406,7 @@ class MainWindow(QMainWindow):
         self.cal_verdict = label("—", font=theme.text(12))
         self.cal_verdict.setWordWrap(True)
         cl.addWidget(self.cal_verdict)
-        self.cal_table = label("", "muted", theme.figure(10))
+        self.cal_table = label("", "muted", theme.figure(10), wrap=True)
         cl.addWidget(self.cal_table)
         self.bt_result = label("", "muted", theme.figure(10))
         self.bt_result.setWordWrap(True)
@@ -2399,13 +2449,28 @@ class MainWindow(QMainWindow):
 
         self.cal_verdict.setText(cal.get("verdict", "—"))
         rows = []
-        for b in cal.get("buckets", []):
-            if not b["n"]:
+        mostly_open = []
+        buckets = cal.get("buckets", [])
+        for b, (n_open, age) in zip(buckets, _open_by_band(buckets, pos.get("open") or [])):
+            if not b["n"] and not n_open:
                 continue
             hr = "—" if not b["enough"] else f'{b["hit_rate"]*100:.0f}%'
             note = "" if b["enough"] else f'  (need {cal.get("min_sample", 20)})'
+            still = (f"  still open {n_open} (median age {_open_span(age)})"
+                     if n_open else "")
             rows.append(f'  score {b["lo"]:>3}–{_band_top(b):<3}  n={b["n"]:<4} '
-                        f'hit {hr:<5} vs advertised {b["expected"]*100:.0f}%{note}')
+                        f'hit {hr:<5} vs advertised {b["expected"]*100:.0f}%{note}{still}'
+                        if b["n"] else
+                        f'  score {b["lo"]:>3}–{_band_top(b):<3}  n=0{still}')
+            if n_open / (b["n"] + n_open) >= CENSORED_SHARE:
+                mostly_open.append(f'{b["lo"]}–{_band_top(b)}')
+        if cal.get("n_manual"):
+            rows.append(f"  {cal['n_manual']} closed by hand — not graded, and not in the "
+                        "counts above")
+        if mostly_open:
+            rows.append(f"  provisional: slow positions are missing from this grade — "
+                        f"{CENSORED_SHARE * 100:.0f}% or more of the positions entered "
+                        f"at scores {', '.join(mostly_open)} are still open")
         self.cal_table.setText("\n".join(rows) or
                                "  no closed positions yet — nothing to grade")
 
@@ -2506,7 +2571,9 @@ class MainWindow(QMainWindow):
         gl.addLayout(gh)
         self.grade_verdict = label("—", font=theme.text(12), wrap=True)
         gl.addWidget(self.grade_verdict)
-        self.grade_rows = label("", "muted", theme.figure(10))
+        # Wraps: a band's line now carries its open count and age as well, and
+        # an unwrapped label that long sets a floor under the window's width.
+        self.grade_rows = label("", "muted", theme.figure(10), wrap=True)
         gl.addWidget(self.grade_rows)
         self.grade_next = label("", "faint", theme.figure(9), wrap=True)
         gl.addWidget(self.grade_next)
@@ -2587,21 +2654,39 @@ class MainWindow(QMainWindow):
         block's words before any entry carries its own."""
         return calibration_mod.shadow_t_days(self.live.horizon.name)
 
-    def _refresh_grade(self, cal: dict, closed: list) -> None:
+    def _refresh_grade(self, cal: dict, closed: list, open_rows: list) -> None:
         """The calibration verdict in the words the manual uses (§10), plus
-        what the verdict still lacks. Reads the same report My trades does."""
+        what the verdict still lacks. Reads the same report My trades does.
+
+        The report grades only positions that have closed, and the book has no
+        time stop, so the grade is made of the quick ones. Each band's line
+        therefore also says how many of its entries are still open and how old
+        they are, and a band that is mostly open is named in the caveat.
+        `closed` is only the latest forty rows; the closed count per band is
+        the report's, which covers the whole book."""
         n = cal.get("n_settled", 0)
         need = cal.get("min_sample", 20)
         self.grade_verdict.setText(cal.get("verdict") or "—")
         rows = []
-        for b in cal.get("buckets", []):
-            if not b.get("n"):
+        mostly_open = []
+        buckets = cal.get("buckets", [])
+        for b, (n_open, age) in zip(buckets, _open_by_band(buckets, open_rows)):
+            n_closed = b.get("n", 0)
+            entered = n_closed + n_open
+            if not entered:
                 continue
-            wins = round(b["hit_rate"] * b["n"])
-            note = "" if b.get("enough") else f"   (a band needs {need} to count)"
-            rows.append(f'scores {b["lo"]}–{_band_top(b)}:  {b["n"]} closed · {wins} won '
-                        f'({b["hit_rate"]*100:.0f}%) · the plan promised '
-                        f'{b["expected"]*100:.0f}%{note}')
+            still = (f"{n_open} still open (median age {_open_span(age)})"
+                     if n_open else "none still open")
+            line = (f'scores {b["lo"]}–{_band_top(b)}:  {entered} entered, '
+                    f'{still} · {n_closed} closed')
+            if n_closed:
+                wins = round(b["hit_rate"] * n_closed)
+                note = "" if b.get("enough") else f"   (a band needs {need} to count)"
+                line += (f' · {wins} won ({b["hit_rate"]*100:.0f}%) · the plan '
+                         f'promised {b["expected"]*100:.0f}%{note}')
+            rows.append(line)
+            if n_open / entered >= CENSORED_SHARE:
+                mostly_open.append(f'{b["lo"]}–{_band_top(b)}')
         if cal.get("enough") and cal.get("overall_hit_rate") is not None:
             line = (f'all {n}:  {cal["overall_hit_rate"]*100:.0f}% won against '
                     f'{(cal.get("advertised_rate") or 0)*100:.0f}% promised')
@@ -2613,11 +2698,19 @@ class MainWindow(QMainWindow):
         self.grade_count.setText(f"{n} graded" if n else "")
         manual = cal.get("n_manual", 0)
         if manual:
-            rows.append(f"{manual} closed by hand — not graded: the odds are about "
-                        "reaching the target or the stop")
+            rows.append(f"{manual} closed by hand — not graded, and not in the counts "
+                        "above: the odds are about reaching the target or the stop")
             self.grade_rows.setText("\n".join(rows))
 
         parts = []
+        if mostly_open:
+            where = (mostly_open[0] if len(mostly_open) == 1 else
+                     ", ".join(mostly_open[:-1]) + " and " + mostly_open[-1])
+            lead = ("the verdict is provisional" if cal.get("enough")
+                    else "any verdict is provisional")
+            parts.append(f"{lead}: slow positions are missing from the grade — "
+                         f"{CENSORED_SHARE * 100:.0f}% or more of the positions "
+                         f"entered at scores {where} are still open")
         if n < need:
             parts.append(f"{n} of the {need} closed positions a verdict needs — "
                          f"{need - n} to go")
@@ -2695,7 +2788,7 @@ class MainWindow(QMainWindow):
         st = pos.get("stats") or {}
         if not st:
             return
-        self._refresh_grade(cal, pos.get("closed") or [])
+        self._refresh_grade(cal, pos.get("closed") or [], pos.get("open") or [])
         pnl = st.get("total_pnl", 0.0)
         self.pstats["p&l now"].set(_money(pnl, signed=True), theme.pnl_color(pnl))
         self.plines["p&l now"].setText(
@@ -3472,6 +3565,8 @@ class MainWindow(QMainWindow):
         self.playmaker_btn.clicked.connect(self._playmaker_analyse)
         row.addWidget(self.playmaker_btn)
         self.playmaker_status = label("", "faint", theme.figure(9))
+        # Shows exception text, which can quote a model or a file: never markup.
+        self.playmaker_status.setTextFormat(Qt.PlainText)
         row.addWidget(self.playmaker_status, 1)
         dl.addLayout(row)
         lay.addWidget(data_p)
@@ -3891,7 +3986,11 @@ class MainWindow(QMainWindow):
             return
         self.risk_box.setEnabled(False)
         self.hz_box.setEnabled(False)
-        self._set_status("applying — rescanning…")
+        # Not an unbounded hold: refresh()'s own ⚠ (read-only, a failed poll,
+        # health) must still get through during a long rescan. Its ordinary
+        # line says "applying" instead while this is pending.
+        self._config_pending = True
+        self._set_status(self.APPLYING, hold_s=True)
         self._cfg_thread = ConfigThread(
             self.live, self.risk_box.currentData(), self.hz_box.currentData(), self)
         self._cfg_thread.done.connect(self._config_done)
@@ -3906,19 +4005,30 @@ class MainWindow(QMainWindow):
         touched can disagree with the engine. Synced quietly, so setting the
         widget does not fire the action again."""
         if not (self._cfg_thread and self._cfg_thread.isRunning()):
-            i = self.risk_box.findData(self.live.risk.name)
-            if i >= 0 and i != self.risk_box.currentIndex():
-                self.risk_box.blockSignals(True)
-                self.risk_box.setCurrentIndex(i)
-                self.risk_box.blockSignals(False)
+            for box, name in ((self.risk_box, self.live.risk.name),
+                              (self.hz_box, self.live.horizon.name)):
+                i = box.findData(name)
+                if i >= 0 and i != box.currentIndex():
+                    box.blockSignals(True)
+                    box.setCurrentIndex(i)
+                    box.blockSignals(False)
         if self.protocol_box.isChecked() != self.live.protocol_on:
             self.protocol_box.blockSignals(True)
             self.protocol_box.setChecked(self.live.protocol_on)
             self.protocol_box.blockSignals(False)
 
-    def _config_done(self, _cfg: dict) -> None:
+    APPLYING = "applying — rescanning…"
+
+    def _config_done(self, cfg: dict) -> None:
         self.risk_box.setEnabled(True)
         self.hz_box.setEnabled(True)
+        self._config_pending = False
+        why = cfg.get("refused") or cfg.get("error")
+        if why:
+            self._set_status(f"⚠  setting not applied: {why}", hold_s=True)
+            if self._toast_target is None:
+                # Not over a live Undo: the trade it offers is unrelated.
+                self._warn(f"Setting not applied: {why}")
         for which in ("markets", "assets"):
             setattr(self, f"_{which}_sig", None)      # force a rebuild
 
@@ -3990,19 +4100,24 @@ class MainWindow(QMainWindow):
         this would then belong on a thread."""
         result = self.live.trade(symbol, direction)
         self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"]
-                         + "  ·  paper money only")
+                         + "  ·  paper money only", hold_s=True)
         pos = result.get("position") or {}
         if result["ok"] and pos.get("id"):
             self._toast(f"{result['message']} — paper money only", pos["id"], "trade")
+        elif not result["ok"]:
+            self._warn(f"Not traded: {result['message']}")
         self._assets_sig = None          # force the board to redraw
         self._book_sig = None
         self._portfolio_sig = None
 
     def _close_position(self, pos_id: str) -> None:
         result = self.live.close_position(pos_id)
-        self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"])
+        self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"],
+                         hold_s=True)
         if result["ok"]:
             self._toast(result["message"], pos_id, "close")
+        else:
+            self._warn(f"Not closed: {result['message']}")
         self._book_sig = None
         self._portfolio_sig = None
 
@@ -4050,7 +4165,15 @@ class MainWindow(QMainWindow):
         self._refresh_wire()
         self._sync_knobs()
 
-        if snap.get("status") == "read-only":
+        # The Screener and Big picture do not depend on the bitcoin feed: they
+        # draw whatever the engine has, whatever state the hourly poll is in.
+        # Gating them on it froze the core path on "Fetching prices…" for as
+        # long as Binance and Coinbase were unreachable (closing UX C-1).
+        status = snap.get("status")
+        self._refresh_cards(assets, read_only=status == "read-only")
+        self._refresh_macro(snap)
+
+        if status == "read-only":
             # Another SONAR holds the engine lock and cannot be followed (a
             # second window), or the one being followed stopped answering.
             # Say so plainly rather than showing a window that looks broken;
@@ -4058,13 +4181,19 @@ class MainWindow(QMainWindow):
             self._set_status("⚠  " + snap.get("detail", "another engine is running"))
             self.read_btn.setEnabled(False)
             return
-        if snap.get("status") != "live":
-            self._set_status(f'{snap.get("status", "…")} — first poll can take a moment')
+        if status == "error":
+            detail = " ".join(str(snap.get("detail") or "no reason given").split())
+            following = snap.get("following")
+            whose = (f'the engine at {following.split("//")[-1]}: ' if following else "")
+            self._set_status(f"⚠  {whose}bitcoin price poll failed ({detail[:140]}) — retrying. "
+                             "The Screener and Big picture do not depend on it.")
+            return
+        if status != "live":
+            self._set_status(self.APPLYING if getattr(self, "_config_pending", False)
+                             else f'{status or "…"} — first poll can take a moment')
             return
         self.read_btn.setEnabled(True)
         self._refresh_terminal(snap)
-        self._refresh_cards(assets)
-        self._refresh_macro(snap)
         if self.tray is not None:
             self.tray.update_state(snap)
 
@@ -4075,6 +4204,7 @@ class MainWindow(QMainWindow):
         who = (f'following the engine at {following.split("//")[-1]} · '
                if following else "")
         self._set_status(
+            self.APPLYING if getattr(self, "_config_pending", False) else
             f'{who}risk {self.live.risk.name} · horizon {hz.name} · '
             f'{assets.get("n", 0)} assets · paper money only')
         # A dead loop leaves its last snapshot looking live; say so instead.
@@ -4148,8 +4278,43 @@ class MainWindow(QMainWindow):
             self.mvm.setText("model vs market: no settled hours scored yet — "
                              f"fills in as hours resolve, traded or not{health}")
 
-    def _refresh_cards(self, assets: dict) -> None:
-        asig = (assets.get("generated"), assets.get("n"))
+    #: After this long with no board, "the first scan takes about a minute"
+    #: is no longer true and the placeholder says so.
+    ASSETS_LATE_S = 180
+
+    def _assets_empty_text(self, assets: dict, now: float,
+                           read_only: bool = False) -> str:
+        """What the Screener says when it has no rows: never "fetching" once
+        that has stopped being true (closing UX C-1)."""
+        if assets.get("error"):
+            # First: an old board's "filtered" or "fetching" is about a scan
+            # that is no longer the latest. Neutral wording — the failure may be
+            # after the prices arrived (marking the book, alerts).
+            return (f"The last scan failed ({assets['error'][:140]}). "
+                    "Trying again shortly.")
+        if assets.get("generated"):
+            if assets.get("priced") == 0:
+                return ("No prices came back from the market data source on the last "
+                        "scan. Trying again shortly.")
+            return "No instruments pass this risk profile's volatility filter."
+        if read_only:
+            return ("No board in this window: it is read-only, and the status "
+                    "line says why.")
+        waited = now - self._assets_since
+        if waited > self.ASSETS_LATE_S:
+            return (f"Still no prices after {int(waited // 60)} minutes: the first "
+                    "scan has not finished. It keeps trying.")
+        return self.ASSETS_LOADING
+
+    def _refresh_cards(self, assets: dict, read_only: bool = False) -> None:
+        now = time.time()
+        if read_only or getattr(self, "_assets_since", None) is None:
+            # A read-only window does not scan: its "still no prices after N
+            # minutes" clock starts when it may.
+            self._assets_since = now
+        empty = (self._assets_empty_text(assets, now, read_only)
+                 if not assets.get("assets") else None)
+        asig = (assets.get("generated"), assets.get("n"), empty)
         if asig != self._assets_sig:
             self._assets_sig = asig
             generated = float(assets.get("generated") or 0.0)
@@ -4159,11 +4324,8 @@ class MainWindow(QMainWindow):
             # object and a RuntimeError on the next tick.
             self._asset_rows = [AssetRow(a, self._read, self._trade, generated)
                                 for a in assets.get("assets", [])]
-            self._rebuild(self._assets_lay, list(self._asset_rows),
-                          "No instruments pass this risk profile's volatility filter."
-                          if assets.get("generated") else self.ASSETS_LOADING)
+            self._rebuild(self._assets_lay, list(self._asset_rows), empty or "")
         else:
-            now = time.time()
             for row in self._asset_rows:
                 row.update_age(now)
 
@@ -4174,7 +4336,9 @@ class MainWindow(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
         if not widgets:
-            lay.addWidget(label(empty_msg, "muted", theme.figure(10)))
+            # Wrapped: an error can make this long, and an unwrapped label
+            # sets the window's minimum width (see label()).
+            lay.addWidget(label(empty_msg, "muted", theme.figure(10), wrap=True))
         for wdg in widgets:
             lay.addWidget(wdg)
         lay.addStretch(1)
@@ -4199,7 +4363,20 @@ class MainWindow(QMainWindow):
             self.regime_lb.setText("—")
             self.regime_lb.setStyleSheet(f"color: {theme.MUTED.name()};")
             self.regime_sub.setText("")
-            on_long = (snap.get("horizon") or {}).get("macro")
+            # No figures without a regime: a dash beside the last known 10y and
+            # VIX read as current numbers once the feed behind them stopped.
+            self.regime_bar.set_parts({}, {})
+            for stat in self.macro_stats.values():
+                stat.set("—")
+            if snap.get("status") == "read-only":
+                # Nothing loads here and the horizon cannot be changed: say so,
+                # rather than "Loading…" or advice that would be refused.
+                self.macro_note.setText("The macro regime is not available in this "
+                                        "window: it is read-only, and the status "
+                                        "line says why.")
+                return
+            on_long = (snap.get("horizon") or {}).get("macro",
+                                                      self.live.horizon.macro)
             self.macro_note.setText(
                 "Loading the macro regime…" if on_long else
                 "The macro regime is only material at long horizons. "
@@ -4423,7 +4600,7 @@ class MainWindow(QMainWindow):
         the user just asked for. `reveal()` clears the flag; this is a no-op
         once it has.
         """
-        if not self._hide_on_leaving_fullscreen:
+        if not isValid(self) or not self._hide_on_leaving_fullscreen:
             return
         if self.isFullScreen():
             # showNormal() has not taken yet. Hiding now would leave an empty
@@ -4454,8 +4631,14 @@ class MainWindow(QMainWindow):
 
         Showing before hiding again is deliberate: a `hide()` Qt considers
         redundant never reaches the platform window at all.
+
+        This runs from a timer, so it can outlive the window: a quit, or a test
+        run tearing windows down, deletes the C++ object while the callback is
+        still queued. `isValid` is the answer to that — without it the call
+        raised "Internal C++ object already deleted" after the last test of
+        every suite run, exit code 0, easy to learn to ignore.
         """
-        if tries <= 0 or self.isVisible():
+        if not isValid(self) or tries <= 0 or self.isVisible():
             return
         handle = self.windowHandle()
         if handle is None or not handle.isExposed():
@@ -4510,13 +4693,24 @@ class MainWindow(QMainWindow):
             self._bar_status.setVisible(self.tabs.is_collapsed())
         return self._bar_status
 
-    def _set_status(self, text: str) -> None:
+    def _set_status(self, text: str, hold_s: float | bool = False) -> None:
+        """Write the status line. ``hold_s`` keeps it for that many seconds
+        (True: as long as a toast) against refresh()'s once-a-second rewrite,
+        which used to erase a refused trade's warning within a second (closing
+        UX C-2). A later held message replaces an earlier one at once."""
+        now = _now()
+        if hold_s is False:
+            if now < getattr(self, "_status_hold_until", 0.0):
+                return
+        else:
+            span = self.TOAST_MS / 1000 if hold_s is True else float(hold_s)
+            self._status_hold_until = now + span
         self.status.setText(text)
         self._status_bar_parts().setText(text)
 
     def _sync_status_bar(self) -> None:
         self._status_bar_parts()
-        toast = self._toast_target is not None
+        toast = not self._toast_label.isHidden()
         self._bar_status.setVisible(self.tabs.is_collapsed())
         self.statusBar().setVisible(self.tabs.is_collapsed() or toast)
 
@@ -4533,6 +4727,17 @@ class MainWindow(QMainWindow):
         self._toast_timer.start(self.TOAST_MS)
         self._sync_status_bar()
 
+    def _warn(self, text: str) -> None:
+        """A refusal, held as long as a success's toast but with nothing to
+        undo: the user who clicked and looked away still sees it."""
+        self._status_bar_parts()
+        self._toast_target = None
+        self._toast_label.setText(f"⚠  {text}")
+        self._toast_label.show()
+        self._toast_undo.hide()
+        self._toast_timer.start(self.TOAST_MS)
+        self._sync_status_bar()
+
     def _toast_done(self) -> None:
         self._toast_target = None
         self._toast_label.hide()
@@ -4546,7 +4751,10 @@ class MainWindow(QMainWindow):
         result = self.live.undo(pos_id, kind)
         self._toast_timer.stop()
         self._toast_done()
-        self._set_status(("↶  " if result["ok"] else "⚠  ") + result["message"])
+        self._set_status(("↶  " if result["ok"] else "⚠  ") + result["message"],
+                         hold_s=True)
+        if not result["ok"]:
+            self._warn(f"Not undone: {result['message']}")
         self._assets_sig = self._book_sig = self._portfolio_sig = None
 
     def _sync_rail(self) -> None:

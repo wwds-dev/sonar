@@ -10,7 +10,69 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## Unreleased (not installed)
+
+- The launchd agent runs the installed `SONAR.app` headless instead of the checkout's working tree,
+  so an edit in the checkout cannot reach it on a restart. `install_agent.sh` checks the app's
+  signature, clean build stamp and self-test first; `./build_app.sh --install` stops the agent
+  around the copy and starts it on the new build, and refuses a dirty build while the agent runs
+  the app. Agent logs move to `~/Library/Logs/SONAR`. `--checkout` keeps the old way.
+  (closing-sre-release P1-2, part 2, option A)
+
+## v2.215 — 2026-10-12
+
+Installed 2026-10-12 from `5b34235`, built in a clean detached worktree so the stamp reads
+`dirty: false` (the main checkout always carries other sessions' tracked edits and the activity
+log). The previous v2.190 is kept at `~/Library/Application Support/SONAR-rollback.noindex/`.
+The agent was **not** restarted: it runs the checkout's working tree, so it still runs the code
+it loaded at 10:56 (no `build` field in `/api/health`) until someone restarts it on a tree
+they have checked.
+
+- The suite no longer prints "MainWindow already deleted" tracebacks after its last test. The close
+  button's confirm and hide timers outlived the window they were queued for; they now check it is
+  still alive (`shiboken6.isValid`) before touching it. Exit code was always 0, which is why it
+  went unnoticed.
+- `/api/health` says which code the agent loaded: `build: {version, commit, dirty, source,
+  nested}`, read at start, nested repos included; unknown is reported as `null`, not clean.
+- `scripts/install_agent.sh` refuses a tree with uncommitted tracked changes (its own or a
+  nested repo's) unless `--allow-dirty`; `--status` prints the running agent's build.
+  (closing-sre-release P1-2, part 1; running the agent from a clean snapshot awaits the owner.)
+- A failed bitcoin poll no longer freezes the app: the Screener and Big picture keep drawing,
+  the status line says the poll failed and why, and the empty Screener says what is true (scan
+  failed, nothing priced, still waiting after N minutes, read-only) instead of "Fetching prices…"
+  forever. Big picture clears old figures when it has no regime. (closing UX C-1)
+- A refused trade, a failed close or undo, and a setting that did not apply each get a ⚠ message
+  in the window's bar for 8 seconds, and the status line keeps an action's result instead of being
+  rewritten within a second; "applying — rescanning…" stays until the rescan is done, without
+  hiding warnings. A setting a read-only window cannot change now says so.
+  (closing UX C-2)
+
 ## Unreleased — 2026-10-12
+
+**A followed engine's read answer stays with that engine; error text is never
+markup.** While following another SONAR process, whether a read can run is that
+process's answer; it was kept after the window moved to another holder or the
+holder restarted, so the new one was shown the old one's "ready" or refusal. It
+is now tied to the holder that gave it (`docs/specs/holder-llm-playmaker-plaintext.md`).
+The Playmaker status line is plain text, and the Playmaker completion and the
+read and prop workers show exception text cleaned and capped, as the LLM read
+already did.
+
+**The LLM read fails plainly, and its reply is drawn as text.** A refused,
+truncated, unparseable or wrongly shaped reply, and every API error (one fixed
+line per status, a timeout, a full context window), now becomes a plain error
+line in the read panel instead of a half-answer or an exception; the server's
+raw error body is never shown (`docs/specs/llm-read-hardening.md`). The panel's
+subject, verdict and body are plain text, so a reply steered by a headline
+cannot draw its own link or image (security S1).
+
+**Tests for what the closing QA found unpinned** (`docs/specs/closing-qa-fixes.md`):
+an hour closing at its open is scored UP (M7); fills outside the 0.02-0.98
+buyability band are excluded and counted, the edges included (M4); a second
+warm-up correction never overwrites the kept original record (X6, replacing a
+test that could not fail); the calibrated grade labels (M5, unreachable today);
+and the follow tests wait for the holder's whole first round, which removes a
+flake on a loaded machine.
 
 **The docs say what broker the book actually uses.** README, the Learn tab,
 `GOING_LIVE.md` and `.env.example` said that adding Alpaca paper keys made the
@@ -42,6 +104,24 @@ The bar is not a calibrated 5% test: a random direction per asset class still
 got a verdict on about 1 run in 10 (11.4%), and the verdict copy says so. The
 Learn tab §7–§8, `CONFIDENCE.md`, ADR 0001, `TESTPLAN.md` §2 and §7 and the
 backlog are restated (`docs/specs/qa11-qa13-honest-baselines.md`).
+
+## v2.187 — 2026-10-11
+
+**"Is the score right?" says how much of the book it could not grade.** The
+calibration report grades closed positions only, and the paper book has no
+time stop, so how long a position takes to close depends on its score and the
+closed set is the quick ones: on the live book 54% / 40% / 14% of the entries
+had closed across the 0–20 / 40–60 / 60–80 bands
+(`docs/audit/calibration-censoring-by-score.md`). Each band's line on the
+first screen now says how many positions were entered, how many are still open
+and their median age, and how many closed; when 40% or more of a band's
+entries are still open, the panel adds that the verdict is provisional because
+slow positions are missing from the grade. My trades' calibration table
+carries the same open counts and caveat. Only the readout changed:
+`calibration.report()`, its verdict text and the book are as they were, and the
+grade-by-cohort and time-stop options in the audit note remain the owner's
+call.
+
 
 ## v2.180 — 2026-10-10
 

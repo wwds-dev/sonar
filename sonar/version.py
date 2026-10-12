@@ -282,6 +282,56 @@ def staleness() -> dict:
     }
 
 
+def provenance() -> dict:
+    """What code this process loaded: ``{version, commit, dirty, source}``.
+
+    For ``/api/health``. Called when ``Live`` is built, i.e. at process start,
+    and cached by :func:`info`, so it answers "what did this agent load", not
+    "what is on disk now".
+
+    ``dirty`` is None, not False, when the tree could not be read: unknown is
+    not clean. From a checkout only live git counts — a git-ignored
+    ``_build_info.json`` left by the last package names a build this process
+    may not be running. The nested repos (:data:`NESTED_REPOS`) are code the
+    agent imports but the outer ``git status`` cannot see, so they are read
+    too and fold into ``dirty``: True if any is dirty, else None if any is
+    unknown."""
+    running = info()
+    known = running["source"] == ("baked" if paths.is_frozen() else "git")
+    dirty = running["dirty"] if known else None
+    # A checkout asks its nested repos now; a bundle carries what they were at
+    # build time (scripts/stamp_version.py, already folded into its "dirty").
+    nested = (_nested() if running["source"] == "git"
+              else (_baked() or {}).get("nested") or {} if running["source"] == "baked"
+              else {})
+    for repo in nested.values():
+        if repo["dirty"] is True:
+            dirty = True
+        elif repo["dirty"] is None and dirty is False:
+            dirty = None
+    return {"version": running["version"], "commit": running["commit"],
+            "dirty": dirty, "source": running["source"], "nested": nested}
+
+
+#: Separate git repositories inside the package (git-ignored by this one).
+NESTED_REPOS = ("macro", "playmaker")
+
+
+@lru_cache(maxsize=1)
+def _nested() -> dict:
+    """``{name: {commit, dirty}}`` for each nested repo that is a checkout.
+    Cached: ``Live`` is built many times in the suite, and git is not free."""
+    out = {}
+    for name in NESTED_REPOS:
+        root = PROJECT_ROOT / "sonar" / name
+        if not (root / ".git").exists():
+            continue
+        found = _git_build(root)
+        out[name] = ({"commit": found["commit"], "dirty": found["dirty"]}
+                     if found else {"commit": "", "dirty": None})
+    return out
+
+
 def tooltip() -> str:
     """The badge's hover text: what is running, and whether it is current."""
     running = info()

@@ -8,15 +8,24 @@ For the owner, at a terminal, when something looks wrong. Real money is out of s
 
 | Thing | Value |
 |---|---|
-| Agent (launchd) | `com.netrunner3000.sonar`, runs `<checkout>/.venv/bin/python main.py --headless` |
+| Agent (launchd) | `com.netrunner3000.sonar`, runs `/Applications/SONAR.app/Contents/MacOS/SONAR --headless` (installed with `install_agent.sh`; `--checkout` runs `<checkout>/.venv/bin/python main.py --headless` instead) |
 | API | `127.0.0.1:8787` (loopback only) |
 | Data directory | `~/Library/Application Support/SONAR` (`SONAR_DATA`): `state.json`, `portfolio.json`, daily `*.bak.<date>` (7 kept) |
 | Off-disk copy | the directory in `$SONAR_BACKUP_DIR` or in `<data>/backup-to` (30 kept) |
-| Logs | `<checkout>/data/logs/agent.out.log`, `agent.err.log` (not rotated) |
-| Three versions | the checkout (`git log -1`), the installed app (`/Applications/SONAR.app`, About box), the running agent |
+| Logs | `~/Library/Logs/SONAR/agent.out.log`, `agent.err.log` (not rotated); `<checkout>/data/logs/` in `--checkout` mode. `install_agent.sh --status` prints the path |
+| Versions | the checkout (`git log -1`), the installed app (`/Applications/SONAR.app`, About box; the agent's code unless it was installed with `--checkout`), the running agent (`/api/health` `build`) |
 
-The agent runs the **checkout's working tree**, not the installed app. Uncommitted edits load on
-any restart. Check `git status` before restarting it.
+The agent runs the **installed app**, so an edit in the checkout cannot reach it on a restart; a
+new build reaches it only through `./build_app.sh --install`. That checks the new build first
+(seal, clean stamp including `sonar/macro` and `sonar/playmaker`, `--selftest`), then disables and
+stops the agent, swaps the app in with two renames, and starts the agent again, but only if it was
+running. If anything fails after the stop, the agent stays stopped **and disabled** (it will not
+start at login on a bad bundle) and the script says so; `./scripts/install_agent.sh` starts it.
+`install_agent.sh` applies the same checks before it writes the plist.
+`/api/health` reports the loaded code as `build: {version, commit, dirty, source, nested}`, read at
+the agent's start (`dirty: null` means it could not be told).
+In `--checkout` mode the agent runs the working tree: uncommitted edits load on any restart, and
+the installer refuses a dirty tree (or nested repo) unless `--allow-dirty`.
 
 ## 2. Is it healthy?
 
@@ -25,7 +34,7 @@ any restart. Check `git status` before restarting it.
 curl -s 127.0.0.1:8787/api/health
 ```
 
-Healthy: `"ok": true` and `"problems": []`. HTTP 503 means a problem: `poll` (no price for
+Healthy: `"ok": true`, `"problems": []`, and `build.dirty` false with the `build.commit` you expect. HTTP 503 means a problem: `poll` (no price for
 minutes), `settle` (no hour settled for hours) or `loop` (the engine loop ended). The agent posts
 a macOS notification after 10 minutes of a poll problem; that banner only reaches you at this Mac.
 
@@ -33,8 +42,8 @@ a macOS notification after 10 minutes of a poll problem; that banner only reache
 
 ```bash
 launchctl kickstart -k gui/$(id -u)/com.netrunner3000.sonar     # restart the agent
-tail -50 data/logs/agent.err.log                                # why it stopped
-git status --short                                              # is the tree what you think it is?
+tail -50 ~/Library/Logs/SONAR/agent.err.log                     # why it stopped
+./scripts/install_agent.sh --status                             # program, build, logs
 ```
 
 - Never start a second headless agent by hand; two engines on one state file is what the engine lock
@@ -58,7 +67,7 @@ git status --short                                              # is the tree wh
    ```bash
    cp -p state.json.bak.<date> state.json && cp -p portfolio.json.bak.<date> portfolio.json
    ```
-4. Start the agent again (`./scripts/install_agent.sh` from the checkout) and compare trade count and
+4. Start the agent again (`./scripts/install_agent.sh`) and compare trade count and
    bankroll in the app with what the backup held.
 
 To rehearse without touching the live book, point a source run at a scratch directory:
@@ -69,12 +78,14 @@ To rehearse without touching the live book, point a source run at a scratch dire
 
 Clean tree, CI green on that exact commit, `./run-tests.sh -q` and
 `QT_QPA_PLATFORM=offscreen ./run-tests.sh -q` both pass, `./build_app.sh --install`, open the app, check
-the version and that the stamp reads clean, restart the agent, record the build and commit. Do not
+the version and that the stamp reads clean, check `./scripts/install_agent.sh --status` shows the
+new build (the install restarted the agent), record the build and commit. Do not
 install from a red commit. There is no `.prev` rollback yet: keep the previous `.app` aside by hand
 before installing.
 
 ## 6. Open owner decisions
 
 Developer ID signing and notarization; where the off-disk copy really leaves this disk (the
-Google Drive job `com.andreas.gdrive-backup` failed to start on 2026-10-11); running the agent from
-a clean snapshot instead of the working tree; an always-on host; an off-machine alarm channel.
+Google Drive job `com.andreas.gdrive-backup` failed to start on 2026-10-11); an always-on host; an off-machine
+alarm channel. (Decided 2026-10-11: the agent runs from the installed `SONAR.app`, option A in
+`docs/specs/t2-1-agent-provenance.md`; built, and live once the owner reinstalls the agent.)

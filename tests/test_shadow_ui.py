@@ -29,6 +29,11 @@ DAY = 86_400.0
 NOW = time.time()
 ROWS = [{"symbol": "AAA", "name": "Alpha", "price": 100.0, "volatility": 0.02,
          "confidence": 60.0, "cls": "Equity", "spark": [96, 97, 99, 98, 100]}]
+# What the Screener needs on top to draw a row: refresh() draws the board in
+# every engine state (closing UX C-1), as in test_portfolio_tab.
+SCREEN = {"day_change": 0.01, "momentum": 0.05, "momentum_days": 5, "lean": "Normal",
+          "comp": {"momentum": .5, "volatility": .3, "news": .8, "catalyst": .2},
+          "data_age_s": 60.0, "plan": {"rr": 1.5, "p_profit": 0.4, "calibrated": False}}
 BANNED = ("promised", "advertised", "profit", "certain", "guarantee")
 EDGE_ALLOWED = ("what no edge would give", "not a trading edge", "not a tradeable edge",
                 "no edge ")
@@ -51,7 +56,7 @@ def window(tmp_path_factory):
     win.poll.quit()
     win.poll.wait(3000)
     with live.lock:
-        live.assets = {"status": "live", "assets": [dict(r) for r in ROWS]}
+        live.assets = {"status": "live", "assets": [{**r, **SCREEN} for r in ROWS]}
     live._mark_book({"assets": [dict(r) for r in ROWS]})
     win.refresh()
     yield win

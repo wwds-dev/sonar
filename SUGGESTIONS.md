@@ -17,7 +17,6 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `BLOCKED` — a row that lands m
 | 10 | **Volatility component is inverted for ranking** — 10 of 12 configurations show a negative IC, quintile gradient 45.3%→34.5%, and the tie-break artefact is ruled out (zero ambiguous bars). But it fails the time-block test at 5/6, p=0.22, with the most recent period reversing — so the weights are unchanged. Also a design question, not only an empirical one: high volatility is correct for *notability* and backwards for *ranking winners* (`CONFIDENCE.md` §10a) | research | M | BLOCKED |
 | 14 | Hit rate vs τ-at-entry | research | S | BLOCKED — first readout at 118 trades says nothing yet: 75% of entries land at τ 0.6–0.85 and the other buckets hold 5–10 trades with ±28–44-point bands. Re-read once 20 protocol positions have closed, the calibration gate |
 | 15 | Playmaker verdict polish — one outer refit iteration in Dixon-Coles so `rho` and the home advantage feed back into the strengths | research | S | PLANNED — it would shift fitted numbers, and the football feed measurement to re-earn them should run through the Lab's new sports panel first |
-| 18 | Wire Alpaca paper into the book (`portfolio.default_broker()` has no caller today) — needs `client_order_id` on submit, `AlpacaPaperBroker.settlements()`, a guard on `execute`, and an open → fill → close test against a stubbed Alpaca; otherwise every position stays PENDING. Then rewrite the docs (`docs/specs/book-broker-truth.md`, `docs/audit/domain-finance.md` P1-1) | infra | M | IDEA |
 
 ## Interface
 
@@ -75,3 +74,4 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `BLOCKED` — a row that lands m
 | Real-money execution | Paper P&L predicts nothing; an earlier run showed +114% on a 44% win rate carried by three longshots. Variance in a costume. |
 | Revolut holdings sync | No public retail-investment API |
 | More features on daily bars | Five studies found nothing there |
+| Wire Alpaca paper into the book (was #18) | Owner decision 2026-10-12: not planned. The book stays on the built-in simulator, which the docs now state (`docs/specs/book-broker-truth.md`); wiring needs settlements, `client_order_id` and a stubbed end-to-end test for little gain while real money is out of scope. |
