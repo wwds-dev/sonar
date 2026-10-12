@@ -12,6 +12,8 @@ section lists what the v2 arc shipped.
 
 ## Unreleased (not installed)
 
+- CI: `actions/checkout` and `actions/setup-python` move to v7, which run on Node.js 24
+  (GitHub is retiring Node.js 20 for actions). No change to the app.
 - The launchd agent runs the installed `SONAR.app` headless instead of the checkout's working tree,
   so an edit in the checkout cannot reach it on a restart. `install_agent.sh` checks the app's
   signature, clean build stamp and self-test first; `./build_app.sh --install` stops the agent

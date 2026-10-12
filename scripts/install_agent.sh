@@ -105,7 +105,7 @@ refuse_dirty() {   # $1: what is dirty, $2: the list
   head -15 <<<"$2"     # not echo | head: SIGPIPE under pipefail on a long list
   if [[ "$ALLOW_DIRTY" != 1 ]]; then
     echo
-    echo "Refusing to install. Commit or revert them (and rebuild), or knowingly run:"
+    echo "Refusing to install. Commit or revert them, or knowingly run:"
     if [[ "$FROM" == checkout ]]; then
       echo "  $0 --checkout --allow-dirty"
     else
