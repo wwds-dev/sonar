@@ -85,7 +85,8 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       ≤ 5%; validator r5 (a), r6 (d)). The same test should calibrate the attribution grades (meaningless
       components graded KEEP/INVERTED on 4.6–7.1%, validator r6 (a)) and settle the component IC's lag (its IC
       z² still runs 1.4–1.5× nominal; QA r6 P2-1, mutant E4). The two acceptance tests are regression guards fitted
-      to their seeds, not proof of the target. Owner signs off the method.
+      to their seeds, not proof of the target. Owner signs off the method. Spec (Define, at the owner gate):
+      `docs/specs/sign-randomisation-verdicts.md`.
 - [ ] `P2` `research` `@me` **The h = 1 Terminal verdict sits on the daily-bar tie residual.** At a 1-day horizon a
       bar that touches both barriers scores a loss; a coin-flip direction read "below" on 11 of 38 seeds in QA r4
       (P2-A). Live 2y h = 1 now reads Δ −0.99 within ±1.4 (QA r6 §4). Options: a placebo baseline, or no verdict
