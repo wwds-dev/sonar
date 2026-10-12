@@ -560,3 +560,9 @@ need an account and time rather than code are under **Open** above.
 - [x] `P3` `docs` `@me` ~~Choose a licence.~~ MIT, copyright holder `wwds-dev` (the repository owner's GitHub account),
       chosen 2026-10-10 on the owner's instruction. `LICENSE`, `pyproject.toml` and the README say so; change all three
       together if the choice changes.
+- [x] `P1` `docs` `@ai` ~~The docs say what broker the book actually uses.~~ README, the Learn tab, `GOING_LIVE.md`
+      and `.env.example` no longer claim Alpaca keys switch the book to Alpaca; they say the book always uses the
+      built-in simulator and keep the cost disclosure. `tests/test_broker_docs_truth.py` scans the source of `sonar/`,
+      `ui/` and `main.py` and fails on a `Portfolio(` given a broker, any reference to `default_broker`, an
+      `AlpacaPaperBroker(` built outside `default_broker`, or a `broker` attribute assigned outside the book's and the
+      order guard's constructors (`docs/specs/book-broker-truth.md`, 2026-10-12).

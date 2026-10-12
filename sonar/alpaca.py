@@ -2,9 +2,10 @@
 
 The paper book in :mod:`sonar.portfolio` fills instantly at the quoted price
 with no fees and no queue, which makes it an optimistic bound rather than a
-simulation. Alpaca's paper environment is the cheap way to do better: real
-symbols, real market hours, real order types, orders that sit unfilled when the
-market is shut — and no money at any point.
+simulation. The book does not use this module yet. Once connected, Alpaca's
+paper environment would add real symbols, real market hours, real order types
+and orders that sit unfilled when the market is shut — and no money at any
+point.
 
 Why the guards are this heavy
 -----------------------------

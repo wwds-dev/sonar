@@ -12,6 +12,19 @@ section lists what the v2 arc shipped.
 
 ## Unreleased — 2026-10-12
 
+**The docs say what broker the book actually uses.** README, the Learn tab,
+`GOING_LIVE.md` and `.env.example` said that adding Alpaca paper keys made the
+book use Alpaca, and that Alpaca was the more honest mode. No code path did
+that: the book always uses the built-in simulator. They now say so, keep the
+cost disclosure (no spread, slippage or fees, polled prices, so an optimistic
+bound, not a forecast), and call the Alpaca adapter "not connected yet". A new
+test reads the source of `sonar/`, `ui/` and `main.py` and fails on a
+`Portfolio(` call given a broker, any reference to `default_broker` (aliased
+imports resolved), an `AlpacaPaperBroker(` built outside `default_broker`, or a
+`broker` attribute assigned outside the book's and the order guard's
+constructors, so the docs have to change with the code. It is a source scan,
+not a runtime check (`docs/specs/book-broker-truth.md`).
+
 **Honest baselines for the backtest and the buyability verdict (QA-11, QA-13).**
 The buyability line's "survives leave-one-out" check could never fail. A claim
 either way now needs the mean return per stake beyond three standard errors,

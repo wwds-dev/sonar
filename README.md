@@ -156,12 +156,14 @@ ones (at this sample an effect of about 3 points on the hit rate, or an IC of 0.
 undetected), and the instruments studied are the ones listed today, which flatters long tests. `P(profit)` stays
 pinned at its driftless baseline and nothing here is a reason to trade.
 
-## Paper trading through Alpaca (optional)
+## Alpaca paper (not connected yet)
 
-The built-in book fills instantly at the quoted price with no fees and no queue, which makes it an optimistic
-bound. Alpaca's **paper** environment does better — real symbols, market hours, order handling — with no money
-anywhere. Copy `.env.example` to a git-ignored `.env` and fill in the paper keys (they start with `PK`); SONAR
-picks them up automatically and falls back to the internal book if they are absent or misconfigured.
+The book always uses the built-in simulator: instant fills at the quoted price, exactly at target or stop, with
+no spread, slippage or fees. Prices are polled, so brief spikes between polls are missed. That makes its results an
+optimistic bound, not a forecast. SONAR includes a guarded Alpaca **paper** adapter, but the book does not use it
+yet, so adding Alpaca keys does not change the book's results. Once connected, Alpaca paper would add real market
+hours and order handling, with no money anywhere; the paper-key slots in `.env.example` (keys start with `PK`) are
+for that adapter and are not used by the book yet.
 
 The host is a module constant with no parameter to override and a key that is not clearly a paper key is
 refused before any request. Going live is not a flag in this file: it is a decision for a human with an account.
@@ -266,7 +268,7 @@ is saved with the state; delete the state file to reset to a clean $10,000.
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 1,879 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 1,916 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -338,7 +340,8 @@ sonar/         the engine and models (each module's docstring says what it is fo
   backtest.py replay.py research/    the replay, step-through, and the study apparatus
   news.py events.py institutions.py alerts.py   headlines, calendars, central banks, what changed
   providers.py paths.py server.py llm.py   data sources, path/backup logic, the HTTP server, the optional LLM
-  alpaca.py execution.py costs.py universe.py venues.py   dormant real-money code, kept on purpose
+  alpaca.py execution.py costs.py   paper-broker adapter and dormant execution guard, its cost ledger
+  universe.py venues.py   the listed US-equity universe, where a row could be traded
   macro/         FRED regime for long horizons — its own git repo, gitignored here
   playmaker/     sports prop pricing, seven sports — its own git repo, gitignored here
 ui/              app.py (the window), tabs.py (rail + page header), words.py (plain/expert), learn.py,

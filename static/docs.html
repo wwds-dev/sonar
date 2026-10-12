@@ -511,12 +511,16 @@
     A table filled by hand-picked trades grades the picker, not the score.
     Turning it off leaves open positions to resolve on their own; closing them
     early would censor the outcomes being measured.</p>
-  <h3>Optionally through Alpaca</h3>
-  <p>The built-in book fills instantly at the quoted price with no fees and no
-    queue, which makes it an optimistic bound. Alpaca's <b>paper</b> environment
-    is more honest — real market hours, real order handling, orders that sit
-    unfilled when the market is shut. Add a free paper key to a git-ignored
-    <code>.env</code> and SONAR uses it:</p>
+  <h3>Alpaca paper (not connected yet)</h3>
+  <p>The book always uses the built-in simulator: instant fills at the quoted
+    price, exactly at target or stop, with no spread, slippage or fees. Prices
+    are polled, so brief spikes between polls are missed. That makes its
+    results an optimistic bound, not a forecast. SONAR includes a
+    guarded Alpaca <b>paper</b> adapter, but the book does not use it yet, so
+    adding Alpaca keys does not change the book's results. Once connected,
+    Alpaca paper would add real market hours and real order handling, with no
+    money anywhere. The adapter reads its keys from a git-ignored
+    <code>.env</code>; they are not used by the book yet:</p>
   <pre><code>APCA_API_KEY_ID=PK...        # paper keys start with PK
 APCA_API_SECRET_KEY=...</code></pre>
   <div class="warn"><b>On the guards.</b> Alpaca's live and paper APIs differ by
@@ -739,10 +743,6 @@ APCA_API_SECRET_KEY=...</code></pre>
     is: the health line's hover text prices the model's favoured side at each
     hour's recorded touch across five fixed edge gates and the active profile's own threshold, with an error bar, and
     refuses a verdict below a hundred qualifying hours.</div>
-  <p>A hit rate says whether the blend worked. Attribution says which part did,
-    which is the only version you can act on. Three readings per component:</p>
-  <table>
-    <tr><th>Reading</th><th>Good looks like</th><th>The trap</th></tr>
   <p>That buyability line is strict on purpose, because it is read again every
     hour and each new look is another chance to be fooled. A result either way
     needs the average return per stake beyond <b>three</b> standard errors of
@@ -756,6 +756,10 @@ APCA_API_SECRET_KEY=...</code></pre>
     errors" suggests. The flip side of that strictness: a real but modest
     advantage would usually not be called "measured" in the first few hundred
     hours.</p>
+  <p>A hit rate says whether the blend worked. Attribution says which part did,
+    which is the only version you can act on. Three readings per component:</p>
+  <table>
+    <tr><th>Reading</th><th>Good looks like</th><th>The trap</th></tr>
     <tr><td>IC</td><td>Consistently non-zero, same sign</td>
       <td>An IC of 0.02 is normal even for real factors. Tiny is not the same as absent.</td></tr>
     <tr><td>Quintile spread</td><td>Top fifth beats bottom fifth, outside the error bar</td>

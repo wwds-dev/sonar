@@ -346,7 +346,7 @@ class GuardedBroker:
 
     There are two broker seams in SONAR and only one of them is guarded. The
     portfolio seam — ``execute(symbol, direction, units, price)`` — is what the
-    Book tab calls and where the Alpaca paper adapter sits; it sends market
+    Book tab calls and where the Alpaca paper adapter would sit; it sends market
     orders and applies no caps, no confirmation and no audit. That is fine for
     paper and unacceptable for anything else. This class exists so the portfolio
     seam can be satisfied without a second, unguarded route to a venue existing.
