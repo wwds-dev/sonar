@@ -137,7 +137,10 @@ def repo(tmp_path):
 
 
 def _install(repo, *args):
+    """Checkout mode: these tests are about the working tree's own check (the
+    default runs the installed app since t2-1 part 2; test_agent_from_bundle)."""
     path, env = repo
+    args = args if args and args[0] in ("--status", "--bogus") else ("--checkout", *args)
     return subprocess.run(["bash", "scripts/install_agent.sh", *args], cwd=path,
                           env=env, capture_output=True, text=True, timeout=30)
 
@@ -171,7 +174,7 @@ def test_untracked_files_do_not_count(repo):
 def test_a_tree_git_cannot_read_is_treated_as_dirty(tmp_path):
     (tmp_path / "scripts").mkdir()
     shutil.copy(SCRIPT, tmp_path / "scripts" / "install_agent.sh")
-    r = subprocess.run(["bash", "scripts/install_agent.sh"], cwd=tmp_path,
+    r = subprocess.run(["bash", "scripts/install_agent.sh", "--checkout"], cwd=tmp_path,
                        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path),
                             "GIT_CEILING_DIRECTORIES": str(tmp_path.parent)},
                        capture_output=True, text=True, timeout=30)

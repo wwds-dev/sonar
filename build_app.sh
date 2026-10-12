@@ -97,10 +97,10 @@ echo "Running self-test against the built binary…"
 "$DIST/$APP_NAME.app/Contents/MacOS/$APP_NAME" --selftest
 
 if [[ "${1:-}" == "--install" ]]; then
-  rm -rf "/Applications/$APP_NAME.app"
-  cp -R "$DIST/$APP_NAME.app" /Applications/
-  touch "/Applications/$APP_NAME.app"  # nudge Finder/Dock to refresh the cached icon
-  echo "Installed: /Applications/$APP_NAME.app"
+  # Stops and restarts the launchd agent around the copy when it runs this
+  # app, and refuses a dirty-stamped build for it (ALLOW_DIRTY=1 to override).
+  ./scripts/install_app.sh "$DIST/$APP_NAME.app" \
+    $([[ "${ALLOW_DIRTY:-0}" == 1 ]] && echo --allow-dirty)
 
   # Nothing left behind to be indexed or backed up.
   rm -rf build "$DIST"

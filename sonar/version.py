@@ -299,7 +299,11 @@ def provenance() -> dict:
     running = info()
     known = running["source"] == ("baked" if paths.is_frozen() else "git")
     dirty = running["dirty"] if known else None
-    nested = _nested() if running["source"] == "git" else {}
+    # A checkout asks its nested repos now; a bundle carries what they were at
+    # build time (scripts/stamp_version.py, already folded into its "dirty").
+    nested = (_nested() if running["source"] == "git"
+              else (_baked() or {}).get("nested") or {} if running["source"] == "baked"
+              else {})
     for repo in nested.values():
         if repo["dirty"] is True:
             dirty = True
