@@ -341,3 +341,57 @@ the UI tests. The suite collects 2,385 tests, and that count is in all four file
 findings in `core.py` and `ui/app.py`.
 
 **Not done (owner):** domain r2 P3s other than N-2–N-4, and `SH_FINAL_NONE`'s wording.
+
+## Fix loop 3 (2026-10-12, on top of `a23556e`)
+Inputs: `shadow-time-stop-domain-finance-r3.md` (N-5–N-7) and `shadow-time-stop-code-reviewer-r3.md`
+(P2-1, P3-1–P3-5). Synthetic only. Commits: `7410465` (domain), then one commit for code review r3
+and this section.
+
+| Finding | Fix |
+|---|---|
+| Domain N-5 | Spec D4 and D5 now require "before costs" and the conditioned 0R sentence, matching the shipped copy. |
+| Domain N-6 | The window row names what it covers: "the {n} with a result opened {first} to {last}", and before any result "entries opened {first} to {last} (none has a result yet)". Expert: "{n} graded: opened …" / "(none graded yet)". D6 and TESTPLAN 11.22 are updated. |
+| Domain N-7 | `SH_ROW_GAP`: "(a real fill could have been different, often worse at a stop)". |
+| CR r3 P2-1 (release-blocking) | The reviewer's fix 2. The newest bar's stamp is the cut only on the session-start pattern, `(s[-1] − s[-2]) % 86 400 == 0`; its close is never used; an off-pattern newest bar is dropped. This removes fix loop 2's fetch-time trust, the bounded cut, and the engine's stored fetch times. New tests: a Friday T with Friday's finished bar stamped 20:00 (last trade) or at a Sunday 00:01 fetch time waits, then gets 100.5, never Thursday's 99.5. A Thursday T with a TARGET booked Friday 16:00 under a last-trade stamp waits, then gives TIME at 99.5, never TARGET. A DST shift costs one day. The pattern holds at exactly 0 s and breaks at ±1 s. The reviewer's `cr3/stamp.py` was run on this tree under all three conventions: no flips. The live weekend check is TESTPLAN 11.23, a confirmation and not a dependency. Build note 16 is rewritten. |
+| CR r3 P3-1 | The FX window is moot: the bounded cut is gone. The FX test and note 16 now say Wednesday, and why. |
+| CR r3 P3-2 | Fetch-time wiring no longer exists. An engine test checks that a session-start newest bar decides through `_shadow_pass` (n_reached 1) and an off-pattern one does not. |
+| CR r3 P3-3 | The two boundaries named are gone with the code. The new boundary (the pattern's exact equality) is tested at 0 and ±1 s. The `closed_at < t_cut` boundary is V-3. |
+| CR r3 P3-4 | Latency is re-measured and the wording corrected: Monday–Thursday 1.4 days, Friday 3.4, a holiday up to 4.4, a 07:00 first pass 4.7, and at least 2.3 days of grace left (tested). |
+| CR r3 P3-5 | The stale docstring is fixed. A mean test now skips when none of its chunks ran and **fails** when only some did (tested). |
+
+**Mutation check (fix loop 3).** All killed:
+- the newest bar always kept;
+- the newest bar always dropped;
+- the pattern loosened to an hour;
+- the engine stripping the newest bar;
+- partial chunks skipping instead of failing. This one survived at first, because the test let the
+  skip propagate. The test now fails on a skip.
+
+**QA round 3** (`shadow-time-stop-qa-engineer-r3.md`, checked at `a23556e`):
+
+| QA item | Status |
+|---|---|
+| P2-B (M20) | Added `test_qa_r3_m20_no_bar_between_entry_and_t_is_never_a_time_exit`: bars stop at the entry and resume after t_T, and the entry waits, then becomes no price, never TIME. Its mutant (the check dropped) is killed. |
+| P2-A (F09) | Covered by `test_r3_the_engine_decides_on_a_session_start_newest_bar`. |
+| P3-1 | Done above: a mean test fails on a partial chunk selection. |
+| P3-3 | Done above. |
+| P3-2 (B08) | Moot: the bounded-cut window is gone. |
+| P3-4 (W02) | Added `test_qa_r3_w02_…`: one damaged `opened_at` among good ones (`"x"`, 1e18, None) leaves both ends from the good dates. Its mutant is killed. |
+
+QA's property harness, `invariants_r3.py`, was run on a `git archive` copy of `f7c3bec` (with
+`sonar/macro` and `playmaker`), not on the shared worktree. The calibration code is unchanged since
+that commit; only tests changed. The harness passes `fetched_at=`, which fix loop 3 removed, so I ran
+a copy with those two keyword arguments deleted and nothing else changed. Result over 400 books:
+- 8,700 decided entries and 689,186 entry-days checked;
+- 383 graded TIME with a booked close;
+- 0 decided outcomes that became undecided again without the memo;
+- **failures: 0**.
+
+**Runs (final tree):**
+- native `./run-tests.sh tests/ -q`: 2390 passed, 3 skipped, 52 deselected, exit 0;
+- offscreen: the same, exit 0;
+- slow `-m slow`: 22 passed in 226 s, exit 0, on the tree of `f7c3bec`. The later changes are two
+  default-suite tests.
+
+The suite collects 2,393 tests, and that count is in all four files. Lint finds nothing new: the
+7 findings left in the changed files were there before.

@@ -726,6 +726,17 @@ def test_v10_no_price_waits_a_week_then_is_left_out_never_zero():
     assert r["n_no_price"] == 1 and r["n_reached"] == 0 and r["mean_r"] is None
 
 
+def test_qa_r3_m20_no_bar_between_entry_and_t_is_never_a_time_exit():
+    """QA r3 M20: a halt, delisting or data hole from the entry past t_T.
+    The last bar at or before t_T is then from before the entry; graded, it
+    would be TIME at a close the position never saw. It waits, then is left
+    out as no price. Kills: dropping the "T bar after the entry" check."""
+    bars = daily(-5, -1) + daily(30, 40)
+    for now, state in ((T_DUE + 3 * DAY, "wait_price"), (T_DUE + 8 * DAY, "no_price")):
+        _r, e = one(sp(), bars, now=now)
+        assert e["state"] == state and e["r"] is None
+
+
 def test_a_series_that_does_not_reach_back_to_the_entry_cannot_decide():
     """The gap check needs every close since entry: a range too short to
     cover it is no price, not a clean record."""

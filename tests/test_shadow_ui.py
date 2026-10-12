@@ -682,3 +682,15 @@ def test_window_on_a_follower_comes_from_the_holders_payload(window, monkeypatch
     for w in (window.shadow_grade, window.book_shadow):
         first = w.shadow_rows.text().splitlines()[0]
         assert first.startswith("the 2 with a result opened 22 Sep") and "3 Oct" in first
+
+
+def test_qa_r3_w02_one_damaged_date_does_not_blank_an_end_of_the_window():
+    """QA r3 W02: a damaged opened_at among good ones is ignored; both ends
+    of the window still come from the good dates."""
+    from ui.app import shadow_texts
+    now = _noon(2026, 12, 1)
+    for bad in ("x", 1e18, None):
+        entries = _entries((_noon(2026, 9, 22), "time"), (bad, "stop"),
+                           (_noon(2026, 10, 3), "target"))
+        rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
+        assert rows[0] == "the 3 with a result opened 22 Sep to 3 Oct", bad
