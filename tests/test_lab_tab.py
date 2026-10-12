@@ -402,10 +402,10 @@ def test_the_score_ranks_backwards_only_on_a_judged_significant_blend(
     from sonar import backtest
     from ui import words
     sentence = "ranking the wrong way round"
-    strong = backtest.attribute(_blend_rows(1, backwards=True))
+    strong = backtest.attribute(_blend_rows(1, backwards=True), gate=False)
     withheld = backtest.attribute(_blend_rows(1, backwards=True),
-                                  withheld="single_class")
-    noise = backtest.attribute(_blend_rows(43, backwards=False))
+                                  withheld="single_class", gate=False)
+    noise = backtest.attribute(_blend_rows(43, backwards=False), gate=False)
     assert strong["blend_ic"] < 0 and withheld["blend_ic"] < 0
     assert noise["blend_ic"] < 0 and not noise["blend_ranks_backwards"]
     for plain in (True, False):
@@ -754,6 +754,70 @@ def test_not_told_apart_from_chance_is_grey_and_never_within(window, monkeypatch
         assert _INSIDE in inside and "#e5c07b" not in inside
 
 
+def test_every_headline_reading_names_the_fixed_direction_residual(
+        window, monkeypatch):
+    """Owner, after validator r7 P1-2: beats, below and not told apart from
+    chance each name the residual the randomisation cannot see — a direction
+    fixed per instrument, such as always long on today's list — in both
+    wordings, on the Lab and the Terminal line. 'within' makes no reading
+    of a direction, so it does not.
+    Mutation it catches: the residual dropped from any one sentence or
+    surface."""
+    from sonar import backtest
+    from ui import words
+    residual = ("A direction fixed per instrument, such as always long on "
+                "today's list, can beat the bar too.")
+    for state, delta in (("beats", 0.031), ("below", -0.031),
+                         ("unconfirmed", 0.031)):
+        r = _judged(delta=delta, std_error=0.014, verdict_state=state,
+                    significant=state != "unconfirmed", outside_bar=True,
+                    randomisation=_rand(0.004 if state != "unconfirmed"
+                                        else 0.31),
+                    verdict=backtest._verdict(delta, 0.014, state))
+        for plain in (True, False):
+            monkeypatch.setattr(words, "plain", lambda p=plain: p)
+            assert residual in window._lab_html(r), (state, plain)
+            window._backtest_done(r)
+            assert residual in window.bt_result.text(), (state, plain)
+    assert "fixed per instrument" not in backtest._verdict(0.001, 0.014,
+                                                           "within")
+
+
+def test_the_terminal_says_what_its_backtest_cannot_judge(window, monkeypatch):
+    """Domain P2-3 and P3-5, A15 as amended after validator r7: the
+    Terminal footer says the instruments are today's list, survivors only,
+    which favours long trades over long ranges; too few stretches names the
+    fix the Terminal's reader has (a shorter profile, not a range); and the
+    button's tooltip does not imply the quarter or year profiles are judged.
+    Mutation it catches: the survivorship line dropped, the Lab's range
+    advice shown in the Terminal, or the tooltip claiming ten years."""
+    from sonar import backtest
+    from ui import words
+    monkeypatch.setattr(words, "plain", lambda: False)
+    few = _judged(horizon_days=60, withheld="few_clusters",
+                  verdict_state="withheld",
+                  randomisation={"p": None, "p_tail": None, "q": 2,
+                                 "draws": 0, "method": None,
+                                 "block_days": 348, "seed": None},
+                  verdict=backtest.few_clusters_verdict(2, 60))
+    window._backtest_done(few)
+    text = window.bt_result.text()
+    assert backtest.few_clusters_verdict(2, 60, terminal=True) in text, text
+    assert "A shorter profile gives more." in text
+    assert "A longer range" not in text
+    assert ("  The instruments are today's list; ones that fell away are "
+            "missing, which favours long trades over long ranges."
+            in text.splitlines()), text
+    # the Lab keeps the range advice: its reader picks the range
+    assert "A longer range or a shorter horizon gives more." in (
+        window._lab_html(few))
+    tip = window.bt_btn.toolTip()
+    assert "five for the month" in tip
+    assert "The quarter and year profiles show the\nnumbers without a verdict" in tip
+    assert "ten for" not in tip and "ten years" not in tip
+    assert "and the year" not in tip and "quarter —" not in tip
+
+
 def test_the_expert_view_shows_the_randomisation_p_in_the_direction_of_delta(
         window, monkeypatch):
     """[A3] (domain pass 2 P2-C): expert wording shows p_tail, labelled 'in
@@ -768,7 +832,10 @@ def test_the_expert_view_shows_the_randomisation_p_in_the_direction_of_delta(
     assert ("p vs random directions, in the direction of Δ</td><td "
             "style='padding:2px 0'><b>0.0123  (9 stretches)</b>") in html, html
     assert "0.9000" not in html
-    assert "reshuffles of whole stretches that read at least this far" in html
+    # twice the one-sided share, as direction_p computes it (domain P3-1)
+    assert ("twice the share of random-direction reshuffles of whole "
+            "stretches that read at least this far in the direction of Δ, "
+            "at most 1") in html
     window._backtest_done(r)
     assert ("  p vs random directions, in the direction of Δ: 0.0123 "
             "(9 stretches)") in window.bt_result.text().splitlines()
@@ -792,6 +859,7 @@ def test_a_component_not_told_apart_from_chance_reads_so_in_grey(monkeypatch):
            "well often enough that this is not told apart from chance. Before "
            "costs, from one replay of past prices.")
     a = {"n": 3200, "fdr_q": 0.1, "withheld": None, "blend_ic": None,
+         "randomisation": {"q": 8, "draws": 256, "block_days": 32},
          "components": [{"component": "momentum", "n": 3200, "ic": 0.137,
                          "p": 0.0022, "p_rand": 0.2109, "weight": 0.3,
                          "spread": {"spread": 0.2031, "se": 0.0643},
@@ -806,3 +874,14 @@ def test_a_component_not_told_apart_from_chance_reads_so_in_grey(monkeypatch):
         assert "unconfirmed" not in html.lower() and "survives FDR" not in html
         assert "#98c379" not in html and why in html
         assert ("vs random stretches 0.2109" in html) is (not plain)
+        # the randomisation's p is shown raw, beside BH-based grades
+        # (domain P3-2)
+        assert ("vs random stretches 0.2109, before the correction for "
+                "testing four components" in html) is (not plain)
+        # in both wordings: what the check cannot see (domain P2-2)
+        assert ("The check against random stretches does not cover traits "
+                "fixed per instrument, such as volatility.") in html
+        assert html.count("fixed per instrument") == 1
+    # a run not held to the randomisation does not claim the check ran
+    assert "fixed per instrument" not in MainWindow._attribution_html(
+        dict(a, randomisation=None))

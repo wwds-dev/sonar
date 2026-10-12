@@ -10,12 +10,18 @@ what it was measured on.
 
 ## 0. Where we are
 
-**2,194 tests**, 80% of statements and branches across `sonar/` and `ui/`
+**2,203 tests**, 80% of statements and branches across `sonar/` and `ui/`
 (2026-10-10; 71% on 2026-09-22, 66% of `sonar/` alone on 2026-09-16), plus 30
 opt-in `-m network` checks of every live source. Run the suite **twice** before
 a push — natively and under `QT_QPA_PLATFORM=offscreen`, which is how CI runs
 it: the two disagree on font metrics, and CI was red for two days in October
 while the native run was green.
+
+**Release checks** are deselected by default too: `./run-tests.sh -m release`.
+`sre-release` runs them before every release, and a failure blocks it. Today
+there is one, `test_no_verdict_ships_with_an_unfilled_figure`: it fails while
+the chance rate the backtest's verdicts quote (`CHANCE_VERDICT_RATE`) or any
+judged verdict sentence still holds a `{` placeholder.
 
 > **2026-10-10 QA pass.** A risk-ranked plan (kept outside the repo, findings
 > QA-1…QA-14) and the tests it called for: the landing page's figures checked

@@ -1949,8 +1949,9 @@ class MainWindow(QMainWindow):
         self.bt_btn.setFont(theme.figure(9))
         self.bt_btn.setToolTip(
             "Replay the same plan over real bars: two years for the day and\n"
-            "week profiles, five for the month and the year, ten for the\n"
-            "quarter — enough separate stretches of time to judge.\n"
+            "week profiles, five for the month — enough separate stretches\n"
+            "of time to judge. The quarter and year profiles show the\n"
+            "numbers without a verdict.\n"
             "Live positions take months to grade; this answers today —\n"
             "for the price half of the score, which is all history can test.")
         self.bt_btn.clicked.connect(self._run_backtest)
@@ -2898,9 +2899,12 @@ class MainWindow(QMainWindow):
                        "error bar: not shown to differ from the prediction, which "
                        "is not the same as no difference.</p>")
         if not words.plain() and rand.get("p_tail") is not None:
-            out.append("<p style='color:#5c6370'>p vs random directions: the "
-                       "share of random-direction reshuffles of whole "
-                       "stretches that read at least this far.</p>")
+            # Twice the one-sided share, as randomisation.direction_p
+            # computes it (domain P3-1).
+            out.append("<p style='color:#5c6370'>p vs random directions: "
+                       "twice the share of random-direction reshuffles of "
+                       "whole stretches that read at least this far in the "
+                       "direction of Δ, at most 1.</p>")
 
         for title, key in (("Momentum buckets", "buckets"),
                            ("Attention buckets", "attention_buckets")):
@@ -2981,7 +2985,8 @@ class MainWindow(QMainWindow):
                     and c.get("p") is not None):
                 ic += f" (p {c['p']:.4f}"
                 if c.get("p_rand") is not None:
-                    ic += f"; vs random stretches {c['p_rand']:.4f}"
+                    ic += (f"; vs random stretches {c['p_rand']:.4f}, before "
+                           "the correction for testing four components")
                 ic += ")"
             cells = (
                 c.get("component", "?"),
@@ -3016,10 +3021,15 @@ class MainWindow(QMainWindow):
                 "that the readings disagree; <b>not told apart from chance</b> "
                 "that it would read keep or backwards, but a meaningless "
                 "reading held for stretches of time ranked setups this well "
-                "often enough to explain it. That check does not cover traits "
-                "fixed per instrument, such as volatility. Keep grades a piece "
-                "of the score against past setups. It does not mean the piece "
-                "makes money.</p>")
+                "often enough to explain it. Keep grades a piece of the score "
+                "against past setups, before costs, from one replay of past "
+                "prices. It does not mean the piece makes money.</p>")
+        # In both wordings (domain P2-2): the volatility grade's own "why"
+        # shows in both, so the residual it carries does too.
+        if a.get("randomisation"):
+            out.append("<p style='color:#7c8798'>The check against random "
+                       "stretches does not cover traits fixed per instrument, "
+                       "such as volatility.</p>")
 
         blend = a.get("blend_ic")
         if blend is not None:
@@ -3630,12 +3640,12 @@ class MainWindow(QMainWindow):
         from sonar import backtest
         from sonar.assets import WATCHLIST
         # The shortest range whose setups fall in enough separate stretches
-        # for a verdict — two years to 10 days, five to 30, ten to 80 (A15) —
-        # or, past that, the range that compares anything at all.
+        # for a verdict — two years to 10 days, five to 30 (A15, amended) —
+        # or, past that, the range that compares anything at all, shown
+        # without a verdict.
         days = self.live.horizon.momentum_days
         rng = backtest.range_for_horizon(days)
-        span = {"2y": "two years", "5y": "five years",
-                "10y": "ten years"}.get(rng, rng)
+        span = {"2y": "two years", "5y": "five years"}.get(rng, rng)
         self.bt_result.setText(f"replaying {span} of bars…")
         self._bt_thread = BacktestThread(
             [s for s, _n, _c, _k in WATCHLIST], days, self, rng=rng,
@@ -3680,7 +3690,15 @@ class MainWindow(QMainWindow):
         for b in r.get("buckets", []):
             lines.append(f'    |momentum| {b["lo"]*100:>3.0f}–{b["hi"]*100:<4.0f}%  '
                          f'n={b["n"]:<6} hit {b["hit_rate"]*100:5.1f}%')
-        lines.append(f'  {r["verdict"]}')
+        # The Terminal's reader picks a profile, not a range, so too few
+        # stretches names that fix (domain P3-5).
+        verdict = r["verdict"]
+        if r.get("withheld") == "few_clusters":
+            from sonar import backtest
+            verdict = backtest.few_clusters_verdict(
+                (r.get("randomisation") or {}).get("q", 0),
+                r.get("horizon_days"), terminal=True)
+        lines.append(f'  {verdict}')
         # The randomisation's p in expert wording, as the Lab shows it [A3].
         rand = r.get("randomisation") or {}
         if not words.plain() and rand.get("p_tail") is not None:
@@ -3688,6 +3706,9 @@ class MainWindow(QMainWindow):
                          f'{rand["p_tail"]:.4f} ({rand.get("q", 0)} stretches)')
         lines.append("  Price-based half only — historical news is not replayed, "
                      "and costs are excluded (both would push this down).")
+        # Survivorship (domain P2-3): the replay runs on today's list.
+        lines.append("  The instruments are today's list; ones that fell away "
+                     "are missing, which favours long trades over long ranges.")
         self.bt_result.setText("\n".join(lines))
 
     def _trade(self, symbol: str, direction: str) -> None:

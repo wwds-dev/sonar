@@ -12,6 +12,7 @@
 #
 #   ./run-tests.sh                 # the suite, 600s budget
 #   ./run-tests.sh -k playmaker    # anything after the script is passed through
+#   ./run-tests.sh -m release      # the release checks, deselected by default
 #   TEST_BUDGET_S=60 ./run-tests.sh
 set -uo pipefail
 cd "$(dirname "$0")"
