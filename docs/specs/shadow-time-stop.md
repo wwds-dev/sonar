@@ -5,7 +5,8 @@
   open questions are accepted: shadow readout (cohort grading stays the fallback); T = 28 calendar days;
   gate on the HC3 slope of R on score, rank IC shown for comparison; Pocock 2.315 at 45 / 101 / 201;
   protocol entries only, hand-closed ones excluded and counted; build after the QA-11/QA-13 work lands.
-- Next: Design (ux-designer), then Build. Blocked on the dependency below (not landed at approval).
+- Next: Build. Design (ux-designer) was written 2026-10-12, below. Build is blocked on the dependency
+  below (not landed at approval).
 - Phases: Define (product-manager role) and Architect (architect role), written 2026-10-12 in one
   session. Design (ux-designer) is deferred until the owner approves the direction; constraints for it
   are below. Build, Review, Verify, Secure and Document come after the gate. Both playbooks are
@@ -114,7 +115,7 @@ a cap fixed in advance (20 bars). This is weaker and slower. At the cap, still-o
 either be excluded, which keeps the selection, or marked, which is this spec under another name. The
 60–80 band would mostly drop out (validator). It remains the option that marks nothing to market.
 
-## Design *(ux-designer, after the gate)*
+## Design *(ux-designer, 2026-10-12)*
 Constraints for the designer:
 - The block sits beside the existing grade. The existing verdict line keeps its words and position.
 - "Promised" and "advertised" stay reserved for the row P(profit). For the shadow, use "what no edge
@@ -124,6 +125,231 @@ Constraints for the designer:
   waiting. It must not read like a verdict.
 - Counts of exclusions (hand-closed, no price, gaps) are always visible when they are non-zero.
 - Wording follows `ui/words.py`. No edge, profit or certainty copy.
+
+The design below meets those constraints. The ux-designer playbook is `status: baseline` (seeded
+2026-10-10, not radar-verified), so it added nothing beyond `AGENTS.md`. Treat it as stale.
+
+### D1. The user's question and the one primary figure
+- **Question:** "Leaving out nothing, does a higher score go with a better result after a fixed
+  time?" It is the panel's question, "Is the score right?", answered a second way. It is not a new
+  question.
+- **Primary figure:** the status sentence (`shadow_status`). Before the first look, it shows progress
+  toward that look ("12 of the first 45 entries have a result"). Once a look has been evaluated, it
+  shows that look's result: z against ±2.315, with the cohort size. Everything else in the block
+  supports that sentence.
+- **Hierarchy:** the existing verdict stays the panel's first and largest sentence (`text(12)`). The
+  shadow status uses `text(11)`. This keeps TESTPLAN 11.9 true and makes the shadow read as the
+  second answer, which is accurate until a look exists.
+
+### D2. Placement
+One widget, `ShadowGrade(QFrame)`, is used on both pages so that the two copies cannot drift apart.
+It takes `detail: bool`. Landing uses `False`; My trades uses `True`, which adds the per-band lines.
+It is appended **after** every existing widget of each grade panel, so no existing label changes
+position, text or order:
+- **Landing, "IS THE SCORE RIGHT?" panel** (`ui/app.py` ~2043–2049): after `self.grade_next` and
+  before `lay.addWidget(grade)`, as `self.shadow_grade = ShadowGrade(detail=False)`.
+- **My trades, "CALIBRATION — DOES A HIGH SCORE ACTUALLY WIN?" panel** (~1896–1904): after
+  `self.bt_result`, as `self.book_shadow = ShadowGrade(detail=True)`.
+
+"Beside" is built as **below, inside the same panel**, not as a second column. A side-by-side
+pair would need a resize-driven reflow at the 1280 pt minimum width (the rail collapses below 1420,
+`ui/app.py:76`). It would also give the two grades equal weight before the shadow has run a test.
+Both pages scroll (landing: `_portfolio_tab` docstring; My trades: `QScrollArea`), so the extra
+height costs no layout.
+
+Contents of the widget, top to bottom:
+
+| # | element | font, colour | content |
+|---|---|---|---|
+| 0 | hairline | 1 px `theme.BORDER`, with 6 px space above | `_hline()`: the horizontal twin of `_vline()` |
+| 1 | header row | `HelpHeading(SH_HEAD, "grading", SH_TIP)` on the left; `shadow_count` `figure(8)` FAINT on the right | the heading links to §10 of the manual, where the tech-writer adds a sub-heading for this grade |
+| 2 | `shadow_status` | `text(11)` INK, wrap | **the one primary sentence** (D3) |
+| 3 | `shadow_rows` | `figure(10)` MUTED, wrap | split, waiting, reference, running, comparison, earlier looks, exclusions, gaps; on My trades also per band (D4) |
+| 4 | `shadow_warn` | `figure(10)` GOLD, wrap; hidden when empty | the more-than-10%-excluded note, which always starts with "Note:" |
+| 5 | `shadow_note` | `figure(9)` FAINT, wrap | the R explanation, the mandatory caveat, and when it was worked out (or the stale text) |
+
+Exclusions go in row 3 (MUTED), not row 5 (FAINT), because the constraint requires them to stay
+visible.
+
+### D3. States and the status sentence
+The UI reads `self.live.shadow`. The engine sets it on the holder; `_mirror_book` copies it from
+`/api/book` on a follower. Precedence, first match wins:
+
+| state | condition | `shadow_status` (string id) | rows shown |
+|---|---|---|---|
+| (e) not available | follower, and the holder's payload has **no `shadow` key** (kept as a sentinel distinct from `None`) | `SH_NOT_AVAILABLE` | none; the note keeps the caveat only |
+| loading | key present, value `None`: the holder has not finished its first computation | `SH_LOADING` | none |
+| error | dict with `error` set (the engine caught an exception; it keeps the last good dict alongside) | `SH_ERROR`; if a last good dict exists, render it below as usual | as for that dict |
+| (a1) empty | `n_entered == 0` | `SH_EMPTY` | none |
+| (a2) nothing at T | `n_reached == 0` | `SH_NONE_AT_T` | waiting, plus exclusions if non-zero |
+| (a3/b) before look 1 | no look evaluated; look 1 not yet due | `SH_BEFORE_LOOK` (or `SH_BEFORE_LOOK_UNDATED` if the 45th entry does not exist yet) | all of D4 that applies |
+| (f) look due, prices missing | a look is due, but members are still `wait_price` | `SH_LOOK_WAITING_PRICE` | all of D4 |
+| (c) look evaluated, not crossed | latest evaluated look has \|z\| < 2.315 and looks remain | `SH_LOOK_NOT_CROSSED` + `SH_NEXT_LOOK` / `SH_NEXT_LOOK_UNDATED` | all of D4, with earlier looks under `SH_ROW_PAST_LOOK` |
+| (c) crossed | any evaluated look has \|z\| ≥ 2.315 (the first crossing is the result, and the design is closed) | `SH_LOOK_CROSSED_UP` or `_DOWN` by the sign of z, then `SH_CAVEAT_CROSSED` | all of D4; the running line keeps its "not a test" label |
+| (d) closed, no crossing | three looks evaluated, none crossed | `SH_FINAL_NONE` | all of D4 |
+
+- **"Between looks" (b):** the running statistics line (`SH_ROW_RUNNING`) always starts with "running,
+  not a test". It appears only once `n_reached ≥ 20`. Below that, `SH_ROW_RUNNING_WAIT` shows instead.
+  20 matches the existing grade's minimum (manual §10), which keeps the shadow from showing a slope
+  fitted on a handful of entries. This is a display rule only; it does not change the looks.
+- **Next look date:** when the cohort's Nth entry (by `opened_at`) exists, the date is that entry's
+  t_T, shown as "on or after {date}". Evaluation also needs a final bar and every member resolved, so
+  "on or after" is literal. When the Nth entry does not exist yet, no date is projected. The text gives
+  the number of entries still to be entered. On 2026-10-12, look 1 has a date (the book holds 51
+  protocol entries) and looks 2 and 3 are undated.
+- **Stale:** `shadow_note` always ends with `SH_WORKED_OUT`. When `computed_at` is more than 26 hours
+  old (a daily-close readout, plus slack), `SH_STALE` replaces it. On a follower, this is also how a
+  dead holder shows.
+- **(f) No network:** a fetch failure never becomes a number. An entry past t_T with no final close
+  counts in `n_wait_price` ("waiting for a closing price"). After 7 days without one it moves to
+  `n_no_price` (ADR §4) and appears under "left out". So a network outage shows first as a rising
+  waiting count and then as a counted exclusion.
+- **(g) Exclusions:** `SH_ROW_LEFT_OUT` lists only its non-zero parts, and the row is hidden only
+  when all three are zero. `n_gap` entries *are* graded (at the barrier), so they get their own row,
+  `SH_ROW_GAP`, not a place under "left out". On 2026-10-12 the row reads "left out and counted: 1
+  chosen by hand" (META).
+- **(h) More than 10% of a cohort excluded:** when (`n_left` + `n_no_price` within the cohort) / N
+  > 0.10 for an evaluated or due look, `shadow_warn` shows `SH_WARN` for that look. It stays visible
+  for as long as the look's result is shown.
+
+### D4. Numbers and formats
+Rows in `shadow_rows`, in this order. Each row is omitted when its inputs are absent:
+1. `SH_ROW_SPLIT`: entries with an outcome, as target / stop / time counts, each with its share of
+   `n_reached` as a whole percent (they need not sum to 100).
+2. `SH_ROW_WAITING`: `n_waiting` (not yet at T) with the next date an entry reaches T, and
+   `n_wait_price`. Only non-zero parts are shown.
+3. `SH_ROW_REF`: the no-edge reference split, as whole percents of the same entries
+   (Σ per-entry `barrier_probabilities_within` ÷ `n_reached`), plus "average result 0R". If ADR 0001
+   has not landed, this row and every per-band reference part are **omitted, not dashed**.
+4. `SH_ROW_RUNNING` (or `_WAIT`): the mean R with its 95% range, the gate statistic z (HC3 slope),
+   and "no costs".
+5. `SH_ROW_IC`: the rank IC on all graded entries, beside the closed-only rank IC **on the same
+   entries** (ADR §3), labelled "for comparison only, not a test". It is shown with the running row,
+   at `n_reached ≥ 20`.
+6. `SH_ROW_PAST_LOOK`: one line for each evaluated look other than the one in the status sentence.
+7. `SH_ROW_LEFT_OUT`, then `SH_ROW_GAP`.
+8. My trades only (`detail=True`): `SH_ROW_BAND` for each score band with `n ≥ 1`, using the same
+   bands and `_band_top` as the existing table. This puts the reference split per band (ADR §2).
+
+**Formats** (ASCII hyphen-minus throughout, so the strings can be grepped):
+- z: signed, 2 decimals (`+0.84`). If 2.305 ≤ |z| < 2.325, show 3 decimals so the shown value can
+  never contradict the verdict, which is decided on the unrounded value. The boundary always shows
+  as `2.315`.
+- R: signed, 2 decimals, with an `R` suffix (`+0.12R`). Range: `{lo:+.2f} to {hi:+.2f}R`.
+- IC: signed, 2 decimals (the existing grade's `:+.2f`).
+- Percentages: whole numbers. Counts: integers.
+- Dates: `_day_text` (`%-d %b`, e.g. "6 Nov"), with ` %Y` added when the year differs from now
+  ("7 Jan 2027"). `computed_at`: `%-d %b %H:%M`, local time.
+- {T}: from the entries' `t_days`. 28 gives "4 weeks" and `{T_adj}` "4-week"; 112 gives "16 weeks";
+  5.6 gives "5.6 days"; other values give "{d:g} days". If one readout mixes values of T, use
+  "4 holding periods" and `{T_adj}` = "fixed-time". All 51 live entries are 28 days.
+- {rr}: the plan's R:R as `:g` (1.5).
+
+**Fields the design reads from the shadow dict.** The names are proposed; the meaning is what
+matters. They are all counts or statistics inside the dict that the architecture already returns, so
+they add no new persisted state:
+`n_entered, n_reached, n_target, n_stop, n_time, n_waiting, next_t, n_wait_price, n_nonprotocol,
+n_left, n_no_price, n_gap, z, ic, ic_closed, mean_r, mean_r_lo, mean_r_hi, ref{target,stop,neither}
+| None, t_days, rr, looks[3]{n, due | None, n_missing, evaluated, z, n_excluded}, bands[], computed_at,
+error`. Two of these, `n_wait_price` and `ic_closed` on the same entries, are not named in the
+Architecture section. The engineer should add them to the function's return value, or ask the
+architect.
+
+### D5. Accessibility and narrow widths
+- **Colour is never the only signal.** Crossed or not is stated in words ("crossed the line" / "did
+  not cross"). A crossing gets **no** green or red, because that would read as good or bad money. The
+  GOLD warning always starts with the word "Note:". Nothing in the block uses `theme.UP`/`DOWN`
+  except the heading's existing link colour.
+- **Contrast** on `PANEL` #1a212c, measured with the WCAG formula on `ui/theme.py` values: INK 14.4:1,
+  MUTED 8.5:1, GOLD 10.2:1, FAINT 5.2:1. All pass AA for body text (4.5:1). FAINT carries only
+  secondary text (the count, R, caveat and time); no exclusion or result is FAINT.
+- **Sizes:** the existing panel's sizes are reused (8/9/10/11 pt); nothing is new or smaller.
+- **Keyboard:** the block is read-only text with no new controls. The one link is the existing
+  `HelpHeading` pattern, which is mouse-only today, as it is for every heading. The manual stays
+  reachable from the Learn tab by keyboard. This is an existing gap, out of scope here; it is a
+  candidate for the next UX audit. Set `setAccessibleName("Second grade, every entry at a fixed
+  date")` on the frame so VoiceOver announces the block.
+- **Narrow:** every label except `shadow_count` is `wrap=True`. Per the `label()` docstring, an
+  unwrapped long row would set the window's minimum width. At the 1280×775 minimum, rows wrap rather
+  than clip. The header count elides nothing: it is at most about 20 characters, beside a stretch.
+  The block adds about 7 lines on landing and about 10 on My trades with three bands. Both pages
+  scroll.
+- **Wording modes:** each string is a `(plain, expert)` pair picked with `words.pick`, as
+  `ATTRIBUTION_HEADS` is. Both modes keep the same rows and the same order (`ui/words.py`
+  docstring). The mandatory caveat and "no costs" appear in **both** modes.
+
+### D6. The strings (one place: `SHADOW_WORDS` in `ui/app.py`, beside `ATTRIBUTION_HEADS`)
+Placeholders are in `{braces}`. "·" separates optional parts; each part is dropped when its count is
+zero.
+
+| id | plain (default) | expert |
+|---|---|---|
+| `SH_HEAD` | EVERY ENTRY, GRADED AT A FIXED DATE | TIME-STOP SHADOW |
+| `SH_TIP` | A second grade, beside the one above, which counts only closed positions. Here every protocol entry gets a result a fixed time after it opened (4 weeks on the week profile): at the target, at the stop, or at that day's close if it reached neither. Slow entries count too. It is tested only at three looks fixed in advance: the first 45, 101 and 201 entries. | *(same)* |
+| `SH_COUNT` | {reached} of {entered} at {T} | {reached}/{entered} past T |
+| `SH_NOT_AVAILABLE` | Not available from the running agent. It is an older version than this window. | Not available from the running agent (older version). |
+| `SH_LOADING` | Working it out: this needs a scan and a few daily closes. | Computing: waits for a scan and daily closes. |
+| `SH_ERROR` | Could not work it out this time ({reason}). Nothing is guessed; the next scan tries again. | Error: {reason}. Nothing guessed; retried next scan. |
+| `SH_EMPTY` | Not a test yet: there are no protocol entries. Protocol mode on My trades makes them. | Not a test yet: no protocol entries. |
+| `SH_NONE_AT_T` | Not a test yet. None of the {entered} entries has had {T} yet; the first gets there on {next_t}. | Not a test yet. 0/{entered} past T; first on {next_t}. |
+| `SH_BEFORE_LOOK` | Not a test yet. {have} of the first {N} entries have a result; the {ordinal} look is on or after {due}. | Not a test yet. {have}/{N} graded for look {k}; due on or after {due}. |
+| `SH_BEFORE_LOOK_UNDATED` | Not a test yet. {have} of the first {N} entries have a result; {missing} of them are not entered yet. | Not a test yet. {have}/{N} graded for look {k}; {missing} not yet entered. |
+| `SH_LOOK_WAITING_PRICE` | Not a test yet. The {ordinal} look is due; {k} of its {N} entries are still waiting for a closing price. | Not a test yet. Look {k} due; {k} of {N} awaiting a final close. |
+| `SH_LOOK_NOT_CROSSED` | Look {k} of 3, first {N} entries ({used} with a result): no clear link between score and result. z = {z}; the line is ±2.315. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| < 2.315, not crossed. |
+| `SH_NEXT_LOOK` | Next look: the first {N2} entries, on or after {due}. | Next: n = {N2}, due on or after {due}. |
+| `SH_NEXT_LOOK_UNDATED` | Next look: the first {N2} entries, after {missing} more are entered. | Next: n = {N2}, {missing} not yet entered. |
+| `SH_LOOK_CROSSED_UP` | Look {k} of 3, first {N} entries ({used} with a result): crossed the line. Entries with higher scores had larger results. z = {z}; the line is ±2.315. The test ends here. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| ≥ 2.315, crossed. Design closed. |
+| `SH_LOOK_CROSSED_DOWN` | *(as above, with "smaller results")* | *(same as UP)* |
+| `SH_CAVEAT_CROSSED` | This means only that the score sorts how coin-flip entries end after {T}. It is not a trading edge. | Ranks random-direction outcomes at T only; not a tradeable edge. |
+| `SH_FINAL_NONE` | Three looks, no crossing: no evidence that the score ranks {T_adj} results, at the planned size. The test is finished. | Looks 1-3 not crossed: no evidence that the score ranks {T_adj} results, at the planned size. Design closed. |
+| `SH_ROW_SPLIT` | {reached} with a result: {t} at the target ({tp}%) · {s} at the stop ({sp}%) · {x} at neither, valued at the {T} close ({xp}%) | {reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} ({xp}%) |
+| `SH_ROW_WAITING` | still waiting: {w} not yet at {T} (the next on {next_t}) · {wp} waiting for a closing price | waiting: {w} before T (next {next_t}) · {wp} awaiting a final close |
+| `SH_ROW_REF` | what no edge would give after {T}: about {a}% at the target · {b}% at the stop · {c}% at neither, and an average result of 0R | what no edge would give: {a}% / {b}% / {c}%, mean 0R |
+| `SH_ROW_RUNNING` | running, not a test: average result {m}R (95% range {lo} to {hi}R) · link z = {z} · no costs | running, not a test: mean R {m} [{lo}, {hi}] · HC3 slope z {z} · no costs |
+| `SH_ROW_RUNNING_WAIT` | running figures start at 20 results; {k} to go | running stats from n = 20; {k} to go |
+| `SH_ROW_IC` | for comparison only, not a test: rank correlation {ic} on these entries at {T}, {icc} on the closed ones alone | descriptive only: rank IC {ic} (all at T) vs {icc} (closed only) |
+| `SH_ROW_PAST_LOOK` | look {k}, first {N}: z = {z}, did not cross the line | look {k}, n = {N}: z {z}, not crossed |
+| `SH_ROW_LEFT_OUT` | left out and counted: {m} chosen by hand · {l} closed by hand before {T} · {p} with no closing price | excluded: {m} non-protocol · {l} hand-closed before T · {p} no price |
+| `SH_ROW_GAP` | {g} graded at the target or stop because a daily close went past it between checks | {g} gap exits (daily close beyond a barrier) |
+| `SH_ROW_BAND` | scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} neither · what no edge would give {a}% / {b}% / {c}% | score {lo}-{hi}  n={n}  T/S/N {t}/{s}/{x}  no edge {a}/{b}/{c}% |
+| `SH_WARN` | Note: {x} of the first {N} entries were left out ({pct}%). This look rests on the other {used}. | Note: {x}/{N} excluded ({pct}%) at look {k}. |
+| `SH_NOTE` | R is the result in units of the amount risked: -1R lost the amount risked, +{rr}R reached the target. This grade asks only whether the score sorts how coin-flip entries end after {T}. Even a crossed line is not a trading edge: the direction was random, and there are no costs. | R = result / initial risk. Ranks random-direction outcomes at T only; not a tradeable edge. No costs. |
+| `SH_WORKED_OUT` | Worked out {when}. | As of {when}. |
+| `SH_STALE` | Not updated for {h} hours: the agent may be stopped. | Stale: {h} h old. |
+
+`{ordinal}` is first / second / third. The word "edge" appears only in the mandated reference
+phrase "what no edge would give" and in the two negated caveats. A test that greps for edge claims
+should allow exactly those strings.
+
+### D7. Tests the design adds (for the qa-engineer's plan)
+- **U-1.** Every `SHADOW_WORDS` string, in both modes, plus the rendered text of `shadow_status`,
+  `shadow_rows`, `shadow_warn` and `shadow_note` in every D3 state, contains none of `FORECAST_WORDS`
+  (`tests/test_landing_figures.py:136`). It also contains none of "promised", "advertised", "profit",
+  "certain" or "guarantee". Note that the existing tests match substrings, so "buy" inside
+  "buyability" or "expect" inside "expected" would fail them.
+- **U-2.** With the shadow present, in every state, the text of `grade_verdict`, `grade_rows`,
+  `grade_next`, `grade_count`, `cal_verdict` and `cal_table` is identical to the text without it.
+  This extends V-11/V-15, and TESTPLAN 11.9 still holds.
+- **U-3 (new TESTPLAN 11.9b).** The landing `shadow_status` text equals the My trades
+  `shadow_status` text, word for word.
+- **U-4.** One test per D3 row, each asserting its string id's text. This includes: a payload
+  without the `shadow` key renders `SH_NOT_AVAILABLE`; "not a test yet" is present until a look is
+  evaluated; "not a test" stays on the running row in every state; and `SH_FINAL_NONE` contains
+  "no evidence that the score ranks 4-week results, at the planned size".
+- **U-5.** A non-zero `n_nonprotocol`, `n_left`, `n_no_price` or `n_gap` each appears in
+  `shadow_rows`. With 5 of 45 excluded (11%), `shadow_warn` is visible and starts with "Note:"; with
+  4 of 45 (8.9%) it is hidden.
+- **U-6.** If `ref` is `None`, the text contains no "what no edge would give" and no dash in its
+  place.
+- **U-7.** z = 2.3149 shows 3 decimals and reads "not crossed"; z = 2.3151 reads "crossed".
+- **U-8.** At the 1280×775 minimum window, the landing page's minimum width does not grow with the
+  shadow block present (`test_layout`).
+
+### D8. For the tech-writer (Document phase)
+Add a sub-heading to manual §10 (`static/docs.html`, `id="grading"`). It should cover: why closed-only
+grading leans on quick resolvers; the fixed-date result and R; the three looks and the line at
+2.315; "what no edge would give"; and the caveat. The heading links to `grading`, because
+`_show_learn` selects a contents row, and sub-anchors are not verified to work.
 
 ## Architecture *(architect)*
 See [ADR 0002](../adr/0002-shadow-time-stop-grade.md) for the decision record. In short:
