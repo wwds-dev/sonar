@@ -18,6 +18,7 @@ import random
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
@@ -27,6 +28,49 @@ from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
 from .engine import Engine
 from .research import hourlyvol
 from . import calibration, events, portfolio, scoring
+
+
+# The hosts a followed engine may be at: the ones sonar.server binds to
+# (server.LOOPBACK; a test keeps the two equal).
+FOLLOW_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _loopback_url(url: object) -> bool:
+    """Is ``url`` a plain http address on this machine? The engine lock names
+    the holder's address, and following it fetches from and posts to it; only
+    the user can write the lock, but a file:// or remote URL in it must never
+    be read or sent the window's changes."""
+    text = str(url)
+    if text != text.strip() or not text.isprintable():
+        return False                    # urlsplit would quietly drop a \t or \n
+    try:
+        parts = urllib.parse.urlsplit(text)
+        port = parts.port               # raises on a port that is not a number
+    except ValueError:
+        return False
+    return (parts.scheme == "http" and parts.hostname in FOLLOW_HOSTS
+            and parts.username is None and parts.password is None
+            and port is not None and 1 <= port <= 65535
+            and parts.path in ("", "/") and not parts.query and not parts.fragment)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A followed engine never redirects; one that does is not followed off
+    the machine (it raises as an HTTP error instead)."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def _follow_opener() -> urllib.request.OpenerDirector:
+    """Following talks to this machine only: no proxy from the environment or
+    the system settings (macOS does not exempt 127.0.0.1 by default), and no
+    redirects."""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                       _NoRedirect)
+
+
+_FOLLOW_OPENER = _follow_opener()
 
 
 def _exc_line(exc: BaseException) -> str:
@@ -1061,6 +1105,9 @@ class Live:
                 self.read_only = True
                 self.conflict = enginelock.describe_conflict(self.engine_lock)
             url = (holder or {}).get("url")
+            refused = url if url and not _loopback_url(url) else None
+            if refused:
+                url = None
             if url:
                 self._follow(url, (holder or {}).get("pid"))
                 slow = now - last_slow >= FOLLOW_SLOW_EVERY
@@ -1069,8 +1116,13 @@ class Live:
                     last_slow = now
             else:
                 self._follow(None)
+                detail = self.conflict
+                if refused:
+                    detail = (f"{detail} The engine lock gives an address that is "
+                              f"not on this machine ({llm._clean(refused, 80)}); "
+                              "it is not followed.")
                 with self.lock:
-                    self.snapshot = {"status": "read-only", "detail": self.conflict}
+                    self.snapshot = {"status": "read-only", "detail": detail}
             self._stop.wait(FOLLOW_EVERY)
         return False
 
@@ -1176,7 +1228,7 @@ class Live:
 
     @staticmethod
     def _fetch(url: str, path: str):
-        with urllib.request.urlopen(url.rstrip("/") + path, timeout=FOLLOW_TIMEOUT) as r:
+        with _FOLLOW_OPENER.open(url.rstrip("/") + path, timeout=FOLLOW_TIMEOUT) as r:
             return json.loads(r.read())
 
     @staticmethod
@@ -1184,7 +1236,7 @@ class Live:
         req = urllib.request.Request(
             url.rstrip("/") + path, data=json.dumps(payload).encode(),
             method="POST", headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=FOLLOW_TIMEOUT) as r:
+        with _FOLLOW_OPENER.open(req, timeout=FOLLOW_TIMEOUT) as r:
             return json.loads(r.read())
 
     def _forward(self, url: str, path: str, payload: dict,

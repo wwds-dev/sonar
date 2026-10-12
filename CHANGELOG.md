@@ -51,6 +51,14 @@ they have checked.
 
 ## Unreleased — 2026-10-12
 
+**A window follows only an engine on this machine.** The engine lock names
+the running engine's address; the window now follows it only if it is a plain
+http address on this machine, and says so when it is not. Following never goes
+through a configured proxy (macOS's system proxy does not exempt 127.0.0.1)
+and never follows a redirect. An engine started with `--host ::1` now binds
+and can be followed, and a lock with an unreadable start time no longer stops
+the window's engine thread (`docs/specs/follow-url-localhost.md`).
+
 **Text from outside the app is drawn as text.** Labels are plain text by
 default, so a feed, the Nasdaq calendar or a followed engine cannot style or
 reword the window with markup; the Playmaker and Lab panes escape pasted book
