@@ -60,15 +60,20 @@ def test_an_empty_result_renders_the_reason_not_a_crash(window):
     assert "no resolved trials" in html
 
 
+_INSIDE = ("The difference sits inside its own error bar: not shown to differ "
+           "from the prediction, which is not the same as no difference.")
+
+
 def test_a_result_inside_its_error_bar_is_reported_as_the_finding(window):
-    """No edge is a result. The tab must not present it as a failure."""
+    """A gap inside its bar is a result, not a failure — and not 'no edge'
+    either: not shown, which is not the same as shown absent (measure 9)."""
     html = window._lab_html({
         "n": 500, "symbols": 10, "hit_rate": 0.393, "predicted": 0.400,
         "delta": -0.007, "std_error": 0.022, "significant": False,
         "expectancy_r": -0.017, "implied_edge_sigma": -0.004,
-        "avg_bars_held": 6.1, "verdict": "no edge detected"})
-    assert "no edge detected" in html
-    assert "supposed to look like" in html
+        "avg_bars_held": 6.1, "verdict": "within"})
+    assert _INSIDE in html
+    assert "no edge" not in html and "supposed to look like" not in html
 
 
 def test_the_predicted_rate_is_shown_next_to_the_realised_one(window):
@@ -337,6 +342,11 @@ def test_a_run_without_a_verdict_shows_no_attention_or_attribution_finding(
                      "attention": 3.0 if spike else -1.0, "c_momentum": m,
                      "c_volatility": 0.3, "c_news": 1.0 if spike else 0.0,
                      "c_catalyst": None})
+    # three days apart, so the judged run falls in ten 32-day stretches; each
+    # row carries its opposite outcome, the mirror of its own (docs/adr/0003)
+    flip = {"TARGET": "STOP", "STOP": "TARGET"}
+    rows = [dict(r, t=r["t"] * 3, opp_outcome=flip[r["outcome"]],
+                 opp_bars_held=3, opp_predicted=0.4) for r in rows]
     monkeypatch.setattr(backtest, "fetch_bars", lambda sym, rng_: _walk(0.0, n=60))
     monkeypatch.setattr(backtest, "run_symbol", lambda *a, **k: list(rows))
     judged = backtest.run(["AAPL"], horizon_days=5)
@@ -573,8 +583,8 @@ def test_a_run_without_a_verdict_shows_the_numbers_and_why(window):
     assert "Realised hit rate" in html and "+2.37 pts" in html
     assert "#e5c07b" not in html                  # not coloured as a finding
     inside = _judged(withheld="too_few", verdict="Too few to judge: 60 ...")
-    assert "supposed to look like" not in window._lab_html(inside)
-    assert "supposed to look like" in window._lab_html(_judged())
+    assert _INSIDE not in window._lab_html(inside)
+    assert _INSIDE in window._lab_html(_judged())
     window._backtest_done(r)
     assert f"  {why}." in window.bt_result.text().splitlines()
 
@@ -599,9 +609,9 @@ def test_the_lab_colour_follows_the_verdict_not_the_rounded_figures(window):
     edge = dict(delta=0.01, std_error=0.005)
     finding = window._lab_html(_judged(significant=True, **edge))
     assert "<p style='color:#e5c07b'><b>" in finding
-    assert "supposed to look like" not in finding
+    assert _INSIDE not in finding
     inside = window._lab_html(_judged(significant=False, **edge))
-    assert "#e5c07b" not in inside and "supposed to look like" in inside
+    assert "#e5c07b" not in inside and _INSIDE in inside
     older = {k: v for k, v in _judged(delta=0.02, std_error=0.005).items()
              if k != "significant"}
     assert "<p style='color:#e5c07b'><b>" in window._lab_html(older)
@@ -702,3 +712,97 @@ def test_the_terminal_backtest_reads_far_enough_back_for_its_horizon(window, mon
         window._bt_thread = None
     assert "five" in window.bt_btn.toolTip()
     window.bt_btn.setEnabled(True)
+
+
+# --------------------------------------------------------------------------- #
+# The direction randomisation on screen (docs/adr/0003)
+# --------------------------------------------------------------------------- #
+def _rand(p_tail: float, q: int = 22, p: float | None = None) -> dict:
+    return {"p": p_tail if p is None else p, "p_tail": p_tail, "q": q,
+            "draws": 11_999, "method": "monte_carlo", "block_days": 32,
+            "seed": 1}
+
+
+def test_not_told_apart_from_chance_is_grey_and_never_within(window, monkeypatch):
+    """Measure 11 on screen. A run outside its bar that the randomisation
+    does not confirm is grey, never the finding colour, and never gets the
+    'inside its own error bar' paragraph, which shows for 'within' only; in
+    neither wording does the page say 'unconfirmed'. The mirror, outside
+    the bar and confirmed, is a finding.
+    Mutation it catches: the state read as 'within', or coloured from
+    `outside_bar`."""
+    from sonar import backtest
+    from ui import words
+    grey = _judged(delta=0.031, std_error=0.014, significant=False,
+                   outside_bar=True, verdict_state="unconfirmed",
+                   randomisation=_rand(0.31),
+                   verdict=backtest._verdict(0.031, 0.014, "unconfirmed"))
+    beats = dict(grey, significant=True, verdict_state="beats",
+                 randomisation=_rand(0.004),
+                 verdict=backtest._verdict(0.031, 0.014, "beats"))
+    within = _judged(verdict_state="within", outside_bar=False,
+                     randomisation=_rand(0.6),
+                     verdict=backtest._verdict(-0.0008, 0.005, "within"))
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = window._lab_html(grey)
+        assert "<p style='color:#7c8798'><b>" in html and "#e5c07b" not in html
+        assert "not told apart from chance" in html
+        assert _INSIDE not in html and "unconfirmed" not in html.lower()
+        assert "<p style='color:#e5c07b'><b>" in window._lab_html(beats)
+        inside = window._lab_html(within)
+        assert _INSIDE in inside and "#e5c07b" not in inside
+
+
+def test_the_expert_view_shows_the_randomisation_p_in_the_direction_of_delta(
+        window, monkeypatch):
+    """[A3] (domain pass 2 P2-C): expert wording shows p_tail, labelled 'in
+    the direction of Δ', with the stretch count — never the equal-tailed p,
+    which is a field only — on the Lab and the Terminal line. Plain wording
+    shows no new number.
+    Mutation it catches: the line reading `p`, or shown in plain wording."""
+    from ui import words
+    r = _judged(randomisation=_rand(0.0123, q=9, p=0.9))
+    monkeypatch.setattr(words, "plain", lambda: False)
+    html = window._lab_html(r)
+    assert ("p vs random directions, in the direction of Δ</td><td "
+            "style='padding:2px 0'><b>0.0123  (9 stretches)</b>") in html, html
+    assert "0.9000" not in html
+    assert "reshuffles of whole stretches that read at least this far" in html
+    window._backtest_done(r)
+    assert ("  p vs random directions, in the direction of Δ: 0.0123 "
+            "(9 stretches)") in window.bt_result.text().splitlines()
+    monkeypatch.setattr(words, "plain", lambda: True)
+    assert "random directions" not in window._lab_html(r)
+    assert "0.0123" not in window._lab_html(r)
+    window._backtest_done(r)
+    assert "random directions" not in window.bt_result.text()
+
+
+def test_a_component_not_told_apart_from_chance_reads_so_in_grey(monkeypatch):
+    """Measure 11 for attribution, on screen: 'UNCONFIRMED' is an internal
+    name. Both wordings show 'not told apart from chance', in grey, with the
+    sentence; never 'survives FDR' or the internal name. Expert wording puts
+    the IC's p and the randomisation's p by the IC.
+    Mutation it catches: the raw name shown in expert wording, or the
+    keep colour on it."""
+    from ui import words
+    why = ("IC +0.137: it looks like it ranks setups on this replay, but a "
+           "meaningless reading held for stretches of time ranked them this "
+           "well often enough that this is not told apart from chance. Before "
+           "costs, from one replay of past prices.")
+    a = {"n": 3200, "fdr_q": 0.1, "withheld": None, "blend_ic": None,
+         "components": [{"component": "momentum", "n": 3200, "ic": 0.137,
+                         "p": 0.0022, "p_rand": 0.2109, "weight": 0.3,
+                         "spread": {"spread": 0.2031, "se": 0.0643},
+                         "blend_ic_without": None, "survives_fdr": True,
+                         "confirmed": False, "verdict": "UNCONFIRMED",
+                         "why": why}]}
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = MainWindow._attribution_html(a)
+        assert ("<b style='color:#7c8798'>not told apart from chance</b>"
+                in html), html
+        assert "unconfirmed" not in html.lower() and "survives FDR" not in html
+        assert "#98c379" not in html and why in html
+        assert ("vs random stretches 0.2109" in html) is (not plain)

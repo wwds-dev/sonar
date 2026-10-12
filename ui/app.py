@@ -456,6 +456,8 @@ ATTRIBUTION_HEADS = {
 ATTRIBUTION_VERDICTS = {
     "KEEP": "keep", "WEAK": "weak", "DROP": "drop", "INVERTED": "backwards",
     "UNCLEAR": "unclear", "not judged": "not judged",
+    # Internal name only: no reader sees it, in either wording (domain P2-A).
+    "UNCONFIRMED": "not told apart from chance",
 }
 
 
@@ -1946,8 +1948,9 @@ class MainWindow(QMainWindow):
         self.bt_btn = QPushButton("run backtest")
         self.bt_btn.setFont(theme.figure(9))
         self.bt_btn.setToolTip(
-            "Replay the same plan over two years of real bars — five on the\n"
-            "year profile, whose horizon two years are too short to test.\n"
+            "Replay the same plan over real bars: two years for the day and\n"
+            "week profiles, five for the month and the year, ten for the\n"
+            "quarter — enough separate stretches of time to judge.\n"
             "Live positions take months to grade; this answers today —\n"
             "for the price half of the score, which is all history can test.")
         self.bt_btn.clicked.connect(self._run_backtest)
@@ -2820,10 +2823,19 @@ class MainWindow(QMainWindow):
         withheld = r.get("withheld")
         # The colour follows the verdict summarise reached on unrounded
         # figures, not a re-derivation from the rounded ones (code review r5
-        # P3-5); a hand-built summary without the flag falls back to them.
-        within = (not r["significant"] if "significant" in r
-                  else abs(delta) <= 2 * se) and not withheld
-        colour = "#7c8798" if within or withheld else "#e5c07b"
+        # P3-5); a summary without `verdict_state` falls back to
+        # `significant`, and a hand-built one without either to the figures.
+        # Outside the bar but not told apart from chance is grey, and is
+        # never "within" (docs/adr/0003).
+        state = r.get("verdict_state")
+        if state is not None:
+            within = state == "within"
+            found = state in ("beats", "below")
+        else:
+            within = (not r["significant"] if "significant" in r
+                      else abs(delta) <= 2 * se) and not withheld
+            found = not within and not withheld
+        colour = "#e5c07b" if found else "#7c8798"
         # Setups that touched neither barrier in time are out of the hit rate,
         # so the prediction is the one for setups that resolved in time — and
         # how many ran out is shown, not hidden (docs/adr/0001). Hand-built
@@ -2867,6 +2879,13 @@ class MainWindow(QMainWindow):
              f"{r['implied_edge_sigma']:+.4f} σ"),
             ("Average hold", f"{r['avg_bars_held']:.1f} bars"),
         ]
+        # The direction randomisation's p, in the direction of Δ — expert
+        # wording only: plain mode gets no new number [A3].
+        rand = r.get("randomisation") or {}
+        if not words.plain() and rand.get("p_tail") is not None:
+            rows.append(("p vs random directions, in the direction of Δ",
+                         f"{rand['p_tail']:.4f}  ({rand.get('q', 0)} "
+                         "stretches)"))
         body = "".join(
             f"<tr><td style='padding:2px 18px 2px 0;color:#7c8798'>{k}</td>"
             f"<td style='padding:2px 0'><b>{v}</b></td></tr>" for k, v in rows)
@@ -2876,8 +2895,12 @@ class MainWindow(QMainWindow):
 
         if within:
             out.append("<p style='color:#7c8798'>The difference sits inside its own "
-                       "error bar, which is what a model with no edge is supposed to "
-                       "look like. That is the result, not a failure to find one.</p>")
+                       "error bar: not shown to differ from the prediction, which "
+                       "is not the same as no difference.</p>")
+        if not words.plain() and rand.get("p_tail") is not None:
+            out.append("<p style='color:#5c6370'>p vs random directions: the "
+                       "share of random-direction reshuffles of whole "
+                       "stretches that read at least this far.</p>")
 
         for title, key in (("Momentum buckets", "buckets"),
                            ("Attention buckets", "attention_buckets")):
@@ -2914,7 +2937,7 @@ class MainWindow(QMainWindow):
     _VERDICT_COLOUR = {"KEEP": "#98c379", "INVERTED": "#e06c75",
                        "DROP": "#e06c75", "WEAK": "#e5c07b",
                        "UNCLEAR": "#7c8798", "not measured": "#5c6370",
-                       "not judged": "#7c8798"}
+                       "not judged": "#7c8798", "UNCONFIRMED": "#7c8798"}
 
     @staticmethod
     def _verdict_word(verdict: str | None) -> str:
@@ -2922,6 +2945,8 @@ class MainWindow(QMainWindow):
         lookup keeps the raw key; only the displayed word changes."""
         if verdict is None:
             return "—"
+        if verdict == "UNCONFIRMED":                 # an internal name only
+            return ATTRIBUTION_VERDICTS[verdict]
         return ATTRIBUTION_VERDICTS.get(verdict, verdict) if words.plain() \
             else verdict
 
@@ -2949,10 +2974,19 @@ class MainWindow(QMainWindow):
             spread = sp.get("spread")
             se = sp.get("se")
             colour = MainWindow._VERDICT_COLOUR.get(c.get("verdict"), "#7c8798")
+            ic = f"{c['ic']:+.3f}" if c.get("ic") is not None else "—"
+            # Expert wording puts the IC's two p-values by it: today's test,
+            # and the randomisation's over whole stretches.
+            if (not words.plain() and c.get("ic") is not None
+                    and c.get("p") is not None):
+                ic += f" (p {c['p']:.4f}"
+                if c.get("p_rand") is not None:
+                    ic += f"; vs random stretches {c['p_rand']:.4f}"
+                ic += ")"
             cells = (
                 c.get("component", "?"),
                 f"{c.get('weight', 0):.2f}" if c.get("weight") is not None else "—",
-                f"{c['ic']:+.3f}" if c.get("ic") is not None else "—",
+                ic,
                 (f"{spread * 100:+.1f} ±{2 * se * 100:.1f}"
                  if spread is not None and se else "—"),
                 (f"{c['blend_ic_without']:+.3f}"
@@ -2979,8 +3013,13 @@ class MainWindow(QMainWindow):
                 "chance would give; <b>weak</b> that both are small; <b>drop</b> "
                 "that removing it does not lower the score's ranking skill; "
                 "<b>backwards</b> that it is clearly negative; <b>unclear</b> "
-                "that the readings disagree. Keep grades a piece of the score "
-                "against past setups. It does not mean the piece makes money.</p>")
+                "that the readings disagree; <b>not told apart from chance</b> "
+                "that it would read keep or backwards, but a meaningless "
+                "reading held for stretches of time ranked setups this well "
+                "often enough to explain it. That check does not cover traits "
+                "fixed per instrument, such as volatility. Keep grades a piece "
+                "of the score against past setups. It does not mean the piece "
+                "makes money.</p>")
 
         blend = a.get("blend_ic")
         if blend is not None:
@@ -3590,11 +3629,13 @@ class MainWindow(QMainWindow):
         self.bt_btn.setEnabled(False)
         from sonar import backtest
         from sonar.assets import WATCHLIST
-        # Two years, unless the profile's horizon needs more history than that
-        # to compare anything (the 250-day profile does).
+        # The shortest range whose setups fall in enough separate stretches
+        # for a verdict — two years to 10 days, five to 30, ten to 80 (A15) —
+        # or, past that, the range that compares anything at all.
         days = self.live.horizon.momentum_days
         rng = backtest.range_for_horizon(days)
-        span = {"2y": "two years", "5y": "five years"}.get(rng, rng)
+        span = {"2y": "two years", "5y": "five years",
+                "10y": "ten years"}.get(rng, rng)
         self.bt_result.setText(f"replaying {span} of bars…")
         self._bt_thread = BacktestThread(
             [s for s, _n, _c, _k in WATCHLIST], days, self, rng=rng,
@@ -3640,6 +3681,11 @@ class MainWindow(QMainWindow):
             lines.append(f'    |momentum| {b["lo"]*100:>3.0f}–{b["hi"]*100:<4.0f}%  '
                          f'n={b["n"]:<6} hit {b["hit_rate"]*100:5.1f}%')
         lines.append(f'  {r["verdict"]}')
+        # The randomisation's p in expert wording, as the Lab shows it [A3].
+        rand = r.get("randomisation") or {}
+        if not words.plain() and rand.get("p_tail") is not None:
+            lines.append(f'  p vs random directions, in the direction of Δ: '
+                         f'{rand["p_tail"]:.4f} ({rand.get("q", 0)} stretches)')
         lines.append("  Price-based half only — historical news is not replayed, "
                      "and costs are excluded (both would push this down).")
         self.bt_result.setText("\n".join(lines))

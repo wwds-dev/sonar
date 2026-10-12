@@ -40,4 +40,5 @@ faulthandler_exit_on_timeout = true
 addopts = "-m 'not network'"
 markers = [
     "network: test genuinely needs a live network connection (deselected by default)",
+    "slow: a rate test of many replays, each under the 60 s cap (runs by default; `-m 'not network and not slow'` skips them)",
 ]
