@@ -64,3 +64,44 @@ The 8h coin reads 7–8% gated across seed sets, close to measure 2's 7.5% bar. 
 - Measure 8: met (thin margin; tight against the time cap).
 - Measure 9: partly met (docs and placeholder open; do not release).
 - Measure 11: met. Add the R4 test before merge.
+
+## Re-verify after fix loop 1 (code at 803a0a4)
+
+**Overall: PASS with gaps.** Evidence is in scratchpad `qa2/`.
+
+### Suite runs
+| Run | Exit | Result | Wall | Slowest test |
+|---|---|---|---|---|
+| native 1 | 0 | 2200 passed, 3 skipped, 31 deselected | 192 s | — |
+| offscreen 1 | 0 | same | 368 s | 21.1 s |
+| native 2 | 0 | same | 182 s | 8.0 s |
+| offscreen 2 | 0 | same | 369 s | 27.0 s |
+| `-m release` | 0 | 1 passed | 6 s | — |
+
+### Earlier findings
+- **Resolved:** P2-1 (R4 is now killed), P2-3 (code side), P2-4 (test docstring), and P3-3, P3-4, P3-5, P3-6.
+- **Partly resolved:** P2-2. Every test stays under the cap in the suite (max 27 s) and alone (max 29.6 s), but not under coverage.
+
+### Findings
+- **P2-A. The documented coverage command still aborts on the 60 s cap.**
+  - Under coverage at load ~80, uncapped, the rate tests take 57–77 s: headline 2 77.0 s, headline 1 72.5 s, attribution 68.7 s, mkt-1h 65.6 s, 8h 63.7 s.
+  - The fallback (`-m 'not … slow'`) exits 0. Combined with an uncapped slow pass, branch coverage is **87%**, above the 83% floor.
+  - Fix: make the fallback plus an uncapped slow pass the documented command, in both app-context "Coverage" and `tooling-baseline.md:29`.
+- **P2-B.** The owner's Lab-10y decision (da206cd) is not built. The Lab still offers 10y with verdicts, and the Lab's few_clusters copy points at longer ranges (it is pinned by 3 tests).
+- **P3-A. Mutant G3 survives.** No test calls `attribute(rows, horizon_days=h, gate=False)`.
+- **P3-B. Mutant U8 survives**, but it is equivalent. No action needed.
+- **P3-C.** Spec :79 still says 0.997 and "stays under the 60 s cap".
+- **P3-D.** `TESTPLAN.md:213` and `static/testplan.html:246` quote the rate for beats only. Assigned to the tech-writer.
+
+### Mutation result
+40 mutants: **38 killed**, G3 survives, U8 is equivalent. Changed lines have 100% branch coverage.
+
+### Measure 9 grep: still open for the tech-writer
+- `static/docs.html:650`, `:654-655`, `:665`
+- `CONFIDENCE.md:600`, `:625`
+- `TESTPLAN.md:213` and `static/testplan.html:246`
+
+### Verdict
+- Measure 8: met (but not under coverage).
+- Measure 9: code side done; not met until the docs land and Lab 10y is built.
+- Measure 11: met (G3 test still to add).
