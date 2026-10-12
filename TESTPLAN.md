@@ -17,7 +17,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **1,916 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **2,044 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -45,6 +45,7 @@ running even when short of time — the list doubles as this project's bug histo
 | 0.6 | `gh run list --limit 1` | `completed success` on the commit being signed off |
 | 0.7 | Hover the version in the installed app; then `git cat-file -e <commit>` with the commit it names | The commit exists in the repository and the tooltip does not say *uncommitted changes*. *The v2.132 bundle of 2026-10-08 named a commit that had been amended away — and the badge called it up to date.* |
 | 0.8 | `./run-tests.sh -m network -q` | Every live source answers in the shape SONAR parses: Binance, Coinbase's fallback, Polymarket's hourly market and book, Yahoo, FRED, Nasdaq, the newswires, the central banks, and each ESPN league. Opt-in because it needs the internet — and therefore the one run nobody makes unless it is on this list: the ESPN checks had been broken for a month when it was first run. |
+| 0.9 | `./run-tests.sh tests/ -m slow -q` | 3 passed, in about a minute: the time-stop shadow's gate holds its 5% ± 1.5 pt size and its planned power on 2,000 and 20,000 seeded books (V-12). Run it at release and on any change to the gate code; a cheaper version is in the default suite. |
 
 ---
 
@@ -294,6 +295,14 @@ with another rather than with a value written here. `curl -s
 | 11.11 | | Read the whole grade panel for forecast words | None of *will, should, buy, sell, expect, likely, going to, bullish, bearish*. It describes what happened. |
 | 11.12 | | Toggle protocol mode on **My trades**, come back | The panel's last line follows: *protocol mode is on* / *is off*, and how many of the closed positions protocol opened. |
 | 11.13 | | Narrow the window to 1280×775 | The figures and the curve are on screen first; the page scrolls; nothing clips. |
+| 11.14 | | Read the first sentence under **Every entry, graded at a fixed date** on the landing page, then on **My trades** | Word for word the same. It sits under the existing grade, which still reads exactly as in 11.9 (Design U-3, named 11.9b in the spec). |
+| 11.15 | | Read the second grade (**Every entry, graded at a fixed date**) before its first look is evaluated | It says *Not a test yet*, the date of the next look (*on or after …*) or how many entries are still to be entered, and never reads like a verdict. Any *running* line starts *running, not a test* and ends *no costs*. |
+| 11.16 | | `curl -s 127.0.0.1:8787/api/book` and read `shadow` | Its counts add up: `n_reached` + `n_waiting` + `n_wait_price` + `n_left` + `n_no_price` = `n_entered`, and `n_reached` = `n_target` + `n_stop` + `n_time`. The block's header count (*N of M at 4 weeks*) matches. |
+| 11.17 | | Read the second grade's rows for exclusions | Every non-zero exclusion is listed under *left out and counted* (a hand-picked entry is *chosen by hand*), and gap exits have their own line. Nothing shows a dash where a figure is missing. |
+| 11.18 | | Switch the wording to Expert and back | The block keeps the same rows in the same order; only the words change. *No costs* and the not-an-edge caveat are there in both. |
+| 11.19 | ⚠ | Run the window while an **older** agent build drives the book | The block says *Not available from the running agent*. With agent and window on the same build, it shows the agent's readout word for word. |
+| 11.20 | | Leave the agent off for more than a day, then open the window | The block's last line says *Not updated for N hours: the agent may be stopped*. Restart the agent: after its first scan the line says *Worked out …* again. |
+| 11.21 | ⚠ | On or after the first look's date (about 2026-11-06), screenshot the block on both pages | Each of the first 45 protocol entries has an outcome (target, stop or time) or a counted exclusion: the sentence names look 1 with its z against ±2.315, or says which entries still wait for a closing price. This is the spec's live success measure. |
 
 ---
 

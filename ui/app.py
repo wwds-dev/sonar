@@ -27,6 +27,7 @@ that boundary is load-bearing.
 from __future__ import annotations
 
 import html
+import math
 import os
 import sys
 import time
@@ -41,8 +42,10 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
                                QSizePolicy, QSpinBox, QTextBrowser,
                                QVBoxLayout, QWidget)
 
+from sonar import calibration as calibration_mod
 from sonar import horizon as hz_mod
 from sonar import paths, playmaker, risk as risk_mod
+from sonar import scoring as scoring_mod
 from sonar import version as version_mod
 from sonar.playmaker import devig as pm_devig, staking as pm_staking
 from sonar.core import Live
@@ -330,6 +333,15 @@ def _vline() -> QFrame:
     return f
 
 
+def _hline() -> QFrame:
+    """The horizontal twin of `_vline`: a hairline between two blocks of one
+    panel, styled directly for the same reason."""
+    f = QFrame()
+    f.setFixedHeight(1)
+    f.setStyleSheet(f"background: {theme.BORDER.name()};")
+    return f
+
+
 def label(text: str = "", obj: str = "", font=None, align=None,
           wrap: bool = False) -> QLabel:
     """A themed QLabel.
@@ -447,6 +459,125 @@ ATTRIBUTION_VERDICTS = {
     "UNCLEAR": "unclear", "not judged": "not judged",
 }
 
+#: The time-stop shadow of the score grade (docs/specs/shadow-time-stop.md,
+#: Design D6), as (plain, expert). "Promised" and "advertised" stay with the
+#: row P(profit); "edge" appears only in "what no edge would give" and the two
+#: negated caveats. Both modes keep the same rows in the same order.
+_SH_TIP = ("A second grade, beside the one above, which counts only closed positions. "
+           "Here every protocol entry gets a result a fixed time after it opened (4 weeks "
+           "on the week profile): at the target, at the stop, or at that day's close if it "
+           "reached neither. Slow entries count too. It is tested only at three looks fixed "
+           "in advance: the first 45, 101 and 201 entries.")
+SHADOW_WORDS = {
+    "SH_HEAD": ("EVERY ENTRY, GRADED AT A FIXED DATE", "TIME-STOP SHADOW"),
+    "SH_TIP": (_SH_TIP, _SH_TIP),
+    "SH_COUNT": ("{reached} of {entered} at {T}", "{reached}/{entered} past T"),
+    "SH_NOT_AVAILABLE": (
+        "Not available from the running agent. It is an older version than this window.",
+        "Not available from the running agent (older version)."),
+    "SH_LOADING": ("Working it out: this needs a scan and a few daily closes.",
+                   "Computing: waits for a scan and daily closes."),
+    "SH_ERROR": ("Could not work it out this time ({reason}). Nothing is guessed; the next "
+                 "scan tries again.",
+                 "Error: {reason}. Nothing guessed; retried next scan."),
+    "SH_EMPTY": ("Not a test yet: there are no protocol entries. Protocol mode on My trades "
+                 "makes them.",
+                 "Not a test yet: no protocol entries."),
+    "SH_NONE_AT_T": ("Not a test yet. None of the {entered} entries has had {T} yet; the "
+                     "first gets there on {next_t}.",
+                     "Not a test yet. 0/{entered} past T; first on {next_t}."),
+    "SH_BEFORE_LOOK": ("Not a test yet. {have} of the first {N} entries have a result; the "
+                       "{ordinal} look is on or after {due}.",
+                       "Not a test yet. {have}/{N} graded for look {k}; due on or after "
+                       "{due}."),
+    "SH_BEFORE_LOOK_UNDATED": ("Not a test yet. {have} of the first {N} entries have a "
+                               "result; {missing} of them are not entered yet.",
+                               "Not a test yet. {have}/{N} graded for look {k}; {missing} "
+                               "not yet entered."),
+    "SH_LOOK_WAITING_PRICE": ("Not a test yet. The {ordinal} look is due; {w} of its {N} "
+                              "entries are still waiting for a closing price.",
+                              "Not a test yet. Look {k} due; {w} of {N} awaiting a final "
+                              "close."),
+    "SH_LOOK_NOT_CROSSED": ("Look {k} of 3, first {N} entries ({used} with a result): no "
+                            "clear link between score and result. z = {z}; the line is "
+                            "±2.315.",
+                            "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| < "
+                            "2.315, not crossed."),
+    "SH_NEXT_LOOK": ("Next look: the first {N2} entries, on or after {due}.",
+                     "Next: n = {N2}, due on or after {due}."),
+    "SH_NEXT_LOOK_UNDATED": ("Next look: the first {N2} entries, after {missing} more are "
+                             "entered.",
+                             "Next: n = {N2}, {missing} not yet entered."),
+    "SH_LOOK_CROSSED_UP": ("Look {k} of 3, first {N} entries ({used} with a result): "
+                           "crossed the line. Entries with higher scores had larger "
+                           "results. z = {z}; the line is ±2.315. The test ends here.",
+                           "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| ≥ "
+                           "2.315, crossed. Design closed."),
+    "SH_LOOK_CROSSED_DOWN": ("Look {k} of 3, first {N} entries ({used} with a result): "
+                             "crossed the line. Entries with higher scores had smaller "
+                             "results. z = {z}; the line is ±2.315. The test ends here.",
+                             "Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, |z| ≥ "
+                             "2.315, crossed. Design closed."),
+    "SH_CAVEAT_CROSSED": ("This means only that the score sorts how coin-flip entries end "
+                          "after {T}. It is not a trading edge.",
+                          "Ranks random-direction outcomes at T only; not a tradeable "
+                          "edge."),
+    "SH_FINAL_NONE": ("Three looks, no crossing: no evidence that the score ranks {T_adj} "
+                      "results, at the planned size. The test is finished.",
+                      "Looks 1-3 not crossed: no evidence that the score ranks {T_adj} "
+                      "results, at the planned size. Design closed."),
+    "SH_ROW_SPLIT": ("{reached} with a result: {t} at the target ({tp}%) · {s} at the stop "
+                     "({sp}%) · {x} at neither, valued at the close after {T} ({xp}%)",
+                     "{reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} "
+                     "({xp}%)"),
+    "SH_ROW_WAITING": ("still waiting: {w} not yet at {T} (the next on {next_t}) · {wp} "
+                       "waiting for a closing price",
+                       "waiting: {w} before T (next {next_t}) · {wp} awaiting a final "
+                       "close"),
+    "SH_ROW_REF": ("what no edge would give after {T}: about {a}% at the target · {b}% at "
+                   "the stop · {c}% at neither, and an average result of 0R",
+                   "what no edge would give: {a}% / {b}% / {c}%, mean 0R"),
+    "SH_ROW_RUNNING": ("running, not a test: average result {m}R (95% range {lo} to {hi}R) "
+                       "· link z = {z} · no costs",
+                       "running, not a test: mean R {m} [{lo}, {hi}] · HC3 slope z {z} · "
+                       "no costs"),
+    "SH_ROW_RUNNING_WAIT": ("running figures start at 20 results; {k} to go",
+                            "running stats from n = 20; {k} to go"),
+    "SH_ROW_IC": ("for comparison only, not a test: rank correlation {ic} on these entries "
+                  "at {T}, {icc} on the closed ones alone",
+                  "descriptive only: rank IC {ic} (all at T) vs {icc} (closed only)"),
+    "SH_ROW_PAST_LOOK": ("look {k}, first {N}: z = {z}, did not cross the line",
+                         "look {k}, n = {N}: z {z}, not crossed"),
+    "SH_ROW_LEFT_OUT": ("left out and counted: {m} chosen by hand · {l} closed by hand "
+                        "before {T} · {p} with no closing price",
+                        "excluded: {m} non-protocol · {l} hand-closed before T · {p} no "
+                        "price"),
+    "SH_ROW_GAP": ("{g} graded at the target or stop because a daily close went past it "
+                   "between checks",
+                   "{g} gap exits (daily close beyond a barrier)"),
+    "SH_ROW_BAND": ("scores {lo}-{hi}: {n} with a result · {t} target · {s} stop · {x} "
+                    "neither · what no edge would give {a}% / {b}% / {c}%",
+                    "score {lo}-{hi}  n={n}  T/S/N {t}/{s}/{x}  no edge {a}/{b}/{c}%"),
+    "SH_WARN": ("Note: {x} of the first {N} entries were left out ({pct}%). This look rests "
+                "on the other {used}.",
+                "Note: {x}/{N} excluded ({pct}%) at look {k}."),
+    "SH_NOTE": ("R is the result in units of the amount risked: -1R lost the amount risked, "
+                "+{rr}R reached the target. This grade asks only whether the score sorts "
+                "how coin-flip entries end after {T}. Even a crossed line is not a trading "
+                "edge: the direction was random, and there are no costs.",
+                "R = result / initial risk. Ranks random-direction outcomes at T only; not "
+                "a tradeable edge. No costs."),
+    "SH_WORKED_OUT": ("Worked out {when}.", "As of {when}."),
+    "SH_STALE": ("Not updated for {h} hours: the agent may be stopped.", "Stale: {h} h old."),
+}
+SHADOW_ORDINALS = {1: "first", 2: "second", 3: "third"}
+#: A daily-close readout, plus slack: older than this, the note says so.
+SHADOW_STALE_H = 26
+#: The running line waits for as many results as the existing grade does.
+SHADOW_RUNNING_FROM = 20
+#: More than this share of a cohort left out, and the look says so.
+SHADOW_WARN_SHARE = 0.10
+
 
 def _px(v: float | None) -> str:
     """A price, to the precision its size wants: two places from 10 up, four
@@ -474,6 +605,335 @@ def _money(v: float, signed: bool = False, places: int = 2) -> str:
     if signed:
         return ("+$" if v >= 0 else "-$") + body
     return ("-$" if v < 0 else "$") + body
+
+
+# -- the time-stop shadow of the score grade ------------------------------- #
+# Formats for docs/specs/shadow-time-stop.md, Design D3–D4. The dict can come
+# from another process (the holder, through /api/book), so every figure is
+# formatted here from a number checked to be one, and every label shows plain
+# text: nothing in the payload is ever rendered as markup.
+
+def _sh_num(v) -> float | None:
+    """A finite number from the shadow dict, or None. A bool is not one."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return float(v) if math.isfinite(v) else None
+
+
+def _sh_int(v) -> int:
+    n = _sh_num(v)
+    return int(n) if n is not None else 0
+
+
+def _sh_pct(v) -> int:
+    """A share as a whole percent."""
+    return round(100 * (_sh_num(v) or 0.0))
+
+
+def _sh_t_words(t_days) -> tuple[str, str]:
+    """``{T}`` and ``{T_adj}``: "4 weeks" / "4-week" for 28 days, "16 weeks"
+    for 112, "5.6 days" otherwise; one readout mixing values of T says
+    "4 holding periods" / "fixed-time"."""
+    t = _sh_num(t_days)
+    if t is None:
+        return "4 holding periods", "fixed-time"
+    if 7 <= t <= 112 and abs(t / 7 - round(t / 7)) < 1e-9:
+        return f"{round(t / 7)} weeks", f"{round(t / 7)}-week"
+    return f"{t:g} days", f"{t:g}-day"
+
+
+def _sh_date(ts, now: float) -> str:
+    """``6 Nov``, with the year when it is not this one ("7 Jan 2027")."""
+    t = _sh_num(ts)
+    if t is None:
+        return "n/a"
+    day = time.localtime(t)
+    text = time.strftime("%-d %b", day)
+    if day.tm_year != time.localtime(now).tm_year:
+        text += time.strftime(" %Y", day)
+    return text
+
+
+def _sh_z(z, crossed: bool | None = None) -> str:
+    """z, signed, two places. Within 0.01 of the line it takes three, cut
+    toward zero, so the figure shown can never contradict the verdict — which
+    is reached on the unrounded value."""
+    v = _sh_num(z)
+    if v is None:
+        return "n/a"
+    line = calibration_mod.SHADOW_BOUNDARY
+    crossed = abs(v) >= line if crossed is None else crossed
+    if not 2.305 <= abs(v) < 2.325:
+        return f"{v:+.2f}"
+    shown = math.floor(abs(v) * 1000) / 1000
+    if crossed and shown < line:
+        shown = line
+    elif not crossed and shown >= line:
+        shown = line - 0.001
+    return f"{'-' if v < 0 else '+'}{shown:.3f}"
+
+
+def _sh_r(v) -> str:
+    n = _sh_num(v)
+    return "n/a" if n is None else f"{n:+.2f}"
+
+
+def _sh_word(key: str, **kw) -> str:
+    return words.pick(SHADOW_WORDS[key]).format(**kw)
+
+
+def _sh_parts(key: str, parts: list[tuple[int, dict]]) -> str:
+    """A row of "·"-separated parts, each dropped when its count is zero. The
+    row's lead-in ("left out and counted: ") stays whichever part is first."""
+    pieces = words.pick(SHADOW_WORDS[key]).split(" · ")
+    lead, sep, first = pieces[0].partition(": ")
+    if sep:
+        pieces[0] = first
+    shown = [p.format(**kw) for p, (count, kw) in zip(pieces, parts, strict=True) if count]
+    if not shown:
+        return ""
+    return (f"{lead}: " if sep else "") + " · ".join(shown)
+
+
+def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str, str]:
+    """The text of every line of the shadow block, in the state D3 names.
+
+    ``shadow`` is ``Live.shadow``: None while the holder works it out, the
+    "unavailable" string when an older holder sends nothing, else the dict
+    from :func:`sonar.calibration.shadow_time_stop`. ``t_default`` is T for
+    the protocol's preset, used before any entry carries its own.
+    """
+    out = {"count": "", "status": "", "rows": "", "warn": "", "note": ""}
+    rr = scoring_mod.K_TARGET / scoring_mod.K_STOP
+    if not isinstance(shadow, dict):
+        T, _adj = _sh_t_words(t_default)
+        out["status"] = _sh_word("SH_LOADING" if shadow is None else "SH_NOT_AVAILABLE")
+        out["note"] = _sh_word("SH_NOTE", rr=f"{rr:g}", T=T)
+        return out
+
+    d = shadow
+    status: list[str] = []
+    if d.get("error"):
+        status.append(_sh_word("SH_ERROR", reason=str(d["error"])[:80]))
+    if "n_entered" not in d:                 # failed before a first readout
+        out["status"] = " ".join(status) or _sh_word("SH_LOADING")
+        out["note"] = _sh_word("SH_NOTE", rr=f"{rr:g}", T=_sh_t_words(t_default)[0])
+        return out
+
+    entered, reached = _sh_int(d.get("n_entered")), _sh_int(d.get("n_reached"))
+    T, T_adj = _sh_t_words(d.get("t_days") if entered else t_default)
+    rr = _sh_num(d.get("rr")) or rr
+    looks = [lk for lk in d.get("looks") or [] if isinstance(lk, dict)]
+    n_wait_price, n_no_price = _sh_int(d.get("n_wait_price")), _sh_int(d.get("n_no_price"))
+    next_t = _sh_date(d.get("next_t"), now)
+
+    waiting = _sh_parts("SH_ROW_WAITING", [
+        (_sh_int(d.get("n_waiting")), {"w": _sh_int(d.get("n_waiting")), "T": T,
+                                       "next_t": next_t}),
+        (n_wait_price, {"wp": n_wait_price})])
+    left_out = _sh_parts("SH_ROW_LEFT_OUT", [
+        (_sh_int(d.get("n_nonprotocol")), {"m": _sh_int(d.get("n_nonprotocol"))}),
+        (_sh_int(d.get("n_left")), {"l": _sh_int(d.get("n_left")), "T": T}),
+        (n_no_price, {"p": n_no_price})])
+    gap = (_sh_word("SH_ROW_GAP", g=_sh_int(d.get("n_gap")))
+           if _sh_int(d.get("n_gap")) else "")
+    rows: list[str] = []
+    named = None                    # the look the status sentence is about
+
+    if entered == 0:
+        status.append(_sh_word("SH_EMPTY"))
+        rows = [left_out]
+    elif reached == 0 and d.get("next_t") is not None and not (n_wait_price or n_no_price):
+        status.append(_sh_word("SH_NONE_AT_T", entered=entered, T=T, next_t=next_t))
+        rows = [waiting, left_out]
+    else:
+        line, named = _sh_look_status(looks, now, T, T_adj)
+        status.append(line)
+        rows = _sh_rows(d, looks, named, detail, T, waiting, left_out, gap)
+
+    out["count"] = (_sh_word("SH_COUNT", reached=reached, entered=entered, T=T)
+                    if entered else "")
+    out["status"] = " ".join(status)
+    out["rows"] = "\n".join(r for r in rows if r)
+    out["warn"] = "\n".join(_sh_warnings(looks, now))
+    note = _sh_word("SH_NOTE", rr=f"{rr:g}", T=T)
+    at = _sh_num(d.get("computed_at"))
+    if at is not None:
+        age_h = (now - at) / 3600
+        note += " " + (_sh_word("SH_STALE", h=int(age_h)) if age_h > SHADOW_STALE_H else
+                       _sh_word("SH_WORKED_OUT",
+                                when=time.strftime("%-d %b %H:%M", time.localtime(at))))
+    out["note"] = note
+    return out
+
+
+def _sh_look_status(looks: list[dict], now: float, T: str,
+                    T_adj: str) -> tuple[str, int | None]:
+    """The primary sentence once an entry has a result (D3 a3–d), and the look
+    it names, if one."""
+    crossed = next((lk for lk in looks if lk.get("crossed")), None)
+    evaluated = [lk for lk in looks if lk.get("evaluated")]
+    pending = [lk for lk in looks if not lk.get("evaluated") and not lk.get("design_closed")]
+    if crossed is not None:
+        z = _sh_num(crossed.get("z")) or 0.0
+        key = "SH_LOOK_CROSSED_UP" if z > 0 else "SH_LOOK_CROSSED_DOWN"
+        return (_sh_word(key, k=_sh_int(crossed.get("k")), N=_sh_int(crossed.get("n")),
+                         used=_sh_int(crossed.get("used")), z=_sh_z(z, True))
+                + " " + _sh_word("SH_CAVEAT_CROSSED", T=T)), _sh_int(crossed.get("k"))
+    if looks and len(evaluated) == len(looks):
+        return _sh_word("SH_FINAL_NONE", T_adj=T_adj), None
+    due = next((lk for lk in pending if _sh_num(lk.get("due")) is not None
+                and now >= _sh_num(lk.get("due"))), None)
+    if due is not None:
+        k = _sh_int(due.get("k"))
+        return _sh_word("SH_LOOK_WAITING_PRICE", ordinal=SHADOW_ORDINALS.get(k, str(k)),
+                        k=k, w=_sh_int(due.get("n_wait_price")) + _sh_int(due.get("n_waiting")),
+                        N=_sh_int(due.get("n"))), None
+    if evaluated:
+        last = evaluated[-1]
+        line = _sh_word("SH_LOOK_NOT_CROSSED", k=_sh_int(last.get("k")),
+                        N=_sh_int(last.get("n")), used=_sh_int(last.get("used")),
+                        z=_sh_z(last.get("z"), False))
+        if pending:
+            nxt = pending[0]
+            if _sh_num(nxt.get("due")) is not None:
+                line += " " + _sh_word("SH_NEXT_LOOK", N2=_sh_int(nxt.get("n")),
+                                       due=_sh_date(nxt.get("due"), now))
+            else:
+                line += " " + _sh_word("SH_NEXT_LOOK_UNDATED", N2=_sh_int(nxt.get("n")),
+                                       missing=_sh_int(nxt.get("n_missing")))
+        return line, _sh_int(last.get("k"))
+    if not pending:
+        return _sh_word("SH_LOADING"), None
+    first = pending[0]
+    k = _sh_int(first.get("k"))
+    kw = {"have": _sh_int(first.get("used")), "N": _sh_int(first.get("n")), "k": k,
+          "ordinal": SHADOW_ORDINALS.get(k, str(k))}
+    if _sh_num(first.get("due")) is not None:
+        return _sh_word("SH_BEFORE_LOOK", due=_sh_date(first.get("due"), now), **kw), None
+    return _sh_word("SH_BEFORE_LOOK_UNDATED", missing=_sh_int(first.get("n_missing")),
+                    **kw), None
+
+
+def _sh_rows(d: dict, looks: list[dict], named: int | None, detail: bool, T: str,
+             waiting: str, left_out: str, gap: str) -> list[str]:
+    """Rows of D4, in order; each omitted when its inputs are absent."""
+    reached = _sh_int(d.get("n_reached"))
+    rows = []
+    if reached:
+        t, s, x = (_sh_int(d.get("n_target")), _sh_int(d.get("n_stop")),
+                   _sh_int(d.get("n_time")))
+        rows.append(_sh_word("SH_ROW_SPLIT", reached=reached, T=T,
+                             t=t, tp=round(100 * t / reached), s=s,
+                             sp=round(100 * s / reached), x=x, xp=round(100 * x / reached)))
+    rows.append(waiting)
+    ref = d.get("ref")
+    if reached and isinstance(ref, dict) and _sh_num(ref.get("target")) is not None:
+        rows.append(_sh_word("SH_ROW_REF", T=T, a=_sh_pct(ref.get("target")),
+                             b=_sh_pct(ref.get("stop")), c=_sh_pct(ref.get("neither"))))
+    if reached >= SHADOW_RUNNING_FROM and _sh_num(d.get("mean_r")) is not None:
+        rows.append(_sh_word("SH_ROW_RUNNING", m=_sh_r(d.get("mean_r")),
+                             lo=_sh_r(d.get("mean_r_lo")), hi=_sh_r(d.get("mean_r_hi")),
+                             z=_sh_z(d.get("z"))))
+        if _sh_num(d.get("ic")) is not None:
+            rows.append(_sh_word("SH_ROW_IC", ic=_sh_r(d.get("ic")),
+                                 icc=_sh_r(d.get("ic_closed")), T=T))
+    elif reached:
+        rows.append(_sh_word("SH_ROW_RUNNING_WAIT", k=SHADOW_RUNNING_FROM - reached))
+    for lk in looks:
+        if lk.get("evaluated") and not lk.get("crossed") and _sh_int(lk.get("k")) != named:
+            rows.append(_sh_word("SH_ROW_PAST_LOOK", k=_sh_int(lk.get("k")),
+                                 N=_sh_int(lk.get("n")), z=_sh_z(lk.get("z"), False)))
+    rows += [left_out, gap]
+    if detail:
+        for b in d.get("bands") or []:
+            if not isinstance(b, dict) or not _sh_int(b.get("n")):
+                continue
+            ref = b.get("ref") if isinstance(b.get("ref"), dict) else {}
+            row = _sh_word("SH_ROW_BAND", lo=_sh_int(b.get("lo")), hi=_band_top(
+                {"hi": _sh_int(b.get("hi"))}), n=_sh_int(b.get("n")),
+                t=_sh_int(b.get("target")), s=_sh_int(b.get("stop")),
+                x=_sh_int(b.get("time")), a=_sh_pct(ref.get("target")),
+                b=_sh_pct(ref.get("stop")), c=_sh_pct(ref.get("neither")))
+            if _sh_num(ref.get("target")) is None:
+                # No reference: the part is left off, never dashed (D4 row 3).
+                row = row.split(" · what no edge")[0].split("  no edge")[0]
+            rows.append(row)
+    return rows
+
+
+def _sh_warnings(looks: list[dict], now: float) -> list[str]:
+    """D3 (h): a look, evaluated or due, with more than 10% of its cohort
+    left out says so for as long as its result is shown."""
+    out = []
+    for lk in looks:
+        due = _sh_num(lk.get("due"))
+        shown = lk.get("evaluated") or (due is not None and now >= due
+                                        and not lk.get("design_closed"))
+        n, x = _sh_int(lk.get("n")), _sh_int(lk.get("n_excluded"))
+        if shown and n and x / n > SHADOW_WARN_SHARE:
+            out.append(_sh_word("SH_WARN", x=x, N=n, pct=round(100 * x / n), used=n - x,
+                                k=_sh_int(lk.get("k"))))
+    return out
+
+
+class ShadowGrade(QFrame):
+    """The second grade: every protocol entry, at a fixed date.
+
+    The grade above it counts closed positions only, and the slow ones — mostly
+    high scores — are still open, so it leans on quick resolvers. This block
+    reads `Live.shadow` (docs/adr/0002) and says where that second grade
+    stands. One class on both pages, so the two copies cannot drift apart;
+    ``detail`` adds the per-band lines on My trades. It sits below the existing
+    grade in the same panel and changes none of its labels. Until a
+    pre-registered look has been evaluated it says it is not a test yet.
+    """
+
+    def __init__(self, detail: bool, on_help, parent=None) -> None:
+        super().__init__(parent)
+        self.detail = detail
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 6, 0, 0)
+        lay.setSpacing(4)
+        lay.addWidget(_hline())
+        head = QHBoxLayout()
+        self.heading = HelpHeading(SHADOW_WORDS["SH_HEAD"], "grading", _SH_TIP, on_help)
+        head.addWidget(self.heading)
+        head.addStretch(1)
+        self.shadow_count = label("", "faint", theme.figure(8))
+        head.addWidget(self.shadow_count)
+        lay.addLayout(head)
+        self.shadow_status = label("", font=theme.text(11), wrap=True)
+        self.shadow_rows = label("", "muted", theme.figure(10), wrap=True)
+        self.shadow_warn = label("", font=theme.figure(10), wrap=True)
+        self.shadow_warn.setStyleSheet(f"color: {theme.GOLD.name()};")
+        self.shadow_warn.setVisible(False)
+        self.shadow_note = label("", "faint", theme.figure(9), wrap=True)
+        for lb in (self.shadow_count, self.shadow_status, self.shadow_rows,
+                   self.shadow_warn, self.shadow_note):
+            lb.setTextFormat(Qt.PlainText)      # payload text is never markup
+        for lb in (self.shadow_status, self.shadow_rows, self.shadow_warn,
+                   self.shadow_note):
+            lay.addWidget(lb)
+        self.setAccessibleName("Second grade, every entry at a fixed date")
+
+    def render(self, shadow, t_default: float, now: float | None = None) -> None:
+        now = time.time() if now is None else now
+        try:
+            texts = shadow_texts(shadow, self.detail, now, t_default)
+        except (TypeError, ValueError, KeyError, AttributeError, IndexError,
+                OverflowError):
+            # A dict this build cannot read (another version's, or damaged):
+            # say so rather than show half of it.
+            texts = shadow_texts({"error": "unreadable"}, self.detail, now, t_default)
+        self.heading.retitle()
+        self.shadow_count.setText(texts["count"])
+        self.shadow_status.setText(texts["status"])
+        self.shadow_rows.setText(texts["rows"])
+        self.shadow_rows.setVisible(bool(texts["rows"]))
+        self.shadow_warn.setText(texts["warn"])
+        self.shadow_warn.setVisible(bool(texts["warn"]))
+        self.shadow_note.setText(texts["note"])
 
 
 class Stat(QWidget):
@@ -1901,6 +2361,8 @@ class MainWindow(QMainWindow):
         self.bt_result = label("", "muted", theme.figure(10))
         self.bt_result.setWordWrap(True)
         cl.addWidget(self.bt_result)
+        self.book_shadow = ShadowGrade(detail=True, on_help=self._show_learn)
+        cl.addWidget(self.book_shadow)
         lay.addWidget(cal)
 
         area = QScrollArea()
@@ -1920,6 +2382,8 @@ class MainWindow(QMainWindow):
         with self.live.lock:
             pos = dict(self.live.positions)
             cal = dict(self.live.calibration)
+            shadow = self.live.shadow
+        self.book_shadow.render(shadow, self._shadow_t_default())
         st = pos.get("stats", {})
         pnl = st.get("total_pnl", 0.0)
         for key, val, col in [
@@ -2046,6 +2510,8 @@ class MainWindow(QMainWindow):
         gl.addWidget(self.grade_rows)
         self.grade_next = label("", "faint", theme.figure(9), wrap=True)
         gl.addWidget(self.grade_next)
+        self.shadow_grade = ShadowGrade(detail=False, on_help=self._show_learn)
+        gl.addWidget(self.shadow_grade)
         lay.addWidget(grade)
 
         self.account_curve = AccountCurve()
@@ -2115,6 +2581,11 @@ class MainWindow(QMainWindow):
         self._portfolio_sig = None
         self._curve_sig = None
         return w
+
+    def _shadow_t_default(self) -> float:
+        """T for the preset protocol entries are made under, for the shadow
+        block's words before any entry carries its own."""
+        return calibration_mod.shadow_t_days(self.live.horizon.name)
 
     def _refresh_grade(self, cal: dict, closed: list) -> None:
         """The calibration verdict in the words the manual uses (§10), plus
@@ -2218,7 +2689,9 @@ class MainWindow(QMainWindow):
         with self.live.lock:
             pos = dict(self.live.positions)
             cal = dict(self.live.calibration)
+            shadow = self.live.shadow
         self._sync_start_card(pos)
+        self.shadow_grade.render(shadow, self._shadow_t_default())
         st = pos.get("stats") or {}
         if not st:
             return
