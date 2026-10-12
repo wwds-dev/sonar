@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
                                QPlainTextEdit, QPushButton, QScrollArea,
                                QSizePolicy, QSpinBox, QTextBrowser,
                                QVBoxLayout, QWidget)
+from shiboken6 import isValid
 
 from sonar import horizon as hz_mod
 from sonar import paths, playmaker, risk as risk_mod
@@ -4124,7 +4125,7 @@ class MainWindow(QMainWindow):
         the user just asked for. `reveal()` clears the flag; this is a no-op
         once it has.
         """
-        if not self._hide_on_leaving_fullscreen:
+        if not isValid(self) or not self._hide_on_leaving_fullscreen:
             return
         if self.isFullScreen():
             # showNormal() has not taken yet. Hiding now would leave an empty
@@ -4155,8 +4156,14 @@ class MainWindow(QMainWindow):
 
         Showing before hiding again is deliberate: a `hide()` Qt considers
         redundant never reaches the platform window at all.
+
+        This runs from a timer, so it can outlive the window: a quit, or a test
+        run tearing windows down, deletes the C++ object while the callback is
+        still queued. `isValid` is the answer to that — without it the call
+        raised "Internal C++ object already deleted" after the last test of
+        every suite run, exit code 0, easy to learn to ignore.
         """
-        if tries <= 0 or self.isVisible():
+        if not isValid(self) or tries <= 0 or self.isVisible():
             return
         handle = self.windowHandle()
         if handle is None or not handle.isExposed():

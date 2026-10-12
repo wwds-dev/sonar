@@ -19,6 +19,10 @@ section lists what the v2 arc shipped.
   the app. Agent logs move to `~/Library/Logs/SONAR`. `--checkout` keeps the old way.
   (closing-sre-release P1-2, part 2, option A)
 
+- The suite no longer prints "MainWindow already deleted" tracebacks after its last test. The close
+  button's confirm and hide timers outlived the window they were queued for; they now check it is
+  still alive (`shiboken6.isValid`) before touching it. Exit code was always 0, which is why it
+  went unnoticed.
 - `/api/health` says which code the agent loaded: `build: {version, commit, dirty, source,
   nested}`, read at start, nested repos included; unknown is reported as `null`, not clean.
 - `scripts/install_agent.sh` refuses a tree with uncommitted tracked changes (its own or a
