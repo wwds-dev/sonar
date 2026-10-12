@@ -1,7 +1,7 @@
 # Spec: the agent says which code it runs, and will not be installed on a dirty tree
 
-- Status: part 1 built (branch `p1-2-agent-provenance`); part 2 built (branch
-  `t2-1-agent-from-bundle`), live switch not done (Release GATE)
+- Status: part 1 built; part 2 built, merged (38404c0) and **live since 2026-10-12 11:55**
+  (owner's go-ahead): the agent runs the installed v2.215
 - Owner approval: part 1 merged to master 2026-10-11; **part 2: owner chose option A (the
   installed bundle) on 2026-10-11**; switching the live agent is the owner's step (below)
 

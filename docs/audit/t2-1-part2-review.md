@@ -35,3 +35,20 @@ Round 1: 16 mutants, all killed. Round 2 (after the fixes): 26 mutants over `che
 Anything under real launchd: TCC, notifications from the ad hoc binary, App Management protection,
 the real install round trip. A manual scratch run of the installed v2.190 binary with `--headless`
 (scratch `SONAR_DATA`, port 8799) drove, answered `/api/health` 200 and stopped on SIGTERM.
+
+## Live switch, 2026-10-12 (owner's go-ahead)
+- Before: launchd ran `<checkout>/.venv/bin/python main.py --headless` (pid 59891), health `ok`,
+  driving, 241 scored, 0 voided, coverage 50.9 %, no `build` field. Old plist kept in the session
+  scratchpad for rollback; `./scripts/install_agent.sh --checkout` is the documented rollback.
+- `./scripts/install_agent.sh` from the main checkout (master 8a28a53): checks passed on the
+  installed v2.215 (`5b34235`, `dirty: false`); `program = /Applications/SONAR.app/Contents/MacOS/SONAR`,
+  pid 53323; health `ok`, driving, 241 scored, 0 voided, `build: {v2.215, 5b34235, dirty false,
+  baked}`; old python agent gone; `engine.lock` held by the new pid; logs in `~/Library/Logs/SONAR/`.
+- Restart drill: checkout HEAD `8a28a53` ≠ the app's `5b34235`; `launchctl kickstart -k` → runs 2,
+  pid 54281, still the bundle, `build.commit` 5b34235, polling (age 1 s), record unchanged. The
+  shared checkout was not edited (another session works in it); the differing HEAD stands in for
+  the edit.
+- LLM reads were already off under the old agent (no `anthropic` in the venv either): unchanged.
+- Not yet verified: the first off-disk copy written by the app (due at the first save after
+  midnight UTC, about 23:00 local) under `~/Documents/lab/backups/sonar-data` (macOS privacy);
+  notifications from the ad hoc binary.
