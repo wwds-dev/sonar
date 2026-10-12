@@ -240,7 +240,7 @@ def test_u4_each_state_says_its_own_sentence(window):
         assert "It is not a trading edge." in s[name] and "crossed the line" in s[name]
     d = s["d closed, no crossing"]
     assert "not enough evidence that the score ranks 4-week results." in d
-    assert "With 201 entries, this test finds a link of about 0.2 or more about 3 times in 4" in d
+    assert "If a link of about 0.2 or more existed, a test with 201 entries would find it about 3 times in 4" in d
     assert "could have been missed" in d and "less sensitive" not in d
     assert "planned size" not in d and "no evidence that" not in d
     f = s["d closed, 190 graded"]
@@ -724,7 +724,7 @@ def test_final_none_wording_compact_and_honest_about_power():
         full, compact = SHADOW_WORDS[key]
         for text in (full, compact):
             assert "not enough evidence that the score ranks {T_adj}" in text
-            assert "0.2 or more about 3 times in 4" in text
+            assert "0.2 or more" in text and "if " in text.lower() and "about 3 times in " in text
             assert "planned size" not in text and "no evidence that" not in text
             assert "fairly strong" not in text and "usually" not in text
             for banned in ("edge", "profit", "proves", "certain"):

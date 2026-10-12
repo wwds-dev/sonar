@@ -15,7 +15,7 @@ section lists what the v2 arc shipped.
 - **Plainer wording when the time-stop test ends without a crossing.** The closing line of the
   *Every entry, graded at a fixed date* block now says "not enough evidence that the score ranks
   4-week results" instead of "no evidence … at the planned size", and adds that with 201 entries
-  the test finds a link of about 0.2 or more about 3 times in 4, so a weaker one could have been
+  a link of about 0.2 or more, if one existed, would be found about 3 times in 4, so a weaker one could have been
   missed. If fewer than the planned 201 entries had a result, it says how many and that the test
   was less sensitive than designed. "Planned size" could be read as position size; "no evidence" overstated a negative.
   ADR 0002 §3 amended. No behaviour change.

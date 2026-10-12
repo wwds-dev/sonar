@@ -547,22 +547,22 @@ SHADOW_WORDS = {
                           "costs, exact fills, one test with a by-design false-alarm rate; "
                           "not a tradeable edge."),
     "SH_FINAL_NONE": ("Three looks, no crossing: not enough evidence that the score ranks "
-                      "{T_adj} results. With {used} entries, this test finds a link of about "
-                      "0.2 or more about 3 times in 4, and a weaker link less often, so a "
-                      "weaker one could have been missed. The test is finished.",
+                      "{T_adj} results. If a link of about 0.2 or more existed, a test with "
+                      "{used} entries would find it about 3 times in 4; a weaker link less "
+                      "often, so a weaker one could have been missed. The test is finished.",
                       "Looks 1-3 not crossed: not enough evidence that the score ranks "
-                      "{T_adj} results. {used} entries find a link of about 0.2 or more "
-                      "about 3 times in 4. Design closed."),
+                      "{T_adj} results. If a link of about 0.2 or more existed, {used} entries "
+                      "would find it about 3 times in 4. Design closed."),
     "SH_FINAL_NONE_FEWER": ("Three looks, no crossing: not enough evidence that the score "
                             "ranks {T_adj} results. Only {used} of the {N} planned entries "
                             "had a result, so the test was less sensitive than designed (at "
-                            "{N} entries it finds a link of about 0.2 or more about 3 times "
-                            "in 4); a weaker link could have been missed. The test is "
-                            "finished.",
+                            "{N} entries, a link of about 0.2 or more, if one existed, would be "
+                            "found about 3 times in 4); a weaker link could have been missed. "
+                            "The test is finished.",
                             "Looks 1-3 not crossed: not enough evidence that the score "
                             "ranks {T_adj} results. {used} of {N} entries graded; designed "
-                            "to find a link of about 0.2 or more about 3 times in 4 at {N}. "
-                            "Design closed."),
+                            "to find a link of about 0.2 or more, if one existed, about 3 times in "
+                            "4 at {N}. Design closed."),
     "SH_ROW_SPLIT": ("{reached} with a result: {t} at the target ({tp}%) · {s} at the stop "
                      "({sp}%) · {x} at neither, valued at the close after {T} ({xp}%)",
                      "{reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} "
