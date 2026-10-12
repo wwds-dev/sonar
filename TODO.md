@@ -103,6 +103,13 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
         timeouts, pairs, entry times or horizon); `attribute(gate=False)` explicit; the "below" sentence reads
         as "beats" does; every headline reading names the fixed-per-instrument residual; A15 amended (no 10y:
         the Terminal's 60-day line shows numbers without a verdict); the Terminal's survivorship line.
+  - [x] `P2` `research` `@ai` **Fix loop 2 (re-review, QA re-verify, domain pass 4, owner's Lab 10y)**: the Lab
+        withholds 10y (`"drift"`, keyed on the run's range in `summarise`; attribution not judged); the Lab's
+        few_clusters tip stops at five years; the fixed-per-instrument residual reworded for beats, below and
+        unconfirmed; the expert IC line names the {n} components BH ran over; untested components read "not
+        tested"; KEEP/INVERTED say before costs; a `gate=False` test (G3); strict zips (ruff 97 → 97); release
+        marker dropped; rate tests in 150-run sets; module teardown of the world caches; coverage in two
+        appended passes (`COVERAGE=1 ./run-tests.sh`).
   - [ ] `P2` `docs` `@ai` **Tech-writer: restate the rule and the rate** in `static/docs.html` (the lines measure
         9 lists), `CONFIDENCE.md:618-625` and the Design section of `qa11-qa13-honest-baselines.md`; the Learn tab
         says the check does not cover traits fixed per instrument. CHANGELOG: the new state and withheld reason,
@@ -112,6 +119,8 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
         interval, withheld share and held-out manifest; measure 2 not met and disclosed; the fixed-per-instrument
         residual (always long on today's list); the Terminal's 60-day line shown without a verdict (no 10y);
         `static/testplan.html:246`, `CONFIDENCE.md:600`. The verdict strings in code are done and pinned.
+        After fix loop 2 also: ten-year Lab runs shown without a verdict (survivorship), the reworded residual
+        ("can also land outside the bar, because the list holds today's survivors"), and the "not tested" grade.
 - [ ] `P2` `research` `@me` **The h = 1 Terminal verdict sits on the daily-bar tie residual.** At a 1-day horizon a
       bar that touches both barriers scores a loss; a coin-flip direction read "below" on 11 of 38 seeds in QA r4
       (P2-A). Live 2y h = 1 now reads Δ −0.99 within ±1.4 (QA r6 §4). Options: a placebo baseline, or no verdict

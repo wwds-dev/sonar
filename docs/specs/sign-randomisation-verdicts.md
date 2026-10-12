@@ -76,10 +76,10 @@ Every rate below is measured by `model-validator`. The bars are a frozen real-ba
    - natively and with `QT_QPA_PLATFORM=offscreen`.
 
    The seed comes from the run's own content, never from the clock. When Monte Carlo is used, the summary reports p, the number of clusters q and the number of draws B.
-8. **Acceptance tests become rate tests** (Architecture §11, tests 8–11). Bounds are set in advance from Binomial(N, p), never fitted to seeds. Each is seeded, slow-marked [A4], caches its forced pairs once per world, and stays under the 60 s per-test cap.
-   - **Two headline verdict tests (a gate against today's code).** Each: 15 synthetic worlds (504 bars) × 20 per-class h-coins at **h15 = 300 judged runs**. Each asserts **`q == 8` on every run and exactly 300 judged** (withheld share 0), so a calendar change fails loudly instead of quietly withholding. Bounds: **≤ 24 verdicts** (99th percentile of Binomial(300, 5%)) and **"beats" ≤ 14**. Today's code (11.0% there) must fail at least one of the two (probability 0.997), and they must catch the mutant "randomisation gate removed". The docstring says this is a gate against today's code, not proof of 5%; proof is measure 1.
-   - **Exactness, inside the same runs:** across the 600 runs of the two headline tests, gate-alone rejections must lie in **13–37** (0.5–99.5% band of Binomial(600, 4.0%)). It catches a dead or inverted statistic.
-   - **Three circular-pass guards (pass/fail),** on the same worlds at h15, **300 judged runs each**, bound **≤ 34** (99th percentile of Binomial(300, 7.5%), measure 2's bar): a per-class 8 h coin, a market-wide h-block coin, a market-wide 4 h coin.
+8. **Acceptance tests become rate tests** (Architecture §11, tests 8–11). Bounds are set in advance from Binomial(N, p), never fitted to seeds. Each is seeded, slow-marked [A4] and caches its forced pairs once per world. Without coverage each stays under the 60 s per-test cap (at most about 20 s at load 50–65, fix loop 2); under coverage on a loaded machine they do not, so coverage runs them in a separate pass with the per-test cap lifted (§14).
+   - **Headline verdict tests (a gate against today's code): four sets of 150** (fix loop 2; split from two tests of 300). Each: 15 synthetic worlds (504 bars) × 10 per-class h-coins at **h15 = 150 judged runs**. Each asserts **`q == 8` on every run and exactly 150 judged** (withheld share 0), so a calendar change fails loudly instead of quietly withholding. Bounds: **≤ 14 verdicts** (99th percentile of Binomial(150, 5%)) and **"beats" ≤ 9** (Binomial(150, 2.5%)). At today's rate on these worlds (9.2%, QA) at least one of the four fails with probability about 0.88 (the verdict bound alone); on these seeds the gate removed reads 14, 10, 18 and 13 verdicts and the third set fails. They must catch the mutant "randomisation gate removed". The docstring says this is a gate against today's code, not proof of 5%; proof is measure 1.
+   - **Exactness, over the same runs:** across the 600 runs of the four headline sets, gate-alone rejections must lie in **13–37** (0.5–99.5% band of Binomial(600, 4.0%)). It catches a dead or inverted statistic.
+   - **Circular-pass guards (pass/fail),** on the same worlds at h15, **two sets of 150 judged runs each**, bound **≤ 19** per set (99th percentile of Binomial(150, 7.5%), measure 2's bar): a per-class 8 h coin, a market-wide h-block coin, a market-wide 4 h coin (nested, and off the grid).
    - **Attribution test (a regression guard, labelled as one).** Its horizon is **re-measured where q ≥ 8** (h60 on 504-bar worlds is now withheld). The engineer first measures today's rate there, then sets N and the bound from Binomial. **The attribution size gate is the real-bar figure of measure 3.** Its docstring and the CHANGELOG say so. The "real component still KEEP" assertion stays.
    - The validator runs the same logic on ≥ 5 disjoint seed sets, and every set must pass (today the attribution test passes on 1 of 3).
 9. **Copy follows the number: every description of the decision rule, not just the rate.** It is restated in the same release wherever it appears:
@@ -159,7 +159,7 @@ The tech-writer words the final strings within these requirements. Every new str
 **Plain mode (no new number):**
 - **Unconfirmed (headline), grey `#7c8798`, Lab and Terminal line.** It names the bar and Δ, then says the result was not told apart from directions picked at random over stretches of time across the watchlist. Shape: "Before costs, 3.1 points above the prediction, outside its error bar (±2.8), but directions picked at random over stretches of time across the watchlist land this far out often enough that this is not told apart from chance." It never says within, no edge, beats, below or "unconfirmed" (Architecture §4); the Terminal uses a short form of "not told apart from chance".
 - **Within:** "…not shown to differ from the prediction, which is not the same as no difference." This replaces "no edge detected. This is what no edge is supposed to look like."
-- **Withheld (`few_clusters`):** names the fix, as Architecture §4: "too few independent stretches to judge (q of the 8 needed); a longer range or a shorter horizon gives more".
+- **Withheld (`few_clusters`):** names the fix, as Architecture §4: "too few separate stretches to judge (q of the 8 needed); a shorter horizon gives more, or a longer range up to five years".
 - **Component `UNCONFIRMED`, grey, plain words "not told apart from chance".** Sentence as Architecture §4 (domain P3-B). It never says "survives FDR", "confirmed" or "verified".
 - **Rate copy (Learn tab and verdict footers):** follows measure 9 (pooled figure plus worst setting, per run, many settings make a chance verdict likely, with the date, N, interval and source).
 - **Power copy:** either the clustered-edge figure or nothing.
@@ -296,7 +296,7 @@ significant   = verdict_state in ("beats", "below")
 - **Grey everywhere.** It is grey on the Lab and on the Terminal line.
 - **The Lab's "inside its own error bar" paragraph** shows for `"within"` only (`ui/app.py:2807` reads `verdict_state`, falling back to `significant`).
 - **"confirmed" and "verified" are banned.** A pin test checks that no beats, below, KEEP or INVERTED string contains either word.
-- **Withheld copy for `few_clusters`.** It names the fix, as the span copy does: "too few independent stretches to judge (q of the 8 needed); a longer range or a shorter horizon gives more".
+- **Withheld copy for `few_clusters`.** It names the fix, as the span copy does: "too few separate stretches to judge (q of the 8 needed); a shorter horizon gives more, or a longer range up to five years".
 - **Hand-built samples are exempt.** A sample with `universe=None` is not held to the gate [A11].
 - **Missing pairs fail closed.** A judged run without opposite outcomes has q = 0 and is withheld.
 
@@ -504,7 +504,7 @@ significant   = verdict_state in ("beats", "below")
 8. **Headline rate tests: two tests**, split for the cap. Together they replace `test_a_correlated_coin_rarely_gets_a_verdict`.
    - Each test: 15 synthetic worlds (504 bars) × 20 per-class h-coins at **h15** = **300 judged runs**. Assert `len(judged) == 300` and `q == 8` on every run, so a calendar change fails loudly instead of quietly withholding.
    - Pre-registered bounds: **≤ 24 verdicts** (99th percentile of Binomial(300, 5%)) and **"beats" ≤ 14** (Binomial(300, 2.5%)).
-   - Today's code (11.0%) fails a given test with probability 0.95, and **at least one of the two with 0.997**. The gated code (2.8%) passes both with probability ≈ 1.
+   - Today's code (11.0%) fails a given test with probability 0.95, and **at least one of the two with 0.997**. The gated code (2.8%) passes both with probability ≈ 1. *(Superseded at fix loop 2: four sets of 150, bounds 14 and 9; see measure 8 and §14.)*
    - q = 8 means enumeration (256 patterns), so the tests run the production path with no B override.
    - About 10–15 CPU-s each.
    - **The docstring says this is a gate against today's code, not proof of 5%** (domain P3-F). Proof of 5% is measure 1 at full scale.
@@ -605,3 +605,30 @@ architecture finds them here:
   directions held up to eight holding periods, says the rate is per run and that nearby settings
   can disagree, and ends with the fixed-per-instrument residual, which the unconfirmed sentence
   carries too (owner decisions after r7).
+
+Fix loop 2 (2026-10-12), after the loop-1 re-review, QA re-verify and domain pass 4:
+
+- **Lab 10y withheld (owner, Lab 10y).** The rule lives in `summarise`, keyed on the run's range:
+  a new `rng` argument (`run()` passes its own) and `NO_VERDICT_RANGES = ("10y",)` give the
+  withheld reason `"drift"`, checked after `horizon` and `single_class` (the reader's settings) and
+  before the sample rules. Chosen over the caller because §8 puts verdict composition and copy in
+  `backtest.py` and has the UI read fields only; a hand-built sample without a range is not held
+  to it [A11]. Attribution reads the withheld run as not judged, as every withheld run. The
+  sentence uses "lands outside the bar" rather than "beats", to match the residual below and the
+  per-symbol coin, which reads either side. The Lab's `few_clusters` tip reads "A shorter horizon
+  gives more, or a longer range up to five years."
+- **Copy.** The fixed-per-instrument residual is "A direction fixed per instrument, such as always
+  long, can also land outside the bar, because the list holds today's survivors; this check cannot
+  see that." (code review P3-3, domain P3-1). The expert IC line says "before the correction for
+  the {n} components measured", n from attribution's `randomisation.measured` (domain P2-2). An
+  untested component is `UNTESTED`, read "not tested" (domain P3-2). KEEP and INVERTED say
+  "before costs" (domain P3-3).
+- **Rate tests in 150-run sets** (code review P3-2, QA P2-A): headline 4 × 150 (bounds 14 and 9),
+  each guard 2 × 150 (bound 19), the attribution guard 2 × 12 (bound 3, the 99th percentile of
+  Binomial(12, 5%)). The z² bounds are unchanged. Slowest test without coverage about 20 s at load
+  50–65. A module teardown clears the world caches (code review P3-4). Coverage is measured in two
+  appended passes under the watchdog (`COVERAGE=1 ./run-tests.sh`), the slow one with
+  `-o faulthandler_timeout=0` and a 1200 s budget (app-context, TESTING.md, tooling baseline).
+- **Release marker dropped** (code review P3-1): the placeholder check runs in the default suite.
+- **Ruff:** `strict=True` on the seven `zip` calls in `sonar/randomisation.py`; 97 findings at
+  049b930 and at the branch head, no new finding (code review P3-5).
