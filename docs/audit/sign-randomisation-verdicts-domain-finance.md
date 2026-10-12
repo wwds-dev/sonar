@@ -110,3 +110,42 @@ None.
 
 ### Verdict
 No P0. Define P1s are resolved. There is one new P1 (the basis of the rate copy), which must be fixed in measure 9 and ADR :63 before the gate. The P2s are wording and residual disclosure. Statistical validity at full scale goes to the model-validator.
+
+## Pass 3: Review (`git diff 049b930..HEAD`)
+
+The reviewer ran the non-slow tests in the 3 affected files offscreen: 120 passed. Slow tests and native mode were not run.
+
+### P0
+None.
+
+### P1
+- **P1-1. The `CHANCE_VERDICT_RATE` placeholder renders literally in every "beats" verdict, and nothing blocks its release.** (`sonar/backtest.py:160`, `:999`; `tests/test_backtest.py:708-717` actually asserts the placeholder.)
+  - Fix: add a release-blocking check that fails while `{` appears in the constant or in any `_verdict(…,"beats")` output.
+  - The figure that replaces it is the validator's worst held-out false-verdict figure across measures 1–2, rounded conservatively (N = floor(1/rate)); if it misses 5%, the miss is stated.
+  - Date, N, interval, withheld share, report and manifest go in the Learn tab and CONFIDENCE.md.
+
+### P2
+- **P2-1.** The copy says "this verdict", but measures 1–2 measure any verdict (pooled; beats-only is ≤ 2.5%). Spec measure 9 ("worst held-out") and Design :158 ("pooled + worst setting") disagree. Either say "a verdict either way" and fill the slot with the worst pooled held-out rate, or keep "this verdict" and fill it with the worst beats-only rate. Add "up to 1 in M at some settings" if a judged cell is materially worse.
+- **P2-2.** The per-instrument residual is shown in plain mode only (`ui/app.py:3001`). The volatility INVERTED "why" line is shown in both modes without it. Add a both-modes line ("does not cover traits fixed per instrument, such as volatility") and pin it.
+- **P2-3.** A15 puts the Terminal 60d line on 10y of today's (survivor) watchlist, with no survivorship clause in the Terminal. Per-instrument drift is a fixed trait that random stretch swaps average out, so it may pass the gate (not verified).
+  - The validator should measure a long-only / drift placebo at 10y h20/h60.
+  - Add a survivorship clause to the Terminal footer.
+  - The tooltip at `:1952-1953` is untrue for the 250-day profile, which is always withheld.
+
+### P3
+- **P3-1.** The expert p explanation is off by 2× (`ui/app.py:2900-2903` vs `randomisation.py:164`).
+- **P3-2.** The attribution `p_rand` is shown raw next to BH-based grades. Add "(before the correction for testing four components)".
+- **P3-3.** The "below" copy is internally tense (`backtest.py:1003-1008`).
+- **P3-4.** Two pass-2 items are still open: the slower-pattern residual and "nearby settings can disagree". They belong at least in the Learn tab and CONFIDENCE.md.
+- **P3-5.** The `few_clusters` fix "a longer range" does not apply in the Terminal.
+- **P3-6.** Spec :156 and :293 still say "independent stretches". The code correctly says "separate".
+
+### Checklist
+- No user string says "confirmed", "verified" or bare "unconfirmed" (pinned).
+- "Not told apart from chance" is grey and correct.
+- `few_clusters` copy is fine.
+- "Before costs" is kept.
+- `p_tail` is expert-only and labelled.
+
+### Verdict
+No P0. One P1: the placeholder, which needs a release-blocking check. The new copy holds. P2s: the rate-slot semantics, the expert-mode residual, and A15 survivorship.
