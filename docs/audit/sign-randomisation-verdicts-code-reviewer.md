@@ -76,3 +76,28 @@ No P0, P1 or P2.
 
 ### Verdict
 Ready for Verify. P3-1, P3-3 and P3-5 are cheap to fix before merge.
+
+## Re-review after fix loop 2 (`87d664b..HEAD`)
+
+**What was run:**
+- 143 fast targeted tests offscreen, and the Lab tests natively: all passed.
+- 17 slow rate tests passed; the maximum was 17.1 s at load ~150.
+- With the gate removed (alpha 1.01), 7 rate tests fail, matching their docstrings.
+- Ruff: 97 findings at 049b930 and 97 at HEAD, as identical sets.
+- The binomial bounds were recomputed independently and are correct.
+
+The full suite and coverage were not run.
+
+All earlier items are resolved, except first-review P3-8 (the 600 s budget, an owner call).
+
+### Findings
+No P0, P1 or P2.
+- **P3-1.** The owner bullet ("tip no longer points at longer ranges") contradicts the shipped "or a longer range up to five years" (`backtest.py:1040`, `:1016`). The owner should confirm or drop it.
+- **P3-2.** "Far more often" (`backtest.py:984`) goes beyond the held-out figures (10–12.5% vs 9.1%). The domain review raised the same point.
+- **P3-3.** The drift rule's order is only half pinned. Moving `drift` below `span` survives the suite. Add `_rigged_rows(50)` with rng="10y" expecting `drift`, and universe="Equity" with rng="10y" expecting `single_class`.
+- **P3-4.** Measure 8's catch probability, re-stated as "about 0.88", assumes the sets are independent, but they share worlds, so the true figure is lower. Say "≤ 0.88 (sets share worlds)". The owner's nod is needed on re-stating a success measure.
+- **P3-5.** The attribution footer says "judged together" on withheld runs, where nothing is judged (`ui/app.py:3079-3091`).
+- **P3-6.** `static/docs.html:716` still gives the old range advice and has no 10y row (Document).
+
+### Verdict
+No P0/P1/P2. Ready for Verify. P3-1 and P3-4 need the owner. P3-3 is a cheap test gap.

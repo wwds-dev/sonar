@@ -182,3 +182,19 @@ None.
 
 ### Verdict
 No P0/P1. Every headline string traces to r7. Before merge: fix P2-2, and get the owner's answer on P2-1. P2-3 belongs to Document.
+
+## Pass 5: Review of fix loop 2 (`git diff 87d664b..HEAD -- sonar ui`)
+
+Ran 120 non-slow tests offscreen; all passed. Resolved from pass 4: P2-1 (Lab 10y `drift`, tips stop at 5y), P2-2 (expert line counts the n measured; footer correctly counts all listed), and P3-1 to P3-4. Pass-4 P2-3 (Learn tab and CONFIDENCE.md) stays with Document.
+
+### P0 / P1 / P2
+None.
+
+### P3
+- **P3-1. The drift sentence says "far more often"** (`backtest.py:983-985`, comment `:141`). The held-out figures are 10–12.5%, against the chance rate of 9.11%; only r5 shows 22.5–31%. Drop "far", or quote both sets.
+- **P3-2. "Because the list holds today's survivors" names survivorship as the only cause.** A random fixed sign per instrument also reads 15.7% on r5, from each instrument's own persistent trend. Suggested wording for the residual and drift sentences: "…because each instrument keeps its own trend over the years and the list holds only today's survivors; this check cannot see that."
+- **P3-3. The five-year tips offer "a longer range up to five years" on a 5y run.** Drop the range clause when `rng == "5y"`.
+- **P3-4. The Lab has no survivorship line on runs of five years or less** (the Terminal has one). Owner call.
+
+### Verdict
+No P0/P1/P2. Fix the wording in P3-1 and P3-2 before the docs copy it. P3-4 is an owner call.
