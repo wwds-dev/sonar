@@ -200,6 +200,11 @@ class Portfolio:
         # written by :meth:`log_equity`. Lives in the same file as the book so
         # one backup carries both.
         self.equity_log: list[dict] = []
+        # The shadow ledger's marker (docs/adr/0002 Amendment 1): its id and
+        # creation time, set by the holder when it starts the ledger, kept as
+        # read and written back on every save. While it is here, a missing
+        # ledger is an error, never a fresh start. None: no ledger yet.
+        self.shadow_ledger: dict | None = None
         self._load()
 
     # -- persistence ------------------------------------------------------- #
@@ -213,6 +218,9 @@ class Portfolio:
         self.closed = [_position_from(p) for p in d.get("closed", [])]
         self.equity_log = [q for q in d.get("equity_log", [])
                            if isinstance(q, dict) and "t" in q and "v" in q]
+        # As it is, damaged or not: the engine checks it, and only a person
+        # removes it (a book reset, Amendment 1).
+        self.shadow_ledger = d.get("shadow_ledger")
 
     @_locked
     def save(self) -> None:
@@ -224,6 +232,8 @@ class Portfolio:
                    "open": [asdict(p) for p in self.open],
                    "closed": [asdict(p) for p in self.closed],
                    "equity_log": self.equity_log}
+        if self.shadow_ledger is not None:
+            payload["shadow_ledger"] = self.shadow_ledger
         paths.write_atomically(self.path, json.dumps(payload))
 
     # -- trading ----------------------------------------------------------- #

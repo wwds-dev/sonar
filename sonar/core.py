@@ -140,6 +140,14 @@ SHADOW_UNAVAILABLE = "unavailable"
 # The shadow's gap check needs a series that starts on or before the entry.
 SHADOW_RANGES = (("3mo", 90), ("6mo", 182), ("1y", 365), ("2y", 730), ("5y", 1826))
 SHADOW_RANGE_SLACK_DAYS = 7     # a weekend and a holiday before the entry
+# The shadow's write-once record (docs/adr/0002 Amendment 1), beside the book
+# and written by the holder only. Its marker lives in portfolio.json.
+SHADOW_LEDGER_FILE = "shadow_ledger.json"
+# A marker this young with no file is a crash between the marker's write and
+# the file's: the file is made once more, not reported missing.
+SHADOW_LEDGER_RETRY_S = 600.0
+# About 0.36 MB a year (validator P3-4); a file near this is not ours to parse.
+SHADOW_LEDGER_MAX_BYTES = 64 * 1024 * 1024
 
 
 class Live:
@@ -241,6 +249,17 @@ class Live:
         self._shadow_bars: dict[str, tuple[str, list | None]] = {}
         # position id -> its decided shadow outcome (see _shadow_pass).
         self._shadow_decided: dict[str, dict] = {}
+        # The shadow ledger (see _shadow_ledger_open): the parsed record, read
+        # once per holder tenure, and whether this tenure has yet to write it;
+        # why it is not there when it is not; when its marker says it began.
+        # The days a fetch could not decide an entry are kept here as well, so
+        # a ledger that cannot be written still counts them in this process.
+        self._ledger: dict | None = None
+        self._ledger_unsaved = False
+        self._ledger_problem: tuple[str, str | None] | None = None
+        self._ledger_marker_at: float | None = None
+        self._ledger_retried = False
+        self._shadow_tries: dict[str, list[str]] = {}
         self._seed_tries = 0        # see _seed_account_history
         self._seed_at = 0.0
         self._scan_at = 0.0
@@ -554,21 +573,25 @@ class Live:
         """Work out the time-stop shadow of the score grade (docs/adr/0002).
 
         The holder's job alone: a follower shows the holder's copy and never
-        fetches. The book is copied under its lock and the lock released before
-        any request — the same rule as the scan's, for the same frozen window.
-        The pure `calibration.shadow_time_stop` does the rest, and `self.lock`
-        covers the assignment and nothing more. A failure keeps the last good
-        readout on screen with the reason beside it; nothing is guessed.
+        fetches, and neither it nor a read-only engine ever reads or writes
+        the ledger or its marker. The book is copied under its lock and the
+        lock released before any request — the same rule as the scan's, for
+        the same frozen window. The pure `calibration.shadow_time_stop` does
+        the rest, and `self.lock` covers the assignment and nothing more. A
+        failure keeps the last good readout on screen with the reason beside
+        it; nothing is guessed.
 
         Each entry's outcome, once decided, is kept in `_shadow_decided` and
         handed back on every later pass, so it never changes within this
         process — not when a day's fetch fails, not when Yahoo rewrites old
-        closes. A look evaluated once stays as it was (ADR 0002 §3). In
-        memory only: a restart decides again from the book and fresh closes.
+        closes. Across restarts the ledger does the same (Amendment 1): what
+        is decided or evaluated for the first time is merged into it, written,
+        and only then published, so a look is shown as a result only once it
+        is on disk.
 
-        Threads: the memo and the bar cache are this method's alone, and it
-        runs only from `_rescan_once`, which every caller enters under
-        `_rescan_lock` (the engine loop, the background step, a settings
+        Threads: the memo, the bar cache and the ledger are this method's
+        alone, and it runs only from `_rescan_once`, which every caller enters
+        under `_rescan_lock` (the engine loop, the background step, a settings
         change's rescan). That lock is what serialises them; nothing else may
         call this.
         """
@@ -580,13 +603,24 @@ class Live:
             with book.lock:
                 held = [replace(p) for p in book.open]
                 done = [replace(p) for p in book.closed]
+            self._shadow_ledger_open(book, now)
+            ledger = self._ledger
             decided = dict(self._shadow_decided)
-            bars = self._shadow_fetch([p for p in held + done if p.id not in decided], now)
-            result = calibration.shadow_time_stop(held, done, bars, now, decided)
+            known = set(decided) | set((ledger or {}).get("entries", ()))
+            bars = self._shadow_fetch([p for p in held + done if p.id not in known], now)
+            day = time.strftime("%Y-%m-%d", time.gmtime(now))
+            fetched = {s for s, (d, _b) in self._shadow_bars.items() if d == day}
+            tries = {k: list(v) for k, v in (ledger or {}).get("price_tries", {}).items()}
+            for k, v in self._shadow_tries.items():
+                tries[k] = sorted(set(tries.get(k, ())) | set(v))
+            result = calibration.shadow_time_stop(held, done, bars, now, decided, ledger,
+                                                  tries, fetched)
             # Deep copies: the published readout and the memo share nothing.
             self._shadow_decided.update(
                 {k: copy.deepcopy(v) for k, v in calibration.shadow_decided(result).items()
                  if k not in self._shadow_decided})
+            self._shadow_tries = copy.deepcopy(result["price_tries"])
+            result = self._shadow_ledger_record(result, now)
         except Exception as exc:
             with self.lock:
                 last = self.shadow if isinstance(self.shadow, dict) else {}
@@ -594,6 +628,119 @@ class Live:
             return
         with self.lock:
             self.shadow = result
+
+    # -- the shadow ledger (docs/adr/0002 Amendment 1) ---------------------- #
+    def _shadow_ledger_path(self):
+        return paths.user_data_base() / SHADOW_LEDGER_FILE
+
+    def _ledger_build(self) -> str:
+        return str((self.build or {}).get("version") or "unknown")[:64]
+
+    def _shadow_ledger_open(self, book, now: float) -> None:
+        """Read the ledger, once per holder tenure; or start it, marker first.
+
+        | marker | file | outcome |
+        | none | none | a new ledger: the marker is saved in portfolio.json, under the book's lock, and the file is written by this same pass |
+        | yes | none | "missing" — never a fresh start; unless the marker is under SHADOW_LEDGER_RETRY_S old, which is a crash between the two writes: the file is made once more |
+        | none | yes | the file is taken as this book's, and the marker written back from it |
+        | yes | yes | read; another id, schema or shape is "read" |
+
+        On "read" or "missing" nothing is written and the file is never
+        moved or repaired; the next pass reads again, so a restored file is
+        picked up without a restart. A good ledger is not read again until
+        the next tenure: from then on this process's copy is the record.
+        """
+        if self._ledger is not None:
+            return
+        self._ledger_problem = None
+        path = self._shadow_ledger_path()
+        with book.lock:
+            raw = copy.deepcopy(book.shadow_ledger)
+        marker, bad = calibration.ledger_marker_parse(raw)
+        self._ledger_marker_at = marker["created_at"] if marker else None
+        if bad:
+            self._ledger_problem = ("read", bad)
+            return
+        try:
+            paths.sweep_temp_files(path)
+            if path.stat().st_size > SHADOW_LEDGER_MAX_BYTES:
+                raise calibration.LedgerFormatError("too large")
+            text = path.read_text()
+        except FileNotFoundError:
+            text = None
+        except (OSError, ValueError) as exc:
+            self._ledger_problem = ("read", type(exc).__name__)
+            return
+        if text is None:
+            if marker is None:
+                ledger = calibration.ledger_new(now, self._ledger_build())
+                if not self._shadow_ledger_mark(book, ledger):
+                    return
+            elif (not self._ledger_retried
+                  and 0 <= now - marker["created_at"] < SHADOW_LEDGER_RETRY_S):
+                self._ledger_retried = True
+                ledger = calibration.ledger_new(now, self._ledger_build(),
+                                                marker["ledger_id"], marker["created_at"])
+            else:
+                self._ledger_problem = ("missing", None)
+                return
+            self._ledger, self._ledger_unsaved = ledger, True
+            return
+        ledger, why = calibration.ledger_parse(text)
+        if why:
+            self._ledger_problem = ("read", why)
+            return
+        if marker is None:
+            if not self._shadow_ledger_mark(book, ledger):
+                return
+        elif ledger["ledger_id"] != marker["ledger_id"]:
+            self._ledger_problem = ("read", calibration.LedgerIdError.__name__)
+            return
+        self._ledger, self._ledger_unsaved = ledger, False
+
+    def _shadow_ledger_mark(self, book, ledger: dict) -> bool:
+        """Record in portfolio.json that this book has a ledger. A failed save
+        leaves no marker, and the next pass tries again."""
+        with book.lock:
+            book.shadow_ledger = {"ledger_id": ledger["ledger_id"],
+                                  "created_at": ledger["created_at"]}
+            try:
+                book.save()
+            except Exception as exc:
+                book.shadow_ledger = None
+                self._ledger_problem = ("write", type(exc).__name__)
+                return False
+        self._ledger_marker_at = ledger["created_at"]
+        return True
+
+    def _shadow_ledger_record(self, result: dict, now: float) -> dict:
+        """Merge what `result` decided or evaluated for the first time into
+        the ledger and write it — after the day's backup, in one atomic step —
+        when anything was added or a try counted. On success the looks are
+        worked out again against the new record, so what is published is
+        what is on disk. On failure the record and the readout's looks stay
+        as they were (an unrecorded look shows no result) and the next pass
+        tries again. `result["ledger"]` says which."""
+        problem = self._ledger_problem
+        ledger = self._ledger
+        if ledger is not None:
+            new, added = calibration.ledger_merge(ledger, result, now, self._ledger_build())
+            if added or self._ledger_unsaved or new["price_tries"] != ledger["price_tries"]:
+                try:
+                    path = self._shadow_ledger_path()
+                    text = json.dumps(new, indent=1, allow_nan=False)
+                    paths.daily_backup(path)
+                    paths.write_atomically(path, text)
+                except Exception as exc:
+                    problem = ("write", type(exc).__name__)
+                else:
+                    self._ledger, self._ledger_unsaved = new, False
+                    result = calibration.shadow_with_ledger(result, new)
+        info = result.get("ledger") or {"created_at": self._ledger_marker_at,
+                                        "error": None, "reason": None}
+        if problem:
+            info = {**info, "error": problem[0], "reason": problem[1]}
+        return {**result, "ledger": info}
 
     def _shadow_fetch(self, positions: list, now: float) -> dict:
         """Daily closes for the entries whose shadow outcome waits on them: past
@@ -1169,6 +1316,13 @@ class Live:
             self.snapshot = {"status": "starting"}
         self._shadow_decided = {}
         self._shadow_bars = {}
+        # So do the ledger and the tries: this tenure's first pass reads the
+        # ledger again, against the marker in the book just re-read.
+        self._ledger = None
+        self._ledger_unsaved = False
+        self._ledger_problem = None
+        self._ledger_retried = False
+        self._shadow_tries = {}
         # Only now may actions write: the book they would write is the one on disk.
         self.read_only = False
         self.conflict = ""

@@ -10,6 +10,7 @@ real data directory and off the network, and the fetch is a stub here.
 
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -125,8 +126,12 @@ def test_one_request_per_symbol_per_utc_day_failures_included(live, monkeypatch,
     live._shadow_pass(_utc(2026, 10, 13, 0) + 60)                 # the next UTC day
     assert len(log.calls) == (1 if answer == "bars" else 2)
     if answer != "bars":
-        # 12 days past T with no close: left out and counted, never guessed.
-        assert live.shadow["n_no_price"] == 2 and live.shadow["n_reached"] == 0
+        # 12 days past T with no close: still waiting (Amendment 1 §4: 28
+        # days and 3 tried days; it was left out after 7), never guessed. Each
+        # day's failed fetch is counted as a try.
+        assert live.shadow["n_wait_price"] == 2 and live.shadow["n_no_price"] == 0
+        assert live.shadow["n_reached"] == 0
+        assert [len(v) for v in live.shadow["price_tries"].values()] == [2, 2]
 
 
 @pytest.mark.parametrize("age,rng", [(40, "3mo"), (83, "3mo"), (85, "6mo"), (100, "6mo"), (300, "1y"), (700, "2y"),
@@ -172,9 +177,9 @@ def test_the_pass_reads_copies_and_writes_nothing(live, monkeypatch):
     seen = []
     real = calibration.shadow_time_stop
 
-    def spy(held, done, bars, now, decided=None):
+    def spy(held, done, bars, now, *rest):
         seen.extend(held + done)
-        return real(held, done, bars, now, decided)
+        return real(held, done, bars, now, *rest)
 
     monkeypatch.setattr(calibration, "shadow_time_stop", spy)
     monkeypatch.setattr(core.assets, "fetch_bars", FetchLog(live))
@@ -392,7 +397,10 @@ def test_the_memo_lives_in_memory_and_keeps_the_first_decision(live, monkeypatch
     first = {k: dict(v) for k, v in live._shadow_decided.items()}
     live._shadow_pass(NOW + DAY)
     assert live._shadow_decided == first
-    assert not any(p.name.startswith("shadow") for p in live.book.path.parent.iterdir())
+    # The memo is in memory; what persists is the ledger alone (Amendment 1:
+    # before it, no shadow file existed at all).
+    assert [p.name for p in live.book.path.parent.iterdir()
+            if p.name.startswith("shadow")] == ["shadow_ledger.json"]
 
 
 def _tree(root):
@@ -400,17 +408,30 @@ def _tree(root):
             for p in root.rglob("*") if p.is_file()}
 
 
-def test_r2_a_pass_writes_nothing_at_all(live, monkeypatch, tmp_path):
-    """QA r2 P3-4: "nothing persisted", checked on the whole data directory
-    — every file, its size and its mtime — before and after two passes."""
+def test_r2_a_pass_writes_the_ledger_and_its_marker_and_nothing_else(live, monkeypatch,
+                                                                     tmp_path):
+    """QA r2 P3-4, checked on the whole data directory — every file, its size
+    and its mtime. Amendment 1 replaced "nothing persisted": the first pass
+    writes the ledger and its marker in portfolio.json, and nothing else
+    changes (the book's contents included); a second pass with nothing new to
+    record writes nothing at all."""
     _cohort(live, n=3)
     live.book.save()
     monkeypatch.setattr(core.assets, "fetch_bars", lambda s, rng=None: _wavy(NOW - 100 * DAY))
+    book_before = json.loads(live.book.path.read_text())
     before = _tree(tmp_path)
     live._shadow_pass(NOW)
-    live._shadow_pass(NOW + DAY)
     assert live.shadow["n_reached"] == 3
-    assert _tree(tmp_path) == before
+    after = _tree(tmp_path)
+    assert set(after) == set(before) | {"shadow_ledger.json"}
+    assert {k: v for k, v in after.items() if k not in ("shadow_ledger.json",
+                                                        "portfolio.json")} == \
+        {k: v for k, v in before.items() if k != "portfolio.json"}
+    book_after = json.loads(live.book.path.read_text())
+    assert set(book_after) == set(book_before) | {"shadow_ledger"}
+    assert {k: v for k, v in book_after.items() if k != "shadow_ledger"} == book_before
+    live._shadow_pass(NOW + DAY)
+    assert _tree(tmp_path) == after
 
 
 def test_qa_c03_a_waiting_window_never_computes(live, monkeypatch):
