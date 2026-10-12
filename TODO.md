@@ -87,6 +87,19 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       z² still runs 1.4–1.5× nominal; QA r6 P2-1, mutant E4). The two acceptance tests are regression guards fitted
       to their seeds, not proof of the target. Owner signs off the method. Spec (Define, at the owner gate):
       `docs/specs/sign-randomisation-verdicts.md`.
+      **Built 2026-10-12** on branch `sign-randomisation-verdicts` (`sonar/randomisation.py`, the gate in
+      `summarise` and `attribute`, `verdict_state`, `few_clusters`, A15 in `range_for_horizon`, rate tests);
+      not merged. Next: Review, then Verify (measures 1–7 and 10 at full scale on the frozen bars and the
+      held-out set). Still open:
+  - [ ] `P2` `research` `@ai` **Validator: the worst held-out false-verdict figure** across measures 1–2, which
+        replaces the placeholder `CHANCE_VERDICT_RATE = "about 1 run in {measured}"` (`sonar/backtest.py`) with
+        its date, N, interval and withheld share. The "beats" sentence shows the placeholder until then: do
+        not release before it is filled.
+  - [ ] `P2` `docs` `@ai` **Tech-writer: restate the rule and the rate** in `static/docs.html` (the lines measure
+        9 lists), `CONFIDENCE.md:618-625` and the Design section of `qa11-qa13-honest-baselines.md`; the Learn tab
+        says the check does not cover traits fixed per instrument. CHANGELOG: the new state and withheld reason,
+        DROP still uncalibrated (deferred), and the attribution test now a regression guard whose size gate is
+        measure 3 on real bars.
 - [ ] `P2` `research` `@me` **The h = 1 Terminal verdict sits on the daily-bar tie residual.** At a 1-day horizon a
       bar that touches both barriers scores a loss; a coin-flip direction read "below" on 11 of 38 seeds in QA r4
       (P2-A). Live 2y h = 1 now reads Δ −0.99 within ±1.4 (QA r6 §4). Options: a placebo baseline, or no verdict
@@ -98,7 +111,8 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       (long-only +8.7 pt), and the coin was clean. Option: the Terminal reads 5y at h ≥ 40.
 - [ ] `P3` `research` `@ai` **DROP has no error bar.** It is read from the point estimate of the leave-one-out cost
       (as small as −0.0018 on the Lab default), fires on 18–28% of noise, is now the main real-run grade
-      (volatility on 10 of 12 settings) and is shown in red (validator r6 P3).
+      (volatility on 10 of 12 settings) and is shown in red (validator r6 P3). Deferred by the owner out of the
+      sign-randomisation change (2026-10-12): the randomisation gate does not touch it.
 - [ ] `P3` `research` `@ai` **Same-day pageviews include hours after the US close** (`sonar/backtest.py`
       `attention_z`), a minor look-ahead in the attention series (validator r5 P3).
 - [ ] `P3` `research` `@ai` **`replay.py` still compares against the untimed `1/(1+R:R)`** (`Session.scorecard`),
