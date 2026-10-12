@@ -1,6 +1,6 @@
 # 0002. Grade the live score on a 4-week time stop, marked to market, as a read-only shadow
 
-- Status: **proposed** (waiting for the owner; GATE)
+- Status: **accepted** (owner, 2026-10-12; every recommendation under "Open questions" taken)
 - Date: 2026-10-12
 - Spec: [`docs/specs/shadow-time-stop.md`](../specs/shadow-time-stop.md)
 - Numbering: the highest committed ADR on any branch is `0000-template`. `0001` belongs to the
@@ -200,7 +200,7 @@ is small and contained to code.
   share by band against the reference split (a σ̂ check).
 - **Migration:** none.
 
-## Open questions for the owner
+## Open questions for the owner (answered 2026-10-12: the recommended option in each)
 1. Approve the shadow readout as the direction (recommended), or take cohort grading as the
    fallback?
 2. T = 28 calendar days for every instrument (recommended), or 20 bars each, which gives crypto 20

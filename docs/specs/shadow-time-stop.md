@@ -1,8 +1,11 @@
 # Spec: a time-stop shadow readout of the live score grade
 
-- Status: draft, **waiting for the owner** (GATE: user-visible and new; architecture touches state and
-  the engine thread, see [ADR 0002](../adr/0002-shadow-time-stop-grade.md))
-- Owner approval: pending
+- Status: **approved** (Define and Architect gates; see [ADR 0002](../adr/0002-shadow-time-stop-grade.md))
+- Owner approval: 2026-10-12, "go on with your recommendation". All six recommendations in ADR 0002's
+  open questions are accepted: shadow readout (cohort grading stays the fallback); T = 28 calendar days;
+  gate on the HC3 slope of R on score, rank IC shown for comparison; Pocock 2.315 at 45 / 101 / 201;
+  protocol entries only, hand-closed ones excluded and counted; build after the QA-11/QA-13 work lands.
+- Next: Design (ux-designer), then Build. Blocked on the dependency below (not landed at approval).
 - Phases: Define (product-manager role) and Architect (architect role), written 2026-10-12 in one
   session. Design (ux-designer) is deferred until the owner approves the direction; constraints for it
   are below. Build, Review, Verify, Secure and Document come after the gate. Both playbooks are
