@@ -499,28 +499,42 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
     (`test_v12_the_design_holds_its_size_where_the_closed_only_grade_does_not`) keeps the spec's
     5% ± 1.5 pt bar. The 20,000-book precision mean is held to the measured 5.7–6.7% (note 24). No user-facing copy states a
     false-alarm rate.
-16. **The newest bar is trusted only when it is a finished session** (fix loop 1, code review P1-2;
-    rewritten in fix loop 2 for code review r2 P2-B). Yahoo can stamp the in-progress bar with the
-    fetch time, not its session's start (EURCHF=X read `10-12 11:17`).
-    - The engine stores each series with the time it was fetched. On a failed day, the kept series
-      keeps its own fetch time.
-    - The newest bar counts only when its stamp is at least 24 h (`SHADOW_FINAL_AFTER_S`) before
-      that fetch, because no session is longer than a day. It is never compared with `now`, or a
-      kept series would turn final.
-    - An untrusted newest bar still bounds its session start to after `stamp − 24 h`. When that is
-      already past t_T, the T bar is the last trusted bar at or before t_T, and it is finished.
-    - The cut then lies in `(stamp − 24 h, stamp]`. A booked close inside that window waits; one
-      outside it is decided by rule 1 as usual.
-    - Without a fetch time (the pure function called alone), the newest bar is never trusted.
-    - **Measured** (`test_r2_latency_*`, US-session bars, one fetch a day at 00:01 UTC): a
-      Monday–Thursday T is decided **2.4 days** after t_T, and a Friday T **3.4 days** after. A
-      holiday after T adds a day. Fix loop 1 took 4.4 days for a Thursday or Friday T, and the
-      reviewer measured up to 5.4 with a holiday. The worst ordinary case now leaves **2.6 days**
-      before the 7-day grace makes an entry "no price".
-    - The FX Sunday case is graded on Tuesday at Monday's close, never at Friday's. B1, B2 and B3 do
-      not flip.
-    - I chose this over snapping stamps to the session start, because it needs no per-market session
-      table.
+16. **The newest bar's close is never used, and its stamp only on the session pattern** (fix loop
+    1, code review P1-2; fix loop 2, r2 P2-B; rewritten in fix loop 3 for code review r3 P2-1).
+    - Yahoo can stamp the in-progress bar with the fetch time (EURCHF=X read `10-12 11:17`). A
+      finished newest bar fetched over a weekend may also carry a last-trade or fetch-time stamp;
+      that is not verified.
+    - Fix loop 2 trusted the newest bar when its stamp was ≥ 24 h before its fetch, and otherwise
+      bounded the cut by `stamp − 24 h`. Both assume the stamp lies in its session, and the trusted
+      path assumes the stamp *is* the session start. Under a last-trade or fetch-time weekend stamp,
+      a Friday t_T was graded at Thursday's close and flipped on Tuesday: the round-1 bug back. Fix
+      loop 3 removes the fetch-time trust, the bounded cut and the engine's stored fetch times.
+    - **Now** (`_shadow_newest_is_a_session_start`): the newest bar's stamp is used only when its
+      time of day equals the bar before it, `(s[-1] − s[-2]) % 86 400 == 0`, which is the
+      session-start pattern. Then it is the exact cut, whatever its age. Its close is never used:
+      it can be neither the T bar with a cut after it, nor a gap-checked close.
+    - Off the pattern, the newest bar is dropped, as in fix loop 2. A DST change or a shifted FX
+      stamp breaks the pattern for one day and costs one day of waiting (tested).
+    - **Checked** against the reviewer's three conventions (session start, fetch time, last trade;
+      `cr3/stamp.py` run on this tree): no outcome flips, and nothing is graded at a close before
+      t_T.
+      - Session-start stamps decide a Thursday T on Saturday and a Friday T on Tuesday.
+      - Fetch-time and last-trade stamps take up to two days longer.
+      - A booked TARGET after the cut is never moved before it.
+    - **Measured** (`test_r2_latency_*`, US-session bars, one fetch a day at 00:01 UTC):
+      - A Monday–Thursday T is decided **1.4 days** after t_T, and a Friday T **3.4 days** after.
+      - A holiday can stretch this to **4.4 days** (a Thursday T before a Friday holiday, or a
+        Friday T before a Monday holiday).
+      - A first pass later than 00:01 adds its delay (07:00: **4.7 days**).
+      - The worst of these leaves **2.3 days** before the 7-day grace makes an entry "no price".
+    - The FX Sunday case is graded at Wednesday's read at Monday's close, never at Friday's. In
+      production the live row is also stamped after `now`, because the pass takes `now` before it
+      fetches (code review r3 P3-1), so it is dropped either way. B1, B2 and B3 wait, then grade at
+      day 28's close.
+    - **Open, for the owner:** verify the weekend stamp live with a Saturday or Sunday fetch after
+      00:00 UTC of ^GSPC, META, EURCHF=X and TRX-USD, and record the newest stamps in ADR §5
+      (TESTPLAN 11.23). The rule above is safe under any of the conventions, so this is a
+      confirmation, not a dependency.
 17. **Bars stamped after `now` are ignored** (security P2-2), so a future stamp cannot make an
     in-progress bar look final.
 18. **Payload timestamps** (security P2-1, code review P2-2). The UI reads a timestamp only within

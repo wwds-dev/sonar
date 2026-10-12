@@ -172,9 +172,9 @@ def test_the_pass_reads_copies_and_writes_nothing(live, monkeypatch):
     seen = []
     real = calibration.shadow_time_stop
 
-    def spy(held, done, bars, now, decided=None, fetched_at=None):
+    def spy(held, done, bars, now, decided=None):
         seen.extend(held + done)
-        return real(held, done, bars, now, decided, fetched_at)
+        return real(held, done, bars, now, decided)
 
     monkeypatch.setattr(calibration, "shadow_time_stop", spy)
     monkeypatch.setattr(core.assets, "fetch_bars", FetchLog(live))
@@ -454,24 +454,23 @@ def test_mv_s1a_failed_fetches_leave_look_1_as_evaluated(live, monkeypatch, fail
 # --------------------------------------------------------------------------- #
 # Fix loop 2 (code review r2): fetch-time trust, memo hygiene
 # --------------------------------------------------------------------------- #
-def test_r2_a_kept_series_is_judged_at_its_own_fetch_time(live, monkeypatch):
-    """P2-B: the newest bar is trusted against the fetch that returned it,
-    never against now. Day 1's newest bar is 10 h old at its fetch, so it is
-    not trusted; day 2's fetch fails and keeps that series. Judged against
-    now it would be 34 h old and trusted. Kills: comparing with now; storing
-    the failed day's time with the kept series."""
+@pytest.mark.parametrize("newest_offset,reached", [(0, 1), (16 * 3600 - 13.5 * 3600 + 1, 0)],
+                         ids=["session-start stamp", "off-pattern stamp"])
+def test_r3_the_engine_decides_on_a_session_start_newest_bar(live, monkeypatch,
+                                                             newest_offset, reached):
+    """Code review r3 P3-2, now through the engine: the T bar is the
+    second-newest bar, so only the newest can be the cut. On the series'
+    13:30 pattern it is, and the entry is graded; stamped off it (a fetch
+    time) it is dropped and the entry waits. Kills: the engine passing bars
+    that lose their stamps, or keeping an off-pattern newest bar."""
     pos = _enter(live, "AAA", 40)
-    pos.opened_at = NOW - 20 * 3600 - 28 * DAY             # t_T = NOW − 20 h
-    series = [(NOW - 10 * 3600 - k * DAY, 100.0) for k in range(100)][::-1]
-    stub = Days({1: lambda s: series, 2: lambda s: None})
-    monkeypatch.setattr(core.assets, "fetch_bars", stub)
-    stub.day = 1
+    stamp0 = (NOW // DAY) * DAY + 13.5 * 3600 - DAY       # yesterday 13:30 UTC
+    pos.opened_at = stamp0 - DAY - 28 * DAY + 3600       # t_T: the day before, 14:30
+    series = [(stamp0 - k * DAY, 100.0) for k in range(1, 100)][::-1]
+    series.append((stamp0 + newest_offset, 100.0))
+    monkeypatch.setattr(core.assets, "fetch_bars", lambda s, rng=None: series)
     live._shadow_pass(NOW)
-    assert live.shadow["n_wait_price"] == 1
-    stub.day = 2
-    live._shadow_pass(NOW + DAY)
-    assert live.shadow["n_wait_price"] == 1 and live.shadow["n_reached"] == 0
-    assert live._shadow_bars["AAA"][2] == NOW
+    assert live.shadow["n_reached"] == reached
 
 
 def test_r2_the_memo_shares_nothing_with_the_published_readout(live, monkeypatch):

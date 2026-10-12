@@ -278,12 +278,6 @@ SHADOW_PRICE_GRACE_DAYS = 7       # past t_T with no final close: waiting, then 
 # guessed. It catches a 2:1 split below ~11% daily σ and a 3:2 split below
 # ~7%, on any preset; a ratio band such as [0.5, 2] would let 3:2 through.
 SHADOW_SPLIT_GUARD = 4.5
-# The newest bar of a fetch counts as a finished session only when its stamp
-# is at least this long before that fetch: no session runs longer than a day,
-# and an in-progress bar carries a recent stamp (its session start, or the
-# fetch time itself, code review P1-2). Measured against the fetch, never
-# against now, so a series kept from a failed day does not turn final.
-SHADOW_FINAL_AFTER_S = 86_400.0
 SHADOW_CRYPTO = "Crypto"          # the asset class that trades on all seven days
 DAY_S = 86_400.0
 
@@ -354,36 +348,41 @@ def hc3_z(x: list[float], y: list[float]) -> float | None:
     return z if math.isfinite(z) else None
 
 
+def _shadow_newest_is_a_session_start(series: list[tuple[float, float]]) -> bool:
+    """Whether the newest bar's stamp has the series' session-start pattern:
+    the same time of day as the bar before it. Yahoo stamps a day bar at its
+    session's start (ADR §5), but an in-progress bar can carry the fetch time
+    (EURCHF=X `11:17`, code review P1-2), and a finished newest bar fetched
+    over a weekend is not verified to keep its session start (code review r3
+    P2-1): a last-trade or fetch-time stamp breaks the pattern."""
+    return len(series) >= 2 and (series[-1][0] - series[-2][0]) % DAY_S == 0
+
+
 def _shadow_from_bars(p, series: list[tuple[float, float]] | None, t_due: float,
-                      booked: str | None,
-                      fetched: float | None = None) -> tuple[str, float | None, bool] | None:
+                      booked: str | None) -> tuple[str, float | None, bool] | None:
     """Rules 1–3 for an entry past t_T, from its symbol's daily bars. Returns
     ``(state, exit price, gap)``, or None when the bars cannot decide yet: no
     series, one that does not reach back to the entry, no bar after the entry
-    up to t_T, or no final T bar and cut bar.
+    up to t_T, or no later bar to show the T bar is finished.
 
-    The newest bar is trusted only when it is a finished session: stamped at
-    least :data:`SHADOW_FINAL_AFTER_S` before ``fetched``, the time of the
-    fetch that returned it (without a fetch time, never). Otherwise it may
-    still be trading, and Yahoo may stamp it with the fetch time rather than
-    its session's start (EURCHF=X read `11:17` on 2026-10-12, code review
-    P1-2): its close is never used, and its stamp neither picks the T bar nor
-    serves as the cut. What it still proves is bounded: its session started
-    after ``stamp − 24 h`` (no session is longer, and its stamp is its start
-    or later). When that bound is already past t_T, the T bar is the last
-    trusted bar at or before t_T and is finished, and the cut lies in
-    ``(stamp − 24 h, stamp]`` — enough for rule 1 unless a booked close falls
-    inside that window, which then waits.
+    The newest bar's close is never used: it may still be trading. Its stamp
+    is used — as the cut, the start of the session after the T bar — only
+    when it has the session-start pattern
+    (:func:`_shadow_newest_is_a_session_start`); then it is exact whatever its
+    age. Otherwise the bar is dropped, so a stamp that is a fetch time or a
+    last trade can neither pick the T bar nor serve as the cut (code review
+    P1-2, r3 P2-1). A DST change or a shifted FX stamp breaks the pattern for
+    a day, which costs a day of waiting and nothing else.
 
-    Measured, US-session bars and one fetch a day at 00:01 UTC (code review
-    r2 P2-B; `test_r2_latency_*`): a T on Monday–Thursday is decided 2.4 days
-    after t_T, a Friday T 3.4 days after (round 1: Thursday and Friday 4.4), a
-    holiday after T adds a day — at least 2.6 days inside the 7-day grace
-    before "no price"."""
+    Measured, US-session bars and one fetch a day at 00:01 UTC
+    (`test_r2_latency_*`): a T on Monday–Thursday is decided 1.4 days after
+    t_T, a Friday T 3.4 days after; a holiday can add up to two days (a
+    Thursday T before a Friday holiday: 4.4), and a first pass later than
+    00:01 adds its delay (07:00: 4.7), leaving at least 2.3 days of the 7-day
+    grace before "no price"."""
     series = list(series or [])
-    pending = None                           # the newest bar, if not trusted
-    if series and (fetched is None or series[-1][0] > fetched - SHADOW_FINAL_AFTER_S):
-        pending = series.pop()[0]
+    if series and not _shadow_newest_is_a_session_start(series):
+        series.pop()
     if not series:
         return None
     stamps = [t for t, _c in series]
@@ -394,25 +393,14 @@ def _shadow_from_bars(p, series: list[tuple[float, float]] | None, t_due: float,
     if abs(before - p.entry) > SHADOW_SPLIT_GUARD * daily_sigma:
         return None                          # rescaled (a split?) or wrong: not this price
     i = bisect.bisect_right(stamps, t_due) - 1     # the T bar: never the next one
-    if i < 0 or stamps[i] <= p.opened_at:
+    # A later bar must exist; the newest may be it (its stamp only, never its close).
+    if i < 0 or stamps[i] <= p.opened_at or i + 1 >= len(series):
         return None
-    if i + 1 < len(series):
-        cut_lo = cut_hi = stamps[i + 1]      # a trusted later bar: the cut is its stamp
-    elif pending is not None and pending - SHADOW_FINAL_AFTER_S > t_due:
-        cut_lo, cut_hi = pending - SHADOW_FINAL_AFTER_S, pending
-    else:
-        return None                          # nothing yet shows the T bar is finished
-    if booked is not None:                   # rule 1: closed before the cut?
-        if cut_lo == cut_hi:
-            before_cut = p.closed_at < cut_hi
-        elif p.closed_at <= cut_lo or p.closed_at >= cut_hi:
-            before_cut = p.closed_at <= cut_lo
-        else:
-            return None                      # closed inside the window the cut may lie in
-        if before_cut:
-            if booked in GRADED:
-                return booked.lower(), (p.target if booked == "TARGET" else p.stop), False
-            return "left", None, False
+    t_cut = stamps[i + 1]
+    if booked is not None and p.closed_at < t_cut:
+        if booked in GRADED:
+            return booked.lower(), (p.target if booked == "TARGET" else p.stop), False
+        return "left", None, False
     # A bar's close comes at its session's end. Only bars that *start* after
     # the entry are certainly closed after it: the entry day's own close may
     # predate the entry, and the live polls watched that session anyway.
@@ -435,7 +423,7 @@ def shadow_decided(result: dict) -> dict[str, dict]:
             if e["state"] in SHADOW_GRADED or e["state"] == "left"}
 
 
-def _shadow_entry(p, series, now: float, fetched: float | None = None) -> dict:
+def _shadow_entry(p, series, now: float) -> dict:
     """One protocol entry's shadow outcome. Reads the position; never writes it."""
     t_due = shadow_due(p)
     booked = p.outcome if p.closed_at is not None else None
@@ -450,7 +438,7 @@ def _shadow_entry(p, series, now: float, fetched: float | None = None) -> dict:
             state = booked.lower()
             exit_price = p.target if booked == "TARGET" else p.stop
     elif now >= t_due:
-        got = _shadow_from_bars(p, series, t_due, booked, fetched)
+        got = _shadow_from_bars(p, series, t_due, booked)
         if got is not None:
             state, exit_price, gap = got
         elif now >= t_due + SHADOW_PRICE_GRACE_DAYS * DAY_S:
@@ -534,8 +522,7 @@ def _split(rows: list[dict]) -> dict:
 
 
 def shadow_time_stop(open, closed, bars, now: float,
-                     decided: dict[str, dict] | None = None,
-                     fetched_at: dict[str, float] | None = None) -> dict:
+                     decided: dict[str, dict] | None = None) -> dict:
     """The time-stop shadow of the score grade, for every protocol entry.
 
     ``open`` and ``closed`` are :class:`sonar.portfolio.Position` lists (the
@@ -551,10 +538,6 @@ def shadow_time_stop(open, closed, bars, now: float,
     still protocol and filled is looked up, so the book stays the population;
     its ``booked`` outcome is refreshed from the position, so ``ic_closed``
     reads the book as it is now (code review r2 P3-1).
-
-    ``fetched_at`` maps a symbol to the time its bars were fetched; with it,
-    a newest bar old enough to be a finished session can be used (see
-    :func:`_shadow_from_bars`). Without it the newest bar never is.
     """
     from .research import stats as _stats
 
@@ -584,8 +567,7 @@ def shadow_time_stop(open, closed, bars, now: float,
             kept["booked"] = p.outcome if p.closed_at is not None else None
             entries.append(kept)
             continue
-        entries.append(_shadow_entry(p, series.get(p.symbol), now,
-                                     (fetched_at or {}).get(p.symbol)))
+        entries.append(_shadow_entry(p, series.get(p.symbol), now))
     entries.sort(key=lambda e: (e["opened_at"], e["id"]))
 
     graded = [e for e in entries if e["state"] in SHADOW_GRADED]

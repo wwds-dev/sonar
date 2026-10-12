@@ -238,8 +238,7 @@ class Live:
         self.shadow: dict | str | None = None
         # symbol -> (UTC day, bars or None): one request per symbol per day,
         # a failed one included. In memory only, like the shadow itself.
-        # symbol -> (UTC day, bars or None, when those bars were fetched).
-        self._shadow_bars: dict[str, tuple[str, list | None, float | None]] = {}
+        self._shadow_bars: dict[str, tuple[str, list | None]] = {}
         # position id -> its decided shadow outcome (see _shadow_pass).
         self._shadow_decided: dict[str, dict] = {}
         self._seed_tries = 0        # see _seed_account_history
@@ -583,8 +582,7 @@ class Live:
                 done = [replace(p) for p in book.closed]
             decided = dict(self._shadow_decided)
             bars = self._shadow_fetch([p for p in held + done if p.id not in decided], now)
-            fetched = {s: f for s, (_d, b, f) in self._shadow_bars.items() if b}
-            result = calibration.shadow_time_stop(held, done, bars, now, decided, fetched)
+            result = calibration.shadow_time_stop(held, done, bars, now, decided)
             # Deep copies: the published readout and the memo share nothing.
             self._shadow_decided.update(
                 {k: copy.deepcopy(v) for k, v in calibration.shadow_decided(result).items()
@@ -604,9 +602,7 @@ class Live:
         one try a day rather than one a scan — over a range that reaches back to
         the symbol's oldest such entry, for the gap check. A failed request
         keeps the series already held: one bad day must not take away closes
-        that were good yesterday (code review P1-1), together with the time
-        those closes were fetched, which decides whether their newest bar is a
-        finished session (`calibration.SHADOW_FINAL_AFTER_S`)."""
+        that were good yesterday (code review P1-1)."""
         oldest: dict[str, float] = {}
         for p in positions:
             if calibration.shadow_needs_bars(p, now):
@@ -626,13 +622,9 @@ class Live:
             with ThreadPoolExecutor(max_workers=assets.FETCH_WORKERS) as ex:
                 got = dict(zip(due, ex.map(get, due), strict=True))
             for s, b in got.items():
-                if b:
-                    cache[s] = (day, b, now)
-                else:                            # keep yesterday's closes and their fetch time
-                    _old_day, old, at = cache.get(s, (None, None, None))
-                    cache[s] = (day, old, at)
+                cache[s] = (day, b or cache.get(s, (None, None))[1])
         self._shadow_bars = cache
-        return {s: b for s, (_day, b, _at) in cache.items() if b}
+        return {s: b for s, (_day, b) in cache.items() if b}
 
     @staticmethod
     def _shadow_range(age_s: float) -> str:

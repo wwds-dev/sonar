@@ -305,18 +305,16 @@ def test_mv_b1_b2_a_restamped_in_progress_bar_never_flips_the_outcome():
     """Model-validator P1-2, s1 B1/B2 (t_T = day 28 15:00). B1: the day-28
     bar, still trading, stamped at fetch time 16:00. Taken at face value it
     made day 27's close (99.0, before t_T) final: R −0.50. B2: next day it is
-    restamped 13:30 and graded at 101.0: R +0.50 — a flip. Now B1 waits, and
-    the outcome, when it comes, is day 28's close. (Since fix loop 2 it comes
-    at B2: the untrusted day-29 bar still proves a session began after
-    day 28 16:00, past t_T, so day 28's bar is finished; its own close and
-    stamp are never used.)"""
+    restamped 13:30 and graded at 101.0: R +0.50 — a flip. Now B1 and B2 wait
+    (each newest bar is off the 13:30 pattern, so it is dropped), and the
+    outcome, when it comes, is day 28's close."""
     base = daily(-5, 27, close=lambda d: 99.0 if d == 27 else 100.0)
     b1 = base + [(28 * DAY + 16 * 3600, 101.5)]
     _r, e = one(sp(), b1, now=28 * DAY + 16 * 3600 + 60)
     assert e["state"] == "wait_price"
     b2 = base + [(28 * DAY + STAMP_H, 101.0), (29 * DAY + 16 * 3600, 100.2)]
     _r, e = one(sp(), b2, now=29 * DAY + 16 * 3600 + 60)
-    assert e["state"] == "time" and e["exit"] == 101.0
+    assert e["state"] == "wait_price"
     b3 = base + [(28 * DAY + STAMP_H, 101.0), (29 * DAY + STAMP_H, 100.2),
                  (30 * DAY + 16 * 3600, 100.4)]
     _r, e = one(sp(), b3, now=30 * DAY + 16 * 3600 + 60)
@@ -339,7 +337,9 @@ def test_v6_the_fx_sunday_entry_waits_for_mondays_close():
     t_T falls inside Monday's session, which Yahoo stamps Sunday 23:00. Read
     at Monday 00:05 the newest bar is Monday's, stamped 00:05; the old code
     took Friday's close as final. It must wait, then grade at Monday's close
-    — never Friday's."""
+    — never Friday's. The live row is off the 23:00 pattern and is dropped
+    (in production it is also stamped after `now`, code review r3 P3-1), so
+    the entry is graded at Wednesday's read."""
     sun = 3 * DAY                                           # a Sunday, at 00:00
     fx = sp("fx", symbol="EURCHF=X", entry=1.0, target=1.03, stop=0.98,
             opened_at=sun + 23.5 * 3600)
@@ -359,10 +359,10 @@ def test_v6_the_fx_sunday_entry_waits_for_mondays_close():
     bars = sessions(monday - 1) + [(read, 1.002)]            # Friday's close is 1.001
     e = calibration.shadow_time_stop([fx], [], {"EURCHF=X": bars}, read)["entries"][0]
     assert e["state"] == "wait_price" and e["exit"] is None
-    read = (monday + 1) * DAY + 5 * 60                       # Tuesday 00:05
-    bars = sessions(monday) + [(read, 1.002)]                # the live row starts after t_T
+    read = (monday + 1) * DAY + 5 * 60                       # Tuesday 00:05: Monday's bar is
+    bars = sessions(monday) + [(read, 1.002)]                # the newest kept, nothing after it
     e = calibration.shadow_time_stop([fx], [], {"EURCHF=X": bars}, read)["entries"][0]
-    assert e["state"] == "time" and e["exit"] == 1.004
+    assert e["state"] == "wait_price"
     read = (monday + 2) * DAY + 5 * 60                       # Wednesday 00:05
     bars = sessions(monday + 1) + [(read, 1.002)]
     e = calibration.shadow_time_stop([fx], [], {"EURCHF=X": bars}, read)["entries"][0]
@@ -392,8 +392,8 @@ def test_a_rescaled_history_is_not_this_entrys_price(ratio):
 
 
 def test_an_ordinary_gap_before_entry_is_still_this_entrys_price():
-    """The guard is two stop distances: a close 1.5 stop distances from the
-    entry (3 points at a stop 2 away) still grades."""
+    """The guard is 4.5 daily σ — 4.02 points on the week preset at a stop 2
+    away: a close 3 points from the entry still grades, 4.1 does not."""
     bars = daily(-5, 40, close=lambda d: 97.0 if d == 0 else 100.0)
     _r, e = one(sp(), bars)
     assert e["state"] == "time"
@@ -455,7 +455,6 @@ def test_the_split_guard_is_pinned():
     """In daily σ since fix loop 2 (code review r2 P2-A): 4.5 daily σ is the
     week preset's former 2 stop distances (2·√5 ≈ 4.47)."""
     assert calibration.SHADOW_SPLIT_GUARD == 4.5
-    assert calibration.SHADOW_FINAL_AFTER_S == 86_400.0
 
 
 @pytest.mark.parametrize("preset", ["intraday", "week", "month", "quarter", "year"])
@@ -481,40 +480,80 @@ def test_r2_the_split_guard_is_in_daily_sigma_on_every_preset(preset, ratio, usa
     assert state == ("time" if usable else "wait_price"), (preset, ratio, state)
 
 
-def test_r2_a_finished_newest_bar_is_trusted_against_its_fetch_time():
-    """Code review r2 P2-B, option 1: the newest bar counts as a finished
-    session when stamped at least 24 h before the fetch that returned it.
-    Day 29's bar (13:30) is the newest; fetched on day 30 at 13:31 it is
-    finished, so day 28's bar is graded; fetched 23 h after its stamp, or with
-    no fetch time, it is not trusted — though it still shows a session began
-    after day 28's (see the bounded-cut test). Kills: comparing with now."""
-    bars = daily(-5, 29, close=lambda d: 101.0 if d == 28 else 100.0)
-    shut = closed_as(sp(), "TARGET", 29 * DAY + STAMP_H + 3600)   # after day 29's start
-    fetched = {"AAA": 30 * DAY + STAMP_H + 60}
-    r = calibration.shadow_time_stop([], [shut], {"AAA": bars}, 31 * DAY, fetched_at=fetched)
-    assert r["entries"][0]["state"] == "time"       # cut = day 29 13:30, exact
-    young = {"AAA": 29 * DAY + STAMP_H + 23 * 3600}
-    for f in (young, None):
-        r = calibration.shadow_time_stop([], [shut], {"AAA": bars}, 31 * DAY, fetched_at=f)
-        assert r["entries"][0]["state"] == "wait_price"   # the close falls in the cut window
-
-
-@pytest.mark.parametrize("closed_h,state", [(-25, "target"), (-1, "wait_price"),
-                                             (0, "time"), (5, "time")])
-def test_r2_an_untrusted_newest_bar_bounds_the_cut(closed_h, state):
-    """The untrusted newest bar (stamped day 30 13:30) began after day 29
-    13:30 — past t_T — so day 28's bar is finished and the cut lies in
-    (day 29 13:30, day 30 13:30]. A booked TARGET before that window keeps
-    rule 1; one inside it waits; one at or after its end is graded at T.
-    Kills: taking the untrusted stamp as the cut."""
-    newest = 30 * DAY + STAMP_H
-    bars = daily(-5, 28, close=lambda d: 101.0 if d == 28 else 100.0) + [(newest, 100.3)]
-    shut = closed_as(sp(), "TARGET", newest + closed_h * 3600)
-    r = calibration.shadow_time_stop([], [shut], {"AAA": bars}, newest + 5 * 3600 + 60)
-    e = r["entries"][0]
+@pytest.mark.parametrize("offset,state", [(0, "time"), (1, "wait_price"), (-1, "wait_price")])
+def test_r3_the_newest_stamp_is_a_cut_only_on_the_session_pattern(offset, state):
+    """Code review r3 P2-1, fix 2: the newest bar's stamp serves as the cut
+    only when its time of day equals the bar before it — exactly, so one
+    second off drops it. Day 29's bar (the newest) decides day 28's at
+    13:30:00; at 13:30:01 or 13:29:59 it is dropped and the entry waits.
+    Its close (100.3) is never used. Kills: `% DAY == 0` loosened."""
+    bars = daily(-5, 28, close=lambda d: 101.0 if d == 28 else 100.0)
+    bars.append((29 * DAY + STAMP_H + offset, 100.3))
+    _r, e = one(sp(), bars, now=29 * DAY + 20 * 3600)
     assert e["state"] == state
     if state == "time":
         assert e["exit"] == 101.0
+
+
+def _fri_week(last_day, fri_stamp=None):
+    """US bars to ``last_day``. Day 0 is Thursday 1 January 1970, so day 28
+    is a Thursday (close 99.5) and day 29 a Friday (close 100.5).
+    ``fri_stamp`` overrides Friday's stamp while it is the newest bar (a
+    last-trade or fetch-time stamp)."""
+    bars = _us_bars(-10, last_day, close=lambda d: {28: 99.5, 29: 100.5}.get(d, 100.0))
+    if fri_stamp is not None and bars[-1][0] == 29 * DAY + STAMP_H:
+        bars[-1] = (fri_stamp, bars[-1][1])
+    return bars
+
+
+@pytest.mark.parametrize("fri_stamp", [29 * DAY + 20 * 3600, 31 * DAY + 60],
+                         ids=["last trade 20:00", "fetch time Sunday 00:01"])
+def test_r3_a_friday_t_is_never_graded_at_thursdays_close(fri_stamp):
+    """Code review r3 P2-1, reproduced: a Friday t_T (15:00), fetched on
+    Sunday at 00:01 when Friday's finished bar is the newest. If that bar
+    carries a last-trade or fetch-time stamp, fix loop 2 trusted it as the
+    cut and graded the entry at Thursday's close (99.5, before t_T), then
+    flipped to Friday's (100.5) on Tuesday. Now it waits, then gets 100.5.
+    Kills: trusting a newest stamp off the session pattern."""
+    p = sp(day=1.0)                                     # opened Friday: t_T Friday day 29
+    assert time.gmtime(p.opened_at + 28 * DAY).tm_wday == 4
+    sunday = 31 * DAY + 60
+    r = calibration.shadow_time_stop([p], [], {"AAA": _fri_week(29, fri_stamp)}, sunday)
+    assert r["entries"][0]["state"] == "wait_price"
+    tuesday = 33 * DAY + 60                             # Friday's bar restamped, Monday's newest
+    e = calibration.shadow_time_stop([p], [], {"AAA": _fri_week(32)}, tuesday)["entries"][0]
+    assert e["state"] == "time" and e["exit"] == 100.5
+
+
+def test_r3_a_last_trade_stamp_never_moves_the_cut_past_a_booked_close():
+    """The reviewer's second case: a Thursday t_T, TARGET booked on Friday
+    at 16:00 (after Friday's 13:30 start, so after the cut). With Friday's
+    bar stamped 20:00 (last trade) taken as the cut, the close fell before it
+    and was graded TARGET; on Tuesday, TIME at 99.5 — a flip. Now Sunday
+    waits and Tuesday gives TIME at Thursday's close, the right answer."""
+    p = closed_as(sp(day=0.0), "TARGET", 29 * DAY + 16 * 3600)
+    sunday = 31 * DAY + 60
+    e = calibration.shadow_time_stop([], [p], {"AAA": _fri_week(29, 29 * DAY + 20 * 3600)},
+                                     sunday)["entries"][0]
+    assert e["state"] == "wait_price"
+    e = calibration.shadow_time_stop([], [p], {"AAA": _fri_week(32)}, 33 * DAY + 60)["entries"][0]
+    assert e["state"] == "time" and e["exit"] == 99.5
+
+
+def test_r3_a_dst_shift_costs_a_day_and_nothing_else():
+    """A clock change moves the US session start from 13:30 to 14:30 UTC.
+    The first shifted bar breaks the pattern and is dropped for a day; the
+    next shifted bar restores it. Same outcome, one day later."""
+    def bars(last):
+        return [(d * DAY + (STAMP_H if d < 29 else STAMP_H + 3600),
+                 101.0 if d == 28 else 100.0) for d in range(-5, last + 1)]
+    plain = daily(-5, 29, close=lambda d: 101.0 if d == 28 else 100.0)
+    _r, e = one(sp(), plain, now=30 * DAY + 60)
+    assert e["state"] == "time"                         # no shift: decided on day 30
+    _r, e = one(sp(), bars(29), now=30 * DAY + 60)
+    assert e["state"] == "wait_price"                   # shifted: one more day
+    _r, e = one(sp(), bars(30), now=31 * DAY + 60)
+    assert e["state"] == "time" and e["exit"] == 101.0
 
 
 def _us_bars(first, last, holidays=(), close=lambda d: 100.0):
@@ -524,45 +563,45 @@ def _us_bars(first, last, holidays=(), close=lambda d: 100.0):
             if time.gmtime(d * DAY).tm_wday < 5 and d not in holidays]
 
 
-def _latency(entry_day, holidays=(), trust=True):
-    """Days from t_T to the first daily fetch (00:01 UTC) that decides the
-    entry, each fetch seeing every bar stamped before it."""
+def _latency(entry_day, holidays=(), first_pass_s=60):
+    """Days from t_T to the first daily fetch (at ``first_pass_s`` after
+    00:00 UTC) that decides the entry, each fetch seeing every bar stamped
+    before it."""
     p = sp(day=float(entry_day))
     t_due = calibration.shadow_due(p)
     for k in range(entry_day + 28, entry_day + 40):
-        at = k * DAY + 60
+        at = k * DAY + first_pass_s
         bars = [b for b in _us_bars(entry_day - 10, k, holidays) if b[0] < at]
-        r = calibration.shadow_time_stop([p], [], {"AAA": bars}, at,
-                                         fetched_at={"AAA": at} if trust else None)
+        r = calibration.shadow_time_stop([p], [], {"AAA": bars}, at)
         if r["entries"][0]["state"] == "time":
             return (at - t_due) / DAY
     return math.inf
 
 
-def test_r2_latency_a_thursday_t_is_decided_on_sunday_not_tuesday():
-    """Code review r2 P2-B, measured: t_T on a Thursday (15:00). Friday's bar
-    is the newest all weekend; trusted once 24 h older than the fetch, it
-    decides the entry at Sunday's 00:01 fetch, 2.4 days on. Without the
-    fetch time it waits for Tuesday (4.4), as in round 1. Kills: dropping the
-    fetch-time trust."""
+def test_r2_latency_monday_to_thursday():
+    """Code review r2 P2-B / r3 P3-4, measured: a T on Monday–Thursday
+    (15:00) is decided at the 00:01 fetch two days on — the next session's
+    bar, the newest on the session pattern, is the cut — 1.4 days after t_T
+    (round 1: up to 4.4)."""
     assert time.gmtime(sp(day=0.0).opened_at + 28 * DAY).tm_wday == 3
-    assert _latency(0) == pytest.approx(2.38, abs=0.01)
-    assert _latency(0, trust=False) == pytest.approx(4.38, abs=0.01)
-    for monday_to_wednesday in (4, 5, 6):
-        assert _latency(monday_to_wednesday) == pytest.approx(2.38, abs=0.01)
+    for monday_to_thursday in (4, 5, 6, 0):
+        assert _latency(monday_to_thursday) == pytest.approx(1.38, abs=0.01)
 
 
-@pytest.mark.parametrize("holidays,want", [((), 3.38), ((32,), 4.38)],
-                         ids=["Friday", "Friday, Monday holiday"])
-def test_r2_latency_a_friday_t_keeps_slack_before_the_grace(holidays, want):
-    """A Friday t_T: Monday's bar, untrusted at Tuesday's fetch, already shows
-    that Friday's session is over, so the entry is decided on Tuesday, 3.4
-    days on (round 1: Wednesday, 4.4). A Monday holiday adds a day. Both
-    leave at least 2.6 days before the 7-day grace makes it "no price"."""
-    assert time.gmtime(sp(day=1.0).opened_at + 28 * DAY).tm_wday == 4
-    got = _latency(1, holidays)
+@pytest.mark.parametrize("entry_day,holidays,first_pass_s,want", [
+    (1, (), 60, 3.38), (1, (32,), 60, 4.38), (0, (29,), 60, 4.38),
+    (0, (29,), 7 * 3600, 4.67)],
+    ids=["Friday T", "Friday T, Monday holiday", "Thursday T, Friday holiday",
+         "Thursday T, Friday holiday, first pass 07:00"])
+def test_r2_latency_weekends_and_holidays_stay_inside_the_grace(entry_day, holidays,
+                                                                first_pass_s, want):
+    """A Friday T waits for Monday's bar: 3.4 days. A holiday can stretch a
+    T to 4.4 days, and a first pass later than 00:01 adds its delay (07:00:
+    4.7). The worst leaves 2.3 days before the 7-day grace makes it "no
+    price" (code review r3 P3-4)."""
+    got = _latency(entry_day, holidays, first_pass_s)
     assert got == pytest.approx(want, abs=0.01)
-    assert calibration.SHADOW_PRICE_GRACE_DAYS - got >= 2.6
+    assert calibration.SHADOW_PRICE_GRACE_DAYS - got >= 2.3
 
 
 def test_r2_a_memo_entry_takes_the_books_outcome_as_it_is_now():
@@ -1129,6 +1168,19 @@ V12_PRECISION_CHUNKS = 10
 _v12_rates: dict[int, float] = {}
 
 
+def _v12_all_chunks_or_skip(done: dict, n: int, chunk_test: str) -> None:
+    """A mean test only averages what its chunk tests computed in this
+    session (QA r2 P2-A: alone, recomputing them all ran into the 60 s hang
+    guard). None ran: skip, saying why. Some but not all ran — a `-k` or
+    `--lf` selection — : fail, because a partial mean is not the bar
+    (code review r3 P3-5)."""
+    if not done:
+        pytest.skip(f"averages the {n} {chunk_test} runs; run it with them "
+                    "(./run-tests.sh tests/ -m slow)")
+    assert len(done) == n, (f"only {len(done)} of the {n} {chunk_test} runs ran in this "
+                            "session; run them all (./run-tests.sh tests/ -m slow)")
+
+
 def _v12_chunk(k: int) -> float:
     if k not in _v12_rates:
         _v12_rates[k] = _v12_null(V12_BOOKS, 2_000 + k,
@@ -1153,14 +1205,10 @@ def test_v12_slow_the_design_size_to_a_fifth_of_a_point():
     5% comes from look 1, where the HC3 z has slightly heavy tails at n = 45;
     the owner accepted it on 2026-10-12 (spec Build note 15). The bar is the
     measured value ± 3 SE (QA P1-1), so a regression either way shows; the
-    spec's 5 ± 1.5 pt test is the 2,000-book one above. Run with the chunks
-    (``-m slow``): alone, it computes them itself and takes about a minute."""
-    if len(_v12_rates) < V12_PRECISION_CHUNKS:
-        # QA r2 P2-A: alone, recomputing the ten chunks would take the 60 s
-        # hang guard down with it. The chunks are the computation; this only
-        # averages what they produced.
-        pytest.skip("averages the ten test_v12_slow_size_chunk runs; run it with them "
-                    "(./run-tests.sh tests/ -m slow)")
+    spec's 5 ± 1.5 pt test is the 2,000-book one above. It averages the
+    chunks run in this session: run it with them (``-m slow``); alone it
+    skips, and with only some of them it fails."""
+    _v12_all_chunks_or_skip(_v12_rates, V12_PRECISION_CHUNKS, "test_v12_slow_size_chunk")
     rates = [_v12_rates[k] for k in range(V12_PRECISION_CHUNKS)]
     size = sum(rates) / len(rates)
     assert 0.057 <= size <= 0.067, size
@@ -1261,11 +1309,23 @@ def test_v12_slow_e2e_the_whole_pipeline_holds_the_measured_size():
     Monte-Carlo SE (±1.1 pt) of the 6.1% measured on 40,000. Kills what the
     dict-level V-12 cannot see: a rule in `shadow_time_stop` that bends the
     null (the validator's run gave 6.13% end to end)."""
-    if len(_e2e_hits) < E2E_CHUNKS:
-        # QA r2 P2-A, as for the precision mean above.
-        pytest.skip("averages the eight test_v12_slow_e2e_chunk runs; run it with them "
-                    "(./run-tests.sh tests/ -m slow)")
+    _v12_all_chunks_or_skip(_e2e_hits, E2E_CHUNKS, "test_v12_slow_e2e_chunk")
     hits = sum(_e2e_hits[k] for k in range(E2E_CHUNKS))
     n = E2E_CHUNKS * E2E_BOOKS
     se = math.sqrt(E2E_MEASURED * (1 - E2E_MEASURED) / n)
     assert abs(hits / n - E2E_MEASURED) <= 3 * se, hits / n
+
+
+def test_r3_a_mean_test_skips_with_no_chunks_and_fails_with_some():
+    """Code review r3 P3-5: a partial selection must not pass quietly."""
+    with pytest.raises(pytest.skip.Exception):
+        _v12_all_chunks_or_skip({}, 3, "chunk")
+    try:
+        _v12_all_chunks_or_skip({0: 1, 1: 1}, 3, "chunk")
+    except pytest.skip.Exception:
+        pytest.fail("a partial chunk selection skipped instead of failing")
+    except AssertionError as exc:
+        assert "only 2 of the 3" in str(exc)
+    else:
+        pytest.fail("a partial chunk selection passed")
+    _v12_all_chunks_or_skip({0: 1, 1: 1, 2: 1}, 3, "chunk")

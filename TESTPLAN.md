@@ -17,7 +17,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **2,385 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **2,391 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -304,6 +304,7 @@ with another rather than with a value written here. `curl -s
 | 11.20 | | Leave the agent off for more than a day, then open the window | The block's last line says *Not updated for N hours: the agent may be stopped*. Restart the agent: after its first scan the line says *Worked out …* again. |
 | 11.21 | ⚠ | On or after the first look's date (about 2026-11-06), screenshot the block on both pages | Each of the first 45 protocol entries has an outcome (target, stop or time) or a counted exclusion: the sentence names look 1 with its z against ±2.315, or says which entries still wait for a closing price. This is the spec's live success measure. |
 | 11.22 | | Read the first row of the second grade on both pages, and compare it with the oldest and newest protocol entries on **My trades** | *the N with a result opened {first} to {last}*: N and the dates of the oldest and newest graded entry; before any is graded, *entries opened {first} to {last} (none has a result yet)* over all entries. A year only when it is not this one. The same on both pages; Expert reads *N graded: opened … to …* / *… (none graded yet)*. Absent when there are no protocol entries. |
+| 11.23 | ⚠ | On a Saturday or Sunday after 00:00 UTC, run `.venv/bin/python -c "from sonar import assets; [print(s, assets.fetch_bars(s, '5d')[-3:]) for s in ('^GSPC', 'META', 'EURCHF=X', 'TRX-USD')]"` (market data only, no book) | Note each symbol's newest stamps (UTC). If the finished Friday bar keeps its session-start time (13:30 for US, 23:00 the evening before for FX, 00:00 for crypto), record that in ADR 0002 §5. If it carries a last-trade or fetch time, record that too; the shadow drops such a bar and waits a day (spec Build note 16), so either answer is safe. |
 
 ---
 
