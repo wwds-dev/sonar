@@ -11,6 +11,7 @@ someone with no finance background should be able to read it. A glossary that
 quietly loses half its entries still looks like a glossary.
 """
 
+import math
 import re
 from pathlib import Path
 
@@ -144,10 +145,13 @@ def test_the_reading_section_covers(idea):
 
 
 def test_it_states_how_much_data_a_number_needs():
-    """A hit rate on twenty trials carries a +/-21.5 point band. Without that,
-    every small run looks like a finding."""
+    """A hit rate on twenty trials carries a +/-21.9 point band — the shipped
+    rule's two binomial standard errors at 40%, the narrowest bar the Lab can
+    draw. Without that, every small run looks like a finding."""
     section = HTML[HTML.index('id="reading"'):HTML.index('id="alerts"')]
-    assert "21.5" in section and "2,000" in section
+    band = 2 * math.sqrt(0.4 * 0.6 / 20) * 100
+    assert f"<td>20</td><td class=\"down\">±{band:.1f} points</td>" in section
+    assert "2,000" in section
 
 
 def test_it_defines_what_working_well_would_look_like():

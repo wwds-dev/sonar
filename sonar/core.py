@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 
 from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
-               institutions, llm, macro, model, news, paths, risk)
+               institutions, llm, macro, model, news, paths, risk, version)
 from .engine import Engine
 from .research import hourlyvol
 from . import calibration, events, portfolio, scoring
@@ -88,6 +88,10 @@ class Live:
                  horizon_name: str | None = None) -> None:
         self.lock = threading.Lock()
         self._rescan_lock = threading.Lock()
+        # Which code this process loaded, read once at start. The agent runs
+        # the checkout's working tree, so a restart can load edits nobody
+        # committed; /api/health carries this so that is visible.
+        self.build = version.provenance()
         # Set by stop() to end run()'s loop. Qt aborts the whole process if a
         # QThread is still running when it is destroyed, so the loop this drives
         # must be able to finish on request — see ui/app.py's shutdown().
@@ -121,6 +125,16 @@ class Live:
         # it and forwards instead: one writer, whoever holds the lock.
         self.following: str | None = None
         self._follow_failures = 0
+        # Bumped under self.lock when a protocol or knob change is handed to
+        # the holder and again when the holder has answered; _in_flight
+        # counts the changes between the two. A mirror applies the holder's
+        # protocol, risk and horizon only if none was in flight when its
+        # fetch began and the generation has not moved since: an answer
+        # fetched before a change, or before the holder had taken it, is
+        # older than what the window now shows (QA r3: the switch flipped
+        # back on until the next slow mirror). See _mirror_mark.
+        self._local_gen = 0
+        self._in_flight = 0
         # Whether the engine being followed can run an LLM read, as its own
         # /api/config says. The read runs there, so this process's SDK and
         # key are beside the point while following.
@@ -275,8 +289,12 @@ class Live:
                 self.assets = ap
                 if fired:
                     self.alerts = self.alert_engine.recent()
-        except Exception:
-            pass
+        except Exception as exc:
+            # Kept on the board so the Screener can say why it is empty rather
+            # than "fetching" forever; the next good scan replaces the dict.
+            with self.lock:
+                self.assets = {**self.assets,
+                               "error": " ".join(f"{type(exc).__name__}: {exc}".split())}
         self._scan_at = time.time()
 
     # -- the calibration protocol ------------------------------------------ #
@@ -305,8 +323,14 @@ class Live:
         closing them early would censor exactly the outcomes being measured."""
         url = self.following                    # read once: a takeover clears it
         if url:
-            self.protocol_on = bool(on)          # what the window shows now
-            self._forward(url, "/api/config", {"protocol": bool(on)})
+            with self.lock:
+                self._local_change(+1)           # on its way to the holder
+                self.protocol_on = bool(on)      # what the window shows now
+            try:
+                self._forward(url, "/api/config", {"protocol": bool(on)})
+            finally:
+                with self.lock:
+                    self._local_change(-1)       # the holder has answered
             return
         if self._waiting_without_a_holder_to_follow():
             return
@@ -593,21 +617,33 @@ class Live:
         if self.following:
             url = self.following
             try:
-                self._post(url, "/api/config", {"risk": risk_name, "horizon": horizon_name,
-                                                "protocol": protocol})
+                with self.lock:
+                    self._local_change(+1)       # see _mirror_mark
+                try:
+                    self._post(url, "/api/config", {"risk": risk_name,
+                                                    "horizon": horizon_name,
+                                                    "protocol": protocol})
+                finally:
+                    with self.lock:
+                        self._local_change(-1)
                 self._mirror_config(url)
                 self._mirror_book(url)
                 board = self._fetch(url, "/api/assets")
                 if isinstance(board, dict):
                     with self.lock:
                         self.assets = board
-            except Exception:
-                pass                      # the next mirror round shows what took
+            except Exception as exc:
+                # The next mirror round shows what took; the caller is told
+                # now, so the window can say the setting may not have applied.
+                return {**self.config(), "error":
+                        f"the engine at {url.split('//')[-1]} did not confirm it "
+                        f"({type(exc).__name__}: {exc})"}
             return self.config()
         if self._waiting_without_a_holder_to_follow():
             # A risk change saves the state file and the rescan marks the book;
             # neither is this window's to write while another engine drives.
-            return self.config()
+            return {**self.config(), "refused":
+                    "this window is read-only while another SONAR runs the engine"}
         changed = False
         if risk_name and risk.get(risk_name).name != self.risk.name:
             self.risk = risk.get(risk_name)
@@ -855,7 +891,14 @@ class Live:
         except Exception as exc:
             self._poll_failed(exc)
             with self.lock:
-                self.snapshot = {"status": "error", "detail": str(exc)}
+                # The bitcoin feed failing says nothing about the rest: the
+                # horizon and the macro regime ride along, so Big picture can
+                # still draw (closing UX review C-1).
+                snap = {"status": "error", "detail": str(exc),
+                        "horizon": self.horizon.as_dict()}
+                if self.horizon.macro and self._macro_snap is not None:
+                    snap["macro"] = self._macro_snap.as_dict()
+                self.snapshot = snap
             return
         if self._poll_fresh:
             self.last_poll_ok_at = time.time()
@@ -915,7 +958,7 @@ class Live:
                                  f"{int(run.get('last_settled_age_s', 0) // 3600)} h"})
         return {"ok": not problems, "mode": mode, "problems": problems,
                 "last_poll_age_s": age, "last_error": self.last_poll_error,
-                "run": run}
+                "run": run, "build": self.build}
 
     def stop(self) -> None:
         """Ask :meth:`run` to finish. Safe to call from another thread, and
@@ -1059,7 +1102,26 @@ class Live:
                         "detail": f"{self.conflict} It is not answering at "
                                   f"{url} ({type(exc).__name__}: {exc})."}
 
+    def _local_change(self, step: int) -> None:
+        """A protocol or knob change starts (+1) or ends (-1) its trip to the
+        holder. Call under self.lock."""
+        self._local_gen += 1
+        self._in_flight += step
+
+    def _mirror_mark(self) -> int | None:
+        """Taken before a mirror fetch: the generation, or None if a local
+        change is in flight — an answer fetched then may predate it."""
+        with self.lock:
+            return None if self._in_flight else self._local_gen
+
+    def _settled_since(self, mark: int | None) -> bool:
+        """Whether a mirror fetched at ``mark`` may apply the holder's
+        protocol and knobs: nothing was in flight then and no local change
+        has been made since. Call under self.lock."""
+        return mark is not None and mark == self._local_gen
+
     def _mirror_book(self, url: str) -> None:
+        gen = self._mirror_mark()               # before the fetch
         book = self._fetch(url, "/api/book")
         if not isinstance(book, dict):
             return
@@ -1068,21 +1130,24 @@ class Live:
                 self.positions = book["positions"]
             if isinstance(book.get("calibration"), dict):
                 self.calibration = book["calibration"]
-            if "protocol_on" in book:
+            if "protocol_on" in book and self._settled_since(gen):
                 self.protocol_on = bool(book["protocol_on"])
 
     def _mirror_config(self, url: str) -> None:
+        gen = self._mirror_mark()               # before the fetch
         cfg = self._fetch(url, "/api/config")
         if not isinstance(cfg, dict):
             return
-        name = (cfg.get("risk") or {}).get("name")
-        if name and name != self.risk.name:
-            self.risk = risk.get(name)
-        name = (cfg.get("horizon") or {}).get("name")
-        if name and name != self.horizon.name:
-            self.horizon = horizon.get(name)
-        if "on" in (cfg.get("protocol") or {}):
-            self.protocol_on = bool(cfg["protocol"]["on"])
+        with self.lock:
+            if self._settled_since(gen):
+                name = (cfg.get("risk") or {}).get("name")
+                if name and name != self.risk.name:
+                    self.risk = risk.get(name)
+                name = (cfg.get("horizon") or {}).get("name")
+                if name and name != self.horizon.name:
+                    self.horizon = horizon.get(name)
+                if "on" in (cfg.get("protocol") or {}):
+                    self.protocol_on = bool(cfg["protocol"]["on"])
         llm_cfg = cfg.get("llm")
         if isinstance(llm_cfg, dict) and "available" in llm_cfg:
             self._holder_llm = (bool(llm_cfg["available"]),

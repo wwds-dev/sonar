@@ -63,6 +63,8 @@ from .worker import (BacktestThread, ConfigThread, PollThread, PropThread,
                      ReadThread, SportsMeasureThread)
 
 REFRESH_MS = 1000
+#: The status line's hold clock (a seam for tests; monotonic, not wall time).
+_now = time.monotonic
 # Opening size, before the screen gets a say. See MainWindow._fit_to_screen.
 # Wider than a 13" laptop on purpose: on a screen that has the room, the rail
 # opens with its names showing; _fit_to_screen clamps it on one that does not,
@@ -446,7 +448,7 @@ ATTRIBUTION_HEADS = {
 }
 ATTRIBUTION_VERDICTS = {
     "KEEP": "keep", "WEAK": "weak", "DROP": "drop", "INVERTED": "backwards",
-    "UNCLEAR": "unclear",
+    "UNCLEAR": "unclear", "not judged": "not judged",
 }
 
 
@@ -1526,7 +1528,7 @@ class MainWindow(QMainWindow):
         """
         page = paths.resource_base() / "static" / filename
         if not page.exists():
-            self._set_status(f"⚠  {what} not found at {page}")
+            self._set_status(f"⚠  {what} not found at {page}", hold_s=True)
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(page)))
 
@@ -1929,7 +1931,8 @@ class MainWindow(QMainWindow):
         self.bt_btn = QPushButton("run backtest")
         self.bt_btn.setFont(theme.figure(9))
         self.bt_btn.setToolTip(
-            "Replay the same plan over two years of real bars.\n"
+            "Replay the same plan over two years of real bars — five on the\n"
+            "year profile, whose horizon two years are too short to test.\n"
             "Live positions take months to grade; this answers today —\n"
             "for the price half of the score, which is all history can test.")
         self.bt_btn.clicked.connect(self._run_backtest)
@@ -2738,11 +2741,14 @@ class MainWindow(QMainWindow):
             return
         self.lab_btn.setEnabled(False)
         self.lab_status.setText(f"replaying {len(symbols)} instruments…")
+        # The universe is passed, not guessed from the symbols: only the
+        # whole watchlist gets a verdict (owner decision P1-C).
         self._lab_thread = BacktestThread(
             symbols, self.lab_horizon.value(), self,
             rng=self.lab_range.currentData(), step=self.lab_step.value(),
             with_news=self.lab_news.isChecked(),
-            with_catalyst=self.lab_catalyst.isChecked())
+            with_catalyst=self.lab_catalyst.isChecked(),
+            universe=self.lab_universe.currentData())
         self._lab_thread.progress.connect(
             lambda sym, n: self.lab_status.setText(f"{sym} — {n} setups so far"))
         self._lab_thread.done.connect(self._lab_done)
@@ -2756,20 +2762,86 @@ class MainWindow(QMainWindow):
         self.lab_out.setHtml(self._lab_html(r))
 
     @staticmethod
+    def _short_window_reason(r: dict) -> str:
+        """Why a run compared nothing, and what would leave room — the same
+        sentence on the Lab and the Terminal."""
+        text = ("A setup is compared only when at least two horizons of bars "
+                "follow it. A longer range or a shorter horizon leaves room for "
+                "that.")
+        if r.get("longest_comparable_horizon"):
+            text += (" On this range the longest series can compare a horizon "
+                     f"of up to {r['longest_comparable_horizon']} days.")
+        return text
+
+    @staticmethod
     def _lab_html(r: dict) -> str:
         if not r.get("n"):
-            return (f"<p style='color:#e06c75'>{r.get('verdict', 'nothing resolved')}"
-                    "</p>")
+            out = (f"<p style='color:#e06c75'>{r.get('verdict', 'nothing resolved')}"
+                   "</p>")
+            # Nothing to compare is still a count: how many ran out of time or
+            # of data is the reason, and a run where every setup did must say
+            # so rather than look empty.
+            left = []
+            if r.get("n_timeout"):
+                left.append(f"{r['n_timeout']:,} ran out of time")
+            if r.get("n_short_window"):
+                left.append(f"{r['n_short_window']:,} too near the end of the data")
+            if left:
+                out += f"<p style='color:#7c8798'>{' · '.join(left)}.</p>"
+            if r.get("n_short_window"):
+                out += (f"<p style='color:#7c8798'>"
+                        f"{MainWindow._short_window_reason(r)}</p>")
+            return out
         hit, pred = r["hit_rate"], r["predicted"]
         se, delta = r["std_error"], r["delta"]
-        within = abs(delta) <= 2 * se
-        colour = "#7c8798" if within else "#e5c07b"
-        rows = [
-            ("Resolved setups", f"{r['n']:,} across {r.get('symbols', 0)} instruments"),
+        # A run shown without a verdict (horizon too long, or too few setups)
+        # is neither a finding nor "no edge": the reason is the verdict.
+        withheld = r.get("withheld")
+        # The colour follows the verdict summarise reached on unrounded
+        # figures, not a re-derivation from the rounded ones (code review r5
+        # P3-5); a hand-built summary without the flag falls back to them.
+        within = (not r["significant"] if "significant" in r
+                  else abs(delta) <= 2 * se) and not withheld
+        colour = "#7c8798" if within or withheld else "#e5c07b"
+        # Setups that touched neither barrier in time are out of the hit rate,
+        # so the prediction is the one for setups that resolved in time — and
+        # how many ran out is shown, not hidden (docs/adr/0001). Hand-built
+        # and older summaries lack these fields and render without them.
+        # The instruments are those that reached the comparison, which a long
+        # horizon can make far fewer than those fetched.
+        compared = r.get("symbols_compared", r.get("symbols", 0))
+        resolved = f"{r['n']:,} across {compared} instruments"
+        if "symbols_compared" in r and (r.get("symbols") or 0) > compared:
+            resolved += f" (of {r['symbols']} fetched)"
+        if r.get("n_timeout") is not None:
+            resolved += (f" · {r['n_timeout']:,} ran out of time "
+                         f"({r.get('timeout_share', 0.0):.1%})")
+        # Setups with under two horizons of data left are counted, not compared.
+        if r.get("n_short_window"):
+            resolved += f" · {r['n_short_window']:,} too near the end of the data"
+        predicted = f"{pred * 100:.2f}%"
+        if r.get("baseline_untimed") is not None:
+            predicted += f" ({r['baseline_untimed']:.0%} with unlimited time)"
+        if r.get("expectancy_vs_null_r") is not None:
+            expectancy = (words.pick(("Expectancy beyond a no-edge market",
+                                      "Excess expectancy")),
+                          f"{r['expectancy_vs_null_r']:+.3f} R per setup")
+        else:
+            expectancy = ("Expectancy", f"{r['expectancy_r']:+.3f} R per setup")
+        rows = [("Resolved setups", resolved)]
+        if r.get("compared_by_class"):
+            rows.append(("Instruments compared", " · ".join(
+                f"{k} {cls}" for cls, k in r["compared_by_class"].items())))
+        if r.get("first_entry"):
+            rows.append(("Entry dates", f"{r['first_entry']} to "
+                                        f"{r['last_entry']} · "
+                                        f"{r.get('n_entry_dates', 0):,} dates"))
+        rows += [
             ("Realised hit rate", f"{hit * 100:.2f}%"),
-            ("Predicted by the barrier maths", f"{pred * 100:.2f}%"),
-            ("Difference", f"{delta * 100:+.2f} pts  (±{2 * se * 100:.2f} at 2 s.e.)"),
-            ("Expectancy", f"{r['expectancy_r']:+.3f} R per setup"),
+            ("Predicted, for setups that resolved in time", predicted),
+            ("Difference", f"{delta * 100:+.2f} pts  (error bar ±{2 * se * 100:.2f}; "
+                           "setups entered on the same day counted together)"),
+            expectancy,
             (words.pick(("Average drift, in normal-move units", "Implied drift")),
              f"{r['implied_edge_sigma']:+.4f} σ"),
             ("Average hold", f"{r['avg_bars_held']:.1f} bars"),
@@ -2790,14 +2862,22 @@ class MainWindow(QMainWindow):
             bk = r.get(key) or []
             if not bk:
                 continue
+            # An attention bucket is judged against the run (`vs_run`), so its
+            # table shows that figure under that name; momentum buckets, and
+            # older attention buckets without it, show the gap to the
+            # prediction (code review r5 P3-1).
+            gap, gap_head = "delta", "vs baseline"
+            if key == "attention_buckets" and all("vs_run" in b for b in bk):
+                gap, gap_head = "vs_run", "vs setups with attention"
             head = "".join(f"<th style='text-align:left;padding-right:16px'>{h}</th>"
-                           for h in ("bucket", "n", "hit rate", "vs baseline"))
+                           for h in ("bucket", "n", "hit rate", gap_head))
             body = "".join(
                 "<tr>" + "".join(
                     f"<td style='padding-right:16px'>{c}</td>" for c in (
-                        b.get("label", "?"), f"{b.get('n', 0):,}",
+                        b.get("label") or b.get("name") or "?",
+                        f"{b.get('n', 0):,}",
                         f"{b.get('hit_rate', 0) * 100:.1f}%",
-                        f"{b.get('delta', 0) * 100:+.1f}")) + "</tr>"
+                        f"{b.get(gap, 0) * 100:+.1f}")) + "</tr>"
                 for b in bk)
             out.append(f"<h4 style='margin:14px 0 4px'>{title}</h4>"
                        f"<table>{head}{body}</table>")
@@ -2811,7 +2891,8 @@ class MainWindow(QMainWindow):
     # component is the problem one.
     _VERDICT_COLOUR = {"KEEP": "#98c379", "INVERTED": "#e06c75",
                        "DROP": "#e06c75", "WEAK": "#e5c07b",
-                       "UNCLEAR": "#7c8798", "not measured": "#5c6370"}
+                       "UNCLEAR": "#7c8798", "not measured": "#5c6370",
+                       "not judged": "#7c8798"}
 
     @staticmethod
     def _verdict_word(verdict: str | None) -> str:
@@ -2880,7 +2961,12 @@ class MainWindow(QMainWindow):
 
         blend = a.get("blend_ic")
         if blend is not None:
-            note = ("" if blend > 0 else
+            # "Ranking the wrong way round" is a finding, so it needs one: a
+            # run that gets a verdict, and a blend IC that clears the claim
+            # bar (attribute's blend_ranks_backwards). Otherwise the number
+            # stands alone (code-review r4 P2-1).
+            backwards = a.get("blend_ranks_backwards") and not a.get("withheld")
+            note = ("" if not backwards else
                     f" — a negative blend {words.pick(('ranking skill', 'IC'))} "
                     "means the score as a whole is ranking the wrong way round, "
                     "not merely failing to rank")
@@ -2889,8 +2975,13 @@ class MainWindow(QMainWindow):
                        f"<b>{blend:+.3f}</b> over {a.get('n', 0):,} resolved "
                        f"setups{note}.</p>")
 
+        # A run without a verdict grades no component: one line says so, in
+        # place of a verdict line per component.
+        if a.get("withheld") and a.get("note"):
+            out.append(f"<p style='color:#7c8798'>{a['note']}</p>")
         for c in rows:
-            if c.get("why") and c.get("verdict") not in ("not measured",):
+            if c.get("why") and c.get("verdict") not in ("not measured",
+                                                         "not judged"):
                 colour = MainWindow._VERDICT_COLOUR.get(c["verdict"], "#7c8798")
                 out.append(f"<p style='color:{colour};margin:2px 0'><b>"
                            f"{c['component']}</b> — {c['why']}</p>")
@@ -3415,7 +3506,11 @@ class MainWindow(QMainWindow):
             return
         self.risk_box.setEnabled(False)
         self.hz_box.setEnabled(False)
-        self._set_status("applying — rescanning…")
+        # Not an unbounded hold: refresh()'s own ⚠ (read-only, a failed poll,
+        # health) must still get through during a long rescan. Its ordinary
+        # line says "applying" instead while this is pending.
+        self._config_pending = True
+        self._set_status(self.APPLYING, hold_s=True)
         self._cfg_thread = ConfigThread(
             self.live, self.risk_box.currentData(), self.hz_box.currentData(), self)
         self._cfg_thread.done.connect(self._config_done)
@@ -3430,19 +3525,30 @@ class MainWindow(QMainWindow):
         touched can disagree with the engine. Synced quietly, so setting the
         widget does not fire the action again."""
         if not (self._cfg_thread and self._cfg_thread.isRunning()):
-            i = self.risk_box.findData(self.live.risk.name)
-            if i >= 0 and i != self.risk_box.currentIndex():
-                self.risk_box.blockSignals(True)
-                self.risk_box.setCurrentIndex(i)
-                self.risk_box.blockSignals(False)
+            for box, name in ((self.risk_box, self.live.risk.name),
+                              (self.hz_box, self.live.horizon.name)):
+                i = box.findData(name)
+                if i >= 0 and i != box.currentIndex():
+                    box.blockSignals(True)
+                    box.setCurrentIndex(i)
+                    box.blockSignals(False)
         if self.protocol_box.isChecked() != self.live.protocol_on:
             self.protocol_box.blockSignals(True)
             self.protocol_box.setChecked(self.live.protocol_on)
             self.protocol_box.blockSignals(False)
 
-    def _config_done(self, _cfg: dict) -> None:
+    APPLYING = "applying — rescanning…"
+
+    def _config_done(self, cfg: dict) -> None:
         self.risk_box.setEnabled(True)
         self.hz_box.setEnabled(True)
+        self._config_pending = False
+        why = cfg.get("refused") or cfg.get("error")
+        if why:
+            self._set_status(f"⚠  setting not applied: {why}", hold_s=True)
+            if self._toast_target is None:
+                # Not over a live Undo: the trade it offers is unrelated.
+                self._warn(f"Setting not applied: {why}")
         for which in ("markets", "assets"):
             setattr(self, f"_{which}_sig", None)      # force a rebuild
 
@@ -3450,26 +3556,53 @@ class MainWindow(QMainWindow):
         if self._bt_thread is not None and self._bt_thread.isRunning():
             return
         self.bt_btn.setEnabled(False)
-        self.bt_result.setText("replaying two years of bars…")
+        from sonar import backtest
         from sonar.assets import WATCHLIST
+        # Two years, unless the profile's horizon needs more history than that
+        # to compare anything (the 250-day profile does).
+        days = self.live.horizon.momentum_days
+        rng = backtest.range_for_horizon(days)
+        span = {"2y": "two years", "5y": "five years"}.get(rng, rng)
+        self.bt_result.setText(f"replaying {span} of bars…")
         self._bt_thread = BacktestThread(
-            [s for s, _n, _c, _k in WATCHLIST],
-            self.live.horizon.momentum_days, self)
+            [s for s, _n, _c, _k in WATCHLIST], days, self, rng=rng,
+            universe=backtest.WHOLE_WATCHLIST)
         self._bt_thread.done.connect(self._backtest_done)
         self._bt_thread.start()
 
     def _backtest_done(self, r: dict) -> None:
         self.bt_btn.setEnabled(True)
+        left = (f' · {r["n_timeout"]:,} timed out'
+                if r.get("n_timeout") is not None else '')
+        if r.get("n_short_window"):
+            left += f' · {r["n_short_window"]:,} too near the end of the data'
         if not r.get("n"):
-            self.bt_result.setText(f'backtest: {r.get("verdict", "no result")}')
+            # Every setup ran out of time or of data: say how many, not just
+            # "nothing" — and, if the data was too short, why, as the Lab does.
+            self.bt_result.setText(
+                f'backtest: {r.get("verdict", "no result")}'
+                + (left if r.get("n_timeout") or r.get("n_short_window") else '')
+                + ("\n  " + self._short_window_reason(r)
+                   if r.get("n_short_window") else ''))
             return
+        # The same figures the Lab shows (D7): beyond a market with nothing in
+        # it, which the raw expectancy over resolved setups is not — that one
+        # reads negative on no edge. Older summaries fall back to the raw one.
+        if r.get("expectancy_vs_null_r") is not None:
+            expectancy = (words.pick(("expectancy beyond a no-edge market",
+                                      "excess expectancy"))
+                          + f' {r["expectancy_vs_null_r"]:+.3f}R')
+        else:
+            expectancy = f'expectancy {r["expectancy_r"]:+.3f}R'
         lines = [
-            f'BACKTEST · {r["n"]:,} resolved trials across {r["symbols"]} '
-            f'instruments, {r["range"]} of daily bars, {r["horizon_days"]}d horizon',
+            f'BACKTEST · {r["n"]:,} resolved trials across '
+            f'{r.get("symbols_compared", r.get("symbols", 0))} '
+            f'instruments, {r["range"]} of daily bars, {r["horizon_days"]}d horizon'
+            + left,
             f'  realised {r["hit_rate"]*100:.2f}%   '
-            f'predicted {r["predicted"]*100:.2f}%   '
+            f'predicted {r["predicted"]*100:.2f}% for setups that resolved in time   '
             f'delta {r["delta"]*100:+.2f} pts (± {r["std_error"]*100*2:.1f})   '
-            f'expectancy {r["expectancy_r"]:+.3f}R',
+            + expectancy,
         ]
         for b in r.get("buckets", []):
             lines.append(f'    |momentum| {b["lo"]*100:>3.0f}–{b["hi"]*100:<4.0f}%  '
@@ -3487,19 +3620,24 @@ class MainWindow(QMainWindow):
         this would then belong on a thread."""
         result = self.live.trade(symbol, direction)
         self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"]
-                         + "  ·  paper money only")
+                         + "  ·  paper money only", hold_s=True)
         pos = result.get("position") or {}
         if result["ok"] and pos.get("id"):
             self._toast(f"{result['message']} — paper money only", pos["id"], "trade")
+        elif not result["ok"]:
+            self._warn(f"Not traded: {result['message']}")
         self._assets_sig = None          # force the board to redraw
         self._book_sig = None
         self._portfolio_sig = None
 
     def _close_position(self, pos_id: str) -> None:
         result = self.live.close_position(pos_id)
-        self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"])
+        self._set_status(("✓  " if result["ok"] else "⚠  ") + result["message"],
+                         hold_s=True)
         if result["ok"]:
             self._toast(result["message"], pos_id, "close")
+        else:
+            self._warn(f"Not closed: {result['message']}")
         self._book_sig = None
         self._portfolio_sig = None
 
@@ -3547,7 +3685,15 @@ class MainWindow(QMainWindow):
         self._refresh_wire()
         self._sync_knobs()
 
-        if snap.get("status") == "read-only":
+        # The Screener and Big picture do not depend on the bitcoin feed: they
+        # draw whatever the engine has, whatever state the hourly poll is in.
+        # Gating them on it froze the core path on "Fetching prices…" for as
+        # long as Binance and Coinbase were unreachable (closing UX C-1).
+        status = snap.get("status")
+        self._refresh_cards(assets, read_only=status == "read-only")
+        self._refresh_macro(snap)
+
+        if status == "read-only":
             # Another SONAR holds the engine lock and cannot be followed (a
             # second window), or the one being followed stopped answering.
             # Say so plainly rather than showing a window that looks broken;
@@ -3555,13 +3701,19 @@ class MainWindow(QMainWindow):
             self._set_status("⚠  " + snap.get("detail", "another engine is running"))
             self.read_btn.setEnabled(False)
             return
-        if snap.get("status") != "live":
-            self._set_status(f'{snap.get("status", "…")} — first poll can take a moment')
+        if status == "error":
+            detail = " ".join(str(snap.get("detail") or "no reason given").split())
+            following = snap.get("following")
+            whose = (f'the engine at {following.split("//")[-1]}: ' if following else "")
+            self._set_status(f"⚠  {whose}bitcoin price poll failed ({detail[:140]}) — retrying. "
+                             "The Screener and Big picture do not depend on it.")
+            return
+        if status != "live":
+            self._set_status(self.APPLYING if getattr(self, "_config_pending", False)
+                             else f'{status or "…"} — first poll can take a moment')
             return
         self.read_btn.setEnabled(True)
         self._refresh_terminal(snap)
-        self._refresh_cards(assets)
-        self._refresh_macro(snap)
         if self.tray is not None:
             self.tray.update_state(snap)
 
@@ -3572,6 +3724,7 @@ class MainWindow(QMainWindow):
         who = (f'following the engine at {following.split("//")[-1]} · '
                if following else "")
         self._set_status(
+            self.APPLYING if getattr(self, "_config_pending", False) else
             f'{who}risk {self.live.risk.name} · horizon {hz.name} · '
             f'{assets.get("n", 0)} assets · paper money only')
         # A dead loop leaves its last snapshot looking live; say so instead.
@@ -3645,8 +3798,43 @@ class MainWindow(QMainWindow):
             self.mvm.setText("model vs market: no settled hours scored yet — "
                              f"fills in as hours resolve, traded or not{health}")
 
-    def _refresh_cards(self, assets: dict) -> None:
-        asig = (assets.get("generated"), assets.get("n"))
+    #: After this long with no board, "the first scan takes about a minute"
+    #: is no longer true and the placeholder says so.
+    ASSETS_LATE_S = 180
+
+    def _assets_empty_text(self, assets: dict, now: float,
+                           read_only: bool = False) -> str:
+        """What the Screener says when it has no rows: never "fetching" once
+        that has stopped being true (closing UX C-1)."""
+        if assets.get("error"):
+            # First: an old board's "filtered" or "fetching" is about a scan
+            # that is no longer the latest. Neutral wording — the failure may be
+            # after the prices arrived (marking the book, alerts).
+            return (f"The last scan failed ({assets['error'][:140]}). "
+                    "Trying again shortly.")
+        if assets.get("generated"):
+            if assets.get("priced") == 0:
+                return ("No prices came back from the market data source on the last "
+                        "scan. Trying again shortly.")
+            return "No instruments pass this risk profile's volatility filter."
+        if read_only:
+            return ("No board in this window: it is read-only, and the status "
+                    "line says why.")
+        waited = now - self._assets_since
+        if waited > self.ASSETS_LATE_S:
+            return (f"Still no prices after {int(waited // 60)} minutes: the first "
+                    "scan has not finished. It keeps trying.")
+        return self.ASSETS_LOADING
+
+    def _refresh_cards(self, assets: dict, read_only: bool = False) -> None:
+        now = time.time()
+        if read_only or getattr(self, "_assets_since", None) is None:
+            # A read-only window does not scan: its "still no prices after N
+            # minutes" clock starts when it may.
+            self._assets_since = now
+        empty = (self._assets_empty_text(assets, now, read_only)
+                 if not assets.get("assets") else None)
+        asig = (assets.get("generated"), assets.get("n"), empty)
         if asig != self._assets_sig:
             self._assets_sig = asig
             generated = float(assets.get("generated") or 0.0)
@@ -3656,11 +3844,8 @@ class MainWindow(QMainWindow):
             # object and a RuntimeError on the next tick.
             self._asset_rows = [AssetRow(a, self._read, self._trade, generated)
                                 for a in assets.get("assets", [])]
-            self._rebuild(self._assets_lay, list(self._asset_rows),
-                          "No instruments pass this risk profile's volatility filter."
-                          if assets.get("generated") else self.ASSETS_LOADING)
+            self._rebuild(self._assets_lay, list(self._asset_rows), empty or "")
         else:
-            now = time.time()
             for row in self._asset_rows:
                 row.update_age(now)
 
@@ -3671,7 +3856,9 @@ class MainWindow(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
         if not widgets:
-            lay.addWidget(label(empty_msg, "muted", theme.figure(10)))
+            # Wrapped: an error can make this long, and an unwrapped label
+            # sets the window's minimum width (see label()).
+            lay.addWidget(label(empty_msg, "muted", theme.figure(10), wrap=True))
         for wdg in widgets:
             lay.addWidget(wdg)
         lay.addStretch(1)
@@ -3696,7 +3883,20 @@ class MainWindow(QMainWindow):
             self.regime_lb.setText("—")
             self.regime_lb.setStyleSheet(f"color: {theme.MUTED.name()};")
             self.regime_sub.setText("")
-            on_long = (snap.get("horizon") or {}).get("macro")
+            # No figures without a regime: a dash beside the last known 10y and
+            # VIX read as current numbers once the feed behind them stopped.
+            self.regime_bar.set_parts({}, {})
+            for stat in self.macro_stats.values():
+                stat.set("—")
+            if snap.get("status") == "read-only":
+                # Nothing loads here and the horizon cannot be changed: say so,
+                # rather than "Loading…" or advice that would be refused.
+                self.macro_note.setText("The macro regime is not available in this "
+                                        "window: it is read-only, and the status "
+                                        "line says why.")
+                return
+            on_long = (snap.get("horizon") or {}).get("macro",
+                                                      self.live.horizon.macro)
             self.macro_note.setText(
                 "Loading the macro regime…" if on_long else
                 "The macro regime is only material at long horizons. "
@@ -4007,13 +4207,24 @@ class MainWindow(QMainWindow):
             self._bar_status.setVisible(self.tabs.is_collapsed())
         return self._bar_status
 
-    def _set_status(self, text: str) -> None:
+    def _set_status(self, text: str, hold_s: float | bool = False) -> None:
+        """Write the status line. ``hold_s`` keeps it for that many seconds
+        (True: as long as a toast) against refresh()'s once-a-second rewrite,
+        which used to erase a refused trade's warning within a second (closing
+        UX C-2). A later held message replaces an earlier one at once."""
+        now = _now()
+        if hold_s is False:
+            if now < getattr(self, "_status_hold_until", 0.0):
+                return
+        else:
+            span = self.TOAST_MS / 1000 if hold_s is True else float(hold_s)
+            self._status_hold_until = now + span
         self.status.setText(text)
         self._status_bar_parts().setText(text)
 
     def _sync_status_bar(self) -> None:
         self._status_bar_parts()
-        toast = self._toast_target is not None
+        toast = not self._toast_label.isHidden()
         self._bar_status.setVisible(self.tabs.is_collapsed())
         self.statusBar().setVisible(self.tabs.is_collapsed() or toast)
 
@@ -4030,6 +4241,17 @@ class MainWindow(QMainWindow):
         self._toast_timer.start(self.TOAST_MS)
         self._sync_status_bar()
 
+    def _warn(self, text: str) -> None:
+        """A refusal, held as long as a success's toast but with nothing to
+        undo: the user who clicked and looked away still sees it."""
+        self._status_bar_parts()
+        self._toast_target = None
+        self._toast_label.setText(f"⚠  {text}")
+        self._toast_label.show()
+        self._toast_undo.hide()
+        self._toast_timer.start(self.TOAST_MS)
+        self._sync_status_bar()
+
     def _toast_done(self) -> None:
         self._toast_target = None
         self._toast_label.hide()
@@ -4043,7 +4265,10 @@ class MainWindow(QMainWindow):
         result = self.live.undo(pos_id, kind)
         self._toast_timer.stop()
         self._toast_done()
-        self._set_status(("↶  " if result["ok"] else "⚠  ") + result["message"])
+        self._set_status(("↶  " if result["ok"] else "⚠  ") + result["message"],
+                         hold_s=True)
+        if not result["ok"]:
+            self._warn(f"Not undone: {result['message']}")
         self._assets_sig = self._book_sig = self._portfolio_sig = None
 
     def _sync_rail(self) -> None:

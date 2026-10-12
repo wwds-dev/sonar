@@ -83,3 +83,12 @@ schema version; news keyword false positives; Dixon-Coles neutral-site; remainin
 2. I add Tier 0 and Tier 1 to `TODO.md` with P-levels and `@ai`/`@me` owners; `@me` items are
    Developer ID/notarization, backup destination, and legal/disclaimer review.
 3. Run `/ship-feature` on **T0-1 through T0-5 first** (small, reproduced, testable), starting with T0-1.
+
+## Domain audit (finance), 2026-10-12
+Report: `docs/audit/domain-finance.md` (playbook baseline; regulatory references not verified).
+P0: none. P1:
+- **P1-1** README, docs.html and GOING_LIVE say Alpaca paper is used when keys are set; the book
+  never uses it (`core.py:163`, `:959`; `default_broker()` has no caller). Fix the docs, or wire
+  the broker with settlements and an end-to-end test.
+Top P2: non-USD instruments booked and shown in "$" with no conversion; long-horizon plans with
+barriers at or below zero; entries booked at prices up to an hour old.

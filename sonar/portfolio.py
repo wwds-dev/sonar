@@ -137,7 +137,8 @@ class Broker(Protocol):
 def default_broker():
     """Alpaca's paper environment when configured, the internal book otherwise.
 
-    Both are paper. The Alpaca path is strictly more honest — real market hours,
+    Both are paper. Nothing calls this yet: the book always uses the internal
+    one. Once connected, the Alpaca path would be more realistic — real market hours,
     real order handling, orders that sit unfilled when the market is shut —
     while the internal one fills instantly at the quoted price and so flatters
     every result. Neither can reach real money: see sonar/alpaca.py for the

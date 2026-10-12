@@ -100,8 +100,9 @@ sonar/execution.py   BrokerPort.place(coid, symbol, side, quantity, limit_price)
                      └─ Behind Guard. Every rule above applies.
 ```
 
-`portfolio.Broker` is the obvious place to add a live broker — it is where Alpaca already
-sits, it is what the Book tab calls, and `default_broker()` picks it up automatically.
+`portfolio.Broker` is the obvious place to add a live broker — `AlpacaPaperBroker` implements
+it, and `default_broker()` exists to choose one. Today `default_broker()` has no caller: the Book
+tab builds the internal `PaperBroker`, so Alpaca is not connected to the book at all.
 
 **Do not put a live venue there.** `AlpacaPaperBroker.execute` sends
 `{"type": "market"}` with no cap check of any kind. That is correct for paper and

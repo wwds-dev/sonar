@@ -38,8 +38,9 @@ closed ones ever got — the survivors are the slow ones.
    the bias; changes what the barrier maths promise (P(profit) is the *untimed* 1/(1+R:R)) and resets the
    experiment's comparability with positions already open. Needs an ADR.
 
-Recommendation: 1 now (no behaviour change), decide 2 vs 3 with `model-validator` — the QA-11/QA-13 session
-already has `calibration.py` and `docs/adr/0001` open, so route it there rather than editing in parallel.
+Recommendation: 1 now (no behaviour change); decide 2 vs 3 with `model-validator`, as its own spec and ADR.
+No session owns this yet: the QA-11/QA-13 change touches `calibration.py` only in a docstring (confirmed by that
+session, 2026-10-11) and does not cover it. It is the owner's decision.
 
 **2026-10-11: option 1 built for the landing panel** (v2.187, branch `claude/happy-visvesvaraya-84b4ef`, not merged;
 My trades does not show it yet). Each band's line gives entered / still open (median age) / closed, and the panel
