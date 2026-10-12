@@ -76,10 +76,21 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
 From the review, QA and validation rounds in `docs/audit/qa11-qa13-honest-baselines-*` and the
 spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 
-- [ ] `P1` `research` `@me` **Calibration is right-censored by score — needs its own owner decision.** The
-      calibration table grades closed positions only, and the book has no time stop, so high-score positions are
-      the ones still open (60–80 band: 1 of 7 closed on 2026-10-11). The rank IC and the 2σ gate are not
-      interpretable until this is handled (`docs/audit/calibration-censoring-by-score.md`).
+- [ ] `P1` `research` `@ai` **Calibration is right-censored by score — time-stop shadow built, not yet shipped.**
+      Owner decision 2026-10-12: ADR 0002, spec `docs/specs/shadow-time-stop.md`. Build done 2026-10-12 on
+      branch `claude/zealous-mclaren-8985d0` (`docs/audit/shadow-time-stop-engineer.md`). Next: Review
+      (code-reviewer, plus domain-finance and model-validator on the gate), Verify, Secure (the payload is
+      untrusted input on a follower), Document (manual §10 sub-heading, Design D8; CHANGELOG), Release.
+- [ ] `P2` `research` `@me` **The shadow's real false-positive rate is about 6%, not 5%.** V-12 measured
+      5.9–6.2% over 20,000 no-edge books: inside the spec's 5 ± 1.5, but the HC3 z has heavy tails at
+      n = 45 (look 1 rejects 2.7% against Pocock's 2.06%). Boundary left at 2.315 as pre-registered;
+      decide before the first look (about 2026-11-06) whether to accept it or amend ADR 0002.
+- [ ] `P2` `testing` `@ai` **Run `./run-tests.sh tests/ -m slow` at release** and on any change to the
+      shadow's gate code (V-12 at 2,000 and 20,000 books, about a minute). The default suite runs a cheaper
+      version.
+- [ ] `P3` `research` `@ai` **`n_no_price` is not sticky.** A look that counted an entry as "no price"
+      changes if closes for it arrive more than 7 days after its T. Nothing is persisted, so it cannot be
+      frozen; it needs a week-long outage. For the reviewer (spec Build note 6).
 - [ ] `P2` `research` `@ai` **Sign-randomisation test for the backtest's error bar.** The date-clustered bar still
       lets a direction picked at random per class and block get a verdict on 11.4% of judged real-bar runs (target
       ≤ 5%; validator r5 (a), r6 (d)). The same test should calibrate the attribution grades (meaningless

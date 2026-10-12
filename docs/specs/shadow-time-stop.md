@@ -294,7 +294,7 @@ zero.
 | `SH_NONE_AT_T` | Not a test yet. None of the {entered} entries has had {T} yet; the first gets there on {next_t}. | Not a test yet. 0/{entered} past T; first on {next_t}. |
 | `SH_BEFORE_LOOK` | Not a test yet. {have} of the first {N} entries have a result; the {ordinal} look is on or after {due}. | Not a test yet. {have}/{N} graded for look {k}; due on or after {due}. |
 | `SH_BEFORE_LOOK_UNDATED` | Not a test yet. {have} of the first {N} entries have a result; {missing} of them are not entered yet. | Not a test yet. {have}/{N} graded for look {k}; {missing} not yet entered. |
-| `SH_LOOK_WAITING_PRICE` | Not a test yet. The {ordinal} look is due; {k} of its {N} entries are still waiting for a closing price. | Not a test yet. Look {k} due; {k} of {N} awaiting a final close. |
+| `SH_LOOK_WAITING_PRICE` | Not a test yet. The {ordinal} look is due; {w} of its {N} entries are still waiting for a closing price. | Not a test yet. Look {k} due; {w} of {N} awaiting a final close. |
 | `SH_LOOK_NOT_CROSSED` | Look {k} of 3, first {N} entries ({used} with a result): no clear link between score and result. z = {z}; the line is ±2.315. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| < 2.315, not crossed. |
 | `SH_NEXT_LOOK` | Next look: the first {N2} entries, on or after {due}. | Next: n = {N2}, due on or after {due}. |
 | `SH_NEXT_LOOK_UNDATED` | Next look: the first {N2} entries, after {missing} more are entered. | Next: n = {N2}, {missing} not yet entered. |
@@ -302,7 +302,7 @@ zero.
 | `SH_LOOK_CROSSED_DOWN` | *(as above, with "smaller results")* | *(same as UP)* |
 | `SH_CAVEAT_CROSSED` | This means only that the score sorts how coin-flip entries end after {T}. It is not a trading edge. | Ranks random-direction outcomes at T only; not a tradeable edge. |
 | `SH_FINAL_NONE` | Three looks, no crossing: no evidence that the score ranks {T_adj} results, at the planned size. The test is finished. | Looks 1-3 not crossed: no evidence that the score ranks {T_adj} results, at the planned size. Design closed. |
-| `SH_ROW_SPLIT` | {reached} with a result: {t} at the target ({tp}%) · {s} at the stop ({sp}%) · {x} at neither, valued at the {T} close ({xp}%) | {reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} ({xp}%) |
+| `SH_ROW_SPLIT` | {reached} with a result: {t} at the target ({tp}%) · {s} at the stop ({sp}%) · {x} at neither, valued at the close after {T} ({xp}%) | {reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} ({xp}%) |
 | `SH_ROW_WAITING` | still waiting: {w} not yet at {T} (the next on {next_t}) · {wp} waiting for a closing price | waiting: {w} before T (next {next_t}) · {wp} awaiting a final close |
 | `SH_ROW_REF` | what no edge would give after {T}: about {a}% at the target · {b}% at the stop · {c}% at neither, and an average result of 0R | what no edge would give: {a}% / {b}% / {c}%, mean 0R |
 | `SH_ROW_RUNNING` | running, not a test: average result {m}R (95% range {lo} to {hi}R) · link z = {z} · no costs | running, not a test: mean R {m} [{lo}, {hi}] · HC3 slope z {z} · no costs |
@@ -316,6 +316,11 @@ zero.
 | `SH_NOTE` | R is the result in units of the amount risked: -1R lost the amount risked, +{rr}R reached the target. This grade asks only whether the score sorts how coin-flip entries end after {T}. Even a crossed line is not a trading edge: the direction was random, and there are no costs. | R = result / initial risk. Ranks random-direction outcomes at T only; not a tradeable edge. No costs. |
 | `SH_WORKED_OUT` | Worked out {when}. | As of {when}. |
 | `SH_STALE` | Not updated for {h} hours: the agent may be stopped. | Stale: {h} h old. |
+
+Build changes to this table (engineer, 2026-10-12): `SH_ROW_SPLIT` plain read "valued at the {T}
+close", which renders as "the 4 weeks close"; it now reads "valued at the close after {T}".
+`SH_LOOK_WAITING_PRICE` used `{k}` twice (the look and the count) in both modes; the count is now
+`{w}`, the members of that look not yet final. No other string changed.
 
 `{ordinal}` is first / second / third. The word "edge" appears only in the mandated reference
 phrase "what no edge would give" and in the two negated caveats. A test that greps for edge claims
@@ -369,6 +374,79 @@ See [ADR 0002](../adr/0002-shadow-time-stop-grade.md) for the decision record. I
 - **Failure modes:** with no network or no bars, entries are counted under `n_no_price` and never
   guessed. An in-progress daily bar is never used as an exit (ADR §3). An agent stall that missed a
   barrier crossing is caught by the daily-close check (ADR §4).
+
+### Build notes *(engineer, 2026-10-12)*
+Decisions taken where the spec or ADR left a choice, each read as close to ADR 0002 as possible.
+Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pass`,
+`_shadow_fetch`, `_shadow_range`, `_mirror_book`), `sonar/server.py` (`/api/book`), `ui/app.py`
+(`SHADOW_WORDS`, `shadow_texts`, `ShadowGrade`). Report: `docs/audit/shadow-time-stop-engineer.md`.
+
+1. **An entry is graded only from its t_T.** A barrier hit on day 10 is final, but it counts from
+   t_T on, like every other entry. Counting it earlier would let the running figures lean on the
+   quick resolvers again. The looks are unaffected: a look waits for all its members anyway.
+2. **Which bars the gap check reads.** Bars stamped after `opened_at`, up to and including the T bar.
+   A bar is stamped at its session's start, so only those bars' closes are certainly after the
+   entry. The entry day's own close may come before the entry, and the live polls watched that
+   session anyway. Any decision that needs bars waits until the T bar is final, because an open
+   position can still hit a barrier in the T session before the cut, which rule 1 would grade.
+3. **Coverage and range.** The series must start at or before `opened_at`; otherwise the gap check
+   is incomplete and the entry waits for a price (`n_wait_price`, then `n_no_price` after 7 days).
+   The engine asks for the shortest Yahoo range whose reach is at least the age of the symbol's
+   oldest entry that needs bars, plus 7 days: 3mo (90 days), 6mo (182), 1y (365), 2y (730),
+   5y (1,826).
+4. **Hand closes.** A protocol entry closed by hand before the cut is excluded (`n_left`) before
+   the gap check, so no hand-closed entry is ever graded. One closed by hand after the cut is
+   graded like an open one. A hand close at or before t_T is counted as soon as it happens.
+5. **R** = d·(exit − entry)/|entry − stop|, with the exit at the barrier for barrier and gap
+   outcomes. This equals +R:R and −1 whenever the fill was at the planned entry, which is always
+   true on the internal paper book. A worse broker fill moves the entry, not the barriers.
+6. **`n_no_price` is not sticky.** It is a function of the bars available when it is computed. If
+   closes arrive more than 7 days after t_T, the entry is graded, and a look that had counted it as
+   excluded changes. Nothing is persisted (ADR §7), so this cannot be frozen. It needs an outage of
+   more than a week past an entry's T, and the engine retries daily. **For the reviewer.**
+7. **Looks.** `due` is the latest t_T among the N members, which is the Nth entry's t_T when T is
+   the same for all. `n_missing` is the number of members not yet entered. A look also reports
+   `entered`, `used` (graded), `n_excluded`, `n_waiting`, `n_wait_price`, `crossed` and
+   `design_closed`.
+8. **The closed-only rank IC on the same entries** (`ic_closed`) is report()'s statistic
+   (confidence against TARGET = 1 / STOP = 0) over the graded entries that the book closed at a
+   barrier, at any time. Their count is `n_closed_same`.
+9. **Reference horizons.** Each entry uses `barrier_probabilities_within(rr, 1.0, h)` with h = 4 on
+   weekday instruments and h = 4 × 7/5 = 5.6 when the asset class is `Crypto`.
+10. **`t_days` and `rr`** are the value all entries share, or None when they differ. The UI then
+    says "4 holding periods" and uses the default R:R.
+11. **The gate.** `hc3_z` is the sims' `hc3_z`, except that it returns None, not 0.0, when the
+    residual variance is zero or a point's leverage reaches 1. The dict never holds NaN or infinity.
+12. **The engine** copies every filled position under `book.lock`. It needs the manual ones only to
+    count `n_nonprotocol`. An error keeps the last good dict and adds `error`, which holds the
+    exception's class name only, so no long or untrusted text reaches the screen. `Live.shadow`
+    starts as None (loading). A follower whose holder sends no `shadow` key holds the string
+    `"unavailable"`. Any other non-dict value is ignored. Taking the book resets the value to None.
+13. **UI states.** (a2) "nothing at T" applies only while no entry is past T (no `wait_price` and no
+    `no_price`). Otherwise the look states apply. The waiting and left-out rows drop zero parts but
+    keep their lead-in. The split row always shows all three counts. Within [2.305, 2.325) z is cut
+    to three decimals and clamped to the verdict's side, so 2.3149 shows as 2.314.
+14. **TESTPLAN.** The landing-equals-My-trades case is **11.14**, not 11.9b, because the page
+    generator accepts only `N.N` ids. Cases 11.15–11.21 are new manual cases for the QA plan.
+15. **V-12, as built.** The walk model is the sims' model, made fast by scale invariance. A walk of
+    vol s against (+1.5, −1) is a unit walk against (+1.5/s, −1/s), so a library of unit paths,
+    each stored as running-maximum and running-minimum records, answers any s with two bisections.
+    A test checks the library against a direct step-by-step walk. The design runs through the
+    production `shadow_looks`. Always on: 1,000 null books and 500 power books (about 3 s).
+    Marked `slow` and deselected by default (`./run-tests.sh tests/ -m slow`): the spec's 2,000
+    books, with the closed-only comparison; 20,000 null books; and 10,000 power books.
+    **Measured** (steep gradient, s = 1.3 → 0.5; seeds in the tests):
+    - Null size at 2,000 books (seed 20261012, 50,000-path library): 5.35%. On the same books,
+      the closed-only rank IC at 2σ rejected 13.6% (n ≈ 194 closed).
+    - Null size at 20,000 books over ten libraries: 6.19% (Monte-Carlo SE 0.17 pt) with
+      20,000-path libraries, and 5.95% with 50,000-path libraries. Independent checks gave 5.9%
+      (20,000 books, flat vol) and 5.8% (6,000 books, fresh walks, no library).
+    - Power at a planted correlation of 0.2: 0.741 at 2,000 books, 0.739 at 10,000 books, against
+      the design calculation of 0.73.
+
+    The real size is about **6%, inside 5 ± 1.5 but above 5**. The HC3 z has slightly heavy tails
+    at n = 45: look 1 alone rejects 2.7%, against Pocock's 2.06%. The boundary and the test bar are
+    unchanged. **For the owner** (see the engineer's report).
 
 ## Risks and open questions
 - **The rank IC is not exactly zero-centred under no edge.** Barrier R-multiples are skewed: the
