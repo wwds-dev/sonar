@@ -3073,14 +3073,22 @@ class MainWindow(QMainWindow):
         if a.get("catalyst"):
             out.append(f"<p style='color:#5c6370'>catalyst — "
                        f"{html.escape(str(a['catalyst']), quote=False)}</p>")
-        judged = ("the four components are judged together, with a stricter bar "
-                  "for each than if it stood alone"
+        # The count today's Benjamini-Hochberg runs over: every component
+        # listed, one not measured at p = 1 (backtest.attribute), so the
+        # stricter bar is that of all of them, not of the measured alone.
+        n_all = len(rows)
+        n_meas = sum(1 for c in rows if c.get("ic") is not None)
+        many = f"{n_all} component{'' if n_all == 1 else 's'}"
+        rest = (f" (the {n_meas} measured, and those not measured counting "
+                "as finding nothing)" if n_meas < n_all else "")
+        judged = (f"the {many} are judged together{rest}, with a stricter "
+                  "bar for each than if it stood alone"
                   if words.plain() else
-                  "p-values go through Benjamini-Hochberg together at "
-                  f"q={a.get('fdr_q', 0.1)}")
+                  f"p-values of the {many} go through Benjamini-Hochberg "
+                  f"together at q={a.get('fdr_q', 0.1)}{rest}")
         out.append(f"<p style='color:#5c6370'>{judged[0].upper() + judged[1:]}: "
-                   "testing four components and reporting the best one is how "
-                   "noise gets published.</p>")
+                   f"testing {many} and reporting the best one is how noise "
+                   "gets published.</p>")
         return "".join(out)
 
     # -- playmaker ------------------------------------------------------------ #

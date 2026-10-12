@@ -1012,8 +1012,8 @@ def _withheld_verdict(why: str, horizon_days: int | None, n: int,
                 "market move, so a verdict needs them spread over at least "
                 f"{MIN_VERDICT_SPAN_HORIZONS} times the horizon "
                 f"({min_verdict_span_days(horizon_days):,} days; a horizon "
-                "counts trading days). A longer range or a shorter horizon "
-                "spreads them out.")
+                "counts trading days). A shorter horizon spreads them out, "
+                "or a longer range up to five years.")
     if why == "horizon":
         return (f"No verdict at a {horizon_days}-day horizon. At horizons this "
                 "long an instrument's own trend dominates the comparison — "

@@ -1128,6 +1128,9 @@ def test_no_verdict_unless_the_entries_span_five_horizons():
     assert v.startswith("Too close together to judge: these setups were "
                         "entered over 36 days, 4.9 times the 5-day horizon."), v
     assert "at least 5 times the horizon (37 days;" in v
+    # the fix stops at five years: ten are never judged (owner, Lab 10y)
+    assert v.endswith("A shorter horizon spreads them out, or a longer range "
+                      "up to five years."), v
     assert backtest.summarise(_span_of(rows, 19))["withheld"] is None
 
 

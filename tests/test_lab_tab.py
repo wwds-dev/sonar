@@ -950,3 +950,41 @@ def test_a_component_the_check_could_not_test_reads_not_tested(monkeypatch):
         # the plain legend says what the label means
         assert ("<b>not tested</b> that the check against random stretches "
                 "could not run on it" in html) is plain
+
+
+def test_the_attribution_footer_names_the_components_tested_together(
+        monkeypatch):
+    """Domain P2-2, the footer: it names how many components today's
+    Benjamini-Hochberg runs over — every one listed, one not measured
+    counting as p = 1 — and how many of them were measured, in both
+    wordings, never a fixed 'four'.
+    Mutation it catches: the count hard-coded, or the measured share
+    dropped."""
+    from ui import words
+
+    def comp(name, ic):
+        return {"component": name, "n": 3200 if ic is not None else 0,
+                "ic": ic, "p": 0.5 if ic is not None else None,
+                "weight": 0.25, "spread": {}, "verdict": (
+                    "UNCLEAR" if ic is not None else "not measured")}
+    a = {"n": 3200, "fdr_q": 0.1, "withheld": None, "blend_ic": None,
+         "randomisation": None,
+         "components": [comp("momentum", 0.01), comp("volatility", -0.02),
+                        comp("news", None), comp("catalyst", None)]}
+    monkeypatch.setattr(words, "plain", lambda: True)
+    html = MainWindow._attribution_html(a)
+    assert ("The 4 components are judged together (the 2 measured, and those "
+            "not measured counting as finding nothing), with a stricter bar "
+            "for each than if it stood alone: testing 4 components and "
+            "reporting the best one is how noise gets published.") in html, html
+    monkeypatch.setattr(words, "plain", lambda: False)
+    html = MainWindow._attribution_html(a)
+    assert ("P-values of the 4 components go through Benjamini-Hochberg "
+            "together at q=0.1 (the 2 measured, and those not measured "
+            "counting as finding nothing): testing 4 components") in html, html
+    three = dict(a, components=a["components"][:3])
+    html = MainWindow._attribution_html(dict(three, components=[
+        comp("momentum", 0.01), comp("volatility", -0.02),
+        comp("news", 0.03)]))
+    assert "P-values of the 3 components go through" in html
+    assert "q=0.1:" in html and "four" not in html
