@@ -53,5 +53,16 @@ app's Application Support directory.
   Brier logs; model files `sonar/model.py`, `scoring.py`, `backtest.py`, `calibration.py`,
   `volatility.py`, `replay.py` and the research studies.
 
+## Domain specialist
+Key: `finance` (`domain-finance`). Domain: retail investing and paper trading for users without
+finance training. Rules and standards: the app gives no investment advice and is paper-only
+(`alpaca.py` refuses non-paper hosts); jurisdiction of users `UNVERIFIED`, so the reviewer flags
+wording that would count as advice or performance advertising under SEC/FINRA or ESMA/BaFin
+rules rather than ruling on it. Check: every result shown as simulated/paper; performance and
+calibration figures carry period, sample size and cost/slippage treatment (`CONFIDENCE.md`);
+money arithmetic and rounding in `execution.py`, `backtest.py`, `scoring.py`; data provenance and
+staleness (Alpaca, news feeds). Never claim: edge, profit, certainty, "should buy/sell", or that
+`GOING_LIVE.md` is anything but a plan.
+
 ## Optional roles installed
-model-validator
+model-validator, domain-finance
