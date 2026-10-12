@@ -81,10 +81,11 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       `claude/zealous-mclaren-8985d0`, all 2026-10-12: Build, Review (four rounds), Verify (four rounds), Secure
       and Document (manual §10 "A second grade: every entry at a fixed date", CHANGELOG under Unreleased) are
       done; reports in `docs/audit/shadow-time-stop-*.md`. Next: Release (owner gate), with the slow suite.
-- [ ] `P2` `design` `@me` **Decide the shadow's `SH_FINAL_NONE` wording before Release** (model-validator P2-4,
+- [x] `P2` `design` `@me` **Decide the shadow's `SH_FINAL_NONE` wording before Release** (model-validator P2-4,
       domain-finance P3-3; spec "Known limits", owner question 3). ADR 0002 §3 fixes "no evidence that the score
       ranks 4-week results, at the planned size"; the reviews say it overstates a negative and that "planned size"
       can read as position size. Keep it, or amend the ADR and take one of the suggested wordings.
+      Done 2026-10-12: ADR 0002 §3 amended, new wording in `SHADOW_WORDS` (ships with the next build).
 - [ ] `P2` `testing` `@me` **Live weekend stamp check for the shadow (TESTPLAN 11.23).** On a Saturday or Sunday
       after 00:00 UTC, note the newest daily-bar stamps of ^GSPC, META, EURCHF=X, TRX-USD and ^N225 and record them
       in ADR 0002 §5. Outcomes are correct under any convention, but with last-trade or fetch-time stamps the wait

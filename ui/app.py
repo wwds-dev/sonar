@@ -546,10 +546,13 @@ SHADOW_WORDS = {
                           "Ranks past random-direction paper outcomes at T only; before "
                           "costs, exact fills, one test with a by-design false-alarm rate; "
                           "not a tradeable edge."),
-    "SH_FINAL_NONE": ("Three looks, no crossing: no evidence that the score ranks {T_adj} "
-                      "results, at the planned size. The test is finished.",
-                      "Looks 1-3 not crossed: no evidence that the score ranks {T_adj} "
-                      "results, at the planned size. Design closed."),
+    "SH_FINAL_NONE": ("Three looks, no crossing: not enough evidence that the score ranks "
+                      "{T_adj} results. With 201 entries the test would usually find only a "
+                      "fairly strong link (a correlation of about 0.2 or more); a weaker one "
+                      "could have been missed. The test is finished.",
+                      "Looks 1-3 not crossed: not enough evidence that the score ranks "
+                      "{T_adj} results. 201 entries would usually show only a link of about "
+                      "0.2 or more. Design closed."),
     "SH_ROW_SPLIT": ("{reached} with a result: {t} at the target ({tp}%) · {s} at the stop "
                      "({sp}%) · {x} at neither, valued at the close after {T} ({xp}%)",
                      "{reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} "

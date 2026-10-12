@@ -233,8 +233,11 @@ def test_u4_each_state_says_its_own_sentence(window):
     assert "On these paper entries, higher scores went with lower R on average." in s["c crossed down"]
     for name in ("c crossed up", "c crossed down"):
         assert "It is not a trading edge." in s[name] and "crossed the line" in s[name]
-    assert "no evidence that the score ranks 4-week results, at the planned size" in \
-        s["d closed, no crossing"]
+    d = s["d closed, no crossing"]
+    assert "not enough evidence that the score ranks 4-week results." in d
+    assert "With 201 entries the test would usually find only a fairly strong link" in d
+    assert "a correlation of about 0.2 or more" in d and "could have been missed" in d
+    assert "planned size" not in d and "no evidence that" not in d
 
 
 def test_u4_not_a_test_yet_until_a_look_is_evaluated(window):
@@ -706,3 +709,15 @@ def test_qa_r3_w02_one_damaged_date_does_not_blank_an_end_of_the_window():
     entries = _entries((_noon(2026, 9, 22), "time"), (_noon(2026, 10, 3), "target"))
     rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
     assert "readable" not in rows[0]
+
+
+def test_final_none_wording_compact_and_honest_about_power():
+    full, compact = SHADOW_WORDS["SH_FINAL_NONE"]
+    for text in (full, compact):
+        assert "not enough evidence that the score ranks {T_adj}" in text
+        assert "0.2 or more" in text
+        assert "planned size" not in text and "no evidence that" not in text
+        for banned in ("edge", "profit", "proves", "certain"):
+            assert banned not in text.lower()
+    assert "could have been missed" in full
+    assert full.startswith("Three looks, no crossing") and compact.startswith("Looks 1-3 not crossed")

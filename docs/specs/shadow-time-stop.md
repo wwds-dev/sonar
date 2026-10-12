@@ -315,7 +315,7 @@ zero.
 | `SH_LOOK_CROSSED_UP` | Look {k} of 3, first {N} entries ({used} with a result): crossed the line. On these paper entries, higher scores went with higher R on average. z = {z}; the line is ±2.315. The test ends here. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| ≥ 2.315, crossed. Design closed. |
 | `SH_LOOK_CROSSED_DOWN` | *(as above, with "lower R on average")* | *(same as UP)* |
 | `SH_CAVEAT_CROSSED` | This says only that the score sorted how these past coin-flip paper entries ended after {T}. It does not show that trading by score would make money: it is one test on {used} entries, before costs, fees and slippage, with exact fills, and a test like this can cross by chance even when there is no link. It is not a trading edge. | Ranks past random-direction paper outcomes at T only; before costs, exact fills, one test with a by-design false-alarm rate; not a tradeable edge. |
-| `SH_FINAL_NONE` | Three looks, no crossing: no evidence that the score ranks {T_adj} results, at the planned size. The test is finished. | Looks 1-3 not crossed: no evidence that the score ranks {T_adj} results, at the planned size. Design closed. |
+| `SH_FINAL_NONE` | Three looks, no crossing: not enough evidence that the score ranks {T_adj} results. With 201 entries the test would usually find only a fairly strong link (a correlation of about 0.2 or more); a weaker one could have been missed. The test is finished. | Looks 1-3 not crossed: not enough evidence that the score ranks {T_adj} results. 201 entries would usually show only a link of about 0.2 or more. Design closed. |
 | `SH_ROW_SPLIT` | {reached} with a result: {t} at the target ({tp}%) · {s} at the stop ({sp}%) · {x} at neither, valued at the close after {T} ({xp}%) | {reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} ({xp}%) |
 | `SH_ROW_WAITING` | still waiting: {w} not yet at {T} (the next on {next_t}) · {wp} waiting for a closing price | waiting: {w} before T (next {next_t}) · {wp} awaiting a final close |
 | `SH_ROW_REF` | what no edge would give after {T}, if the volatility estimate was right: about {a}% at the target · {b}% at the stop · {c}% at neither. A different split can mean the volatility estimate was off. With no edge, exact fills and randomly wandering prices, the average result would be about 0R. | what no edge would give at planned σ: {a}% / {b}% / {c}% (a σ̂ check); mean ≈0R at any σ (exact fills) |
@@ -378,7 +378,7 @@ Fix loop 2 (domain r2 P2-1, N-1, N-2, N-3):
 - **U-4.** One test per D3 row, each asserting its string id's text. This includes: a payload
   without the `shadow` key renders `SH_NOT_AVAILABLE`; "not a test yet" is present until a look is
   evaluated; "not a test" stays on the running row in every state; and `SH_FINAL_NONE` contains
-  "no evidence that the score ranks 4-week results, at the planned size".
+  "not enough evidence that the score ranks 4-week results" and "a correlation of about 0.2 or more".
 - **U-5.** A non-zero `n_nonprotocol`, `n_left`, `n_no_price` or `n_gap` each appears in
   `shadow_rows`. With 5 of 45 excluded (11%), `shadow_warn` is visible and starts with "Note:"; with
   4 of 45 (8.9%) it is hidden.
@@ -694,7 +694,9 @@ backlog entry in `TODO.md`.
    can lack a price, and delisting is related to the outcome. Options: hold a look with any
    `no_price` member unevaluated, or show a sensitivity bound (excluded members at R = −1 and at
    +1.5).
-3. **The `SH_FINAL_NONE` wording** (model-validator P2-4; domain-finance P3-3,
+3. **The `SH_FINAL_NONE` wording — resolved 2026-10-12** (ADR 0002 §3 amended on the owner's yes; now
+   "not enough evidence … With 201 entries the test would usually find only a fairly strong link
+   (a correlation of about 0.2 or more)"). Was: (model-validator P2-4; domain-finance P3-3,
    `docs/audit/shadow-time-stop-domain-finance-r2.md` and `-r3.md`). ADR 0002 §3 fixes the sentence
    "no evidence that the score ranks 4-week results, at the planned size". The validator finds it
    overstates a negative and suggests "not enough evidence … At the planned size the test could
