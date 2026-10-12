@@ -49,6 +49,15 @@ they have checked.
 
 ## Unreleased — 2026-10-12
 
+**Text from outside the app is drawn as text.** Labels are plain text by
+default, so a feed, the Nasdaq calendar or a followed engine cannot style or
+reword the window with markup; the Playmaker and Lab panes escape pasted book
+names, parse errors and backtest text, and no pane follows a link drawn in it.
+Error messages shown in the window are one cleaned line of at most 160
+characters; a failed setting change now names the error type. Books that
+disagree on how many outcomes a market has get "Could not read the prices."
+instead of nothing (`docs/specs/untrusted-text-sweep.md`).
+
 **A followed engine's read answer stays with that engine; error text is never
 markup.** While following another SONAR process, whether a read can run is that
 process's answer; it was kept after the window moved to another holder or the

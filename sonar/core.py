@@ -29,6 +29,12 @@ from .research import hourlyvol
 from . import calibration, events, portfolio, scoring
 
 
+def _exc_line(exc: BaseException) -> str:
+    """An exception as one clean, capped line for the window: its text can
+    quote a server body, a feed or a file path, and some labels draw markup."""
+    return llm._clean(f"{type(exc).__name__}: {exc}", 160)
+
+
 def trade_dict(t) -> dict | None:
     return asdict(t) if t is not None else None
 
@@ -296,7 +302,7 @@ class Live:
             # than "fetching" forever; the next good scan replaces the dict.
             with self.lock:
                 self.assets = {**self.assets,
-                               "error": " ".join(f"{type(exc).__name__}: {exc}".split())}
+                               "error": _exc_line(exc)}
         self._scan_at = time.time()
 
     # -- the calibration protocol ------------------------------------------ #
@@ -639,7 +645,7 @@ class Live:
                 # now, so the window can say the setting may not have applied.
                 return {**self.config(), "error":
                         f"the engine at {url.split('//')[-1]} did not confirm it "
-                        f"({type(exc).__name__}: {exc})"}
+                        f"({_exc_line(exc)})"}
             return self.config()
         if self._waiting_without_a_holder_to_follow():
             # A risk change saves the state file and the rescan marks the book;
@@ -838,8 +844,8 @@ class Live:
                     # say why on screen and try again rather than exit silently.
                     with self.lock:
                         self.snapshot = {"status": "read-only", "detail":
-                                         f"could not read the book ({type(exc).__name__}: "
-                                         f"{exc}); trying again"}
+                                         f"could not read the book ({_exc_line(exc)}); "
+                                         "trying again"}
                     if self._stop.wait(LOCK_RETRY_EVERY):
                         return
             self._driving_since = time.time()
@@ -898,7 +904,7 @@ class Live:
                 # The bitcoin feed failing says nothing about the rest: the
                 # horizon and the macro regime ride along, so Big picture can
                 # still draw (closing UX review C-1).
-                snap = {"status": "error", "detail": str(exc),
+                snap = {"status": "error", "detail": llm._clean(exc, 160),
                         "horizon": self.horizon.as_dict()}
                 if self.horizon.macro and self._macro_snap is not None:
                     snap["macro"] = self._macro_snap.as_dict()
@@ -912,7 +918,7 @@ class Live:
 
     def _poll_failed(self, exc: Exception) -> None:
         self._poll_failures += 1
-        self.last_poll_error = " ".join(f"{type(exc).__name__}: {exc}".split())
+        self.last_poll_error = _exc_line(exc)
         if self._poll_failures % POLL_ERROR_LOG_EVERY == 1:
             print(f"SONAR {time.strftime('%Y-%m-%d %H:%M:%S')}: poll failed "
                   f"({self._poll_failures} in a row): {self.last_poll_error}",
@@ -1113,7 +1119,7 @@ class Live:
                     self.snapshot = {
                         "status": "read-only", "following": url,
                         "detail": f"{self.conflict} It is not answering at "
-                                  f"{url} ({type(exc).__name__}: {exc})."}
+                                  f"{url} ({_exc_line(exc)})."}
 
     def _local_change(self, step: int) -> None:
         """A protocol or knob change starts (+1) or ends (-1) its trip to the
@@ -1198,7 +1204,7 @@ class Live:
         except Exception as exc:
             return {"ok": False, "position": None,
                     "message": f"the engine at {url} did not take it "
-                               f"({type(exc).__name__}: {exc})"}
+                               f"({_exc_line(exc)})"}
 
     def _sigma(self) -> float:
         """The per-hour volatility the model prices with.

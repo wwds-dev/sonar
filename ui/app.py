@@ -48,6 +48,7 @@ from sonar import paths, playmaker, risk as risk_mod
 from sonar import version as version_mod
 from sonar.playmaker import devig as pm_devig, staking as pm_staking
 from sonar.core import Live
+from sonar.llm import _clean
 from sonar import assets as asset_mod
 from sonar import news as news_mod
 from sonar import venues
@@ -344,8 +345,13 @@ def label(text: str = "", obj: str = "", font=None, align=None,
     children's minimums — so one unwrapped paragraph sets the minimum width of
     its tab, and the widest tab sets the minimum width of the whole window.
     Three of them once forced SONAR to open 4,540pt wide on a 1,280pt screen.
+
+    Plain text by default: labels show feed, holder and exception text, and
+    Qt's AutoText would draw any of it that looks like markup. A label meant
+    for markup opts in with ``setTextFormat(Qt.RichText)``.
     """
     lb = QLabel(text)
+    lb.setTextFormat(Qt.PlainText)
     lb.setWordWrap(wrap)
     if obj:
         lb.setObjectName(obj)
@@ -619,8 +625,11 @@ class AssetRow(QFrame):
             sub.setStyleSheet(
                 f"color: {(theme.DOWN if not v.tradeable else theme.GOLD).name()};")
         name.addWidget(sub)
-        holder.setToolTip(f"{a['name']} ({a['symbol']}) · {a['cls']}\n\n"
-                          f"{a.get('rationale', '')}\n\n{v.summary()}"
+        # A tooltip guesses markup as AutoText does; in follow mode these
+        # fields are the holder's JSON.
+        holder.setToolTip(f"{_clean(a['name'], 80)} ({_clean(a['symbol'], 16)}) · "
+                          f"{_clean(a['cls'], 24)}\n\n"
+                          f"{_clean(a.get('rationale', ''), 600)}\n\n{v.summary()}"
                           f"\n\nVenue list checked {venues.CHECKED}. "
                           "Reference only — not advice, and availability changes.")
         lay.addWidget(holder)
@@ -1359,6 +1368,7 @@ class MainWindow(QMainWindow):
         # under-reports, and the label then paints past the window's bottom
         # edge rather than asking for the height it needs.
         self.status = label("starting…", "faint", theme.figure(9), wrap=True)
+        self.status.setTextFormat(Qt.PlainText)     # shows error text
         self.status.setFixedWidth(self.tabs.rail_width() - 32)
         col.addWidget(self.status)
         return holder
@@ -1949,6 +1959,7 @@ class MainWindow(QMainWindow):
         self.cal_table = label("", "muted", theme.figure(10), wrap=True)
         cl.addWidget(self.cal_table)
         self.bt_result = label("", "muted", theme.figure(10))
+        self.bt_result.setTextFormat(Qt.PlainText)     # shows error text
         self.bt_result.setWordWrap(True)
         cl.addWidget(self.bt_result)
         lay.addWidget(cal)
@@ -2473,12 +2484,14 @@ class MainWindow(QMainWindow):
         self.lab_btn.clicked.connect(self._lab_run)
         row.addWidget(self.lab_btn)
         self.lab_status = label("", "faint", theme.figure(9))
+        self.lab_status.setTextFormat(Qt.PlainText)     # shows error text
         row.addWidget(self.lab_status, 1)
         hl.addLayout(row)
         lay.addWidget(head)
 
         self.lab_out = QTextBrowser()
         self.lab_out.setOpenExternalLinks(False)
+        self.lab_out.setOpenLinks(False)
         self.lab_out.setHtml(
             "<p style='color:#7c8798'>No run yet. A whole-watchlist 2y replay takes "
             "a few seconds and hits the network once per instrument.</p>")
@@ -2540,6 +2553,7 @@ class MainWindow(QMainWindow):
         self.rep_card = QTextBrowser()
         self.rep_card.setOpenExternalLinks(False)
         self.rep_card.setFixedHeight(150)
+        self.rep_card.setOpenLinks(False)
         self.rep_card.setHtml("<p style='color:#7c8798'>No replay running.</p>")
         rl.addWidget(self.rep_card)
         lay.addWidget(rep)
@@ -2581,6 +2595,7 @@ class MainWindow(QMainWindow):
         srow.addWidget(self.sm_status, 1)
         sl.addLayout(srow)
         self.sm_result = label("", "muted", theme.figure(10), wrap=True)
+        self.sm_result.setTextFormat(Qt.PlainText)     # shows error text
         sl.addWidget(self.sm_result)
         lay.addWidget(sports)
 
@@ -2781,7 +2796,8 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _lab_html(r: dict) -> str:
         if not r.get("n"):
-            out = (f"<p style='color:#e06c75'>{r.get('verdict', 'nothing resolved')}"
+            out = (f"<p style='color:#e06c75'>"
+                   f"{html.escape(str(r.get('verdict', 'nothing resolved')), quote=False)}"
                    "</p>")
             # Nothing to compare is still a count: how many ran out of time or
             # of data is the reason, and a run where every setup did must say
@@ -2855,7 +2871,8 @@ class MainWindow(QMainWindow):
             f"<tr><td style='padding:2px 18px 2px 0;color:#7c8798'>{k}</td>"
             f"<td style='padding:2px 0'><b>{v}</b></td></tr>" for k, v in rows)
         out = [f"<table>{body}</table>",
-               f"<p style='color:{colour}'><b>{r['verdict']}</b></p>"]
+               f"<p style='color:{colour}'><b>"
+               f"{html.escape(str(r['verdict']), quote=False)}</b></p>"]
 
         if within:
             out.append("<p style='color:#7c8798'>The difference sits inside its own "
@@ -2919,7 +2936,8 @@ class MainWindow(QMainWindow):
         rows = a.get("components") or []
         if not rows:
             return ("<h4 style='margin:16px 0 4px'>Component attribution</h4>"
-                    f"<p style='color:#7c8798'>{a.get('note', 'not enough setups')}"
+                    f"<p style='color:#7c8798'>"
+                    f"{html.escape(str(a.get('note', 'not enough setups')), quote=False)}"
                     "</p>")
 
         head = "".join(
@@ -2983,16 +3001,18 @@ class MainWindow(QMainWindow):
         # A run without a verdict grades no component: one line says so, in
         # place of a verdict line per component.
         if a.get("withheld") and a.get("note"):
-            out.append(f"<p style='color:#7c8798'>{a['note']}</p>")
+            out.append(f"<p style='color:#7c8798'>{html.escape(str(a['note']), quote=False)}</p>")
         for c in rows:
             if c.get("why") and c.get("verdict") not in ("not measured",
                                                          "not judged"):
                 colour = MainWindow._VERDICT_COLOUR.get(c["verdict"], "#7c8798")
                 out.append(f"<p style='color:{colour};margin:2px 0'><b>"
-                           f"{c['component']}</b> — {c['why']}</p>")
+                           f"{html.escape(str(c['component']), quote=False)}</b> — "
+                           f"{html.escape(str(c['why']), quote=False)}</p>")
 
         if a.get("catalyst"):
-            out.append(f"<p style='color:#5c6370'>catalyst — {a['catalyst']}</p>")
+            out.append(f"<p style='color:#5c6370'>catalyst — "
+                       f"{html.escape(str(a['catalyst']), quote=False)}</p>")
         judged = ("the four components are judged together, with a stricter bar "
                   "for each than if it stood alone"
                   if words.plain() else
@@ -3149,6 +3169,7 @@ class MainWindow(QMainWindow):
 
         self.playmaker_out = QTextBrowser()
         self.playmaker_out.setOpenExternalLinks(False)
+        self.playmaker_out.setOpenLinks(False)     # a pasted link loads nothing
         lay.addWidget(self.playmaker_out, 1)
 
         self._playmaker_sport_changed()
@@ -3221,9 +3242,13 @@ class MainWindow(QMainWindow):
                         "cross-book screen, which is the part with a track record.")
         try:
             quotes = pm_devig.parse_quotes(text)
+            # Books that disagree on the number of outcomes parse line by
+            # line but cannot be compared: the same answer, not a crash.
+            cons = pm_devig.consensus(quotes)
         except ValueError as exc:
             self.playmaker_status.setText(str(exc))
-            return [], f"<b>Could not read the prices.</b><br>{exc}"
+            return [], ("<b>Could not read the prices.</b><br>"
+                        f"{html.escape(str(exc), quote=False)}")
 
         self.playmaker_stats["books"].set(str(len(quotes)))
         first = quotes[0]
@@ -3231,7 +3256,6 @@ class MainWindow(QMainWindow):
 
         blocks = [self._devig_html(first)]
 
-        cons = pm_devig.consensus(quotes)
         self.playmaker_stats["fair"].set(f"{cons.probability[0]*100:.1f}%")
         se = cons.standard_error(0)
         self.playmaker_stats["book spread"].set(
@@ -3277,7 +3301,7 @@ class MainWindow(QMainWindow):
             mark = " &larr; used" if name == pm_devig.DEFAULT_METHOD else ""
             rows.append(f"<tr><td>{name}{mark}</td>{cells}</tr>")
         sides = "".join(f"<td align=right>&nbsp;&nbsp;{o:+d}</td>" for o in quote.odds)
-        return (f"<b>FAIR PRICE — {quote.book}</b><br>"
+        return (f"<b>FAIR PRICE — {html.escape(quote.book, quote=False)}</b><br>"
                 "<table cellspacing=0 cellpadding=2>"
                 f"<tr><td><i>price</i></td>{sides}</tr>{''.join(rows)}</table>"
                 "The three are all defensible ways to remove the same margin, and "
@@ -3297,7 +3321,8 @@ class MainWindow(QMainWindow):
             flag = " <b>outlier</b>" if o.is_outlier else ""
             z = "—" if o.z != o.z else f"{o.z:.1f}&sigma;"
             rows.append(
-                f"<tr><td>{o.book}{flag}</td><td align=right>&nbsp;&nbsp;side {o.outcome+1}</td>"
+                f"<tr><td>{html.escape(o.book, quote=False)}{flag}</td>"
+                f"<td align=right>&nbsp;&nbsp;side {o.outcome+1}</td>"
                 f"<td align=right>&nbsp;&nbsp;{o.odds:+d}</td>"
                 f"<td align=right>&nbsp;&nbsp;{o.fair*100:.1f}%</td>"
                 f"<td align=right>&nbsp;&nbsp;{o.edge*100:+.2f}</td>"
@@ -4204,6 +4229,8 @@ class MainWindow(QMainWindow):
             bar.setSizeGripEnabled(False)
             self._bar_status = label("", "faint", theme.figure(9))
             self._toast_label = label("", "", theme.text(10))
+            for lb in (self._bar_status, self._toast_label):
+                lb.setTextFormat(Qt.PlainText)  # status and errors, never markup
             self._toast_undo = QPushButton("Undo")
             self._toast_undo.setFont(theme.text(10))
             self._toast_undo.clicked.connect(self._undo_clicked)
