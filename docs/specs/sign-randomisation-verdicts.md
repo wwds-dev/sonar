@@ -6,6 +6,11 @@
   - **DROP deferred** (open question 7 (a)): out of this change; a P3 backlog item and a CHANGELOG line saying DROP is uncalibrated.
   - **Build approved** on architect assumptions A1–A14 as amended. The expert view shows `p_tail` (labelled "in the direction of Δ"). User copy says "not told apart from chance", never the bare word "unconfirmed". The volatility / per-instrument-trait residual is disclosed in copy and CONFIDENCE.md.
   - **A15 approved (2026-10-12):** `range_for_horizon` picks 2y for h ≤ 10, 5y for h ≤ 30 and 10y for h ≤ 80, so that the Terminal's 20d and 60d lines are judged rather than always withheld.
+  - **Owner decisions after validator r7 (2026-10-12, `docs/audit/sign-randomisation-verdicts-model-validator-r7.md`):**
+    - **Measure 2 (P1-1): accept and disclose.** The 4h blocks stay. Copy quotes the worst held-out rate for random directions held up to *eight* holding periods, says the rate is per run, and notes that one setting band reads about 1 in 5. Measure 2's 7.5% bar is recorded as not met and disclosed, not re-architected.
+    - **Drift (P1-2): withhold 10y and disclose.** A15 is amended: 2y for h ≤ 10, 5y for h ≤ 30, and no 10y. The Terminal's 60d line shows numbers without a verdict. All headline copy names the residual that a direction fixed per instrument (such as always long on today's list) can beat the bar.
+    - **Rate figure: any verdict.** `CHANCE_VERDICT_RATE` = "about 1 run in 10" (9.11% [7.6–10.9], 1,152 judged held-out runs, 53% withheld; held-out manifest `404f5a77…`), worded "got a verdict either way".
+    - **Measure 5:** the bar is reset from the curve to ≥ 28/40 at Δ ≈ +3 pts per-setup (measured 30/40). The curve is published. User power copy quotes only the clustered figure or says nothing.
   - **Required fixes, no further decision needed:**
     - The 8h and market-wide coins become pass/fail placebos (validator P2-1).
     - Validity text says the test is exact only for directions nested in its clusters, and the asymptotic claim is deleted (P2-2).
