@@ -1102,11 +1102,12 @@ def test_a_ten_year_run_shows_its_numbers_without_a_verdict(monkeypatch):
         "No verdict on ten years. Over ten years of today's list, a direction "
         "fixed per instrument, such as always long, lands outside the bar "
         "more often than the chance rate a verdict quotes (about 1 run in "
-        "10); on one set of past bars about 1 in 4, because each instrument "
-        "keeps its own trend over the years and the list holds only today's "
-        "survivors; this check cannot see that. So ten-year runs are not "
-        "judged; five years or less can be. The numbers are shown without a "
-        "verdict, before costs, from one replay of past prices.")
+        "10); on one set of past bars about 1 in 4 at 20- to 60-day "
+        "horizons, because each instrument keeps its own trend over the years "
+        "and the list holds only today's survivors; this check cannot see "
+        "that. So ten-year runs are not judged; five years or less can be. "
+        "The numbers are shown without a verdict, before costs, from one "
+        "replay of past prices.")
     assert "far more often" not in ten["verdict"]
     # the horizon and the universe still come first; ten years comes before
     # the reasons that depend on the sample, so a sparse ten-year run reads
@@ -1126,6 +1127,9 @@ def test_a_ten_year_run_shows_its_numbers_without_a_verdict(monkeypatch):
                               universe="all", timeouts=[])[
         "withheld"] == "drift"
     assert backtest.summarise(rows)["withheld"] is None
+    # an empty ten-year run compares nothing and still summarises (code
+    # review P3-4)
+    assert backtest.summarise([], rng="10y")["n"] == 0
 
 
 def test_no_verdict_unless_the_entries_span_five_horizons():
@@ -2078,7 +2082,8 @@ def _headline_randomisation(seed: int, coin: int) -> dict:
     return backtest._randomisation(clusters, lines, _H15, block, judged=True)
 
 
-def _assert_headline_rate(runs: tuple[tuple, ...]) -> None:
+def _assert_headline_rate(runs: tuple[tuple, ...]) -> int:
+    """Bound one headline set; return its verdicts for the pooled bound."""
     assert len(runs) == 150
     # Every run judged, at exactly 8 stretches: a change in the calendar
     # fails here, loudly, instead of quietly withholding runs.
@@ -2088,12 +2093,16 @@ def _assert_headline_rate(runs: tuple[tuple, ...]) -> None:
     beats = sum(s == "beats" for _w, s, _p, _q in runs)
     assert verdicts <= 14, f"{verdicts} of 150 coin runs got a verdict"
     assert beats <= 9, f"{beats} of 150 coin runs read 'beats'"
+    return verdicts
 
 
 # The four headline sets, (first world, first coin): worlds 0–14 and 15–29 ×
 # coins 0–9 and 10–19 — the 600 runs of the two earlier 300-run tests, split
 # so that no test nears the 60 s cap (code review P3-2, QA P2-A).
 _HEADLINE_SETS = ((0, 0), (0, 10), (15, 0), (15, 10))
+# Each headline case records its set's verdicts here, and the case that
+# completes the four checks the pooled bound (code review P3-1).
+_HEADLINE_VERDICTS: dict[tuple[int, int], int] = {}
 
 
 @pytest.mark.slow
@@ -2113,12 +2122,25 @@ def test_a_correlated_coin_rarely_gets_a_verdict(first_world, first_coin):
     9 and 5 'beats'): the third fails. At today's rate on these worlds,
     9.2% (QA, 10 world sets: 7.7–12.8%), one set fails with probability
     about 0.41 and at least one of the four with probability ≤ 0.88 (sets
-    share worlds), counting the verdict bound alone. With the randomisation the sets read 6, 5, 7 and 2
-    (3, 2, 4 and 1 'beats'). Proof of 5% is measure 1, on real bars at full
-    scale.
+    share worlds), counting the verdict bound alone. With the randomisation
+    the sets read 6, 5, 7 and 2 (3, 2, 4 and 1 'beats'). Proof of 5% is
+    measure 1, on real bars at full scale.
+
+    Pooled (QA P3-1): the case that completes the four sets in one session
+    also bounds all 600 runs at 43 verdicts, the 99th percentile of
+    Binomial(600, 5%) (P(X ≤ 43) = 0.992), set in advance. With the
+    randomisation they read 20; with the error bar alone, 55 — so the pooled
+    bound catches the gate removed, where of the four sets only [15-0] does.
+    It reads the counts the cases recorded rather than summarising the 600
+    runs again, so no case nears the 60 s cap run alone (code review P3-1);
+    a case run on its own checks its set only.
     Mutation it catches, over the four sets: the randomisation gate
     removed."""
-    _assert_headline_rate(_per_class_h_coin(first_world, first_coin))
+    verdicts = _assert_headline_rate(_per_class_h_coin(first_world, first_coin))
+    _HEADLINE_VERDICTS[(first_world, first_coin)] = verdicts
+    if len(_HEADLINE_VERDICTS) == len(_HEADLINE_SETS):
+        pooled = sum(_HEADLINE_VERDICTS.values())
+        assert pooled <= 43, f"{pooled} of 600 coin runs got a verdict"
 
 
 @pytest.mark.slow
@@ -2134,7 +2156,7 @@ def test_the_randomisation_alone_rejects_near_its_size():
     It reads each run's randomisation alone, not the whole summary — the
     same stretches and p as summarise, checked on the first three runs — so
     it stays well under the 60 s cap run on its own (code review P2-4).
-    The verdicts of the same 600 runs are bounded in the next test.
+    The verdicts of the same 600 runs are bounded in the headline cases.
     Mutation it catches: a dead statistic (never rejects) or an inverted
     one (the wrong tail)."""
     for coin in range(3):
@@ -2146,27 +2168,6 @@ def test_the_randomisation_alone_rejects_near_its_size():
     assert all(r["q"] == 8 and r["method"] == "enumerate" for r in runs)
     rejected = sum(r["p_tail"] < 0.05 for r in runs)
     assert 13 <= rejected <= 37, rejected
-
-
-@pytest.mark.slow
-def test_the_four_headline_sets_together_rarely_get_a_verdict():
-    """Measure 8 over all 600 runs of the four headline sets (QA P3-1): at
-    most 43 verdicts, the 99th percentile of Binomial(600, 5%)
-    (P(X ≤ 43) = 0.992), set in advance. With the randomisation they read
-    20; with the error bar alone (the gate removed), 55 — so this one bound
-    catches the gate removed, where of the four sets only [15-0] does.
-
-    A test of its own, not a line in the exactness test, which must stay
-    under the 60 s cap run alone (code review P2-4): the four headline tests
-    have already summarised these runs, so in the suite this reads their
-    cache in about no time; run alone it summarises all 600 (about 50–65 s
-    on a loaded machine; ``-o faulthandler_timeout=0``, as TESTING.md's
-    slow pass).
-    Mutation it catches: the randomisation gate removed."""
-    verdicts = sum(s in ("beats", "below")
-                   for first in _HEADLINE_SETS
-                   for _w, s, _p, _q in _per_class_h_coin(*first))
-    assert verdicts <= 43, f"{verdicts} of 600 coin runs got a verdict"
 
 
 def _guard(block_days: int, per_class: bool, name: str,

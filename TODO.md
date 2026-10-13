@@ -171,6 +171,11 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P3` `testing` `@ai` **The attribution placebo test is the slowest in the suite** — about 16–18 s under load
       against the 60 s `faulthandler_timeout` (code review r6 P3-2, QA r6). Mark it `slow` or use fewer placebos
       per world (bounds refitted). Also: the step-1 `longest_comparable_horizon` mutant survives (r3 P3-7).
+- [ ] `P3` `testing` `@ai` **Branch-only coverage is 79.5%, under app-context's "80% branch".** The 87% (and the
+      84% / 83% floor) in `docs/company/tooling-baseline.md` is coverage.py's combined statement + branch TOTAL;
+      branch-only read 79.5% (QA re-verify after sign-randomisation fix loop 2). This predates that change; the
+      owner accepted it for this release. Fix the label (app-context and the baseline say which figure the bar
+      means) and set an honest floor on the figure the bar names.
 
 From the v2.190 release (`docs/audit/qa11-qa13-honest-baselines-sre-release.md`):
 

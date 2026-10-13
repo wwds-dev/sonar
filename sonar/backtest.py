@@ -27,10 +27,13 @@ within its own window), which is 39.46% at the shipped 1.5:1, not the untimed
 data that fewer than two horizons of bars follow it is not compared at all,
 only counted: over a window that short the driftless baseline's thin tail
 calls a far target nearly unreachable, and real prices, which jump, reach it
-far more often. Equal means no edge, and that is the
-honest null result. Higher is a reason to look closer. It can also come out
-lower, which the code reports too — without reading it as worse than a coin
-flip, since a direction picked at random can land that far below as well.
+more often (:data:`MIN_WINDOW_HORIZONS`). Inside the error bar the run is not
+shown to differ from the prediction, which is not the same as no difference;
+that is the honest null result. Outside it, above or below, is a reason to
+look closer, not a finding, and only when the direction randomisation below
+agrees; otherwise the run is "not told apart from chance". Below is never read
+as worse than a coin flip, since a direction picked at random can land that
+far below as well.
 
 Some runs get the numbers and no verdict. Above a 120-day horizon an
 instrument's own trend dominates the comparison, so even a coin-flip direction
@@ -993,18 +996,20 @@ def _withheld_verdict(why: str, horizon_days: int | None, n: int,
         # The range, which the Lab's reader picks; the Terminal never reads
         # one (range_for_horizon). The figure it outruns is the one the
         # beats and below sentences quote (owner, Lab 10y).
-        # Both measured figures, held out and r5, not "far more often"
+        # The held-out figure (10-12.5%) is only said to be above the
+        # chance rate; the r5 one is quoted, at the horizons it was measured
+        # at, h20 and h60 (code review P3-2, P3-3). Not "far more often"
         # (domain pass 5 P3-1), and both causes (P3-2).
         return ("No verdict on ten years. Over ten years of today's list, a "
                 "direction fixed per instrument, such as always long, lands "
                 "outside the bar more often than the chance rate a verdict "
                 f"quotes ({CHANCE_VERDICT_RATE}); on one set of past bars "
-                "about 1 in 4, because each instrument keeps its own trend "
-                "over the years and the list holds only today's survivors; "
-                "this check cannot see that. So ten-year runs are not "
-                "judged; five years or less can be. The numbers are shown "
-                "without a verdict, before costs, from one replay of past "
-                "prices.")
+                "about 1 in 4 at 20- to 60-day horizons, because each "
+                "instrument keeps its own trend over the years and the list "
+                "holds only today's survivors; this check cannot see that. "
+                "So ten-year runs are not judged; five years or less can be. "
+                "The numbers are shown without a verdict, before costs, from "
+                "one replay of past prices.")
     if why == "few_clusters":
         return few_clusters_verdict(clusters, horizon_days, rng=rng)
     if why == "unpaired":
