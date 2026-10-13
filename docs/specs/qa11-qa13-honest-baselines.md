@@ -173,6 +173,13 @@ positive one (D3). **Recommend symmetric.**
 finalise against `ui/words.py`. There is no layout work. Tests match on the marked substrings, so
 those must survive any rewording.*
 
+*Superseded for the backtest verdict (tech-writer, 2026-10-13): the `_verdict` strings below, and
+their "about 1 run in 10" for a direction picked at random for a whole asset class, are the round-5
+wording. The shipped rule adds the direction randomisation, and the rate now quoted is the r7
+held-out figure for directions held up to eight holding periods (any verdict). The current strings
+are in `sonar/backtest.py` `_verdict` and `_chance_caveat`; the rule and the rate are in
+`docs/specs/sign-randomisation-verdicts.md` (measure 9 and Design).*
+
 **Buyability verdicts** (`sonar/engine.py`, one vocabulary, shown on hover at `ui/app.py:3533-3539`).
 Placeholders: `{ev}` = `ev:+.1%`, `{n}` hours, `{gate}` such as `4c`, `{best}` = "best hour" or
 "two best hours" (from `robust_drop`), `{rest}` = `robust_ev:+.1%`. No string may contain "edge",

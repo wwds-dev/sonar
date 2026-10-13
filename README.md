@@ -280,11 +280,14 @@ run against the installed bundle, shown in the app by the **Test plan** button; 
 
 ### Learning what the numbers mean
 
-The **Learn** tab *is* the manual: a plain-English primer with a 25-term glossary (§1), and **§8, the one to read
+The **Learn** tab *is* the manual: a plain-English primer with a 32-term glossary (§1), and **§8, the one to read
 before trusting a Practice run** — how to read an error bar, what the attribution verdicts mean, and how many
 trials a number needs before it means anything (the Practice backtest gives no verdict under 100 setups or 20
 entry dates, and setups entered on the same day count together, so 18,973 trials on the default run give ±1.8
-points, not ±0.7).
+points, not ±0.7). A verdict also needs the run's directions to beat directions picked at random over whole
+stretches of time; a run outside its error bar that does not reads "not told apart from chance". Even so,
+random directions held for up to eight holding periods still got a verdict about 1 run in 10 in our tests, per
+run, before costs; ten-year runs get no verdict (`CONFIDENCE.md`).
 
 ### Uptime
 

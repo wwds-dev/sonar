@@ -12,6 +12,57 @@ section lists what the v2 arc shipped.
 
 ## Unreleased (not installed)
 
+**Backtest verdicts: a check against random directions** (branch `sign-randomisation-verdicts`;
+`docs/specs/sign-randomisation-verdicts.md`, `docs/adr/0003-sign-randomisation-gate.md`). Before
+costs, from one replay of past prices, as before.
+
+- **A verdict now needs two things.** The difference outside its error bar, as before, *and* the
+  run's directions reading further from the prediction than directions swapped for the opposite one
+  over whole stretches of time (a stretch is four holding periods, every asset class together). The
+  p-value in the direction of Δ must be under 0.05. The check can only take a verdict away.
+- **A third, grey reading.** Outside the bar without passing the check reads "not told apart from
+  chance", never "within". Inside the bar now reads "not shown to differ from the prediction, which is
+  not the same as no difference" (was "no edge detected. This is what no edge is supposed to look
+  like.").
+- **The rate every verdict quotes.** Directions picked at random and held for up to eight holding
+  periods "still got a verdict either way about 1 run in 10, and about 1 in 5 at some settings"; the
+  rate is per run, and nearby settings can disagree. Figure: 9.11% [7.6–10.9] of 1,152 judged runs on
+  a held-out set (the watchlist's daily bars, 2006-01-01 to 2016-09-30; manifest `404f5a77…`), 52.9%
+  withheld; model validator r7, 2026-10-12. Its 7.5% target was **not met**; the owner chose to
+  disclose it rather than redesign the stretches.
+- **What the check cannot see, said on every reading outside the bar:** "A direction fixed per
+  instrument, such as always long, can also land outside the bar, because each instrument keeps its
+  own trend over the years and the list holds only today's survivors; this check cannot see that."
+- **New reasons for no verdict.** Under 8 separate stretches ("A shorter horizon gives more, or a
+  longer range up to five years"; on a five-year run only the horizon). A sample missing some setups'
+  opposite direction, entry time, horizon or timeouts. Any ten-year Lab run (the Terminal never reads
+  ten years): over ten years a direction fixed per instrument lands outside the bar more often than
+  the quoted rate.
+- **The Terminal's backtest range.** Two years for the day and week profiles, five for the month
+  (was two), so they fall in enough stretches to be judged; the quarter and year profiles show the
+  numbers without a verdict. The Lab and the Terminal show the survivorship line under every result.
+- **Attribution.** KEEP and INVERTED also need the component's own randomisation p to survive
+  Benjamini-Hochberg across the components measured. Otherwise a component reads "not told apart
+  from chance", or "not tested" where the check could not run. The check does not cover traits fixed
+  per instrument, such as volatility; the Lab says so in both wordings. KEEP and INVERTED say "before
+  costs".
+- **DROP is uncalibrated (deferred).** It still has no error bar; the owner deferred that to the P3
+  backlog (`TODO.md`).
+- **Expert wording** adds "p vs random directions, in the direction of Δ: {p} ({q} stretches)", and the
+  IC's randomisation p "before the correction for the {n} components measured". Plain wording gets no
+  new number.
+- **Tests.** The two old acceptance tests become rate tests with bounds set in advance from the
+  binomial distribution, slow-marked, each under pytest's 60 s per-test cap. The headline ones are a
+  gate against the code before the check, not proof of 5%. **The attribution suite test is a
+  regression guard**: the attribution size gate is the real-bar measurement (measure 3), not yet run at
+  full size.
+- **Suite budget 300 s → 600 s** (`run-tests.sh`), for the rate tests on a loaded machine; the 60 s
+  per-test cap is unchanged. **Coverage is measured in two appended passes** under the watchdog, the
+  slow one with the per-test cap lifted and a 1200 s budget (`TESTING.md` §7).
+- **Docs.** Learn tab §7 and §8 explain the check, the readings and the rate with its source;
+  `CONFIDENCE.md` records the r7 figures, the residuals and the clustered power figure; TESTPLAN 7.3,
+  7.5 and a new 7.13; the glossary adds p-value and survivorship.
+
 - CI: `actions/checkout` and `actions/setup-python` move to v7, which run on Node.js 24
   (GitHub is retiring Node.js 20 for actions). No change to the app.
 - The launchd agent runs the installed `SONAR.app` headless instead of the checkout's working tree,

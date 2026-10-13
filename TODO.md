@@ -117,7 +117,8 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
         residual names both causes (each instrument's own trend, today's survivors); no "judged together"
         footer on a withheld run; drift order, the Lab's range hand-off and the 600-run ≤ 43 bound pinned;
         measure 8 "≤ 0.88 (sets share worlds)"; tooling baseline labels 87% as combined (branch-only 79.5%).
-  - [ ] `P2` `docs` `@ai` **Tech-writer: restate the rule and the rate** in `static/docs.html` (the lines measure
+  - [x] `P2` `docs` `@ai` **Tech-writer: restate the rule and the rate** (done 2026-10-13: Learn tab §7–§8,
+        `CONFIDENCE.md`, TESTPLAN 7.3/7.5/7.13, README, CHANGELOG "Unreleased") in `static/docs.html` (the lines measure
         9 lists), `CONFIDENCE.md:618-625` and the Design section of `qa11-qa13-honest-baselines.md`; the Learn tab
         says the check does not cover traits fixed per instrument. CHANGELOG: the new state and withheld reason,
         DROP still uncalibrated (deferred), and the attribution test now a regression guard whose size gate is

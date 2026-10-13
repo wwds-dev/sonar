@@ -313,7 +313,7 @@ suite cannot tell you the bundle is correct.
 
 ## 6. Manual acceptance
 
-Moved to **[`TESTPLAN.md`](TESTPLAN.md)** — 80 cases across every tab, 20 of
+Moved to **[`TESTPLAN.md`](TESTPLAN.md)** — 150 cases across every tab, 18 of
 them marked as regressions that have caught a real bug before. Two documents
 that both claim to be the manual checklist is one too many, so this section is
 a pointer rather than a copy.
