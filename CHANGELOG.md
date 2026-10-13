@@ -78,6 +78,15 @@ crossed line is not a trading edge. (ADR 0002 Amendment 1, `docs/specs/shadow-le
   reported; the old record's backups rotate out after a reset; the robust rule's power cost above;
   the extreme fills are not a bound on z; the date given for a retired record is when its file
   last changed status, which a restore from a backup moves.
+## v2.266 — 2026-10-13
+
+- **Plainer wording when the time-stop test ends without a crossing.** The closing line of the
+  *Every entry, graded at a fixed date* block now says "not enough evidence that the score ranks
+  4-week results" instead of "no evidence … at the planned size", and adds that with 201 entries
+  a link of about 0.2 or more, if one existed, would be found about 3 times in 4, so a weaker one could have been
+  missed. If fewer than the planned 201 entries had a result, it says how many and that the test
+  was less sensitive than designed. "Planned size" could be read as position size; "no evidence" overstated a negative.
+  ADR 0002 §3 amended. No behaviour change.
 
 ## v2.260 — 2026-10-12
 
@@ -140,6 +149,14 @@ they have checked.
   (closing UX C-2)
 
 ## Unreleased — 2026-10-12
+
+**The time-stop shadow reads a damaged readout as unreadable.** A look counts as crossed
+only when its flag is `true` and its z is a finite number; otherwise the block says "Could not
+work it out this time (unreadable)" instead of a "crossed" line with z +0.00. Look numbers are
+held to 1 to 3, and the looks, bands and entries it reads are cut to the lengths the engine writes.
+New tests pin the mean-R range, the 7-day price grace and the T bar. ADR 0002 now records that the
+whole design's false-alarm rate measures about 6%, not 5%; the bar stays 2.315 (owner's choice) and
+no on-screen text changes.
 
 **A window follows only an engine on this machine.** The engine lock names
 the running engine's address; the window now follows it only if it is a plain

@@ -52,3 +52,9 @@
 {"ts": "2026-10-13T14:03:58", "phase": "secure", "state": "done", "spec": "shadow-ledger"}
 {"ts": "2026-10-13T14:03:58", "phase": "document", "state": "done", "spec": "shadow-ledger"}
 {"ts": "2026-10-13T14:03:59", "phase": "release", "state": "blocked", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T12:52:50", "phase": "build", "state": "done", "spec": "shadow-time-stop"}
+{"ts": "2026-10-12T22:05:15", "phase": "define", "state": "start", "spec": "shadow-final-none"}
+{"ts": "2026-10-12T22:28:41", "phase": "define", "state": "done", "spec": "shadow-final-none"}
+{"ts": "2026-10-12T23:00:01", "phase": "define", "state": "done", "spec": "shadow-final-none"}
+{"ts": "2026-10-13T12:37:40", "phase": "release", "state": "start", "spec": "shadow-final-none"}
+{"ts": "2026-10-13T12:41:17", "phase": "release", "state": "done", "spec": "shadow-final-none"}

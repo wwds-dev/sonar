@@ -594,10 +594,23 @@ SHADOW_WORDS = {
                           "Ranks past random-direction paper outcomes at T only; before "
                           "costs, exact fills, one test with a by-design false-alarm rate; "
                           "not a tradeable edge."),
-    "SH_FINAL_NONE": ("Three looks, no crossing: no evidence that the score ranks {T_adj} "
-                      "results, at the planned size. The test is finished.",
-                      "Looks 1-3 not crossed: no evidence that the score ranks {T_adj} "
-                      "results, at the planned size. Design closed."),
+    "SH_FINAL_NONE": ("Three looks, no crossing: not enough evidence that the score ranks "
+                      "{T_adj} results. If a link of about 0.2 or more existed, a test with "
+                      "{used} entries would find it about 3 times in 4; a weaker link less "
+                      "often, so a weaker one could have been missed. The test is finished.",
+                      "Looks 1-3 not crossed: not enough evidence that the score ranks "
+                      "{T_adj} results. If a link of about 0.2 or more existed, {used} entries "
+                      "would find it about 3 times in 4. Design closed."),
+    "SH_FINAL_NONE_FEWER": ("Three looks, no crossing: not enough evidence that the score "
+                            "ranks {T_adj} results. Only {used} of the {N} planned entries "
+                            "had a result, so the test was less sensitive than designed (at "
+                            "{N} entries, a link of about 0.2 or more, if one existed, would be "
+                            "found about 3 times in 4); a weaker link could have been missed. "
+                            "The test is finished.",
+                            "Looks 1-3 not crossed: not enough evidence that the score "
+                            "ranks {T_adj} results. {used} of {N} entries graded; designed "
+                            "to find a link of about 0.2 or more, if one existed, about 3 times in "
+                            "4 at {N}. Design closed."),
     "SH_ROW_SPLIT": ("{reached} with a result: {t} at the target ({tp}%) · {s} at the stop "
                      "({sp}%) · {x} at neither, valued at the close after {T} ({xp}%)",
                      "{reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} "
@@ -868,6 +881,18 @@ def _sh_int(v) -> int:
     return int(n) if n is not None else 0
 
 
+def _sh_k(v) -> int:
+    """A look number, held to the pre-registered looks (1..3): a payload cannot
+    make the readout name a fourth."""
+    return min(max(_sh_int(v), 1), len(calibration_mod.SHADOW_LOOKS))
+
+
+#: Longest list the readout reads from a payload. The engine makes three looks,
+#: five bands and one entry per protocol position (capped at 40 open); anything
+#: past these is not from this build, and costs no time here.
+SHADOW_ENTRIES_MAX = 10_000
+
+
 def _sh_pct(v) -> int:
     """A share as a whole percent."""
     return round(100 * (_sh_num(v) or 0.0))
@@ -1004,8 +1029,9 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
     entered, reached = _sh_int(d.get("n_entered")), _sh_int(d.get("n_reached"))
     T, T_adj = _sh_t_words(d.get("t_days") if entered else t_default)
     rr = _sh_num(d.get("rr")) or rr
-    looks = [lk for lk in (d.get("looks") if isinstance(d.get("looks"), list) else [])
-             if isinstance(lk, dict)][:len(calibration_mod.SHADOW_LOOKS)]
+    raw = d.get("looks")
+    looks = ([lk for lk in raw[:len(calibration_mod.SHADOW_LOOKS)] if isinstance(lk, dict)]
+             if isinstance(raw, list) else [])
     n_wait_price, n_no_price = _sh_int(d.get("n_wait_price")), _sh_int(d.get("n_no_price"))
     next_t = _sh_date(d.get("next_t"), now)
 
@@ -1153,24 +1179,31 @@ def _sh_look_status(looks: list[dict], now: float, T: str, T_adj: str,
     one worked out and not recorded says so, with no z and no crossing."""
     shown = [lk for lk in looks if _sh_shown(lk, blocked)]
     unrecorded = [lk for lk in looks if lk.get("evaluated") and not _sh_shown(lk, blocked)]
-    # `is True`: a payload's "no" or 1 is not a crossing (security P3-7).
-    crossed = next((lk for lk in shown if lk.get("crossed") is True), None)
+    crossed = next((lk for lk in shown if lk.get("crossed")), None)
+    if crossed is not None and (crossed.get("crossed") is not True
+                                or _sh_num(crossed.get("z")) is None):
+        # Crossed means True and a z to show for it; anything else is a
+        # payload this build cannot read, not a verdict (security P3-7).
+        raise ValueError("a look neither crossed nor not crossed")
     pending = [lk for lk in looks if not lk.get("evaluated") and not lk.get("design_closed")]
     if crossed is not None:
-        z = _sh_num(crossed.get("z")) or 0.0
+        z = _sh_num(crossed.get("z"))
         key = "SH_LOOK_CROSSED_UP" if z > 0 else "SH_LOOK_CROSSED_DOWN"
         used = _sh_int(crossed.get("used"))
-        line = (_sh_word(key, k=_sh_int(crossed.get("k")), N=_sh_int(crossed.get("n")),
+        line = (_sh_word(key, k=_sh_k(crossed.get("k")), N=_sh_int(crossed.get("n")),
                          used=used, z=_sh_z(z, True),
                          date=_sh_date(crossed.get("recorded_at"), now))
                 + " " + _sh_word("SH_CAVEAT_CROSSED", T=T, used=used))
-        return line, _sh_int(crossed.get("k"))
+        return line, _sh_k(crossed.get("k"))
     if looks and len(shown) == len(looks):
-        return _sh_word("SH_FINAL_NONE", T_adj=T_adj), None
+        last = looks[-1]
+        used, planned = _sh_int(last.get("used")), _sh_int(last.get("n"))
+        key = "SH_FINAL_NONE" if used >= planned else "SH_FINAL_NONE_FEWER"
+        return _sh_word(key, T_adj=T_adj, used=used, N=planned), None
     due = next((lk for lk in pending if _sh_num(lk.get("due")) is not None
                 and now >= _sh_num(lk.get("due"))), None)
     if due is not None:
-        k = _sh_int(due.get("k"))
+        k = _sh_k(due.get("k"))
         line = _sh_word("SH_LOOK_WAITING_PRICE", ordinal=SHADOW_ORDINALS.get(k, str(k)),
                         k=k, w=_sh_int(due.get("n_wait_price")) + _sh_int(due.get("n_waiting")),
                         N=_sh_int(due.get("n")))
@@ -1180,10 +1213,10 @@ def _sh_look_status(looks: list[dict], now: float, T: str, T_adj: str,
         return line, None
     if unrecorded:
         return _sh_word("SH_LOOK_BLOCKED" if blocked else "SH_LOOK_UNRECORDED",
-                        k=_sh_int(unrecorded[-1].get("k"))), None
+                        k=_sh_k(unrecorded[-1].get("k"))), None
     if shown:
         last = shown[-1]
-        kw = {"k": _sh_int(last.get("k")), "N": _sh_int(last.get("n")),
+        kw = {"k": _sh_k(last.get("k")), "N": _sh_int(last.get("n")),
               "used": _sh_int(last.get("used")), "date": _sh_date(last.get("recorded_at"), now)}
         if last.get("past_line"):
             # Past the line, but not robust to the members left out (G2 (a)):
@@ -1203,11 +1236,11 @@ def _sh_look_status(looks: list[dict], now: float, T: str, T_adj: str,
             else:
                 line += " " + _sh_word("SH_NEXT_LOOK_UNDATED", N2=_sh_int(nxt.get("n")),
                                        missing=_sh_int(nxt.get("n_missing")))
-        return line, _sh_int(last.get("k"))
+        return line, _sh_k(last.get("k"))
     if not pending:
         return _sh_word("SH_LOADING"), None
     first = pending[0]
-    k = _sh_int(first.get("k"))
+    k = _sh_k(first.get("k"))
     kw = {"have": _sh_int(first.get("used")), "N": _sh_int(first.get("n")), "k": k,
           "ordinal": SHADOW_ORDINALS.get(k, str(k))}
     if _sh_num(first.get("due")) is not None:
@@ -1222,7 +1255,8 @@ def _sh_window(entries, now: float) -> str:
     entries, or of every protocol entry when none is graded yet. Empty when
     there are no entries. Dates go through the payload clamp; a bad one reads
     n/a. Read from the readout itself, so a follower shows the holder's."""
-    rows = [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+    rows = ([e for e in entries[:SHADOW_ENTRIES_MAX] if isinstance(e, dict)]
+            if isinstance(entries, list) else [])
     if not rows:
         return ""
     graded = [e for e in rows if e.get("state") in calibration_mod.SHADOW_GRADED]
@@ -1250,7 +1284,7 @@ def _sh_rows(d: dict, looks: list[dict], named: int | None, detail: bool, T: str
     # The extreme fills of the look the sentence names, when it left any
     # members out for want of a result (Amendment 1 §3).
     for lk in looks:
-        if (_sh_int(lk.get("k")) == named and _sh_shown(lk, blocked)
+        if (_sh_k(lk.get("k")) == named and _sh_shown(lk, blocked)
                 and _sh_int(lk.get("n_filled")) and _sh_num(lk.get("z_lo")) is not None
                 and _sh_num(lk.get("z_hi")) is not None):
             rows.append(_sh_word("SH_EXTREMES", x=_sh_int(lk.get("n_filled")),
@@ -1277,16 +1311,17 @@ def _sh_rows(d: dict, looks: list[dict], named: int | None, detail: bool, T: str
         rows.append(_sh_word("SH_ROW_RUNNING_WAIT", k=SHADOW_RUNNING_FROM - reached))
     for lk in looks:
         if (_sh_shown(lk, blocked) and lk.get("crossed") is not True
-                and _sh_int(lk.get("k")) != named):
+                and _sh_k(lk.get("k")) != named):
             past = bool(lk.get("past_line"))
             na = _sh_num(lk.get("z_lo")) is None or _sh_num(lk.get("z_hi")) is None
             key = (("SH_ROW_PAST_LOOK_NA" if na else "SH_ROW_PAST_LOOK_NOT_ROBUST") if past
                    else "SH_ROW_PAST_LOOK")
-            rows.append(_sh_word(key, k=_sh_int(lk.get("k")), N=_sh_int(lk.get("n")),
+            rows.append(_sh_word(key, k=_sh_k(lk.get("k")), N=_sh_int(lk.get("n")),
                                  z=_sh_z(lk.get("z"), past)))
     rows += [left_out, gap]
     if detail:
-        for b in d.get("bands") or []:
+        bands = d.get("bands")
+        for b in bands[:len(calibration_mod.BUCKETS)] if isinstance(bands, list) else []:
             if not isinstance(b, dict) or not _sh_int(b.get("n")):
                 continue
             ref = b.get("ref") if isinstance(b.get("ref"), dict) else {}
@@ -1316,7 +1351,7 @@ def _sh_warnings(looks: list[dict], now: float, blocked: bool = False) -> list[s
         n, x = _sh_int(lk.get("n")), _sh_int(lk.get("n_excluded"))
         if shown and n and x / n > SHADOW_WARN_SHARE:
             out.append(_sh_word("SH_WARN", x=x, N=n, pct=round(100 * x / n), used=n - x,
-                                k=_sh_int(lk.get("k"))))
+                                k=_sh_k(lk.get("k"))))
     return out
 
 

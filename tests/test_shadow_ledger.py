@@ -1540,8 +1540,10 @@ def test_sec_p3_7_only_a_crossed_that_is_true_is_a_crossing():
     led = _recorded(rising())
     out = calibration.shadow_with_ledger({"entries": rising()}, led)
     out["looks"][0]["crossed"] = "yes"
-    t, everything = _texts(_full_readout(out))
-    assert "crossed the line" not in everything
+    # Since the master merge (v2.266 hardening, test_h3_a_*), a truthy crossed
+    # that is not True is an unreadable payload: an error line, never a crossing.
+    with pytest.raises(ValueError):
+        _texts(_full_readout(out))
 
 
 def test_domain_r2_p3_3_extremes_that_could_not_be_worked_out_say_so(monkeypatch):

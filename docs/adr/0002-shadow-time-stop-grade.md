@@ -86,10 +86,19 @@ the plan's σ is scaled to (`core.py:341` passes it to `build_plan`; verified in
   - Cohorts are the **first 45, 101 and 201 protocol entries by `opened_at`**. Membership is set by
     entry order and never by resolution.
   - Each look is evaluated **once**, when every member has an outcome or a final exclusion.
-  - The boundary is **|z| ≥ 2.315 at every look** (Pocock). That holds the false-positive rate of
-    the whole design at 5% two-sided (Monte Carlo, 400,000 paths).
-  - The first crossing is the result. With no crossing by 201, the readout says "no evidence that
-    the score ranks 4-week results, at the planned size". After the third look the design is closed.
+  - The boundary is **|z| ≥ 2.315 at every look** (Pocock). ~~That holds the false-positive rate of
+    the whole design at 5% two-sided (Monte Carlo, 400,000 paths).~~
+    *Amended 2026-10-13: superseded. The whole design measured end to end, with the HC3 z of the
+    production code, has a false-alarm rate of about 6% (5.5-6.5%): 6.095% over 40,000 books
+    (spec Build notes 15 and 22). The 5% held for the idealised statistic in the Monte Carlo; the
+    excess comes from look 1, where the HC3 z has slightly heavy tails at n = 45. The owner chose
+    on 2026-10-12 to keep the bar at 2.315, so the constant does not change. The on-screen copy
+    states no rate.*
+  - The first crossing is the result. With no crossing by 201, the readout says "not enough evidence
+    that the score ranks 4-week results"; at 201 entries it adds that a link of about 0.2
+    or more, if one existed, would be found about 3 times in 4 (power 0.73), and a weaker one less often. With fewer than 201 graded
+    entries it says how many had a result and that the test was less sensitive than designed (amended
+    2026-10-12 on the owner's yes; was "no evidence … at the planned size"). After the third look the design is closed.
   - Between looks the readout shows the running value, labelled "not a test".
   - At 2.54 protocol entries a day, the expected dates are about 2026-11-06, 2026-11-28 and
     2027-01-07. The 40-position cap can push them later.
@@ -98,7 +107,7 @@ the plan's σ is scaled to (`core.py:341` passes it to `build_plan`; verified in
 
 | design | false positives | correlation needed at 45 / 101 / 201 | power at IC 0.1 / 0.2 / 0.3 |
 |---|---|---|---|
-| **Pocock 2.315 at 45, 101, 201 (recommended)** | 5.0% | 0.35 / 0.23 / 0.16 | 0.23 / 0.73 / 0.98 |
+| **Pocock 2.315 at 45, 101, 201 (recommended)** | ~~5.0%~~ about 6% (amended 2026-10-13, above) | 0.35 / 0.23 / 0.16 | 0.23 / 0.73 / 0.98 |
 | O'Brien–Fleming 4.18 / 2.79 / 1.98 | 5.0% | 0.63 / 0.28 / 0.14 | 0.29 / 0.80 / 0.99 |
 | 3σ at each of the three looks (keeps `Z_CLAIM`) | 0.7% | 0.45 / 0.30 / 0.21 | 0.07 / 0.46 / 0.90 |
 | 3σ once at 45 (validator's proposal) | 0.3% | 0.45 | 0.01 / 0.05 / 0.16 |

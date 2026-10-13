@@ -80,7 +80,7 @@ def look(k, n, entered=None, due=None, used=0, excluded=0, waiting=0, wait_price
             "used": used, "n_excluded": excluded, "n_filled": excluded, "n_waiting": waiting,
             "n_wait_price": wait_price, "price_until": None, "evaluated": evaluated, "z": z,
             "z_lo": None, "z_hi": None, "method": None, "crossed": crossed,
-            "past_line": z is not None and abs(z) >= 2.315, "design_closed": closed,
+            "past_line": isinstance(z, (int, float)) and abs(z) >= 2.315, "design_closed": closed,
             "recorded": recorded, "recorded_at": RECORDED_AT if recorded else None}
 
 
@@ -147,6 +147,11 @@ STATES = {
         looks=[look(1, 45, due=NOW - 90 * DAY, used=45, evaluated=True, z=0.4),
                look(2, 101, due=NOW - 60 * DAY, used=101, evaluated=True, z=1.1),
                look(3, 201, due=NOW - DAY, used=201, evaluated=True, z=-0.3)]),
+    "d closed, 190 graded": readout(
+        n_entered=210, n_reached=190, n_waiting=9,
+        looks=[look(1, 45, due=NOW - 90 * DAY, used=45, evaluated=True, z=0.4),
+               look(2, 101, due=NOW - 60 * DAY, used=101, evaluated=True, z=1.1),
+               look(3, 201, due=NOW - DAY, used=190, evaluated=True, z=-0.3)]),
 }
 
 
@@ -246,8 +251,14 @@ def test_u4_each_state_says_its_own_sentence(window):
     assert "On these paper entries, higher scores went with lower R on average." in s["c crossed down"]
     for name in ("c crossed up", "c crossed down"):
         assert "It is not a trading edge." in s[name] and "crossed the line" in s[name]
-    assert "no evidence that the score ranks 4-week results, at the planned size" in \
-        s["d closed, no crossing"]
+    d = s["d closed, no crossing"]
+    assert "not enough evidence that the score ranks 4-week results." in d
+    assert "If a link of about 0.2 or more existed, a test with 201 entries would find it about 3 times in 4" in d
+    assert "could have been missed" in d and "less sensitive" not in d
+    assert "planned size" not in d and "no evidence that" not in d
+    f = s["d closed, 190 graded"]
+    assert "Only 190 of the 201 planned entries had a result" in f
+    assert "less sensitive than designed" in f and "about 3 times in 4" in f
 
 
 def test_u4_not_a_test_yet_until_a_look_is_evaluated(window):
@@ -719,3 +730,105 @@ def test_qa_r3_w02_one_damaged_date_does_not_blank_an_end_of_the_window():
     entries = _entries((_noon(2026, 9, 22), "time"), (_noon(2026, 10, 3), "target"))
     rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
     assert "readable" not in rows[0]
+
+
+# -- hardening round (2026-10-13): a payload that is not from this build ---- #
+# The dict can come from another process, so a "crossing" needs the boolean
+# True and a number to show for it; lists are read only as far as the engine
+# can have written them. Everything else is the "unreadable" sentence.
+
+UNREADABLE = "Could not work it out this time (unreadable)"
+
+
+def _crossed_readout(z, crossed=True, k=1):
+    return readout(n_entered=60, n_reached=45, looks=[
+        look(k, 45, due=NOW - 30 * DAY, used=45, evaluated=True, z=z, crossed=crossed),
+        look(2, 101, due=NOW + 10 * DAY, used=60, closed=True),
+        look(3, 201, entered=120, used=60, closed=True)])
+
+
+@pytest.mark.parametrize("z,crossed", [("abc", True), (True, True), (float("nan"), True),
+                                       (None, True), (0.3, "no"), (2.6, "yes"), (2.6, 1)])
+def test_h3_a_crossing_needs_true_and_a_finite_z(window, z, crossed):
+    """Kills: `_sh_num(z) or 0.0` (a 'crossed ... z=+0.00' for z='abc'/True) and
+    reading any truthy `crossed` as a crossing (crossed:'no' with z=0.3)."""
+    window.shadow_grade.render(_crossed_readout(z, crossed), 28.0, NOW)
+    status = window.shadow_grade.shadow_status.text()
+    assert status.startswith(UNREADABLE), status
+    assert "crossed" not in status.lower().replace("not crossed", "")
+
+
+def test_h3_a_true_crossing_is_unchanged(window):
+    window.shadow_grade.render(_crossed_readout(2.61), 28.0, NOW)
+    assert "+2.61" in window.shadow_grade.shadow_status.text()
+    window.shadow_grade.render(_crossed_readout(-2.61), 28.0, NOW)
+    assert "-2.61" in window.shadow_grade.shadow_status.text()
+
+
+def test_h3_a_look_number_is_held_to_one_through_three(window):
+    from ui.app import shadow_texts
+    for k, held in ((999, 3), (-4, 1), (0, 1)):
+        t = shadow_texts(_crossed_readout(2.61, True, k=k), False, NOW, 28.0)
+        want = shadow_texts(_crossed_readout(2.61, True, k=held), False, NOW, 28.0)
+        assert t["status"] == want["status"] and str(k) not in t["status"]
+
+
+def test_h3_a_huge_payload_costs_bounded_time_and_reads_as_the_first_few(window):
+    from ui.app import shadow_texts
+    base = readout()
+    band = base["bands"][0]
+    big = readout(bands=[dict(band) for _ in range(100_000)],
+                  looks=base["looks"] + [look(9, 9)] * 100_000,
+                  entries=[{"id": str(i), "opened_at": NOW, "state": "waiting"}
+                           for i in range(100_000)])
+    small = readout(bands=[band] * 5, looks=base["looks"][:3])
+    t0 = time.perf_counter()
+    got = shadow_texts(big, True, NOW, 28.0)
+    assert time.perf_counter() - t0 < 1.0
+    want = shadow_texts({**small, "entries": big["entries"][:10_000]}, True, NOW, 28.0)
+    assert got["rows"].count("\n") == want["rows"].count("\n")
+    assert got["status"] == want["status"]
+    window.shadow_grade.render(big, 28.0, NOW)          # and the widget never raises
+    window.book_shadow.render(big, 28.0, NOW)
+    for junk in ({"looks": "abc", "bands": 5, "entries": {"a": 1}},
+                 {"looks": [None, 3, "x"], "bands": [None, 7]}):
+        window.shadow_grade.render(readout(**junk), 28.0, NOW)
+        window.book_shadow.render(readout(**junk), 28.0, NOW)
+
+
+def test_h3_nothing_past_the_planned_lists_is_read():
+    """Kills: dropping the slice on looks (a fourth 'look' that crosses) or on
+    entries (an entry past the cap that stretches the window)."""
+    from ui.app import SHADOW_ENTRIES_MAX, shadow_texts
+    base = readout()
+    extra = look(3, 201, due=NOW, used=201, evaluated=True, z=3.0, crossed=True)
+    t = shadow_texts(readout(looks=base["looks"] + [extra]), False, NOW, 28.0)
+    assert t["status"] == shadow_texts(base, False, NOW, 28.0)["status"]
+    ok = [{"id": str(i), "opened_at": NOW, "state": "time"} for i in range(SHADOW_ENTRIES_MAX)]
+    late = {"id": "late", "opened_at": NOW + 400 * DAY, "state": "time"}
+    assert (shadow_texts(readout(entries=ok + [late]), False, NOW, 28.0)["rows"]
+            == shadow_texts(readout(entries=ok), False, NOW, 28.0)["rows"])
+
+def test_final_none_wording_compact_and_honest_about_power():
+    for key in ("SH_FINAL_NONE", "SH_FINAL_NONE_FEWER"):
+        full, compact = SHADOW_WORDS[key]
+        for text in (full, compact):
+            assert "not enough evidence that the score ranks {T_adj}" in text
+            assert "0.2 or more" in text and "if " in text.lower() and "about 3 times in " in text
+            assert "planned size" not in text and "no evidence that" not in text
+            assert "fairly strong" not in text and "usually" not in text
+            for banned in ("edge", "profit", "proves", "certain"):
+                assert banned not in text.lower()
+        assert "could have been missed" in full
+        assert full.startswith("Three looks, no crossing")
+        assert compact.startswith("Looks 1-3 not crossed")
+    assert "{used}" in SHADOW_WORDS["SH_FINAL_NONE"][0]
+    assert "of the {N} planned" in SHADOW_WORDS["SH_FINAL_NONE_FEWER"][0]
+
+
+def test_final_none_power_figure_is_tied_to_the_201_entry_design():
+    """The "about 3 times in 4" in SH_FINAL_NONE is ADR 0002 §3's power (0.73 at a
+    link of 0.2) for the Pocock design at 45/101/201. If the looks change, the
+    sentence must be re-derived, not silently kept."""
+    from sonar.calibration import SHADOW_BOUNDARY, SHADOW_LOOKS
+    assert SHADOW_LOOKS == (45, 101, 201) and SHADOW_BOUNDARY == 2.315

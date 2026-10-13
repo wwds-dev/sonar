@@ -1218,13 +1218,16 @@ def test_v12_quick_the_design_has_its_planned_power():
 
 @pytest.mark.slow
 def test_v12_the_design_holds_its_size_where_the_closed_only_grade_does_not():
-    """V-12 as the spec states it: 2,000 seeded books. The design rejects 5% ±
-    1.5 pt; the closed-only snapshot statistic on the same books (n ≈ 200)
+    """V-12 as the spec states it: 2,000 seeded books. The design rejects about
+    6% ± 1.5 pt (4.5-7.5%; owner decision 2026-10-13); the closed-only snapshot statistic on the same books (n ≈ 200)
     rejects measurably more; with a planted correlation of 0.2 the power is
     0.73 within Monte-Carlo error. Run with ``./run-tests.sh tests/ -m slow``."""
     lib = _walk_library(*V12_LIBRARY)
     design, shut, shut_n = _v12_null(V12_BOOKS, V12_NULL_SEED, lib)
-    assert 0.035 <= design <= 0.065, design
+    # The whole design's size is about 6% (5.5-6.5%; spec Build notes 15, 22:
+    # 6.095% over 40,000 books). The band is centred on that measured rate,
+    # not on 5%, so another seed's 2,000-book rate (SE 0.5 pt) stays inside it.
+    assert 0.045 <= design <= 0.075, design
     se = math.sqrt(design * (1 - design) / V12_BOOKS + shut * (1 - shut) / V12_BOOKS)
     assert shut - design > 3 * se, (shut, design)
     assert 150 <= shut_n <= 250, shut_n
@@ -1276,7 +1279,7 @@ def test_v12_slow_the_design_size_to_a_fifth_of_a_point():
     5% comes from look 1, where the HC3 z has slightly heavy tails at n = 45;
     the owner accepted it on 2026-10-12 (spec Build note 15). The bar is the
     measured value ± 3 SE (QA P1-1), so a regression either way shows; the
-    spec's 5 ± 1.5 pt test is the 2,000-book one above. It averages the
+    spec's 6 ± 1.5 pt test is the 2,000-book one above. It averages the
     chunks run in this session: run it with them (``-m slow``); alone it
     skips, and with only some of them it fails."""
     _v12_all_chunks_or_skip(_v12_rates, V12_PRECISION_CHUNKS, "test_v12_slow_size_chunk")
@@ -1485,3 +1488,49 @@ def test_r3_a_mean_test_skips_with_no_chunks_and_fails_with_some():
     else:
         pytest.fail("a partial chunk selection passed")
     _v12_all_chunks_or_skip({0: 1, 1: 1, 2: 1}, 3, "chunk")
+
+
+# -- hardening round (2026-10-13): pins found by comparing builds ---------- #
+
+def test_h1_the_mean_r_range_is_mean_pm_196_sd_over_root_n():
+    """The running mean R carries its own range: mean ∓ 1.96·sd/√n with the
+    sample sd (n − 1). Non-constant R, n = 5 (3 target at +1.5, 2 stop at −1),
+    so every constant is told apart. Kills: Z95 → 1.0, n − 1 → n, √n → n, and
+    lo/hi swapped."""
+    book = [closed_as(sp(i), "TARGET", 10 * DAY) for i in range(3)]
+    book += [closed_as(sp(i + 3), "STOP", 10 * DAY) for i in range(2)]
+    r = calibration.shadow_time_stop([], book, {"AAA": daily(-5, 40)}, LATER)
+    rs = [1.5, 1.5, 1.5, -1.0, -1.0]
+    n = len(rs)
+    mean = sum(rs) / n
+    sd = math.sqrt(sum((v - mean) ** 2 for v in rs) / (n - 1))
+    assert r["n_reached"] == n and r["mean_r"] == pytest.approx(mean)
+    assert r["mean_r_lo"] == pytest.approx(mean - 1.96 * sd / math.sqrt(n), abs=1e-12)
+    assert r["mean_r_hi"] == pytest.approx(mean + 1.96 * sd / math.sqrt(n), abs=1e-12)
+    assert r["mean_r_lo"] < r["mean_r"] < r["mean_r_hi"]
+
+
+def test_h2_the_old_seven_day_grace_no_longer_ends_the_wait():
+    """ADR 0002 Amendment 1 §4 (merged after v2.266): "no price" now needs 28
+    days and 3 tried days, so at t_T + 7 days, with no bars, the entry still
+    waits. The 28-day edge to the second is pinned by
+    test_shadow_ledger.py::test_qa_p3_q26_the_grace_ends_at_28_days_to_the_second.
+    Kills: the 7-day grace left in place."""
+    p = sp()
+    for now in (T_DUE + 7 * DAY - 1, T_DUE + 7 * DAY, T_DUE + 28 * DAY - 1):
+        _r, e = one(p, bars=[], now=now)
+        assert e["state"] == "wait_price"
+    _r, e = one(p, bars=[], now=T_DUE + 28 * DAY)        # the helper's 3 tried days
+    assert e["state"] == "no_price"
+
+
+def test_h2_a_bar_stamped_exactly_at_t_is_the_t_bar():
+    """A bar whose stamp equals t_T is the T bar, not the one before it. T is
+    placed on day 28's session-start stamp; its close (101) is the result and
+    the day before (99) is not. Kills: bisect_right → bisect_left on t_due."""
+    t_due = 28 * DAY + STAMP_H
+    p = sp(opened_at=t_due - 28 * DAY)
+    assert calibration.shadow_due(p) == t_due
+    bars = daily(-5, 40, close=lambda d: {27: 99.0, 28: 101.0}.get(d, 100.0))
+    _r, e = one(p, bars)
+    assert e["state"] == "time" and e["exit"] == 101.0

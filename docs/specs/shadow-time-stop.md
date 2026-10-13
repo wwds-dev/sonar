@@ -76,8 +76,8 @@ which entries get graded. It is shown beside the existing grade, which stays unc
 **Success measure.** All four must hold:
 1. **No censoring by construction.** In the test book, outcomes carry no edge but time to resolve
    depends on score. Every entry older than T has an outcome, or an exclusion that is counted and
-   shown. The gate statistic rejects at its nominal rate (two-sided 5% overall, ±1.5 pt of
-   Monte-Carlo error, at least 2,000 seeded books). The closed-only statistic, run on the same
+   shown. The gate statistic rejects at its measured rate (two-sided about 6% overall, 4.5–7.5% at
+   2,000 seeded books; the 5% in the ADR was a normal-increment figure, see its 2026-10-13 amendment). The closed-only statistic, run on the same
    books, does not (test V-12).
 2. **Live:** by the first look (cohort of 45, about 2026-11-06), each of the first 45 protocol
    entries shows an outcome (target / stop / time) or a counted exclusion in the readout. A
@@ -315,7 +315,8 @@ zero.
 | `SH_LOOK_CROSSED_UP` | Look {k} of 3, first {N} entries ({used} with a result): crossed the line. On these paper entries, higher scores went with higher R on average. z = {z}; the line is ±2.315. The test ends here. | Look {k}/3, n = {N} ({used} graded): HC3 slope z {z}, \|z\| ≥ 2.315, crossed. Design closed. |
 | `SH_LOOK_CROSSED_DOWN` | *(as above, with "lower R on average")* | *(same as UP)* |
 | `SH_CAVEAT_CROSSED` | This says only that the score sorted how these past coin-flip paper entries ended after {T}. It does not show that trading by score would make money: it is one test on {used} entries, before costs, fees and slippage, with exact fills, and a test like this can cross by chance even when there is no link. It is not a trading edge. | Ranks past random-direction paper outcomes at T only; before costs, exact fills, one test with a by-design false-alarm rate; not a tradeable edge. |
-| `SH_FINAL_NONE` | Three looks, no crossing: no evidence that the score ranks {T_adj} results, at the planned size. The test is finished. | Looks 1-3 not crossed: no evidence that the score ranks {T_adj} results, at the planned size. Design closed. |
+| `SH_FINAL_NONE` | Three looks, no crossing: not enough evidence that the score ranks {T_adj} results. If a link of about 0.2 or more existed, a test with {used} entries would find it about 3 times in 4; a weaker link less often, so a weaker one could have been missed. The test is finished. | Looks 1-3 not crossed: not enough evidence that the score ranks {T_adj} results. If a link of about 0.2 or more existed, {used} entries would find it about 3 times in 4. Design closed. |
+| `SH_FINAL_NONE_FEWER` (final look graded fewer than its {N} = 201 entries) | Three looks, no crossing: not enough evidence that the score ranks {T_adj} results. Only {used} of the {N} planned entries had a result, so the test was less sensitive than designed (at {N} entries, a link of about 0.2 or more, if one existed, would be found about 3 times in 4); a weaker link could have been missed. The test is finished. | Looks 1-3 not crossed: not enough evidence that the score ranks {T_adj} results. {used} of {N} entries graded; designed to find a link of about 0.2 or more, if one existed, about 3 times in 4 at {N}. Design closed. |
 | `SH_ROW_SPLIT` | {reached} with a result: {t} at the target ({tp}%) · {s} at the stop ({sp}%) · {x} at neither, valued at the close after {T} ({xp}%) | {reached} graded: target {t} ({tp}%) · stop {s} ({sp}%) · time {x} ({xp}%) |
 | `SH_ROW_WAITING` | still waiting: {w} not yet at {T} (the next on {next_t}) · {wp} waiting for a closing price | waiting: {w} before T (next {next_t}) · {wp} awaiting a final close |
 | `SH_ROW_REF` | what no edge would give after {T}, if the volatility estimate was right: about {a}% at the target · {b}% at the stop · {c}% at neither. A different split can mean the volatility estimate was off. With no edge, exact fills and randomly wandering prices, the average result would be about 0R. | what no edge would give at planned σ: {a}% / {b}% / {c}% (a σ̂ check); mean ≈0R at any σ (exact fills) |
@@ -378,7 +379,7 @@ Fix loop 2 (domain r2 P2-1, N-1, N-2, N-3):
 - **U-4.** One test per D3 row, each asserting its string id's text. This includes: a payload
   without the `shadow` key renders `SH_NOT_AVAILABLE`; "not a test yet" is present until a look is
   evaluated; "not a test" stays on the running row in every state; and `SH_FINAL_NONE` contains
-  "no evidence that the score ranks 4-week results, at the planned size".
+  "not enough evidence that the score ranks 4-week results" and "about 3 times in 4"; with fewer than 201 graded entries `SH_FINAL_NONE_FEWER` says so.
 - **U-5.** A non-zero `n_nonprotocol`, `n_left`, `n_no_price` or `n_gap` each appears in
   `shadow_rows`. With 5 of 45 excluded (11%), `shadow_warn` is visible and starts with "Note:"; with
   4 of 45 (8.9%) it is hidden.
@@ -502,10 +503,10 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
     at n = 45: look 1 alone rejects 2.7%, against Pocock's 2.06%.
 
     **Owner decision 2026-10-12:** the measured size (5.9–6.2% over 20,000 null books, the excess
-    from look 1) is accepted. ADR 0002 is not amended, and the boundary stays 2.315 with the looks at
+    from look 1) is accepted. ADR 0002 was amended on 2026-10-13 (about 6%, original text struck through), and the boundary stays 2.315 with the looks at
     45 / 101 / 201. The 2,000-book test
-    (`test_v12_the_design_holds_its_size_where_the_closed_only_grade_does_not`) keeps the spec's
-    5% ± 1.5 pt bar. The 20,000-book precision mean is held to the measured 5.7–6.7% (note 24). No user-facing copy states a
+    (`test_v12_the_design_holds_its_size_where_the_closed_only_grade_does_not`) holds the band 4.5–7.5%
+    (6% ± 1.5 pt, owner decision 2026-10-13). The 20,000-book precision mean is held to the measured 5.7–6.7% (note 24). No user-facing copy states a
     false-alarm rate.
 16. **The newest bar's close is never used, and its stamp only on the session pattern** (fix loop
     1, code review P1-2; fix loop 2, r2 P2-B; rewritten in fix loop 3 for code review r3 P2-1).
@@ -632,7 +633,7 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
     - The 20,000-book precision run is split into 10 chunk tests of a few seconds each; the 59 s
       single test sat against the 60 s hang guard.
     - Its bar is tightened to the measured value ± 3 SE, 5.7–6.7% (QA P1-1), so a regression either
-      way shows. The spec's 2,000-book test keeps 5% ± 1.5 pt.
+      way shows. The 2,000-book test holds 4.5–7.5% since 2026-10-13.
     - New tests kill QA's surviving mutants M11–M14, C03, C06, U01, U04, U05, U08 and U09. None was
       equivalent, and none showed a spec rule to be wrong.
     - U-2 now also covers an existing grade with a verdict (25 graded).
@@ -705,7 +706,10 @@ spec has its own Known limits.
    plus 3 tried days; what is still left out (`no_price` or `left`) is filled in at each member's own
    barrier R, and a crossing counts only when every fill crosses on the same side. Built (spec
    [`shadow-ledger.md`](shadow-ledger.md)), not yet released.
-3. **The `SH_FINAL_NONE` wording** (model-validator P2-4; domain-finance P3-3,
+3. **The `SH_FINAL_NONE` wording — resolved 2026-10-12** (ADR 0002 §3 amended on the owner's yes; now
+   "not enough evidence … With {used} entries, this test finds a link of about 0.2 or more about 3
+   times in 4"; domain-finance review `docs/audit/shadow-final-none-domain-finance.md` P2-1/P2-2
+   applied; its P3s — "sorts" for "ranks", "correlation" jargon — left). Was: (model-validator P2-4; domain-finance P3-3,
    `docs/audit/shadow-time-stop-domain-finance-r2.md` and `-r3.md`). ADR 0002 §3 fixes the sentence
    "no evidence that the score ranks 4-week results, at the planned size". The validator finds it
    overstates a negative and suggests "not enough evidence … At the planned size the test could
@@ -767,7 +771,7 @@ under `QT_QPA_PLATFORM=offscreen`. Each test names the mutant it must kill.
 | V-9 | A non-protocol entry is excluded and counted. A protocol entry hand-closed before T counts in `n_left`. | grading MANUAL by P&L sign |
 | V-10 | With no bars for a symbol, the entry counts in `n_no_price` with no R. | treating a missing price as R = 0 |
 | V-11 | Read-only: `report()` output, `GRADED`, `Z_CLAIM` and verdict strings are identical with the shadow present, and the inputs are unchanged (deepcopy compare). | writing `pos.outcome` or `pos.exit` |
-| V-12 | Null size, seeded, at least 2,000 books. With score-dependent volatility and no edge, the whole three-look design rejects 5% ± 1.5 pt, while the closed-only snapshot statistic, run on the same books at n ≈ 200, rejects measurably more. With a planted edge (R shifted in proportion to score), power matches the design calculation (0.73 at IC 0.2) within Monte-Carlo error. | rank IC as the gate; naive SE; T = ∞; a boundary per look of 1.96 |
+| V-12 | Null size, seeded, at least 2,000 books. With score-dependent volatility and no edge, the whole three-look design rejects about 6% (4.5–7.5%), while the closed-only snapshot statistic, run on the same books at n ≈ 200, rejects measurably more. With a planted edge (R shifted in proportion to score), power matches the design calculation (0.73 at IC 0.2) within Monte-Carlo error. | rank IC as the gate; naive SE; T = ∞; a boundary per look of 1.96 |
 | V-13 | A cohort is the first N entries by `opened_at`. A look is computed once, after its last member resolves, and does not change when later entries resolve. | cohort = the first N to *resolve* (re-selects quick resolvers) |
 | V-14 | Pins T per preset (week 28 d, month 112 d, intraday 5.6 d), the looks (45, 101, 201) and the boundary. | silently changing T |
 | V-15 | Engine: the holder computes the readout outside `book.lock`; a follower shows the holder's copy; a payload with no `shadow` key renders "not available". | a fetch under the lock; a follower fetching |
