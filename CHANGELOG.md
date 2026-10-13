@@ -10,9 +10,9 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## Unreleased (next build) — 2026-10-13
+## v2.296 — 2026-10-13
 
-Not installed yet. Release gives this entry its build number (`VERSIONING.md`). Everything below is
+Everything below is
 about the time-stop shadow block (*Every entry, graded at a fixed date*, manual §10). Its figures
 are paper entries with a coin-flip direction, before costs, fees and slippage, with exact fills; a
 crossed line is not a trading edge. (ADR 0002 Amendment 1, `docs/specs/shadow-ledger.md`)
