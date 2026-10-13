@@ -110,6 +110,13 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
         tested"; KEEP/INVERTED say before costs; a `gate=False` test (G3); strict zips (ruff 97 → 97); release
         marker dropped; rate tests in 150-run sets; module teardown of the world caches; coverage in two
         appended passes (`COVERAGE=1 ./run-tests.sh`).
+  - [x] `P2` `research` `@ai` **Fix loop 3 (loop-2 reviews, domain pass 5, QA re-verify, owner's after-loop-2
+        decisions)**: the survivorship line under every Lab result; the span and few_clusters tips drop the
+        longer-range clause on a 5y run (`offers_longer_range`), and the "nothing to compare" reason stops at
+        five years; the drift sentence without "far more often" and with the r5 figure (about 1 in 4); the
+        residual names both causes (each instrument's own trend, today's survivors); no "judged together"
+        footer on a withheld run; drift order, the Lab's range hand-off and the 600-run ≤ 43 bound pinned;
+        measure 8 "≤ 0.88 (sets share worlds)"; tooling baseline labels 87% as combined (branch-only 79.5%).
   - [ ] `P2` `docs` `@ai` **Tech-writer: restate the rule and the rate** in `static/docs.html` (the lines measure
         9 lists), `CONFIDENCE.md:618-625` and the Design section of `qa11-qa13-honest-baselines.md`; the Learn tab
         says the check does not cover traits fixed per instrument. CHANGELOG: the new state and withheld reason,
@@ -119,8 +126,12 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
         interval, withheld share and held-out manifest; measure 2 not met and disclosed; the fixed-per-instrument
         residual (always long on today's list); the Terminal's 60-day line shown without a verdict (no 10y);
         `static/testplan.html:246`, `CONFIDENCE.md:600`. The verdict strings in code are done and pinned.
-        After fix loop 2 also: ten-year Lab runs shown without a verdict (survivorship), the reworded residual
-        ("can also land outside the bar, because the list holds today's survivors"), and the "not tested" grade.
+        After fix loop 2 also: ten-year Lab runs shown without a verdict (survivorship), the reworded residual,
+        and the "not tested" grade. After fix loop 3 the residual reads "…can also land outside the bar, because
+        each instrument keeps its own trend over the years and the list holds only today's survivors; this check
+        cannot see that."; the ten-year sentence quotes about 1 run in 10 and about 1 in 4 on one set of past
+        bars; the Lab shows the survivorship line on every result; `static/docs.html:716` range advice stops at
+        five years.
 - [ ] `P2` `research` `@me` **The h = 1 Terminal verdict sits on the daily-bar tie residual.** At a 1-day horizon a
       bar that touches both barriers scores a loss; a coin-flip direction read "below" on 11 of 38 seeds in QA r4
       (P2-A). Live 2y h = 1 now reads Δ −0.99 within ±1.4 (QA r6 §4). Options: a placebo baseline, or no verdict
