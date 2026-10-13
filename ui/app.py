@@ -676,25 +676,58 @@ SHADOW_WORDS = {
                        "is shown as a result.",
                        "record unreadable ({reason}); not recording"),
     # LedgerIdError: another book's record, or one with no anchor that this
-    # book does not match (code review P1-1; G3: a reset is manual).
-    "SH_LEDGER_FOREIGN": ("It does not belong to this book. If the book was reset, the old "
-                          "record has to be moved aside on purpose; it is never replaced "
-                          "automatically.",
-                          "not this book's; after a reset, move the old record aside by hand"),
-    # LedgerBehindError (security P3-3).
-    "SH_LEDGER_BEHIND": ("It is older than this book's record: it holds fewer results than "
-                         "were recorded. Restore the newest copy.",
-                         "older than this book's record; restore the newest copy"),
+    # book does not match (code review P1-1; G3: a reset is manual). The
+    # steps are the README's; the file's name is not spelled out here, as it
+    # holds "edge" (Build note 1).
+    "SH_LEDGER_FOREIGN": ("It does not belong to this book, and it is never replaced "
+                          "automatically. If the book was reset on purpose, retire the old "
+                          "record as the README's reset steps say: rename its file, in the same "
+                          "folder, to the retired name with its id. The old record and its "
+                          "backups are kept, and a new record starts.",
+                          "not this book's; after a deliberate reset, retire the old record "
+                          "(README, reset steps)"),
+    # LedgerRetiredError: a copy of a retired record left in its place.
+    "SH_LEDGER_RETIRED": ("It is the same record as a retired one in the folder, so it is not "
+                          "used again. Retiring moves the file: take this copy away, or, if the "
+                          "retirement was a mistake, the retired one.",
+                          "a retired record; take this copy away, or undo the retirement"),
+    # LedgerBehindError (security P3-3). The newest copy holds every recorded
+    # look: one is made right after each look is recorded (code review r2 P2-N1).
+    "SH_LEDGER_BEHIND": ("It is an older copy: it holds fewer recorded looks than this book's "
+                         "record. Put the newest backup copy in its place: the one with the "
+                         "latest date in its name, here or off-site.",
+                         "older than this book's record; restore the newest backup copy"),
+    # "missing", by the anchor that says a record existed (code review r2
+    # P2-N2): the book's marker, or only the folder's sidecar or backups.
     "SH_LEDGER_MISSING": ("The record of results is missing, though this book had one since "
-                          "{date}. It is not started again; restore it from the daily backup.",
-                          "record missing (since {date}); restore from backup"),
+                          "{date}.",
+                          "record missing (this book's, since {date})"),
+    "SH_LEDGER_MISSING_FOLDER": ("The record of results is missing, though this folder had one "
+                                 "since {date}.",
+                                 "record missing (this folder's, since {date})"),
     "SH_LEDGER_MISSING_UNDATED": ("The record of results is missing, though backups of it "
-                                  "exist. It is not started again; restore it from the daily "
-                                  "backup.",
-                                  "record missing (backups exist); restore from backup"),
+                                  "exist.",
+                                  "record missing (backups exist)"),
+    "SH_LEDGER_RESTORE": ("It is not started again. Put the newest backup copy in its place: the "
+                          "one with the latest date in its name, here or off-site. If the book "
+                          "was reset on purpose, retire the old record instead, as the README's "
+                          "reset steps say; it is kept, and a new record starts.",
+                          "restore the newest backup copy, or, after a deliberate reset, retire "
+                          "it (README)"),
+    # Refused by the record's own checks (security P2-3): results and looks
+    # are counted apart (code review r2 P3-N3).
+    "SH_LEDGER_REFUSED_ONE": ("1 result could not be recorded: it did not pass the record's own "
+                              "checks. It is counted but not recorded.",
+                              "1 result refused by the record's checks; not recorded"),
     "SH_LEDGER_REFUSED": ("{n} results could not be recorded: they did not pass the record's own "
                           "checks. They are counted but not recorded.",
                           "{n} results refused by the record's checks; not recorded"),
+    "SH_LEDGER_REFUSED_LOOK_ONE": ("1 look could not be recorded: it did not pass the record's "
+                                   "own checks, so it is not shown as a result.",
+                                   "1 look refused by the record's checks; no result shown"),
+    "SH_LEDGER_REFUSED_LOOKS": ("{n} looks could not be recorded: they did not pass the record's "
+                                "own checks, so they are not shown as results.",
+                                "{n} looks refused by the record's checks; no result shown"),
     "SH_LEDGER_WRITE": ("The latest results could not be recorded ({reason}); the next pass "
                         "tries again.",
                         "record write failed ({reason}); retrying"),
@@ -702,10 +735,10 @@ SHADOW_WORDS = {
     "SH_ERRATUM": ("Erratum {date}: a result counted in {where} was later found wrong "
                    "({reason}); corrected R {r}. As fixed in advance, the recorded look is "
                    "kept, and it may rest on this error.",
-                   "erratum {date}, look {ks}: {reason}; R → {r}; recorded kept"),
+                   "erratum {date}, {where}: {reason}; R → {r}; recorded kept"),
     "SH_ERRATUM_LOOK": ("look {ks}", "look {ks}"),
     "SH_ERRATUM_LOOKS": ("looks {ks}", "looks {ks}"),
-    "SH_ERRATUM_NO_LOOK": ("no recorded look", "none"),
+    "SH_ERRATUM_NO_LOOK": ("no recorded look", "no look"),
     "SH_ERRATA_MORE": ("{n} more errata are in the record.", "+{n} errata"),
 }
 #: At most this many errata lines are shown; the rest are counted (security P3-1).
@@ -1006,16 +1039,26 @@ def _sh_ledger_lines(d: dict, looks: list[dict], now: float, blocked: bool) -> l
     if err == "read":
         line = _sh_word("SH_LEDGER_READ", reason=_clean(ledger.get("reason"), 80))
         extra = {"LedgerIdError": "SH_LEDGER_FOREIGN",
+                 "LedgerRetiredError": "SH_LEDGER_RETIRED",
                  "LedgerBehindError": "SH_LEDGER_BEHIND"}.get(ledger.get("reason"))
         out.append(f"{line} {_sh_word(extra)}" if extra else line)
     elif err == "missing":
-        out.append(_sh_word("SH_LEDGER_MISSING", date=_sh_date(ledger.get("created_at"), now))
-                   if _sh_ts(ledger.get("created_at")) is not None
-                   else _sh_word("SH_LEDGER_MISSING_UNDATED"))
+        # "This book had one" only when the book's own marker says so; the
+        # sidecar and the backups belong to the folder (code review r2 P2-N2).
+        dated = _sh_ts(ledger.get("created_at")) is not None
+        key = ("SH_LEDGER_MISSING_UNDATED" if not dated else
+               "SH_LEDGER_MISSING" if ledger.get("reason") == "marker" else
+               "SH_LEDGER_MISSING_FOLDER")
+        head = _sh_word(key, date=_sh_date(ledger.get("created_at"), now) if dated else "")
+        out.append(f"{head} {_sh_word('SH_LEDGER_RESTORE')}")
     elif err == "write":
         out.append(_sh_word("SH_LEDGER_WRITE", reason=_clean(ledger.get("reason"), 80)))
-    if _sh_int(ledger.get("refused")) > 0:
-        out.append(_sh_word("SH_LEDGER_REFUSED", n=_sh_int(ledger.get("refused"))))
+    for field, one, many in (("refused", "SH_LEDGER_REFUSED_ONE", "SH_LEDGER_REFUSED"),
+                             ("refused_looks", "SH_LEDGER_REFUSED_LOOK_ONE",
+                              "SH_LEDGER_REFUSED_LOOKS")):
+        n = _sh_int(ledger.get(field))
+        if n > 0:
+            out.append(_sh_word(one if n == 1 else many, n=n))
     if blocked:
         return out
     # Bounded, whatever the payload holds (security P3-1).
@@ -1040,7 +1083,7 @@ def _sh_ledger_lines(d: dict, looks: list[dict], now: float, blocked: bool) -> l
                               ks=ks_text))
             out.append(_sh_word("SH_ERRATUM", date=_sh_day(er.get("date"), now),
                                 reason=_clean(er.get("reason"), 80), r=_sh_r(er.get("r")),
-                                where=where, ks=ks_text or _sh_word("SH_ERRATUM_NO_LOOK")))
+                                where=where))
     if len(errata) > SHADOW_ERRATA_SHOWN:
         out.append(_sh_word("SH_ERRATA_MORE", n=len(errata) - SHADOW_ERRATA_SHOWN))
     return out
