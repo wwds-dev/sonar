@@ -160,6 +160,12 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P2` `research` `@me` **`model_vs_market` still claims at 2 se on an hourly re-checked log**
       (`sonar/engine.py:634-641`), the T1-1 problem buyability was moved off. Decide whether it moves to
       `Z_CLAIM` = 3 (architect, spec "Open questions, answered").
+- [ ] `P2` `research` `@me` **Hourly weekend / hour-of-week vol study: run it.** Built and tested offline
+      (`sonar/research/hourlyvol_weekend.py`, `tests/test_hourlyvol_weekend.py`, spec
+      `docs/specs/hourly-weekend-vol-study.md`); not wired into anything live. To do: owner approves the spec,
+      records the approving commit, sets `APPROVED_SPEC_SHA256`, then runs
+      `python3 -m sonar.research.hourlyvol_weekend --power` on the Mac (Binance is blocked in the sandbox).
+      Review, QA and a statistician's look at lag 168 / DM validity are still open.
 - [ ] `P3` `research` `@me` **2y h = 60 is one regime.** QA r4 P2-B: a 2y "beats" at h = 60 was not confirmed on 5y
       (long-only +8.7 pt), and the coin was clean. Option: the Terminal reads 5y at h ≥ 40.
 - [ ] `P3` `research` `@ai` **DROP has no error bar.** It is read from the point estimate of the leave-one-out cost
