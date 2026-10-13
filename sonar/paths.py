@@ -90,12 +90,40 @@ def daily_backup(path: Path, keep: int = BACKUP_KEEP,
         shutil.copy2(p, bak)
     except OSError:
         return None
+    _keep_newest(p, keep)
+    _copy_offsite(bak)
+    return bak
+
+
+def _keep_newest(p: Path, keep: int) -> None:
     # ISO dates sort lexically, so the oldest backups are simply the first.
     for old in sorted(p.parent.glob(f"{p.name}.bak.*"))[:-keep]:
         try:
             old.unlink()
         except OSError:
             pass
+
+
+def snapshot(path: Path, tag: str, keep: int = BACKUP_KEEP,
+             today: str | None = None) -> Path | None:
+    """Copy ``path`` aside now, after a write that must not be lost, as
+    ``<name>.bak.<date>.<tag>`` beside it and off-site.
+
+    :func:`daily_backup` copies a file *before* the day's first write, so on
+    the day something is added its newest copy lacks it. A write-once record
+    calls this right after a write it cannot redo, so a copy holding it
+    exists at once. The name sorts after that day's daily backup and before
+    the next day's, so "the newest copy" is the newest name, and the daily
+    rotation counts and prunes it like any other. Failures are swallowed,
+    as for the daily backup: they must never block the write."""
+    p = Path(path)
+    stamp = today or _dt.date.today().isoformat()
+    bak = p.with_name(f"{p.name}.bak.{stamp}.{tag}")
+    try:
+        shutil.copy2(p, bak)
+    except OSError:
+        return None
+    _keep_newest(p, keep)
     _copy_offsite(bak)
     return bak
 

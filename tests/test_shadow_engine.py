@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from sonar import calibration, core
+from sonar import calibration, core, paths
 
 DAY = 86_400.0
 ROW = {"symbol": "AAA", "name": "Alpha", "price": 100.0, "volatility": 0.02,
@@ -390,6 +390,7 @@ def test_a_failed_request_keeps_the_series_already_held(live, monkeypatch):
 
 
 def test_the_memo_lives_in_memory_and_keeps_the_first_decision(live, monkeypatch):
+    _today(monkeypatch)
     _cohort(live, n=3)
     monkeypatch.setattr(core.assets, "fetch_bars", lambda s, rng=None: _wavy(NOW - 100 * DAY))
     live._shadow_pass(NOW)
@@ -405,10 +406,19 @@ def test_the_memo_lives_in_memory_and_keeps_the_first_decision(live, monkeypatch
         "shadow_ledger.id", "shadow_ledger.json", f"shadow_ledger.json.bak.{_today()}"]
 
 
-def _today():
-    """The local date daily_backup stamps a copy with."""
-    from datetime import date
-    return date.today().isoformat()
+def _today(monkeypatch=None):
+    """The date daily_backup stamps a copy with: the pass's fixed NOW, pinned
+    in `paths` (QA P3: `date.today()` here and in the pass could straddle a
+    midnight). Called with ``monkeypatch`` before the pass, to pin it."""
+    day = datetime.fromtimestamp(NOW, timezone.utc).date()
+    if monkeypatch is not None:
+        class _Dt:
+            class date:
+                @staticmethod
+                def today():
+                    return day
+        monkeypatch.setattr(paths, "_dt", _Dt)
+    return day.isoformat()
 
 
 def _tree(root):
@@ -423,6 +433,7 @@ def test_r2_a_pass_writes_the_ledger_and_its_marker_and_nothing_else(live, monke
     writes the ledger and its marker in portfolio.json, and nothing else
     changes (the book's contents included); a second pass with nothing new to
     record writes nothing at all."""
+    _today(monkeypatch)
     _cohort(live, n=3)
     live.book.save()
     monkeypatch.setattr(core.assets, "fetch_bars", lambda s, rng=None: _wavy(NOW - 100 * DAY))

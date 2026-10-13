@@ -896,9 +896,16 @@ class LedgerIdError(LedgerFormatError):
 
 
 class LedgerBehindError(LedgerFormatError):
-    """A ledger with fewer recorded looks or entries than the book's marker
-    says it had: an older copy, such as a daily backup taken before the
-    day's first write."""
+    """A ledger with fewer recorded looks than the book's marker or the
+    sidecar says it had: an older copy, from before a look was recorded.
+    Entries are not counted: one lost with a newer copy is decided again
+    from the same closes (L-2); a recorded look cannot be redone."""
+
+
+class LedgerRetiredError(LedgerIdError):
+    """A ledger whose id was retired on purpose: a retired file in the data
+    directory holds the same id. A copy of a record set aside is never used
+    or written again (a copy left in place of a moved one)."""
 
 
 def ledger_constants() -> dict:
@@ -925,10 +932,13 @@ def ledger_new(now: float, build: str, ledger_id: str | None = None,
 
 def ledger_anchor(ledger: dict) -> dict:
     """What the book's marker and the sidecar say about the record: its id,
-    when it began, and how many looks and entries it held at the last write.
-    The counts only grow, so a file behind them is an older copy."""
+    when it began, and how many looks it held at the last write. The count
+    only grows, so a file behind it is an older copy. Entries are not
+    counted (code review r2 P2-N1): a lost entry is decided again from the
+    same closes, and counting them made the newest daily backup "behind" on
+    any day that decided one."""
     return {"ledger_id": ledger["ledger_id"], "created_at": ledger["created_at"],
-            "looks": len(ledger["looks"]), "entries": len(ledger["entries"])}
+            "looks": len(ledger["looks"])}
 
 
 def _is_num(v) -> bool:
@@ -993,14 +1003,32 @@ def _check_entry(pid, e) -> None:
           and all(_is_num(v) for v in e["ref"]), where)
 
 
-def _check_look(key, lk, boundary: float = SHADOW_BOUNDARY) -> None:
+def _file_boundary(constants: dict) -> float:
+    """The line the file was made under, when it holds a number; else
+    today's. The reader and the merge both judge a look by it, so a changed
+    module constant is a "constants" mismatch, not a read error (ADR §7)."""
+    b = constants.get("boundary")
+    return b if _is_num(b) else SHADOW_BOUNDARY
+
+
+def _file_looks(constants: dict) -> tuple:
+    """The look sizes the file was made under, when they are positive
+    integers; else today's. See :func:`_file_boundary`."""
+    v = constants.get("looks")
+    ok = isinstance(v, list) and len(v) > 0 and all(_is_int(n) and n > 0 for n in v)
+    return tuple(v) if ok else SHADOW_LOOKS
+
+
+def _check_look(key, lk, boundary: float = SHADOW_BOUNDARY,
+                looks: tuple = SHADOW_LOOKS) -> None:
     """One recorded look: its shape, and a verdict that follows from its own
     figures (security P3-7) — a cohort of the size its key says, and a
-    crossing only past the line and, with members filled in, robust."""
+    crossing only past the line and, with members filled in, robust. The
+    sizes and the line are the file's own (code review r2 P3-N1)."""
     where = f"look {key!r}"
     _fields(lk, LEDGER_LOOK_FIELDS, where)
-    _need(_is_int(lk["k"]) and str(lk["k"]) == key and 1 <= lk["k"] <= len(SHADOW_LOOKS)
-          and _is_int(lk["n"]) and lk["n"] == SHADOW_LOOKS[lk["k"] - 1]
+    _need(_is_int(lk["k"]) and str(lk["k"]) == key and 1 <= lk["k"] <= len(looks)
+          and _is_int(lk["n"]) and lk["n"] == looks[lk["k"] - 1]
           and _is_int(lk["used"]) and _is_int(lk["n_excluded"]), where)
     _need(_is_num(lk["evaluated_at"]) and _is_text(lk["build"]), where)
     _need(all(_opt_num(lk[f]) for f in ("z", "z_lo", "z_hi")), where)
@@ -1064,14 +1092,13 @@ def ledger_parse(raw) -> tuple[dict | None, str | None]:
         _need(_is_uuid(d["ledger_id"]) and _is_num(d["created_at"])
               and _is_text(d["created_by"]), "header")
         _check_constants(d["constants"])
-        boundary = d["constants"].get("boundary")
-        boundary = boundary if _is_num(boundary) else SHADOW_BOUNDARY
+        boundary, sizes = _file_boundary(d["constants"]), _file_looks(d["constants"])
         _need(isinstance(d["entries"], dict), "entries")
         for pid, e in d["entries"].items():
             _check_entry(pid, e)
         _need(isinstance(d["looks"], dict), "looks")
         for key, lk in d["looks"].items():
-            _check_look(key, lk, boundary)
+            _check_look(key, lk, boundary, sizes)
         _check_looks_order(d["looks"])
         _need(isinstance(d["price_tries"], dict), "price_tries")
         for pid, days in d["price_tries"].items():
@@ -1096,7 +1123,9 @@ def ledger_marker_parse(raw) -> tuple[dict | None, str | None]:
     """The marker in ``portfolio.json``, or the sidecar beside the ledger:
     ``(None, None)`` when there is none, ``(marker, None)``, or
     ``(None, reason)`` when it is there but damaged — which is never the same
-    as "no ledger yet". The counts of looks and entries are 0 when absent."""
+    as "no ledger yet". The count of looks is 0 when absent. An ``entries``
+    count (fix loop 1 wrote one) is checked and dropped: entries are no
+    longer counted (see :func:`ledger_anchor`)."""
     if raw is None:
         return None, None
     if (isinstance(raw, dict) and {"ledger_id", "created_at"} <= set(raw)
@@ -1105,8 +1134,21 @@ def ledger_marker_parse(raw) -> tuple[dict | None, str | None]:
             and all(_is_int(raw.get(k, 0)) and raw.get(k, 0) >= 0
                     for k in ("looks", "entries"))):
         return {"ledger_id": raw["ledger_id"], "created_at": raw["created_at"],
-                "looks": raw.get("looks", 0), "entries": raw.get("entries", 0)}, None
+                "looks": raw.get("looks", 0)}, None
     return None, LedgerFormatError.__name__
+
+
+def ledger_id_of(text) -> str | None:
+    """The ``ledger_id`` of a ledger-shaped text — a backup or a retired
+    record — or None when the text is not a JSON object naming one. Only the
+    id is read, so a copy made under other constants is still attributed
+    (code review r2 P2-N2); nothing else in it is trusted or used."""
+    try:
+        d = json.loads(text, parse_constant=_no_constant)
+    except (ValueError, TypeError, RecursionError):
+        return None
+    lid = d.get("ledger_id") if isinstance(d, dict) else None
+    return lid if _is_uuid(lid) else None
 
 
 def ledger_belongs(ledger: dict, book_ids) -> bool:
@@ -1119,7 +1161,8 @@ def ledger_belongs(ledger: dict, book_ids) -> bool:
 
 
 def ledger_merge(old: dict, readout: dict, now: float, build: str,
-                 refused: list | None = None) -> tuple[dict, int]:
+                 refused: list | None = None,
+                 refused_looks: list | None = None) -> tuple[dict, int]:
     """``old`` plus what ``readout`` has decided or evaluated for the first
     time: ``(new, added)``. Write-once: an entry is added only when its id is
     absent and its state is final (:data:`SHADOW_FINAL`); a look only when its
@@ -1129,11 +1172,17 @@ def ledger_merge(old: dict, readout: dict, now: float, build: str,
     it is decided. ``old`` is never modified.
 
     Each new entry and look is checked as :func:`ledger_parse` would read it
-    back; one that fails is left out (and its id appended to ``refused``),
-    so the file never holds what this build could not read again (security
-    P2-3), and one bad record never blocks the rest."""
+    back — a look against the file's own line and sizes — and one that
+    fails is left out, so the file never holds what this build could not
+    read again (security P2-3, code review r2 P3-N1), and one bad record
+    never blocks the rest. A refused entry's id is appended to ``refused``;
+    a refused look's ``"look k"`` to ``refused_looks``, or, without it, to
+    ``refused``."""
     new = copy.deepcopy(old)
     added = 0
+    boundary, sizes = _file_boundary(new["constants"]), _file_looks(new["constants"])
+    if refused_looks is None:
+        refused_looks = refused
     for e in readout.get("entries", ()):
         if e["id"] in new["entries"] or e["state"] not in SHADOW_FINAL:
             continue
@@ -1159,19 +1208,31 @@ def ledger_merge(old: dict, readout: dict, now: float, build: str,
                "used": lk["used"], "n_excluded": lk["n_excluded"],
                "members": copy.deepcopy(lk["members"])}
         try:
-            _check_look(key, rec)
+            _check_look(key, rec, boundary, sizes)
             _check_looks_order({**new["looks"], key: rec})
             json.dumps(rec, allow_nan=False)
         except (ValueError, TypeError, KeyError):
-            if refused is not None:
-                refused.append(f"look {key}")
+            if refused_looks is not None:
+                refused_looks.append(f"look {key}")
             continue
         new["looks"][key] = rec
         added += 1
     tries = new["price_tries"]
+    states = {e["id"]: e["state"] for e in readout.get("entries", ())}
     for pid, days in (readout.get("price_tries") or {}).items():
-        if _is_text(pid, LEDGER_ID_MAX):
-            tries[pid] = sorted(set(tries.get(pid, ())) | set(days))
+        if not _is_text(pid, LEDGER_ID_MAX):
+            continue
+        have = tries.get(pid, ())
+        if states.get(pid) != "wait_price" and len(have) >= SHADOW_PRICE_TRIES:
+            # No longer waiting (final as "no price" for its looks), with its
+            # days recorded: no more are needed. Added every failed day, a
+            # never-priced entry passed
+            # the reader's limit of 400 days about 13 months on, and every
+            # later write failed its read-back (QA P2-1). Days are now added
+            # only while the entry waits; with its tries it waits no later
+            # than 28 days after t_T, so the list stays short.
+            continue
+        tries[pid] = sorted(set(have) | set(days))
     for pid in [pid for pid in tries if pid in new["entries"]]:
         del tries[pid]
     return new, added
