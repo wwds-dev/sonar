@@ -94,8 +94,11 @@ the plan's σ is scaled to (`core.py:341` passes it to `build_plan`; verified in
     excess comes from look 1, where the HC3 z has slightly heavy tails at n = 45. The owner chose
     on 2026-10-12 to keep the bar at 2.315, so the constant does not change. The on-screen copy
     states no rate.*
-  - The first crossing is the result. With no crossing by 201, the readout says "no evidence that
-    the score ranks 4-week results, at the planned size". After the third look the design is closed.
+  - The first crossing is the result. With no crossing by 201, the readout says "not enough evidence
+    that the score ranks 4-week results"; at 201 entries it adds that a link of about 0.2
+    or more, if one existed, would be found about 3 times in 4 (power 0.73), and a weaker one less often. With fewer than 201 graded
+    entries it says how many had a result and that the test was less sensitive than designed (amended
+    2026-10-12 on the owner's yes; was "no evidence … at the planned size"). After the third look the design is closed.
   - Between looks the readout shows the running value, labelled "not a test".
   - At 2.54 protocol entries a day, the expected dates are about 2026-11-06, 2026-11-28 and
     2027-01-07. The 40-position cap can push them later.

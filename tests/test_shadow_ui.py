@@ -136,6 +136,11 @@ STATES = {
         looks=[look(1, 45, due=NOW - 90 * DAY, used=45, evaluated=True, z=0.4),
                look(2, 101, due=NOW - 60 * DAY, used=101, evaluated=True, z=1.1),
                look(3, 201, due=NOW - DAY, used=201, evaluated=True, z=-0.3)]),
+    "d closed, 190 graded": readout(
+        n_entered=210, n_reached=190, n_waiting=9,
+        looks=[look(1, 45, due=NOW - 90 * DAY, used=45, evaluated=True, z=0.4),
+               look(2, 101, due=NOW - 60 * DAY, used=101, evaluated=True, z=1.1),
+               look(3, 201, due=NOW - DAY, used=190, evaluated=True, z=-0.3)]),
 }
 
 
@@ -233,8 +238,14 @@ def test_u4_each_state_says_its_own_sentence(window):
     assert "On these paper entries, higher scores went with lower R on average." in s["c crossed down"]
     for name in ("c crossed up", "c crossed down"):
         assert "It is not a trading edge." in s[name] and "crossed the line" in s[name]
-    assert "no evidence that the score ranks 4-week results, at the planned size" in \
-        s["d closed, no crossing"]
+    d = s["d closed, no crossing"]
+    assert "not enough evidence that the score ranks 4-week results." in d
+    assert "If a link of about 0.2 or more existed, a test with 201 entries would find it about 3 times in 4" in d
+    assert "could have been missed" in d and "less sensitive" not in d
+    assert "planned size" not in d and "no evidence that" not in d
+    f = s["d closed, 190 graded"]
+    assert "Only 190 of the 201 planned entries had a result" in f
+    assert "less sensitive than designed" in f and "about 3 times in 4" in f
 
 
 def test_u4_not_a_test_yet_until_a_look_is_evaluated(window):
@@ -784,3 +795,27 @@ def test_h3_nothing_past_the_planned_lists_is_read():
     late = {"id": "late", "opened_at": NOW + 400 * DAY, "state": "time"}
     assert (shadow_texts(readout(entries=ok + [late]), False, NOW, 28.0)["rows"]
             == shadow_texts(readout(entries=ok), False, NOW, 28.0)["rows"])
+
+def test_final_none_wording_compact_and_honest_about_power():
+    for key in ("SH_FINAL_NONE", "SH_FINAL_NONE_FEWER"):
+        full, compact = SHADOW_WORDS[key]
+        for text in (full, compact):
+            assert "not enough evidence that the score ranks {T_adj}" in text
+            assert "0.2 or more" in text and "if " in text.lower() and "about 3 times in " in text
+            assert "planned size" not in text and "no evidence that" not in text
+            assert "fairly strong" not in text and "usually" not in text
+            for banned in ("edge", "profit", "proves", "certain"):
+                assert banned not in text.lower()
+        assert "could have been missed" in full
+        assert full.startswith("Three looks, no crossing")
+        assert compact.startswith("Looks 1-3 not crossed")
+    assert "{used}" in SHADOW_WORDS["SH_FINAL_NONE"][0]
+    assert "of the {N} planned" in SHADOW_WORDS["SH_FINAL_NONE_FEWER"][0]
+
+
+def test_final_none_power_figure_is_tied_to_the_201_entry_design():
+    """The "about 3 times in 4" in SH_FINAL_NONE is ADR 0002 §3's power (0.73 at a
+    link of 0.2) for the Pocock design at 45/101/201. If the looks change, the
+    sentence must be re-derived, not silently kept."""
+    from sonar.calibration import SHADOW_BOUNDARY, SHADOW_LOOKS
+    assert SHADOW_LOOKS == (45, 101, 201) and SHADOW_BOUNDARY == 2.315
