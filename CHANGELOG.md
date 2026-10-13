@@ -10,7 +10,7 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## Unreleased (not installed)
+## v2.340 — 2026-10-13
 
 **Backtest verdicts: a check against random directions** (branch `sign-randomisation-verdicts`;
 `docs/specs/sign-randomisation-verdicts.md`, `docs/adr/0003-sign-randomisation-gate.md`). Before
