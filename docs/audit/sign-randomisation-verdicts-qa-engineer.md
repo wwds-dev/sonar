@@ -105,3 +105,43 @@ The 8h coin reads 7–8% gated across seed sets, close to measure 2's 7.5% bar. 
 - Measure 8: met (but not under coverage).
 - Measure 9: code side done; not met until the docs land and Lab 10y is built.
 - Measure 11: met (G3 test still to add).
+
+## Re-verify after fix loop 2 (code at 74baf4e)
+
+**Overall: PASS on the code, with gaps.** Evidence is in scratchpad `qa3/`.
+
+### Suite runs
+| Run | Exit | Result | Wall | Load |
+|---|---|---|---|---|
+| native 1 | 0 | 2213 passed, 3 skipped | 187 s | 113→157 |
+| native 2 | 0 | same | 216 s | 74→80 |
+| offscreen 1 | 137 | reached 100%, then hung in Qt teardown (`~QMainWindowWrapper` in `sendPostedEvents`); watchdog kill | 605 s | 157→74 |
+| offscreen 2 | 137 | same | 609 s | 80→114 |
+| offscreen 3 (1200 s budget) | 0 | 2213 passed | 328 s | 122 |
+| offscreen 4 | 1 | 1 failed (`test_two_processes`, passes alone 2/2) | 529 s | 112→67 |
+| offscreen 5 | 137 | 74% done at load 205; watchdog kill | 606 s | 63→205 |
+
+**Two-pass coverage:** all steps exit 0. Total 87% combined; branch-only 79.5%. Changed lines are fully covered.
+
+### Findings
+- **P2-1. The offscreen suite is not shown green twice within the 600 s budget.** Two runs hung in Qt teardown after reaching 100%, and one was killed under load 205. Not shown to be caused by the change. Re-run twice at load < 50 before release; if it still hangs, investigate against the base.
+- **P3-1.** Only headline set `[15-0]` catches "gate removed". Free fix: in the exactness test, assert total verdicts over the 600 runs ≤ 43. Today's code gives 55.
+- **P3-2.** Drift order is not fully pinned: survivors D4 (drift before single_class) and D5 (drift after too_few).
+- **P3-3.** No test checks that the Lab's chosen range reaches `backtest.run`: survivors D12 and D13.
+- **P3-4.** Survivor N5: the IC-line fallback is unreachable.
+- **P3-5.** "87% branch" is the combined figure; branch-only is 79.5%. The baseline row says "offscreen", but the run was native.
+- **P3-6.** `ui/app.py:2796` `_short_window_reason` still says "A longer range…".
+- The owner decisions in ce5d86a are not built yet.
+
+### Mutation result
+34 mutants: 29 killed. Survivors: D4, D5, D12, D13, N5.
+
+### Measure 9: still open (tech-writer)
+- `static/docs.html`: :568-569, :650-660, :665, :716, :780-781. The Learn tab says nothing about the randomisation, "not told apart", few stretches, 10y drift or "not tested".
+- `CONFIDENCE.md`: :600, :613-625.
+- `TESTPLAN.md:213`, `static/testplan.html:246`.
+
+### Verdict
+- Measure 8: met.
+- Measure 9: not met (docs, and the ce5d86a copy).
+- Measure 11: met.
