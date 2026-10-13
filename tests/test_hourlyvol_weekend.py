@@ -29,7 +29,7 @@ def test_frozen_preregistration_numbers():
     assert w.HAC_LAGS == 168 and w.CONTEXT_LAGS == (24, 9) and w.BOOT_BLOCK == 168
     assert w.MIN_CLASS_HOURS == 100 and w.MIN_SCORED == 2000
     assert w.THRESHOLD == 0.01 and w.KEEP_BLOCKS == 5
-    assert len(w.FAMILY) == 3 and w.ALPHA == pytest.approx(0.05 / 3)
+    assert len(w.FAMILY) == 3 and w.SIGNIF_LEVEL == pytest.approx(0.05 / 3)
     assert w.FAMILY == (("V1", "B0"), ("V2", "B0"), ("V2", "B0L"))
     assert hv.PROFILE_CLAMP == (0.25, 4.0) and hv.DIURNAL_WINDOW == 1440
 
@@ -304,7 +304,7 @@ def test_c2_planted_weekend_is_found_by_v1():
     c = w.run_c2()
     assert c["ok"], c
     cmp = c["comparison"]
-    assert cmp["improvement"] > 0 and cmp["blocks_won"] >= 5 and cmp["p"] < w.ALPHA
+    assert cmp["improvement"] > 0 and cmp["blocks_won"] >= 5 and cmp["p"] < w.SIGNIF_LEVEL
 
 
 def test_c3_planted_tuesday_window_is_found_by_v2_even_against_b0l():
@@ -318,7 +318,9 @@ def test_c4_equivalence_causality_and_b0_reproduced():
 
 
 def test_run_controls_all_pass():
-    assert w.run_controls()["ok"]
+    r = w.run_controls(size_check=False)
+    assert all(r[k]["ok"] for k in ("C1", "C2", "C3", "C4"))
+    assert r["ok"] is False, "a skipped size check can never pass the gate"
 
 
 def test_a_flat_series_with_the_weekend_boundary_shifted_is_not_a_detection():
@@ -352,7 +354,9 @@ def test_c1_size_check_200_seeds_per_variant_rejection_rate():
 
 def test_power_simulation_smoke():
     out = w.power_simulation(seeds=2, multipliers=(1.3,))
-    assert set(out) == {1.3} and 0.0 <= out[1.3] <= 1.0
+    rates = out["detection_rate_v1_vs_b0"]
+    assert set(rates) == {1.3} and 0.0 <= rates[1.3] <= 1.0
+    assert "simulated" in out["scope"] and "simulated" in out["series"]
 
 
 # --------------------------------------------------------------------------- #
@@ -401,3 +405,137 @@ def test_estimators_carry_the_frozen_windows():
     assert w._Est("V1").prof.window == 1440 and w._Est("V1").cls.window == 1440
     assert w._Est("B0L").prof.window == 4368 and len(w._Est("B0L").prof.n) == 24
     assert w._Est("V2").prof.window == 4368 and len(w._Est("V2").prof.n) == 168
+
+
+# --------------------------------------------------------------------------- #
+# Review fixes: run identity, size-check gate, warm-up, labels, attribution
+# --------------------------------------------------------------------------- #
+def test_warmup_below_the_long_window_is_refused():
+    closes, times = w.synth(w.flat, scored=300)
+    with pytest.raises(ValueError, match="warmup"):
+        w.study_weekend(closes, times, warmup=1440)
+    assert "n_scored" in w.study_weekend(closes, times, warmup=w.WARMUP)
+
+
+def test_too_few_closes_has_its_own_message():
+    with pytest.raises(ValueError, match="at least two"):
+        w.check_series([], [])
+
+
+def test_pup_shift_survives_a_zero_sigma():
+    assert w.pup_shift([0.004], [0.0]) >= 0.0
+
+
+def test_b0l_vs_b0_attribution_line_is_present_and_outside_the_family():
+    closes, times = w.synth(w.flat, scored=2500)
+    r = w.study_weekend(closes, times)
+    a = r["attribution"]["B0L_vs_B0"]
+    assert "attribution only" in a["note"] and "verdict" not in a
+    assert set(r["comparisons"]) == {"V1_vs_B0", "V2_vs_B0", "V2_vs_B0L"}
+    expect = (r["pooled_qlike"]["B0"] - r["pooled_qlike"]["B0L"]) / r["pooled_qlike"]["B0"]
+    assert a["improvement"] == pytest.approx(expect, abs=1e-4)
+
+
+def test_verdicts_carry_a_gloss_about_forecast_loss_only():
+    closes, times = w.synth(w.flat, scored=2500)
+    m = w.study_weekend(closes, times)["verdict_meaning"]
+    assert "volatility" in m and "historical" in m and "not profit" in m
+
+
+def test_failed_controls_emit_no_numbers():
+    closes, times = w.synth(w.flat, scored=2500)
+    r = w.study_weekend(closes, times, controls_ok=False)
+    assert "pooled_qlike" not in r
+    for c in r["comparisons"].values():
+        assert set(c) == {"verdict", "note"} and "not evidence" in c["note"]
+
+
+def test_c4_names_what_failed(monkeypatch):
+    monkeypatch.setattr(w, "forecast_sigma", lambda *a, **k: 1.0)
+    r = w.run_c4()
+    assert r["ok"] is False and r["failed"] and "replay path" in r["failed"][0]
+
+
+def test_the_size_check_is_part_of_the_default_gate(monkeypatch):
+    called = []
+    monkeypatch.setattr(w, "c1_size_check", lambda: called.append(1) or {"ok": True})
+    for name in ("run_c1", "run_c2", "run_c3", "run_c4"):
+        monkeypatch.setattr(w, name, lambda: {"ok": True})
+    assert w.run_controls()["ok"] is True and called
+    monkeypatch.setattr(w, "c1_size_check", lambda: {"ok": False})
+    assert w.run_controls()["ok"] is False, "a failed size check stops the run"
+
+
+def test_module_hash_pins_the_source():
+    import hashlib
+    with open(w.__file__, "rb") as fh:
+        assert w.module_sha256() == hashlib.sha256(fh.read()).hexdigest()
+
+
+def test_uppercase_pasted_hash_is_accepted(tmp_path):
+    spec = tmp_path / "s.md"
+    spec.write_text("x")
+    assert w.check_spec(spec, approved=w.spec_sha256(spec).upper())
+
+
+def _fake_run(monkeypatch, tmp_path, controls_ok=True):
+    spec = tmp_path / "s.md"
+    spec.write_text("approved")
+    monkeypatch.setattr(w, "SPEC_PATH", spec)
+    monkeypatch.setattr(w, "check_spec", lambda: "spechash")
+    monkeypatch.setattr(w, "run_controls", lambda: {"ok": controls_ok})
+    closes, times = w.synth(w.flat, scored=2500)
+    monkeypatch.setattr(hv, "fetch_hourly", lambda *a, **k: (times, closes))
+    return times
+
+
+def test_main_happy_path_records_run_identity(monkeypatch, tmp_path, capsys):
+    import json
+    times = _fake_run(monkeypatch, tmp_path)
+    assert w.main(["--skip-power", "--approving-commit", "abc123"]) == 0
+    out = capsys.readouterr().out
+    doc = json.loads(out[out.index("{"):])
+    assert doc["run"]["module_sha256"] == w.module_sha256()
+    assert doc["run"]["approving_commit"] == "abc123"
+    assert "re-run" in doc["run"]["note"] and doc["run"]["run_at"].endswith("UTC")
+    p = doc["provenance"]
+    assert p["bars"] == len(times) and "UTC" in p["period"] and len(p["series_sha256"]) == 64
+    assert "power_v1" not in doc and "verdict_meaning" in doc["result"]
+
+
+def test_main_without_a_commit_says_so_and_runs_power(monkeypatch, tmp_path, capsys):
+    import json
+    _fake_run(monkeypatch, tmp_path)
+    monkeypatch.setattr(w, "power_simulation", lambda: {"scope": "simulated"})
+    assert w.main([]) == 0
+    out = capsys.readouterr().out
+    doc = json.loads(out[out.index("{"):])
+    assert doc["run"]["approving_commit"] == "not supplied"
+    assert doc["power_v1"]["scope"] == "simulated"
+
+
+def test_main_stops_as_not_run_when_controls_fail(monkeypatch, tmp_path, capsys):
+    _fake_run(monkeypatch, tmp_path, controls_ok=False)
+    monkeypatch.setattr(hv, "fetch_hourly", lambda *a, **k: pytest.fail("fetched"))
+    assert w.main([]) == 1
+    assert "NOT RUN" in capsys.readouterr().out
+
+
+def test_print_spec_hash(capsys):
+    assert w.main(["--print-spec-hash"]) == 0
+    assert len(capsys.readouterr().out.strip()) == 64
+
+
+def test_warmup_one_below_is_refused_too():
+    closes, times = w.synth(w.flat, scored=300)
+    with pytest.raises(ValueError, match="warmup"):
+        w.study_weekend(closes, times, warmup=w.WARMUP - 1)
+
+
+def test_approving_commit_constant_is_used_when_no_flag(monkeypatch, tmp_path, capsys):
+    import json
+    _fake_run(monkeypatch, tmp_path)
+    monkeypatch.setattr(w, "APPROVED_SPEC_COMMIT", "deadbeef")
+    assert w.main(["--skip-power"]) == 0
+    out = capsys.readouterr().out
+    assert json.loads(out[out.index("{"):])["run"]["approving_commit"] == "deadbeef"

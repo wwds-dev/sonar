@@ -71,3 +71,5 @@
 {"ts": "2026-10-13T14:27:45", "phase": "build", "state": "done", "spec": "hourly-weekend-vol-study"}
 {"ts": "2026-10-13T14:27:45", "phase": "review", "state": "start", "spec": "hourly-weekend-vol-study"}
 {"ts": "2026-10-13T14:27:45", "phase": "verify", "state": "start", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T17:03:04", "phase": "review", "state": "done", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T17:03:04", "phase": "verify", "state": "done", "spec": "hourly-weekend-vol-study"}

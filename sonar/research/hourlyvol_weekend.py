@@ -29,6 +29,8 @@ import json
 import math
 import random
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sonar.research import hourlyvol as hv
@@ -46,7 +48,7 @@ HAC_LAGS = 168
 CONTEXT_LAGS = (24, 9)
 BOOT_BLOCK = 168
 FAMILY = (("V1", "B0"), ("V2", "B0"), ("V2", "B0L"))
-ALPHA = 0.05 / len(FAMILY)         # 0.0167 each
+SIGNIF_LEVEL = 0.05 / len(FAMILY)         # 0.0167 each
 THRESHOLD = 0.01                   # 1.0% pooled improvement; a judgment, not power-derived
 KEEP_BLOCKS = 5
 C1_SEED = 7
@@ -62,8 +64,19 @@ POWER_SEEDS = 50
 #: (the approving commit hash goes into the spec, then the hash of the file as
 #: approved goes here); the runner refuses to run while it is empty or differs.
 APPROVED_SPEC_SHA256 = ""
+#: Free-text approving commit, recorded in the result block when set (or passed
+#: as `--approving-commit <hash>`). Printed, never required: the run does not
+#: depend on a version-control tool being present.
+APPROVED_SPEC_COMMIT = ""
 SPEC_PATH = (Path(__file__).resolve().parents[2]
              / "docs" / "specs" / "hourly-weekend-vol-study.md")
+
+#: What each verdict word means; printed next to every verdict so a bare
+#: "KEEP" or "DROP" is not read as a trading instruction.
+VERDICT_MEANING = ("Each verdict is a statement about the forecast loss of a "
+                   "volatility estimate on historical BTC hours only. KEEP means "
+                   "a candidate for a later, separate spec, not a signal and not "
+                   "profit; DROP means no improvement was detected here.")
 
 MODELS = ("B0", "B0L", "V1", "V2")
 ATTRIBUTION = ("trailing72", "garch")
@@ -219,6 +232,8 @@ class _Est:
 def check_series(closes: list[float], times: list[int]) -> list[float]:
     """Log returns, after asserting a contiguous hourly series of positive
     prices. A gap or a bad close aborts: it would shift every weekday cell."""
+    if len(closes) < 2:
+        raise ValueError("need at least two closes")
     if len(closes) != len(times):
         raise ValueError("closes and times differ in length")
     if any(b - a != 3600 for a, b in zip(times, times[1:])):
@@ -273,18 +288,18 @@ def classify(n: int, improvement: float, blocks_won: int, p: float,
         return "NOT RUN"
     if n < MIN_SCORED:
         return "INSUFFICIENT"
-    if improvement >= THRESHOLD and p < ALPHA:
+    if improvement >= THRESHOLD and p < SIGNIF_LEVEL:
         return "KEEP" if blocks_won >= KEEP_BLOCKS else "WEAK"
-    if 0 < improvement < THRESHOLD and p < ALPHA:
+    if 0 < improvement < THRESHOLD and p < SIGNIF_LEVEL:
         return "DETECTED, BELOW THRESHOLD"
     return "DROP"
 
 
 def v2_label(verdict: str, vs_longer_window: dict) -> str:
-    """V2's KEEP also needs I > 0 and p < ALPHA against B0L; otherwise the win
+    """V2's KEEP also needs I > 0 and p < SIGNIF_LEVEL against B0L; otherwise the win
     is the longer window and the words "weekday effect" are not used."""
     if verdict == "KEEP" and not (vs_longer_window["improvement"] > 0
-                                  and vs_longer_window["p"] < ALPHA):
+                                  and vs_longer_window["p"] < SIGNIF_LEVEL):
         return "V2: LONGER WINDOW ONLY"
     return verdict
 
@@ -295,7 +310,7 @@ def pup_shift(sig_base: list[float], sig_var: list[float]) -> float:
     scored hours (one-hour horizon, tau = 1)."""
     def phi(x: float) -> float:
         return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
-    return (sum(abs(phi(0.5 * sb / sv) - phi(0.5)) for sb, sv in zip(sig_base, sig_var))
+    return (sum(abs(phi(0.5 * sb / max(sv, hv.MIN_VOL)) - phi(0.5)) for sb, sv in zip(sig_base, sig_var))
             / len(sig_base))
 
 
@@ -307,6 +322,9 @@ def study_weekend(closes: list[float], times: list[int], warmup: int = WARMUP,
                   trace: dict | None = None) -> dict:
     """Walk every hour once; score B0, B0L, V1, V2 (plus trailing72 and garch,
     attribution only) on the same hours after `warmup` hours."""
+    if warmup < WARMUP:
+        raise ValueError(f"warmup {warmup} is below the {WARMUP} h the 26-week "
+                         "models need to fill their window")
     rets = check_series(closes, times)
     if len(rets) < warmup + 1:
         return {"error": f"need more than {warmup} clean hourly returns, "
@@ -356,9 +374,22 @@ def study_weekend(closes: list[float], times: list[int], warmup: int = WARMUP,
     c2 = comps["V2_vs_B0"]
     c2["verdict"] = v2_label(c2["verdict"], comps["V2_vs_B0L"])
 
-    return {"n_scored": n, "blocks": BLOCKS, "alpha": ALPHA, "threshold": THRESHOLD,
+    if not controls_ok:
+        # Failed apparatus: the numbers are not evidence and are not emitted.
+        return {"n_scored": n, "controls_ok": False,
+                "comparisons": {k: {"verdict": c["verdict"],
+                                    "note": "apparatus failed; not evidence"}
+                                for k, c in comps.items()},
+                "verdict_meaning": VERDICT_MEANING, "scope": NOT_EVIDENCE}
+
+    # B0L vs B0 is attribution only (window length), not a hypothesis.
+    attribution = {"B0L_vs_B0": compare(loss["B0"], loss["B0L"], context=context)}
+    attribution["B0L_vs_B0"]["note"] = "attribution only; not part of the family"
+
+    return {"n_scored": n, "blocks": BLOCKS, "significance_level": SIGNIF_LEVEL, "threshold": THRESHOLD,
             "pooled_qlike": {m: round(sum(x) / n, 5) for m, x in loss.items()},
-            "comparisons": comps, "scope": NOT_EVIDENCE}
+            "comparisons": comps, "attribution": attribution,
+            "verdict_meaning": VERDICT_MEANING, "scope": NOT_EVIDENCE}
 
 
 def forecast_sigma(closes: list[float], times: list[int], model: str,
@@ -418,13 +449,13 @@ def run_c1(seed: int = C1_SEED) -> dict:
 
 
 def c1_size_check(seeds: int = C1_SIZE_SEEDS, first_seed: int = 1) -> dict:
-    """Rejection rate of the one-sided test at ALPHA on flat series, per variant."""
+    """Rejection rate of the one-sided test at SIGNIF_LEVEL on flat series, per variant."""
     rej = {"V1": 0, "V2": 0}
     for s in range(first_seed, first_seed + seeds):
         r = study_weekend(*synth(flat, seed=s))["comparisons"]
         for v in rej:
             c = r[f"{v}_vs_B0"]
-            if c["p"] < ALPHA and c["improvement"] > 0:
+            if c["p"] < SIGNIF_LEVEL and c["improvement"] > 0:
                 rej[v] += 1
     limit = C1_SIZE_MAX_REJECTS * seeds / C1_SIZE_SEEDS
     return {"rejections": rej, "seeds": seeds, "limit": limit,
@@ -432,9 +463,9 @@ def c1_size_check(seeds: int = C1_SIZE_SEEDS, first_seed: int = 1) -> dict:
 
 
 def run_c2() -> dict:
-    """Planted weekend 1.5x: V1 must meet rule 3's I > 0, W >= 5, p < ALPHA."""
+    """Planted weekend 1.5x: V1 must meet rule 3's I > 0, W >= 5, p < SIGNIF_LEVEL."""
     c = study_weekend(*synth(planted_weekend, seed=2))["comparisons"]["V1_vs_B0"]
-    return {"ok": c["improvement"] > 0 and c["blocks_won"] >= KEEP_BLOCKS and c["p"] < ALPHA,
+    return {"ok": c["improvement"] > 0 and c["blocks_won"] >= KEEP_BLOCKS and c["p"] < SIGNIF_LEVEL,
             "comparison": c}
 
 
@@ -454,32 +485,37 @@ def run_c4(seed: int = 4, every: int = 997) -> dict:
                           scored=1500, seed=seed)
     tr: dict = {}
     study_weekend(closes, times, trace=tr)
-    ok = True
+    failed: list[str] = []
     for m in MODELS:
         for k in range(0, len(tr[m]), every):
             i, s = tr[m][k]
             f = forecast_sigma(closes[:i + 1], times[:i + 1], m, target_time=times[i + 1])
-            ok &= math.isclose(f, s, rel_tol=1e-12)
+            if not math.isclose(f, s, rel_tol=1e-12):
+                failed.append(f"{m}: replay path differs at return {i}")
     shipped: list = []
     hv.study(closes, times, warmup=WARMUP, trace=shipped)
-    ok &= len(shipped) == len(tr["B0"])
-    ok &= all(math.isclose(s, v, rel_tol=1e-12)
-              for (_, v), (_, s) in zip(shipped, tr["B0"]))
+    if len(shipped) != len(tr["B0"]):
+        failed.append("B0: scored-hour count differs from the shipped study")
+    if not all(math.isclose(s, v, rel_tol=1e-12)
+               for (_, v), (_, s) in zip(shipped, tr["B0"])):
+        failed.append("B0: differs from the shipped ewma_diurnal")
     # causality: scale every close after index j, which changes only return j
     j = WARMUP + 700
     bumped = closes[:j + 1] + [c * 1.5 for c in closes[j + 1:]]
     tr2: dict = {}
     study_weekend(bumped, times, trace=tr2)
     for m in MODELS:
-        ok &= all(a == b for (i, a), (_, b) in zip(tr[m], tr2[m]) if i <= j)
-        ok &= any(a != b for (i, a), (_, b) in zip(tr[m], tr2[m]) if i > j)
-    return {"ok": bool(ok)}
+        if not all(a == b for (i, a), (_, b) in zip(tr[m], tr2[m]) if i <= j):
+            failed.append(f"{m}: a later return changed an earlier forecast")
+        if not any(a != b for (i, a), (_, b) in zip(tr[m], tr2[m]) if i > j):
+            failed.append(f"{m}: the perturbation did not reach later forecasts")
+    return {"ok": not failed, "failed": failed}
 
 
 def power_simulation(seeds: int = POWER_SEEDS,
                      multipliers: tuple = POWER_MULTIPLIERS) -> dict:
     """Reported, non-gating: share of seeded series with a planted weekend
-    sigma multiplier in which V1 beats B0 at ALPHA (I > 0, p < ALPHA). The
+    sigma multiplier in which V1 beats B0 at SIGNIF_LEVEL (I > 0, p < SIGNIF_LEVEL). The
     study's resolving power, by simulation rather than hand arithmetic."""
     out = {}
     for m in multipliers:
@@ -487,13 +523,24 @@ def power_simulation(seeds: int = POWER_SEEDS,
         for s in range(1, seeds + 1):
             c = study_weekend(*synth(lambda t, m=m: planted_weekend(t, m), seed=s)
                               )["comparisons"]["V1_vs_B0"]
-            hits += c["improvement"] > 0 and c["p"] < ALPHA
+            hits += c["improvement"] > 0 and c["p"] < SIGNIF_LEVEL
         out[m] = hits / seeds
-    return out
+    return {"detection_rate_v1_vs_b0": out, "seeds_each": seeds,
+            "series": f"simulated, flat sigma {SYNTH_SIGMA} with a planted weekend "
+                      f"multiplier, {WARMUP} + {SYNTH_SCORED} hours each",
+            "scope": "simulated detection rates; not a result on real data, "
+                     "forecast loss only; non-gating"}
 
 
-def run_controls() -> dict:
+def run_controls(size_check: bool = True) -> dict:
+    """C1-C4 and, by default, the 200-seed C1 size check. The size check is
+    part of the run gate (about 1.5-2 minutes of CPU); `size_check=False`
+    exists for fast unit tests only and the runner never passes it."""
     res = {"C1": run_c1(), "C2": run_c2(), "C3": run_c3(), "C4": run_c4()}
+    if size_check:
+        res["C1_size"] = c1_size_check()
+    else:
+        res["C1_size"] = {"ok": False, "skipped": True}
     res["ok"] = all(v["ok"] for v in res.values())
     return res
 
@@ -508,6 +555,7 @@ def spec_sha256(path: Path = SPEC_PATH) -> str:
 def check_spec(path: Path = SPEC_PATH, approved: str | None = None) -> str:
     """Refuse to run unless the spec file is the one that was approved."""
     approved = APPROVED_SPEC_SHA256 if approved is None else approved
+    approved = approved.strip().lower()
     actual = spec_sha256(path)
     if not approved:
         raise RuntimeError("no approved spec hash recorded; the study is not "
@@ -519,23 +567,56 @@ def check_spec(path: Path = SPEC_PATH, approved: str | None = None) -> str:
     return actual
 
 
+def module_sha256() -> str:
+    """SHA-256 of this module's source: pins the code that produced a result
+    (the spec hash pins only the pre-registration)."""
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+
+def iso_utc(t: float) -> str:
+    return datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _arg(argv: list[str], flag: str) -> str:
+    if flag in argv and argv.index(flag) + 1 < len(argv):
+        return argv[argv.index(flag) + 1]
+    return ""
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Run the study. Cost: the controls including the 200-seed size check take
+    about 2-3 minutes of CPU, the power table (skip with `--skip-power`,
+    non-gating) about 1.5 more, then one network pull of ~18 requests. Any
+    re-run is a new run and should be logged by the owner."""
     argv = sys.argv[1:] if argv is None else argv
     if "--print-spec-hash" in argv:
         print(spec_sha256())
         return 0
     spec_hash = check_spec()
     print(f"spec sha256 {spec_hash} (matches the approved file)")
+    run_id = {"run_at": iso_utc(time.time()), "module_sha256": module_sha256(),
+              "approving_commit": (_arg(argv, "--approving-commit")
+                                   or APPROVED_SPEC_COMMIT or "not supplied"),
+              "note": "any re-run is a new run and must be logged"}
+    print("controls (incl. 200-seed size check, a few minutes)...", flush=True)
     controls = run_controls()
-    print("controls:", json.dumps(controls, default=str))
+    controls["scope"] = "simulated controls on synthetic series; gate for the run"
+    if not controls["ok"]:
+        out = {"spec_sha256": spec_hash, "run": run_id, "controls": controls,
+               "verdict": "NOT RUN", "verdict_meaning": VERDICT_MEANING}
+        print(json.dumps(out, indent=2, default=str))
+        return 1
     times, closes = hv.fetch_hourly("BTCUSDT", 730)
     check_series(closes, times)
     provenance = {"endpoint": hv._KLINES.split("?")[0], "symbol": "BTCUSDT",
-                  "first_bar": times[0], "last_bar": times[-1], "bars": len(times),
-                  "series_sha256": series_hash(times, closes)}
-    result = study_weekend(closes, times, controls_ok=controls["ok"], context=True)
-    out = {"spec_sha256": spec_hash, "provenance": provenance, "result": result}
-    if "--power" in argv:
+                  "interval": "1h, UTC bar boundaries",
+                  "first_bar": times[0], "last_bar": times[-1],
+                  "period": f"{iso_utc(times[0])} to {iso_utc(times[-1])}",
+                  "bars": len(times), "series_sha256": series_hash(times, closes)}
+    result = study_weekend(closes, times, controls_ok=True, context=True)
+    out = {"spec_sha256": spec_hash, "run": run_id, "provenance": provenance,
+           "controls": controls, "result": result}
+    if "--skip-power" not in argv:
         out["power_v1"] = power_simulation()
     print(json.dumps(out, indent=2, default=str))
     return 0
