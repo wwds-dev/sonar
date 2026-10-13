@@ -10,7 +10,7 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
-## Unreleased
+## v2.266 — 2026-10-13
 
 - **Plainer wording when the time-stop test ends without a crossing.** The closing line of the
   *Every entry, graded at a fixed date* block now says "not enough evidence that the score ranks
