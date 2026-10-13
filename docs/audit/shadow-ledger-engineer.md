@@ -331,3 +331,72 @@ every changed code file: `core.py` 2 and `ui/app.py` 5 findings, the same as bef
   an old daily backup costs the new record that day's daily backup (the name is taken).
 - `docs/company/activity.jsonl` got a `build start` line in this worktree; it is not committed
   (shared log, concurrent sessions).
+
+## Fix loop 3 (2026-10-13)
+Inputs: `shadow-ledger-domain-finance-r3.md` (D3) and `shadow-ledger-code-reviewer-r3.md` (CR3), at
+`a08e796`. Branch `shadow-ledger-fl3` from `a08e796`, in an isolated worktree. Code and tests are in
+`71a5f5e` and `7a34499`; documents in `2401d80` and the commit after this report. Choices are in spec
+Build note 18. Playbook still `status: baseline` (stale). Synthetic books and pytest scratch
+directories only.
+
+| # | Finding | Fix (file:line at `7a34499`) | Test (`tests/test_shadow_ledger.py` unless named) |
+|---|---|---|---|
+| 1 | D3 P1-1: retiring re-tests the same book with no trace (G3) | A retirement is not honoured while `portfolio.json`'s marker names the id (`core.py` :759-764); the ten-minute rule never remakes a retired id (:785). `_shadow_retired` (:866) now returns id → `st_ctime`; `ledger.retired` / `retired_first` count the retired records other than the one in use (:1025-1033). `SH_RECORD_RETIRED_ONE` / `SH_RECORD_RETIRED` (`ui/app.py` :665, :1056-1064). `SH_LEDGER_RESTORE_RETIRE` (:733) follows only a non-`marker` "missing" (:1090-1094). README, CHANGELOG, manual §10, spec rows and Known limit 9 | `test_cr3_g3_retiring_without_a_reset_is_not_honoured[a day on, inside ten minutes]`, `test_cr3_domain_p1_1_retired_records_are_always_disclosed`, the end-to-end reset test (disclosure after restart), `test_cr2_p2_n2_a_copy_of_a_retired_record_left_in_place_is_never_used[after a reset, book not reset]`, L-15 (no retire sentence) |
+| 2 | D3 P3-1 "counted but not recorded" | "could not be written to the record … It is not in the record, so a look that uses it cannot be fully checked against the record." / "not in record" | `test_sec_p2_3_…`, `test_cr2_p3_n3_…`, `test_cr2_p3_n1_n3_…` (wording) |
+| 3 | D3 P3-2 a hidden erratum may matter | Errata touching a recorded look first, then newest (`ui/app.py` :1118-1146); `SH_ERRATA_MORE` "{n} more …; {m} of them touch a recorded look." / "+{n} errata ({m} on looks)" | `test_cr3_errata_on_looks_first_then_newest_and_how_many_are_hidden`, `test_sec_p3_1_…` |
+| 4 | D3 P3-3 "corrected R n/a" | `SH_ERRATUM_R` / `SH_ERRATUM_NO_R` "it has no usable R" / "R → none" | same test |
+| 5 | CR3 P3-1 two files carry the look's date | Restore and behind lines: "the last one by name … (on a look's day, the one with .look in its name; after a reset, see the README)"; spec row "unless that copy failed" | L-15, `test_sec_p3_3_…` |
+| 6 | CR3 P3-2 reset day: no copy of the new record | `_shadow_ledger_copy` (`core.py` :948) after a new record's first successful write, tag `created` (sorts before `look`; the suggested `start` would sort after it). README: the newest copy ending in the id's first 8 characters | `test_cr3_p3_2_after_a_reset_the_new_records_first_copy_restores_it`, `…the_first_copy_waits_for_the_first_write_that_succeeds`, `…the_look_copy_is_the_last_by_name_on_a_day_with_both`; `test_shadow_engine.py` file lists |
+| 7 | CR3 P3-3 "this folder's" for one pass | `_shadow_missing_reason` (`core.py` :958) in the refresh | `test_cr3_p3_3_a_file_lost_under_the_holder_is_this_books_at_once` |
+| 8 | CR3 P3-4 "same closes" | Docstrings (`calibration.py` LedgerBehindError, `ledger_anchor`), core comment, spec Build note 17 and the "behind" row: "decided again from the closes then available; not part of any recorded look" | — |
+| 9 | CR3 P3-5 "looks 1 and 2 and 3" | "1, 2 and 3" (`ui/app.py` :1131-1133) | the errata test |
+| 10 | CR3 P3-6 race in `test_two_processes` | `_wait(lambda: not live.read_only)` before the assertion | `tests/test_two_processes.py` |
+
+**Existing tests changed in this loop:**
+- `test_cr2_p2_n2_retiring_without_a_reset_starts_a_new_record_for_the_same_book` is replaced by
+  `test_cr3_g3_retiring_without_a_reset_is_not_honoured`. It asserted a new record for the same
+  book; the orchestrator's fix-loop-3 decision (enforcing G3) refuses that, so the test now pins
+  the refusal. This is a spec change, not a weakening: the new test asserts more (error, reason,
+  no file, marker unchanged, no retire sentence, and the ten-minute case).
+- `test_cr2_p2_n2_a_copy_of_a_retired_record_left_in_place_is_never_used` now runs after a reset
+  (no marker), where `LedgerRetiredError` still applies, and adds the "book not reset" case, where
+  the retirement is ignored.
+- L-15: no retire sentence on the "this book" path; restore wording "the last one by name".
+- Backup lists include the `created` copy: `test_the_day_is_backed_up_before_its_first_overwrite`,
+  `test_cr2_p2_n1_lost_after_a_look_…`, and the two `test_shadow_engine.py` file-list tests.
+- Refused wording: `test_sec_p2_3_…`, `test_cr2_p3_n3_…` (its "no look line" check now looks for
+  "look(s) could not", since the result line itself mentions "a look"), `test_cr2_p3_n1_n3_…`.
+- `test_sec_p3_1_…`: the hidden-errata line with its look count.
+
+**Mutation check.** Scratch copy of `7a34499` (`git archive` plus the nested repos), never the
+worktree; scripts and log in scratchpad `fl3/` (`mut3.py`, `mut_log.txt`). **16 of 16 killed**: G01
+retirement honoured with the marker; G02 ten-minute rule remakes a retired id; G03 retired records
+not in the payload; G04 the record in use counted as retired; G05 disclosure dropped; G06 plural for
+one; G07 retire offered on the marker path; G08 no first copy at open; G09 no first copy after a
+failed open write; G10 "this folder's" for a file lost under the holder; G11 errata on looks not
+first; G12 not newest first; G13 hidden-on-looks count 0; G14 no R shown as n/a; G15 "1 and 2 and 3";
+G16 first copy tagged `start` (sorts after the look's). G09 needed a new test
+(`…the_first_copy_waits_for_the_first_write_that_succeeds`), written before the run.
+
+**Runs** (`TEST_BUDGET_S=900`, tree `7a34499`; output in scratchpad `fl3/`):
+
+| Run | Exit | Result |
+|---|---|---|
+| Native | **0** | 2,563 passed, 3 skipped, 61 deselected (2:11) |
+| Offscreen (`QT_QPA_PLATFORM=offscreen`) | **0** | 2,563 passed, 3 skipped, 61 deselected (5:40) |
+| Slow (`-m slow`) over `test_shadow_ledger`, `_engine`, `_ui`, `test_calibration` | 0 | 31 passed (5:04) |
+
+Suite size 2,566 (was 2,558) in `TESTPLAN.md`, `TESTING.md`, `README.md`, `static/testplan.html`.
+No flake. ruff on the changed code files: the same 7 findings as before (`core.py` 2,
+`ui/app.py` 5), none in the tests.
+
+**Not done, and not verified.**
+- The retired date is `st_ctime`. A rename or a copy sets it, but a later metadata change (a restore
+  of the folder, a permission change) moves it. Not tested on a restored folder.
+- Removing the marker by hand, or the retired file, still lets someone start over unseen (Known
+  limit 2: not tamper-evident). Spec Known limit 9 says so.
+- No ADR 0002 note: under the decision the same-book retirement is refused, so none is needed.
+  The owner may still want G3's enforcement recorded there.
+- Known limit 8 ("nobody has walked through it by hand") is unchanged. Code review r3 scripted the
+  README walks (W1-W5); a hand walk has still not been done.
+- No build, install, push or `launchctl`. No screenshot of the new lines.
