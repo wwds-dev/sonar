@@ -73,6 +73,8 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
 
 ### After QA-11 / QA-13 (honest baselines) — recorded 2026-10-12, not built
 
+- [ ] P3 — Offscreen suite teardown: conftest's `pytest_unconfigure` deletes ~814 leftover top-level windows (89 MainWindow, 712 QFrame), which takes 22–47 s offscreen and grows with load. The merged offscreen suite takes 330–400 s under load and once hit the 600 s watchdog at load ~190. Have the window fixtures delete their own windows, or find out why each offscreen window takes ~0.3 s to destroy. Owner: keep 600 s for now (2026-10-13). Source: `docs/specs/sign-randomisation-verdicts.md` §14 loop-3 notes.
+
 From the review, QA and validation rounds in `docs/audit/qa11-qa13-honest-baselines-*` and the
 spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 

@@ -15,6 +15,11 @@
       - Measure 8 is accepted as "≤ 0.88 (sets share worlds)".
       - The 600 s suite budget is approved.
       - The Lab shows the Terminal's survivorship line on every result, in both modes.
+    - **At the release gate (2026-10-13):**
+      - The rate tests use the new default-on `rate` marker, because master made `slow` opt-in.
+      - The 600 s suite budget stays. A TODO covers speeding up offscreen window teardown.
+      - Branch-only coverage of 79.5% is accepted for this release, with a TODO item.
+      - The five final P3s are fixed.
     - **Rate figure: any verdict.** `CHANCE_VERDICT_RATE` = "about 1 run in 10" (9.11% [7.6–10.9], 1,152 judged held-out runs, 53% withheld; held-out manifest `404f5a77…`), worded "got a verdict either way".
     - **Measure 5:** the bar is reset from the curve to ≥ 28/40 at Δ ≈ +3 pts per-setup (measured 30/40). The curve is published. User power copy quotes only the clustered figure or says nothing.
   - **Required fixes, no further decision needed:**
