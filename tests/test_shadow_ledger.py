@@ -1780,6 +1780,32 @@ def test_cr2_p3_n1_the_merge_judges_a_look_by_the_files_own_line():
     assert calibration.ledger_parse(json.dumps(new, allow_nan=False))[1] is None
 
 
+def test_cr2_p3_n1_n3_a_holder_on_a_stricter_file_refuses_the_look_and_says_so(live,
+                                                                            monkeypatch):
+    """The boundary probe through the holder: a record made under a stricter
+    line. Look 1 crosses today's line, not the file's, so it is refused and
+    counted as a look (not a result); the entries are recorded and no pass
+    fails its read-back. Kills: the merge on today's line ("write" on every
+    pass), and refused looks counted as results."""
+    _cohort(live, per_symbol=True)
+    live._shadow_ledger_open(live.book, NOW)
+    f = _ledger_file()
+    led = json.loads(f.read_text())
+    led["constants"]["boundary"] = 1e9            # beyond any z these closes give
+    f.write_text(json.dumps(led, indent=1))
+    _fetch(monkeypatch, lambda s: flat(rising_close(int(s[1:]))))
+    again = _restart()
+    for k in range(2):
+        again._shadow_pass(NOW + k * DAY)
+        led = again.shadow["ledger"]
+        assert (led["error"], led["refused"], led["refused_looks"]) == (None, 0, 1), k
+    on_disk = json.loads(f.read_text())
+    assert len(on_disk["entries"]) == 45 and on_disk["looks"] == {}
+    assert again.shadow["looks"][0]["crossed"] and not again.shadow["looks"][0]["recorded"]
+    t = _no_result_shown(again.shadow)
+    assert "1 look could not be recorded" in t["warn"] and "result could not" not in t["warn"]
+
+
 def test_cr2_p3_n1_changed_look_sizes_are_a_constants_mismatch_not_unreadable(monkeypatch):
     """Code review r2 P3-N1, the looks probe: a later build with other look
     sizes reads a file recorded under (45, 101, 201) by the file's own sizes,
