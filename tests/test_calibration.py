@@ -1212,6 +1212,10 @@ def test_v12_the_design_holds_its_size_where_the_closed_only_grade_does_not():
     0.73 within Monte-Carlo error. Run with ``./run-tests.sh tests/ -m slow``."""
     lib = _walk_library(*V12_LIBRARY)
     design, shut, shut_n = _v12_null(V12_BOOKS, V12_NULL_SEED, lib)
+    # The whole design's size is about 6% (5.5-6.5%; spec Build notes 15, 22:
+    # 6.095% over 40,000 books), not the 5% the band is centred on. The band
+    # holds only because the seed is fixed: another seed's 2,000-book rate has
+    # SE 0.5 pt and would leave 6.5% in reach. Thresholds are the owner's call.
     assert 0.035 <= design <= 0.065, design
     se = math.sqrt(design * (1 - design) / V12_BOOKS + shut * (1 - shut) / V12_BOOKS)
     assert shut - design > 3 * se, (shut, design)
@@ -1388,3 +1392,45 @@ def test_r3_a_mean_test_skips_with_no_chunks_and_fails_with_some():
     else:
         pytest.fail("a partial chunk selection passed")
     _v12_all_chunks_or_skip({0: 1, 1: 1, 2: 1}, 3, "chunk")
+
+
+# -- hardening round (2026-10-13): pins found by comparing builds ---------- #
+
+def test_h1_the_mean_r_range_is_mean_pm_196_sd_over_root_n():
+    """The running mean R carries its own range: mean ∓ 1.96·sd/√n with the
+    sample sd (n − 1). Non-constant R, n = 5 (3 target at +1.5, 2 stop at −1),
+    so every constant is told apart. Kills: Z95 → 1.0, n − 1 → n, √n → n, and
+    lo/hi swapped."""
+    book = [closed_as(sp(i), "TARGET", 10 * DAY) for i in range(3)]
+    book += [closed_as(sp(i + 3), "STOP", 10 * DAY) for i in range(2)]
+    r = calibration.shadow_time_stop([], book, {"AAA": daily(-5, 40)}, LATER)
+    rs = [1.5, 1.5, 1.5, -1.0, -1.0]
+    n = len(rs)
+    mean = sum(rs) / n
+    sd = math.sqrt(sum((v - mean) ** 2 for v in rs) / (n - 1))
+    assert r["n_reached"] == n and r["mean_r"] == pytest.approx(mean)
+    assert r["mean_r_lo"] == pytest.approx(mean - 1.96 * sd / math.sqrt(n), abs=1e-12)
+    assert r["mean_r_hi"] == pytest.approx(mean + 1.96 * sd / math.sqrt(n), abs=1e-12)
+    assert r["mean_r_lo"] < r["mean_r"] < r["mean_r_hi"]
+
+
+def test_h2_the_price_grace_ends_exactly_seven_days_after_t():
+    """No price is decided at t_T + 7 days exactly, and not a second sooner.
+    Kills: `>=` → `>` at the grace edge. No bars at all, so no price comes."""
+    p = sp()
+    _r, e = one(p, bars=[], now=T_DUE + 7 * DAY - 1)
+    assert e["state"] == "wait_price"
+    _r, e = one(p, bars=[], now=T_DUE + 7 * DAY)
+    assert e["state"] == "no_price"
+
+
+def test_h2_a_bar_stamped_exactly_at_t_is_the_t_bar():
+    """A bar whose stamp equals t_T is the T bar, not the one before it. T is
+    placed on day 28's session-start stamp; its close (101) is the result and
+    the day before (99) is not. Kills: bisect_right → bisect_left on t_due."""
+    t_due = 28 * DAY + STAMP_H
+    p = sp(opened_at=t_due - 28 * DAY)
+    assert calibration.shadow_due(p) == t_due
+    bars = daily(-5, 40, close=lambda d: {27: 99.0, 28: 101.0}.get(d, 100.0))
+    _r, e = one(p, bars)
+    assert e["state"] == "time" and e["exit"] == 101.0

@@ -72,6 +72,14 @@ they have checked.
 
 ## Unreleased — 2026-10-12
 
+**The time-stop shadow reads a damaged readout as unreadable.** A look counts as crossed
+only when its flag is `true` and its z is a finite number; otherwise the block says "Could not
+work it out this time (unreadable)" instead of a "crossed" line with z +0.00. Look numbers are
+held to 1 to 3, and the looks, bands and entries it reads are cut to the lengths the engine writes.
+New tests pin the mean-R range, the 7-day price grace and the T bar. ADR 0002 now records that the
+whole design's false-alarm rate measures about 6%, not 5%; the bar stays 2.315 (owner's choice) and
+no on-screen text changes.
+
 **A window follows only an engine on this machine.** The engine lock names
 the running engine's address; the window now follows it only if it is a plain
 http address on this machine, and says so when it is not. Following never goes

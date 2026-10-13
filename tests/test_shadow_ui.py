@@ -706,3 +706,81 @@ def test_qa_r3_w02_one_damaged_date_does_not_blank_an_end_of_the_window():
     entries = _entries((_noon(2026, 9, 22), "time"), (_noon(2026, 10, 3), "target"))
     rows = shadow_texts(readout(entries=entries), False, now, 28.0)["rows"].splitlines()
     assert "readable" not in rows[0]
+
+
+# -- hardening round (2026-10-13): a payload that is not from this build ---- #
+# The dict can come from another process, so a "crossing" needs the boolean
+# True and a number to show for it; lists are read only as far as the engine
+# can have written them. Everything else is the "unreadable" sentence.
+
+UNREADABLE = "Could not work it out this time (unreadable)"
+
+
+def _crossed_readout(z, crossed=True, k=1):
+    return readout(n_entered=60, n_reached=45, looks=[
+        look(k, 45, due=NOW - 30 * DAY, used=45, evaluated=True, z=z, crossed=crossed),
+        look(2, 101, due=NOW + 10 * DAY, used=60, closed=True),
+        look(3, 201, entered=120, used=60, closed=True)])
+
+
+@pytest.mark.parametrize("z,crossed", [("abc", True), (True, True), (float("nan"), True),
+                                       (None, True), (0.3, "no"), (2.6, "yes"), (2.6, 1)])
+def test_h3_a_crossing_needs_true_and_a_finite_z(window, z, crossed):
+    """Kills: `_sh_num(z) or 0.0` (a 'crossed ... z=+0.00' for z='abc'/True) and
+    reading any truthy `crossed` as a crossing (crossed:'no' with z=0.3)."""
+    window.shadow_grade.render(_crossed_readout(z, crossed), 28.0, NOW)
+    status = window.shadow_grade.shadow_status.text()
+    assert status.startswith(UNREADABLE), status
+    assert "crossed" not in status.lower().replace("not crossed", "")
+
+
+def test_h3_a_true_crossing_is_unchanged(window):
+    window.shadow_grade.render(_crossed_readout(2.61), 28.0, NOW)
+    assert "+2.61" in window.shadow_grade.shadow_status.text()
+    window.shadow_grade.render(_crossed_readout(-2.61), 28.0, NOW)
+    assert "-2.61" in window.shadow_grade.shadow_status.text()
+
+
+def test_h3_a_look_number_is_held_to_one_through_three(window):
+    from ui.app import shadow_texts
+    for k, held in ((999, 3), (-4, 1), (0, 1)):
+        t = shadow_texts(_crossed_readout(2.61, True, k=k), False, NOW, 28.0)
+        want = shadow_texts(_crossed_readout(2.61, True, k=held), False, NOW, 28.0)
+        assert t["status"] == want["status"] and str(k) not in t["status"]
+
+
+def test_h3_a_huge_payload_costs_bounded_time_and_reads_as_the_first_few(window):
+    from ui.app import shadow_texts
+    base = readout()
+    band = base["bands"][0]
+    big = readout(bands=[dict(band) for _ in range(100_000)],
+                  looks=base["looks"] + [look(9, 9)] * 100_000,
+                  entries=[{"id": str(i), "opened_at": NOW, "state": "waiting"}
+                           for i in range(100_000)])
+    small = readout(bands=[band] * 5, looks=base["looks"][:3])
+    t0 = time.perf_counter()
+    got = shadow_texts(big, True, NOW, 28.0)
+    assert time.perf_counter() - t0 < 1.0
+    want = shadow_texts({**small, "entries": big["entries"][:10_000]}, True, NOW, 28.0)
+    assert got["rows"].count("\n") == want["rows"].count("\n")
+    assert got["status"] == want["status"]
+    window.shadow_grade.render(big, 28.0, NOW)          # and the widget never raises
+    window.book_shadow.render(big, 28.0, NOW)
+    for junk in ({"looks": "abc", "bands": 5, "entries": {"a": 1}},
+                 {"looks": [None, 3, "x"], "bands": [None, 7]}):
+        window.shadow_grade.render(readout(**junk), 28.0, NOW)
+        window.book_shadow.render(readout(**junk), 28.0, NOW)
+
+
+def test_h3_nothing_past_the_planned_lists_is_read():
+    """Kills: dropping the slice on looks (a fourth 'look' that crosses) or on
+    entries (an entry past the cap that stretches the window)."""
+    from ui.app import SHADOW_ENTRIES_MAX, shadow_texts
+    base = readout()
+    extra = look(3, 201, due=NOW, used=201, evaluated=True, z=3.0, crossed=True)
+    t = shadow_texts(readout(looks=base["looks"] + [extra]), False, NOW, 28.0)
+    assert t["status"] == shadow_texts(base, False, NOW, 28.0)["status"]
+    ok = [{"id": str(i), "opened_at": NOW, "state": "time"} for i in range(SHADOW_ENTRIES_MAX)]
+    late = {"id": "late", "opened_at": NOW + 400 * DAY, "state": "time"}
+    assert (shadow_texts(readout(entries=ok + [late]), False, NOW, 28.0)["rows"]
+            == shadow_texts(readout(entries=ok), False, NOW, 28.0)["rows"])
