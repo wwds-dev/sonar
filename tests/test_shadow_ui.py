@@ -23,7 +23,7 @@ from sonar.core import Live
 from sonar.portfolio import Portfolio
 from test_landing_figures import FORECAST_WORDS
 from ui import words
-from ui.app import SHADOW_WORDS, MainWindow, _sh_z
+from ui.app import SHADOW_WORDS, MainWindow, _sh_date, _sh_z
 
 DAY = 86_400.0
 NOW = time.time()
@@ -66,13 +66,22 @@ def window(tmp_path_factory):
     mp.undo()
 
 
+#: When the fixtures' evaluated looks were recorded in the ledger. Since the
+#: ledger amendment a look is a result only once recorded, and its line opens
+#: with this date ("Look 1 of 3, recorded 12 Oct, ...").
+RECORDED_AT = NOW - 20 * DAY
+
+
 def look(k, n, entered=None, due=None, used=0, excluded=0, waiting=0, wait_price=0,
-         evaluated=False, z=None, crossed=False, closed=False):
+         evaluated=False, z=None, crossed=False, closed=False, recorded=None):
     entered = n if entered is None else entered
+    recorded = evaluated if recorded is None else recorded
     return {"k": k, "n": n, "entered": entered, "n_missing": n - entered, "due": due,
-            "used": used, "n_excluded": excluded, "n_waiting": waiting,
-            "n_wait_price": wait_price, "evaluated": evaluated, "z": z,
-            "crossed": crossed, "design_closed": closed}
+            "used": used, "n_excluded": excluded, "n_filled": excluded, "n_waiting": waiting,
+            "n_wait_price": wait_price, "price_until": None, "evaluated": evaluated, "z": z,
+            "z_lo": None, "z_hi": None, "method": None, "crossed": crossed,
+            "past_line": isinstance(z, (int, float)) and abs(z) >= 2.315, "design_closed": closed,
+            "recorded": recorded, "recorded_at": RECORDED_AT if recorded else None}
 
 
 def readout(**kw) -> dict:
@@ -89,7 +98,9 @@ def readout(**kw) -> dict:
                     "ref": {"target": 0.374, "stop": 0.574, "neither": 0.052}},
                    {"lo": 80, "hi": 101, "n": 7, "target": 3, "stop": 3, "time": 1,
                     "ref": {"target": 0.374, "stop": 0.574, "neither": 0.052}}],
-         "entries": [], "computed_at": NOW - 600, "error": None}
+         "entries": [], "computed_at": NOW - 600, "error": None,
+         "mismatches": [], "errata": [],
+         "ledger": {"created_at": NOW - 40 * DAY, "error": None, "reason": None}}
     d.update(kw)
     return d
 
@@ -230,8 +241,10 @@ def test_u4_each_state_says_its_own_sentence(window):
     assert "15 of them are not entered yet" in s["a3 before look 1, undated"]
     assert "The first look is due; 3 of its 45 entries are still waiting" in \
         s["f look due, prices missing"]
-    assert s["c not crossed"].startswith("Look 1 of 3, first 45 entries (45 with a result): "
-                                         "no link strong enough to cross the line yet")
+    rec = _sh_date(RECORDED_AT, NOW)
+    assert s["c not crossed"].startswith(f"Look 1 of 3, recorded {rec}, first 45 entries "
+                                         "(45 with a result): no link strong enough to cross "
+                                         "the line yet")
     assert "Next look: the first 101 entries, on or after" in s["c not crossed"]
     assert "after 21 more are entered" in s["c not crossed, next undated"]
     assert "On these paper entries, higher scores went with higher R on average." in s["c crossed up"]

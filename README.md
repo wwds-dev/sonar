@@ -265,10 +265,26 @@ versus the checkout's `data/state.json`). `SONAR_DATA` points a source run at an
 agent's plist sets it to the app's, so the agent and the installed app share one book. The active risk profile
 is saved with the state; delete the state file to reset to a clean $10,000.
 
+The shadow grade's write-once record, `shadow_ledger.json`, survives a reset on purpose (ADR 0002 Amendment 1):
+after the paper book (`portfolio.json`, beside it in the same folder) is reset, SONAR refuses to use the old record or to start a new one ("It does not belong to
+this book"). **Only after such a reset**, to start a new record, **retire** the old one: with the agent and the app
+stopped, move `shadow_ledger.json` to `shadow_ledger.retired.<its ledger_id>.json` in the same folder (the id is the
+file's `"ledger_id"`, also in `shadow_ledger.id`). Nothing is deleted: the retired file keeps the old record, and its
+backups (`shadow_ledger.json.bak.*`, here and off-site) stay where they are and no longer block. The new record
+re-tests the same kind of entries, so the block always says how many records were retired in the folder and when.
+A retirement is **refused while the book's own marker** (the `shadow_ledger` key in `portfolio.json`) names the
+record: the book was not reset, so the record is reported missing and no new one starts.
+
+If the record is **missing** instead, put the newest backup copy in its place. Normally that is the last
+`shadow_ledger.json.bak.*` file by name, here or off-site; on a look's day it is the `.look<k>` copy, which is made right
+after every recorded look. After a reset, when two records' copies sit together, take the newest copy whose name ends
+in the first 8 characters of the id in `shadow_ledger.id` (one is made right after a record's first write, and after
+each look). After a deliberate reset, you may instead retire it: copy that newest backup to the retired name.
+
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 2,471 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 2,638 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 

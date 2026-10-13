@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import random
+import stat
 import sys
 import threading
 import time
@@ -140,6 +142,59 @@ SHADOW_UNAVAILABLE = "unavailable"
 # The shadow's gap check needs a series that starts on or before the entry.
 SHADOW_RANGES = (("3mo", 90), ("6mo", 182), ("1y", 365), ("2y", 730), ("5y", 1826))
 SHADOW_RANGE_SLACK_DAYS = 7     # a weekend and a holiday before the entry
+# The shadow's write-once record (docs/adr/0002 Amendment 1), beside the book
+# and written by the holder only. Its marker lives in portfolio.json.
+SHADOW_LEDGER_FILE = "shadow_ledger.json"
+# A marker this young with no file is a crash between the marker's write and
+# the file's: the file is made once more, not reported missing.
+SHADOW_LEDGER_RETRY_S = 600.0
+# About 0.36 MB a year (validator P3-4); a file near this is not ours to parse.
+SHADOW_LEDGER_MAX_BYTES = 64 * 1024 * 1024
+# The ledger's second anchor, beside it: its id and counts. No build before
+# the ledger knows the name, so none rewrites it (code review P2-1).
+SHADOW_SIDECAR_FILE = "shadow_ledger.id"
+# A record retired on purpose (G3, code review r2 P2-N2): the ledger moved to
+# `shadow_ledger.retired.<its ledger_id>.json` in the data directory. Its id
+# then anchors nothing, so a reset book can start a new record while the old
+# one, and every backup of it, is kept. At most this many are looked at.
+SHADOW_RETIRED_PREFIX = "shadow_ledger.retired."
+SHADOW_RETIRED_SUFFIX = ".json"
+SHADOW_RETIRED_MAX = 50
+
+
+def _read_regular(path, limit: int):
+    """``(text, stat)`` of a regular file of at most ``limit`` bytes, or
+    ``(None, None)`` when there is none. A symlink is refused (O_NOFOLLOW), a
+    FIFO or a device neither blocks nor is read (O_NONBLOCK, S_ISREG), and
+    no more than ``limit + 1`` bytes are ever read (security P3-2)."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None, None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise calibration.LedgerFormatError("not a regular file")
+        if st.st_size > limit:
+            raise calibration.LedgerFormatError("too large")
+        chunks, left = [], limit + 1
+        while left > 0:
+            chunk = os.read(fd, min(left, 1 << 20))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            left -= len(chunk)
+        data = b"".join(chunks)
+        if len(data) > limit:
+            raise calibration.LedgerFormatError("too large")
+        return data.decode("utf-8"), st
+    finally:
+        os.close(fd)
+
+
+def _file_key(st) -> tuple:
+    """What says a file changed: its inode, size and modification time."""
+    return (st.st_ino, st.st_size, st.st_mtime_ns)
 
 
 class Live:
@@ -241,6 +296,25 @@ class Live:
         self._shadow_bars: dict[str, tuple[str, list | None]] = {}
         # position id -> its decided shadow outcome (see _shadow_pass).
         self._shadow_decided: dict[str, dict] = {}
+        # The shadow ledger (see _shadow_ledger_open): the parsed record, read
+        # once per holder tenure, and whether this tenure has yet to write it;
+        # why it is not there when it is not; when its marker says it began.
+        # The days a fetch could not decide an entry are kept here as well, so
+        # a ledger that cannot be written still counts them in this process.
+        self._ledger: dict | None = None
+        self._ledger_unsaved = False
+        self._ledger_problem: tuple[str, str | None] | None = None
+        self._ledger_marker_at: float | None = None
+        self._ledger_retried = False
+        # The file as this tenure last read or wrote it (see _file_key).
+        self._ledger_seen: tuple | None = None
+        # An anchor save failed after the file was read or written: retried
+        # at the start of each pass (code review r2 P3-N2).
+        self._ledger_needs_anchor = False
+        # Retired records found at the last open: id -> when retired. Shown
+        # beside the record line (domain r3 P1-1).
+        self._ledger_retired_found: dict[str, float] = {}
+        self._shadow_tries: dict[str, list[str]] = {}
         self._seed_tries = 0        # see _seed_account_history
         self._seed_at = 0.0
         self._scan_at = 0.0
@@ -554,46 +628,413 @@ class Live:
         """Work out the time-stop shadow of the score grade (docs/adr/0002).
 
         The holder's job alone: a follower shows the holder's copy and never
-        fetches. The book is copied under its lock and the lock released before
-        any request — the same rule as the scan's, for the same frozen window.
-        The pure `calibration.shadow_time_stop` does the rest, and `self.lock`
-        covers the assignment and nothing more. A failure keeps the last good
-        readout on screen with the reason beside it; nothing is guessed.
+        fetches, and neither it nor a read-only engine ever reads or writes
+        the ledger or its marker. The book is copied under its lock and the
+        lock released before any request — the same rule as the scan's, for
+        the same frozen window. The pure `calibration.shadow_time_stop` does
+        the rest, and `self.lock` covers the assignment and nothing more. A
+        failure keeps the last good readout on screen with the reason beside
+        it; nothing is guessed.
 
         Each entry's outcome, once decided, is kept in `_shadow_decided` and
         handed back on every later pass, so it never changes within this
         process — not when a day's fetch fails, not when Yahoo rewrites old
-        closes. A look evaluated once stays as it was (ADR 0002 §3). In
-        memory only: a restart decides again from the book and fresh closes.
+        closes. Across restarts the ledger does the same (Amendment 1): what
+        is decided or evaluated for the first time is merged into it, written,
+        and only then published, so a look is shown as a result only once it
+        is on disk.
 
-        Threads: the memo and the bar cache are this method's alone, and it
-        runs only from `_rescan_once`, which every caller enters under
-        `_rescan_lock` (the engine loop, the background step, a settings
+        Threads: the memo, the bar cache and the ledger are this method's
+        alone, and it runs only from `_rescan_once`, which every caller enters
+        under `_rescan_lock` (the engine loop, the background step, a settings
         change's rescan). That lock is what serialises them; nothing else may
         call this.
         """
         if self.following or self.read_only:
             return
         now = time.time() if now is None else now
+        self._ledger_problem = None              # this pass's own, from here on
         try:
             book = self.book
             with book.lock:
                 held = [replace(p) for p in book.open]
                 done = [replace(p) for p in book.closed]
+            self._shadow_ledger_open(book, now)
+            ledger = self._ledger
             decided = dict(self._shadow_decided)
-            bars = self._shadow_fetch([p for p in held + done if p.id not in decided], now)
-            result = calibration.shadow_time_stop(held, done, bars, now, decided)
+            known = set(decided) | set((ledger or {}).get("entries", ()))
+            bars = self._shadow_fetch([p for p in held + done if p.id not in known], now)
+            day = time.strftime("%Y-%m-%d", time.gmtime(now))
+            fetched = {s for s, (d, _b) in self._shadow_bars.items() if d == day}
+            tries = {k: list(v) for k, v in (ledger or {}).get("price_tries", {}).items()}
+            for k, v in self._shadow_tries.items():
+                tries[k] = sorted(set(tries.get(k, ())) | set(v))
+            result = calibration.shadow_time_stop(held, done, bars, now, decided, ledger,
+                                                  tries, fetched)
             # Deep copies: the published readout and the memo share nothing.
             self._shadow_decided.update(
                 {k: copy.deepcopy(v) for k, v in calibration.shadow_decided(result).items()
                  if k not in self._shadow_decided})
+            self._shadow_tries = copy.deepcopy(result["price_tries"])
+            result = self._shadow_ledger_record(book, result, now)
         except Exception as exc:
+            if not self._may_write_shadow():
+                return
             with self.lock:
                 last = self.shadow if isinstance(self.shadow, dict) else {}
                 self.shadow = {**last, "error": type(exc).__name__}
             return
+        if not self._may_write_shadow():
+            return                              # stopped or handed over: not ours to show
         with self.lock:
             self.shadow = result
+
+    # -- the shadow ledger (docs/adr/0002 Amendment 1) ---------------------- #
+    def _shadow_ledger_path(self):
+        return paths.user_data_base() / SHADOW_LEDGER_FILE
+
+    def _shadow_sidecar_path(self):
+        return paths.user_data_base() / SHADOW_SIDECAR_FILE
+
+    def _ledger_build(self) -> str:
+        return str((self.build or {}).get("version") or "unknown")[:64]
+
+    def _may_write_shadow(self) -> bool:
+        """Whether this pass may still write the ledger, its anchors or the
+        readout: not once a stop was asked for, and only while this engine
+        drives and holds the engine lock (code review P3-1). A pass still in
+        flight at a quit or a handover ends without writing; the next holder
+        reads the record afresh. No lock at all is a direct call (tests)."""
+        if self._stop.is_set() or self.following or self.read_only:
+            return False
+        lock = self.engine_lock
+        return lock is None or bool(getattr(lock, "held", False))
+
+    def _shadow_ledger_open(self, book, now: float) -> None:
+        """Read the ledger, once per holder tenure; or start it, anchors first.
+
+        The record is anchored three ways: the marker in portfolio.json, the
+        sidecar `shadow_ledger.id` beside the file (which no older build
+        rewrites, code review P2-1 / security P2-2), and any backup of the
+        file, here or off-site. Both the marker and the sidecar carry the
+        record's id and its count of looks at the last write. An anchor that
+        names a retired id (`_shadow_retired`) anchors nothing — unless the
+        book's own marker names it: retiring is only for a book that was
+        reset (owner decision G3, domain r3 P1-1), so while the marker names
+        the record the retirement is not honoured and the record is
+        "missing" (reason "marker"); no new record starts.
+
+        | anchor | file | outcome |
+        | none | none | a new ledger: marker, then sidecar, then the empty file, in this pass |
+        | yes | none | "missing" — never a fresh start; unless marker or sidecar is under SHADOW_LEDGER_RETRY_S old and counts no look, a crash between the writes: the file is made once more |
+        | backups only | none | "missing" |
+        | retired only (no marker, or a marker naming another id) | none | a new ledger, as with none |
+        | marker naming a retired id | none | "missing" ("marker"): not reset, so not retired |
+        | no marker | yes | taken as this book's only if empty or every recorded id is a protocol position of this book (code review P1-1); else "read" (LedgerIdError) |
+        | yes | yes | read; another id is "read" (LedgerIdError), fewer looks than the anchor counts is "read" (LedgerBehindError), any other shape is "read" |
+        | no marker naming it | a retired id | "read" (LedgerRetiredError) |
+
+        "missing" says which anchor holds it, as its reason: "marker" (this
+        book had a record), "sidecar" or "backup" (this folder had one). On
+        "read" or "missing" nothing is written and the file is never moved
+        or repaired; the next pass reads again, so a restored file is picked
+        up without a restart. A good ledger is not parsed again in this
+        tenure unless the file changes under it (see
+        `_shadow_ledger_refresh`); otherwise this process's copy is the
+        record, and anchors that could not be saved are tried again.
+        """
+        if self._ledger is not None:
+            if self._shadow_ledger_refresh() and self._ledger_needs_anchor:
+                self._ledger_needs_anchor = not self._shadow_ledger_anchor(book, self._ledger)
+            return
+        path = self._shadow_ledger_path()
+        with book.lock:
+            raw = copy.deepcopy(book.shadow_ledger)
+            ids = {p.id for p in book.open + book.closed if p.protocol}
+        marker, bad = calibration.ledger_marker_parse(raw)
+        side, bad_side = (None, None) if bad else self._shadow_sidecar()
+        if bad or bad_side:
+            self._ledger_problem = ("read", bad or bad_side)
+            return
+        found = self._shadow_retired()
+        self._ledger_retired_found = found
+        # G3: a retirement is honoured only for a reset book. While the
+        # book's own marker names the id, the book was not reset.
+        retired = set(found) - {marker["ledger_id"]} if marker else set(found)
+        side = None if side and side["ledger_id"] in retired else side
+        anchors = [a for a in (marker, side) if a]
+        self._ledger_marker_at = anchors[0]["created_at"] if anchors else None
+        if len({a["ledger_id"] for a in anchors}) > 1:
+            self._ledger_problem = ("read", calibration.LedgerIdError.__name__)
+            return
+        anchor = anchors[0] if anchors else None
+        looks = max((a["looks"] for a in anchors), default=0)
+        try:
+            paths.sweep_temp_files(path)
+            text, st = _read_regular(path, SHADOW_LEDGER_MAX_BYTES)
+        except (OSError, ValueError) as exc:
+            self._ledger_problem = ("read", type(exc).__name__)
+            return
+        if text is None:
+            if anchor is None and self._shadow_ledger_backups(path, retired):
+                self._ledger_problem = ("missing", "backup")
+                return
+            if anchor is None:
+                ledger = calibration.ledger_new(now, self._ledger_build())
+            elif (not self._ledger_retried and looks == 0
+                  and anchor["ledger_id"] not in found
+                  and 0 <= now - anchor["created_at"] < SHADOW_LEDGER_RETRY_S):
+                # Entries lost with it are decided again from the closes then
+                # available (a recorded look keeps its own members); an anchor
+                # that counts a look had a file to lose. A retired id is never
+                # made again.
+                self._ledger_retried = True
+                ledger = calibration.ledger_new(now, self._ledger_build(),
+                                                anchor["ledger_id"], anchor["created_at"])
+            else:
+                self._ledger_problem = ("missing", "marker" if marker else "sidecar")
+                return
+            if not self._shadow_ledger_anchor(book, ledger):
+                return
+            # The empty file at once, so a crash later in the pass leaves a
+            # file, not "missing" (code review P3-2). A failure is retried.
+            self._ledger, self._ledger_unsaved = ledger, True
+            if self._shadow_ledger_write(ledger):
+                self._ledger_unsaved = False
+                self._shadow_ledger_copy(ledger, "created")
+            return
+        ledger, why = calibration.ledger_parse(text)
+        if why:
+            self._ledger_problem = ("read", why)
+            return
+        if ledger["ledger_id"] in retired:
+            # A copy of a record retired on purpose, left in its place: never
+            # used again, or a later loss of it would anchor nothing.
+            self._ledger_problem = ("read", calibration.LedgerRetiredError.__name__)
+            return
+        if marker is None and not calibration.ledger_belongs(ledger, ids):
+            # No marker in this book (a reset book, or one an older build
+            # saved): the file is taken only if it can be this book's — the
+            # sidecar names the directory's record, not the book's.
+            self._ledger_problem = ("read", calibration.LedgerIdError.__name__)
+            return
+        if anchor is not None and ledger["ledger_id"] != anchor["ledger_id"]:
+            self._ledger_problem = ("read", calibration.LedgerIdError.__name__)
+            return
+        elif len(ledger["looks"]) < looks:
+            self._ledger_problem = ("read", calibration.LedgerBehindError.__name__)
+            return
+        self._ledger, self._ledger_unsaved = ledger, False
+        self._ledger_seen = _file_key(st)
+        # A marker an older build dropped, a missing sidecar, or counts behind
+        # the file: brought up to the record, which is the one source here.
+        # A failed save is tried again on each pass (code review r2 P3-N2).
+        self._ledger_needs_anchor = not self._shadow_ledger_anchor(book, ledger)
+
+    def _shadow_sidecar(self) -> tuple[dict | None, str | None]:
+        """The sidecar, parsed as a marker: (None, None) when there is none."""
+        try:
+            text, _st = _read_regular(self._shadow_sidecar_path(), 4096)
+            raw = None if text is None else json.loads(text)
+        except (OSError, ValueError) as exc:
+            return None, type(exc).__name__
+        if text is not None and raw is None:
+            return None, calibration.LedgerFormatError.__name__
+        return calibration.ledger_marker_parse(raw)
+
+    @staticmethod
+    def _shadow_ledger_backups(path, retired=frozenset()) -> bool:
+        """Whether a backup of a record not retired exists, here or off-site:
+        the third anchor, which says a record existed even with no marker or
+        sidecar. With ids retired, each backup's own `ledger_id` is read (the
+        bounded reader, the id alone parsed); one that cannot be read or
+        names no id still anchors, as it cannot be shown to be retired."""
+        far = paths.offsite_dir()
+        for where in [path.parent] + ([far] if far is not None else []):
+            for bak in where.glob(f"{path.name}.bak.*"):
+                if not retired:
+                    return True
+                try:
+                    text, _st = _read_regular(bak, SHADOW_LEDGER_MAX_BYTES)
+                except (OSError, ValueError):
+                    return True
+                if text is not None and calibration.ledger_id_of(text) not in retired:
+                    return True
+        return False
+
+    @staticmethod
+    def _shadow_retired() -> dict[str, float]:
+        """The ids retired on purpose (G3, code review r2 P2-N2), each with
+        when its file got its retired name: every
+        `shadow_ledger.retired.<id>.json` in the data directory whose own
+        `ledger_id` is that <id>, read with the bounded reader. A name that
+        does not match its contents, or a file that cannot be read, retires
+        nothing, so a mistyped name blocks as before rather than freeing an
+        id it does not hold. The time is the file's status-change time
+        (`st_ctime`), which a rename or a copy sets: the day it was retired,
+        unless something touched the file's metadata since."""
+        out: dict[str, float] = {}
+        base = paths.user_data_base()
+        names = sorted(base.glob(f"{SHADOW_RETIRED_PREFIX}*{SHADOW_RETIRED_SUFFIX}"))
+        for p in names[:SHADOW_RETIRED_MAX]:
+            lid = p.name[len(SHADOW_RETIRED_PREFIX):-len(SHADOW_RETIRED_SUFFIX)]
+            try:
+                text, st = _read_regular(p, SHADOW_LEDGER_MAX_BYTES)
+            except (OSError, ValueError):
+                continue
+            if text is not None and calibration.ledger_id_of(text) == lid:
+                out[lid] = st.st_ctime
+        return out
+
+    def _shadow_ledger_anchor(self, book, ledger: dict) -> bool:
+        """Bring the marker in portfolio.json (saved under the book's lock)
+        and then the sidecar up to `ledger`'s id, start and counts, each only
+        when it differs. Called before the file exists and after every write,
+        so neither ever counts more than the file holds. A failed save leaves
+        the old marker, and the next pass tries again."""
+        want = calibration.ledger_anchor(ledger)
+        if not self._may_write_shadow():
+            return False
+        with book.lock:
+            old = book.shadow_ledger
+            if old != want:
+                book.shadow_ledger = want
+                try:
+                    book.save()
+                except Exception as exc:
+                    book.shadow_ledger = old
+                    self._ledger_problem = ("write", type(exc).__name__)
+                    return False
+        self._ledger_marker_at = want["created_at"]
+        try:
+            side, _bad = self._shadow_sidecar()
+            if side != want:
+                paths.write_atomically(self._shadow_sidecar_path(), json.dumps(want))
+        except Exception as exc:
+            self._ledger_problem = ("write", type(exc).__name__)
+            return False
+        return True
+
+    def _shadow_ledger_refresh(self) -> bool:
+        """Re-read the file if it changed since this tenure last read or wrote
+        it (security P2-1): a person may add an erratum while the holder runs.
+        Same id: its errata are taken over, and nothing else. Gone, unreadable
+        or another id: the tenure's copy is dropped and the next pass reads
+        again — never written over. Returns whether the copy is still good."""
+        if self._ledger_unsaved and self._ledger_seen is None:
+            return True                      # this tenure's new file, not written yet
+        path = self._shadow_ledger_path()
+        try:
+            st = os.stat(path, follow_symlinks=False)
+            if _file_key(st) == self._ledger_seen:
+                return True
+            text, st = _read_regular(path, SHADOW_LEDGER_MAX_BYTES)
+        except (OSError, ValueError) as exc:
+            missing = isinstance(exc, FileNotFoundError)
+            self._ledger_problem = (("missing", self._shadow_missing_reason()) if missing
+                                    else ("read", type(exc).__name__))
+            self._ledger = None
+            return False
+        ledger, why = (None, None) if text is None else calibration.ledger_parse(text)
+        if text is None or why or ledger["ledger_id"] != self._ledger["ledger_id"]:
+            self._ledger_problem = (("missing", self._shadow_missing_reason()) if text is None
+                                    else ("read", why or calibration.LedgerIdError.__name__))
+            self._ledger = None
+            return False
+        self._ledger = {**self._ledger, "errata": ledger["errata"]}
+        self._ledger_seen = _file_key(st)
+        return True
+
+    def _shadow_ledger_copy(self, ledger: dict, tag: str) -> None:
+        """A copy of the file just written, here and off-site, named
+        `….bak.<date>.<tag>.<first 8 characters of the id>`: after a new
+        record's first write ("created", code review r3 P3-2) and after each
+        recorded look. The id in the name tells records apart on a reset
+        day, and keeps a retired record's copy from being written over.
+        "created" sorts before "look", so on a day with both the look's copy
+        is the last by name."""
+        paths.snapshot(self._shadow_ledger_path(), f"{tag}.{ledger['ledger_id'][:8]}")
+
+    def _shadow_missing_reason(self) -> str | None:
+        """Why a file lost under this tenure is "missing": "marker" when the
+        book's own marker names the record (code review r3 P3-3: the line then
+        says "this book had one", as the next pass's open would), else None."""
+        with self.book.lock:
+            raw = self.book.shadow_ledger
+        named = isinstance(raw, dict) and raw.get("ledger_id") == self._ledger["ledger_id"]
+        return "marker" if named else None
+
+    def _shadow_ledger_write(self, ledger: dict) -> bool:
+        """Write the whole file: after the day's backup, in one atomic step,
+        and only once the text has been read back by the strict reader (code
+        review P3-3). A refusal or failure is a "write" problem."""
+        if not self._may_write_shadow():
+            return False
+        path = self._shadow_ledger_path()
+        try:
+            text = json.dumps(ledger, indent=1, allow_nan=False)
+            _back, why = calibration.ledger_parse(text)
+            if why:
+                self._ledger_problem = ("write", why)
+                return False
+            paths.daily_backup(path)
+            paths.write_atomically(path, text)
+            self._ledger_seen = _file_key(os.stat(path, follow_symlinks=False))
+        except Exception as exc:
+            self._ledger_problem = ("write", type(exc).__name__)
+            return False
+        return True
+
+    def _shadow_ledger_record(self, book, result: dict, now: float) -> dict:
+        """Merge what `result` decided or evaluated for the first time into
+        the ledger and write it when anything was added, a try counted, or
+        this tenure's new file is not on disk yet; then bring the anchors up
+        to it. Before the write the file is checked for a change under it
+        (an erratum added by hand is carried over). On success the looks are
+        worked out again against the new record, so what is published is
+        what is on disk. On failure the record and the readout's looks stay
+        as they were (an unrecorded look shows no result) and the next pass
+        tries again. Records this build could not read back are left out
+        and counted. `result["ledger"]` says which."""
+        refused: list[str] = []
+        refused_looks: list[str] = []
+        if (self._ledger is not None and self._may_write_shadow()
+                and self._shadow_ledger_refresh()):
+            ledger = self._ledger
+            new, added = calibration.ledger_merge(ledger, result, now, self._ledger_build(),
+                                                  refused, refused_looks)
+            if added or self._ledger_unsaved or new["price_tries"] != ledger["price_tries"]:
+                first = self._ledger_unsaved
+                if self._shadow_ledger_write(new):
+                    self._ledger, self._ledger_unsaved = new, False
+                    result = calibration.shadow_with_ledger(result, new)
+                    if first:
+                        self._shadow_ledger_copy(new, "created")
+                    if len(new["looks"]) > len(ledger["looks"]):
+                        # A look cannot be redone, so a copy holding it is
+                        # made at once, here and off-site, before the anchors
+                        # count it: the newest copy matches them unless the
+                        # copy failed (code review r2 P2-N1, r3 P3-1).
+                        k = max(int(key) for key in new["looks"])
+                        self._shadow_ledger_copy(new, f"look{k}")
+                    self._ledger_needs_anchor = not self._shadow_ledger_anchor(book, new)
+            elif result.get("errata") != calibration.ledger_errata(ledger):
+                result = calibration.shadow_with_ledger(result, ledger)
+        info = result.get("ledger") or {"created_at": self._ledger_marker_at,
+                                        "error": None, "reason": None}
+        info = {**info, "refused": len(refused), "refused_looks": len(refused_looks)}
+        # Records retired in this folder, other than the one in use, are
+        # disclosed beside the record line: their looks are not counted here,
+        # and this record re-tests the same kind of entries (domain r3 P1-1).
+        # Only present when there is one.
+        current = (self._ledger or {}).get("ledger_id")
+        earlier = [t for lid, t in self._ledger_retired_found.items() if lid != current]
+        if earlier:
+            info = {**info, "retired": len(earlier), "retired_first": min(earlier)}
+        if self._ledger_problem:
+            info = {**info, "error": self._ledger_problem[0],
+                    "reason": self._ledger_problem[1]}
+        return {**result, "ledger": info}
 
     def _shadow_fetch(self, positions: list, now: float) -> dict:
         """Daily closes for the entries whose shadow outcome waits on them: past
@@ -1169,6 +1610,16 @@ class Live:
             self.snapshot = {"status": "starting"}
         self._shadow_decided = {}
         self._shadow_bars = {}
+        # So do the ledger and the tries: this tenure's first pass reads the
+        # ledger again, against the marker in the book just re-read.
+        self._ledger = None
+        self._ledger_unsaved = False
+        self._ledger_problem = None
+        self._ledger_retried = False
+        self._ledger_seen = None
+        self._ledger_needs_anchor = False
+        self._ledger_retired_found = {}
+        self._shadow_tries = {}
         # Only now may actions write: the book they would write is the one on disk.
         self.read_only = False
         self.conflict = ""

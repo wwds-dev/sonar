@@ -64,6 +64,74 @@ costs, from one replay of past prices, as before.
   `CONFIDENCE.md` records the r7 figures, the residuals and the clustered power figure; TESTPLAN 7.3,
   7.5 and a new 7.13; the glossary adds p-value and survivorship.
 
+## v2.296 — 2026-10-13
+
+Everything below is
+about the time-stop shadow block (*Every entry, graded at a fixed date*, manual §10). Its figures
+are paper entries with a coin-flip direction, before costs, fees and slippage, with exact fills; a
+crossed line is not a trading edge. (ADR 0002 Amendment 1, `docs/specs/shadow-ledger.md`)
+
+- **Results are recorded once and kept.** v2.260 worked the block out in memory, so every restart
+  of the agent (one comes with every install) decided each result again from that day's closes, and
+  a failed price request or a restated close could change a look after it had been shown. The agent
+  now writes each decided result and each look to a record, `shadow_ledger.json` in the data folder,
+  the first time it exists, and never changes either. **A look is shown as a result only once it is
+  recorded**, and its line starts with that date ("Look 1 of 3, recorded …"). A look worked out but
+  not recorded yet shows no z, no crossing and no "the test ends here". The block ends with "Record
+  kept since {date}." Each pass checks the recorded looks against today's entries and the test's
+  fixed settings; a difference is shown, and the recorded result is kept. Only the agent that holds
+  the book writes the record.
+- **A look waits up to 28 days for a missing price.** An entry with no usable closing price after
+  its 4-week date was left out after 7 days. It is now left out only when 28 days have passed since
+  that date **and** requests on at least 3 different days (UTC), from day 7 on, could not settle it.
+  The tried days are kept in the record, so a restart does not skip them. The waiting line says
+  until when. A missing price is usually brief, so the look is then usually graded on every entry;
+  the cost is that a look can come up to about 4 weeks later.
+- **Entries still left out are filled in at their extremes, and a crossing must survive them.**
+  When a look goes ahead with entries left out for want of a price or closed by hand, each is filled
+  in at its own target and at its own stop, and z is worked out for every combination (above 12
+  left out: the two combinations that push the slope furthest each way). The block shows the lowest
+  and highest z found: extreme cases, not estimates and not limits. A crossing counts only when z
+  and every fill are past the line on the same side; otherwise the look says it is "past the line,
+  but not in every extreme case" and the test goes on. **This costs power (simulated, synthetic
+  books, no real data):** with about 3 of 201 entries left out, the chance of a crossing when a real
+  link of correlation 0.2 exists fell from about 70% to about 63%, and with about 7 to about 49%
+  (4,000 books per case); the false-alarm rate fell from 5.5% to 3.8% (12,000 books). **With nothing
+  left out, nothing changes:** the same entries, the same z and the same line as v2.260.
+- **`no_risk`.** An entry whose stop was at or past its fill price has no R. It is now left out at
+  once and counted on its own ("whose stop was at or past the fill price"), instead of under "no
+  closing price", and it is not filled in at the extremes. The app's paper broker fills at the
+  planned entry, so none is expected.
+- **Errata.** A recorded result is never changed. If one is later found wrong (a bad tick, a
+  restated close), a person adds an erratum to the record by hand (position, reason, corrected R,
+  date) under a written ADR note, with the agent and the app stopped. The block shows it with the
+  look(s) that counted the result; it never changes whether a look crossed or the test ended. The
+  app never writes errata. The five shown are those touching a recorded look, newest first; the
+  rest are counted, with how many of them touch a look. An erratum with no corrected R says so.
+- **A missing, unreadable or other book's record is an error, never a fresh start.** Nothing is
+  recorded and no look is shown as a result until it is fixed, and the block says which case it is:
+  unreadable; missing (this book had one, this folder had one, or backups of it exist); an older
+  copy holding fewer looks; another book's record; or a copy of a retired one. The paper book
+  (`portfolio.json`) and a file beside the record (`shadow_ledger.id`) note that a record exists. A
+  copy is made right after a record's first write and right after each recorded look, here and
+  off-site, besides the daily backup, so the newest backup copy holds every recorded look (unless
+  that copy failed). The newest copy is the last one by name; on a look's day, the `.look<k>` copy;
+  after a reset, the newest one whose name ends in the first 8 characters of the id in
+  `shadow_ledger.id`. Putting the right file back clears the error on the next pass.
+- **Retiring a record, only after a reset.** After a deliberate reset of the paper book, the old
+  record is refused ("It does not belong to this book"). To start a new one, stop the agent and the
+  app and rename `shadow_ledger.json` to `shadow_ledger.retired.<its ledger_id>.json` in the same
+  folder. Nothing is deleted, and a new record starts. It re-tests the same kind of entries, so the
+  block's last line always says how many records were retired in the folder and when the first was
+  ("Record kept since … 1 earlier record was retired in this folder, on … Its looks are not
+  counted here, and this record re-tests the same kind of entries."). A retirement is refused while
+  the paper book's own note names the record: that book was not reset, so the record is reported
+  missing and no new one starts. README, under the paper-book reset.
+- Not fixed in this build (spec `shadow-ledger.md`, Known limits): no fsync before the file is
+  renamed into place; the record is not tamper-evident; a copy after a look that fails is not
+  reported; the old record's backups rotate out after a reset; the robust rule's power cost above;
+  the extreme fills are not a bound on z; the date given for a retired record is when its file
+  last changed status, which a restore from a backup moves.
 ## v2.266 — 2026-10-13
 
 - **Plainer wording when the time-stop test ends without a crossing.** The closing line of the

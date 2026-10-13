@@ -217,12 +217,17 @@ def daily(first: int, last: int, close=lambda d: 100.0, skip=()) -> list:
 T_DUE = sp().opened_at + 28 * DAY                    # day 28, 15:00
 T_CUT = 29 * DAY + STAMP_H                           # the bar after the T bar
 LATER = 40 * DAY
+# Past both limits of the "no price" grace (Amendment 1 §4): 28 days after
+# t_T, with failed fetches on three distinct UTC days from t_T + 7 days on.
+PAST_GRACE = T_DUE + 29 * DAY
+TRIED = [calibration._utc_day(T_DUE + d * DAY) for d in (7, 8, 9)]
 
 
-def one(p, bars=None, now=LATER):
+def one(p, bars=None, now=LATER, tries=None):
     r = calibration.shadow_time_stop([p] if p.is_open else [],
                                      [] if p.is_open else [p],
-                                     {"AAA": daily(-5, 40) if bars is None else bars}, now)
+                                     {"AAA": daily(-5, 40) if bars is None else bars}, now,
+                                     tries={p.id: TRIED} if tries is None else tries)
     return r, r["entries"][0] if r["entries"] else None
 
 
@@ -387,7 +392,7 @@ def test_a_rescaled_history_is_not_this_entrys_price(ratio):
     bars = [(t, c * ratio) for t, c in daily(-5, 40)]
     r, e = one(sp(), bars, now=T_DUE + 3 * DAY)
     assert e["state"] == "wait_price" and r["n_wait_price"] == 1 and r["n_reached"] == 0
-    r, e = one(sp(), bars, now=T_DUE + 8 * DAY)
+    r, e = one(sp(), bars, now=PAST_GRACE)
     assert e["state"] == "no_price" and r["n_no_price"] == 1 and e["r"] is None
 
 
@@ -725,15 +730,20 @@ def test_a_broken_bar_is_dropped_not_used():
 
 
 def test_a_plan_with_no_stop_distance_has_no_r():
+    """Amendment 1 §4: no stop distance is `no_risk`, not "no price" (it was
+    filed under no_price until the ledger amendment)."""
     _r, e = one(sp(stop=100.0))
-    assert e["state"] == "no_price" and e["r"] is None
+    assert e["state"] == "no_risk" and e["r"] is None
 
 
-def test_v10_no_price_waits_a_week_then_is_left_out_never_zero():
-    """V-10. Kills: treating a missing price as R = 0."""
+def test_v10_no_price_waits_out_the_grace_then_is_left_out_never_zero():
+    """V-10. Kills: treating a missing price as R = 0. The grace is 28 days
+    and three tried days now (Amendment 1 §4; it was a week)."""
     r, e = one(sp(), bars=[], now=T_DUE + 3 * DAY)
     assert e["state"] == "wait_price" and r["n_wait_price"] == 1
     r, e = one(sp(), bars=[], now=T_DUE + 8 * DAY)
+    assert e["state"] == "wait_price" and r["n_wait_price"] == 1
+    r, e = one(sp(), bars=[], now=PAST_GRACE)
     assert e["state"] == "no_price" and e["r"] is None
     assert r["n_no_price"] == 1 and r["n_reached"] == 0 and r["mean_r"] is None
 
@@ -744,7 +754,7 @@ def test_qa_r3_m20_no_bar_between_entry_and_t_is_never_a_time_exit():
     would be TIME at a close the position never saw. It waits, then is left
     out as no price. Kills: dropping the "T bar after the entry" check."""
     bars = daily(-5, -1) + daily(30, 40)
-    for now, state in ((T_DUE + 3 * DAY, "wait_price"), (T_DUE + 8 * DAY, "no_price")):
+    for now, state in ((T_DUE + 3 * DAY, "wait_price"), (PAST_GRACE, "no_price")):
         _r, e = one(sp(), bars, now=now)
         assert e["state"] == state and e["r"] is None
 
@@ -769,8 +779,9 @@ def test_qa_r4_m21_m22_the_entry_days_own_bar_is_never_the_t_bar(opened_h):
     p = sp(opened_at=opened_h * 3600)
     bars = daily(-5, 0) + daily(30, 40)
     t_due = calibration.shadow_due(p)
-    for now, state in ((t_due + 3 * DAY, "wait_price"), (t_due + 8 * DAY, "no_price")):
-        r = calibration.shadow_time_stop([p], [], {"AAA": bars}, now)
+    tried = {p.id: [calibration._utc_day(t_due + d * DAY) for d in (7, 8, 9)]}
+    for now, state in ((t_due + 3 * DAY, "wait_price"), (t_due + 29 * DAY, "no_price")):
+        r = calibration.shadow_time_stop([p], [], {"AAA": bars}, now, tries=tried)
         assert r["entries"][0]["state"] == state and r["entries"][0]["r"] is None
 
 
@@ -935,7 +946,8 @@ def test_v14_t_the_looks_and_the_line_are_pre_registered():
     assert calibration.SHADOW_T_HORIZONS == 4
     assert calibration.SHADOW_LOOKS == (45, 101, 201)
     assert calibration.SHADOW_BOUNDARY == 2.315
-    assert calibration.SHADOW_PRICE_GRACE_DAYS == 7
+    # Amendment 1 §4 (it was 7 days alone): see test_l9_* in test_shadow_ledger.py.
+    assert calibration.SHADOW_PRICE_GRACE_DAYS == 28
 
 
 def test_v16_the_reference_is_the_timed_no_edge_split_per_entry():
@@ -1287,6 +1299,91 @@ def test_v12_slow_the_design_power_to_two_points():
 
 
 # --------------------------------------------------------------------------- #
+# L-14 (docs/specs/shadow-ledger.md; model-validator P2-1): what the robust
+# rule costs when members are left out
+# --------------------------------------------------------------------------- #
+# V-12's books, each seen twice: whole, and with about 3 of every 201 members
+# left out for want of a price (only slow resolvers, state `time`, as the
+# validator's q1c "random, 3 per 201"). A left-out member is filled in at its
+# barriers, −1 and +1.5, and a crossing then counts only when every fill also
+# crosses (Amendment 1 §3). Measured at build on these seeds, 2,000 books
+# each: size 5.75% whole, 4.05% with exclusions; power 0.729 whole, 0.632
+# with exclusions; 2.94 left out by look 3 (the validator's q1c: 5.47 /
+# 3.78% and 0.723 / 0.625).
+L14_PER_201 = 3.0
+L14_TIME_SHARE = 0.202           # share of V-12 entries resolved by time (measured 0.201)
+L14_POWER = 0.63                 # Amendment 1 §3: about 0.63 at about 3 per 201
+L14_CHUNKS, L14_BOOKS = 4, 500
+_l14: dict[tuple[str, int], tuple[int, int, int]] = {}
+
+
+def _l14_books(books: int, seed: int, lib: tuple, power: bool) -> tuple[int, int, int]:
+    """(rejections whole, rejections with members left out, members left out
+    at look 3), over ``books`` paired books."""
+    rng = random.Random(seed)
+    beta = 0.0
+    if power:
+        draws = [_resolve(lib[rng.randrange(len(lib))], _steep(rng.uniform(0, 80)))[1]
+                 for _ in range(100_000)]
+        m = sum(draws) / len(draws)
+        var_r = sum((v - m) ** 2 for v in draws) / len(draws)
+        beta = V12_IC / math.sqrt(1 - V12_IC ** 2) * math.sqrt(var_r) / (80 / math.sqrt(12))
+    p_out = L14_PER_201 / (calibration.SHADOW_LOOKS[-1] * L14_TIME_SHARE)
+    whole = left_out = k3 = 0
+    for _ in range(books):
+        full, cut = [], []
+        for i in range(calibration.SHADOW_LOOKS[-1]):
+            c = rng.uniform(0, 80)
+            state, r, _t = _resolve(lib[rng.randrange(len(lib))], _steep(c))
+            e = {"id": f"{i:04d}", "opened_at": float(i), "t_due": float(i), "confidence": c,
+                 "state": state, "r": r + beta * (c - 40.0), "r_stop": -1.0, "r_target": 1.5}
+            full.append(e)
+            if state == "time" and rng.random() < p_out:
+                e = dict(e, state="no_price", r=None)
+                k3 += 1
+            cut.append(e)
+        whole += any(lk["crossed"] for lk in calibration.shadow_looks(full))
+        left_out += any(lk["crossed"] for lk in calibration.shadow_looks(cut))
+    return whole, left_out, k3
+
+
+def _l14_chunk(kind: str, k: int) -> tuple[int, int, int]:
+    if (kind, k) not in _l14:
+        seed = (20_261_100 if kind == "null" else 20_261_200) + k
+        _l14[(kind, k)] = _l14_books(L14_BOOKS, seed, _walk_library(*V12_QUICK_LIBRARY),
+                                     kind == "power")
+    return _l14[(kind, k)]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("kind", ["null", "power"])
+@pytest.mark.parametrize("k", range(L14_CHUNKS))
+def test_l14_slow_chunk(kind, k):
+    """One 500-book chunk of each, so none nears the 60 s hang guard."""
+    whole, left_out, k3 = _l14_chunk(kind, k)
+    assert left_out <= whole + 10 and 1.5 <= k3 / L14_BOOKS <= 4.5
+
+
+@pytest.mark.slow
+def test_l14_slow_the_robust_rule_dropped_or_inverted():
+    """L-14: with about 3 left out per 201, the design's size is no more than
+    on the same books whole, and its power at a correlation of 0.2 is about
+    0.63 (± 3 Monte-Carlo SE), as Amendment 1 states. Kills: the robust rule
+    dropped (declaring on the rest gives ~0.70) or inverted (any fill
+    crossing would raise it). Averages the chunks above: run it with them
+    (``-m slow``)."""
+    _v12_all_chunks_or_skip(_l14, 2 * L14_CHUNKS, "test_l14_slow_chunk")
+    n = L14_CHUNKS * L14_BOOKS
+    null = [sum(_l14[("null", k)][j] for k in range(L14_CHUNKS)) for j in range(3)]
+    power = [sum(_l14[("power", k)][j] for k in range(L14_CHUNKS)) for j in range(3)]
+    assert null[1] <= null[0], null
+    assert 2.5 <= (null[2] + power[2]) / (2 * n) <= 3.5
+    p = power[1] / n
+    assert abs(p - L14_POWER) <= 3 * math.sqrt(L14_POWER * (1 - L14_POWER) / n), p
+    assert power[0] / n - p > 0.05, (power[0] / n, p)
+
+
+# --------------------------------------------------------------------------- #
 # V-12 end to end (model-validator P3-1): the null through shadow_time_stop
 # --------------------------------------------------------------------------- #
 # V-12 above runs the gate on hand-built {state, r} dicts. This one builds
@@ -1413,13 +1510,17 @@ def test_h1_the_mean_r_range_is_mean_pm_196_sd_over_root_n():
     assert r["mean_r_lo"] < r["mean_r"] < r["mean_r_hi"]
 
 
-def test_h2_the_price_grace_ends_exactly_seven_days_after_t():
-    """No price is decided at t_T + 7 days exactly, and not a second sooner.
-    Kills: `>=` → `>` at the grace edge. No bars at all, so no price comes."""
+def test_h2_the_old_seven_day_grace_no_longer_ends_the_wait():
+    """ADR 0002 Amendment 1 §4 (merged after v2.266): "no price" now needs 28
+    days and 3 tried days, so at t_T + 7 days, with no bars, the entry still
+    waits. The 28-day edge to the second is pinned by
+    test_shadow_ledger.py::test_qa_p3_q26_the_grace_ends_at_28_days_to_the_second.
+    Kills: the 7-day grace left in place."""
     p = sp()
-    _r, e = one(p, bars=[], now=T_DUE + 7 * DAY - 1)
-    assert e["state"] == "wait_price"
-    _r, e = one(p, bars=[], now=T_DUE + 7 * DAY)
+    for now in (T_DUE + 7 * DAY - 1, T_DUE + 7 * DAY, T_DUE + 28 * DAY - 1):
+        _r, e = one(p, bars=[], now=now)
+        assert e["state"] == "wait_price"
+    _r, e = one(p, bars=[], now=T_DUE + 28 * DAY)        # the helper's 3 tried days
     assert e["state"] == "no_price"
 
 

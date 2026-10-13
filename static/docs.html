@@ -1102,7 +1102,8 @@ APCA_API_SECRET_KEY=...</code></pre>
     tested only at three <b>looks</b>, fixed before any entry had a result: the
     first 45, the first 101 and the first 201 protocol entries, in the order
     they were entered. A look is worked out once, when every one of its entries
-    has a result or a counted exclusion. <b>Crossing the line</b> means z at or
+    has a result or a counted exclusion, and it counts only once it is
+    <b>recorded</b> (below). <b>Crossing the line</b> means z at or
     beyond ±2.315 at a look: a link strong enough that chance alone would rarely
     produce it. Looking three times gives chance three tries, so the line sits
     above the usual two standard errors. The first crossing is the result and
@@ -1121,11 +1122,47 @@ APCA_API_SECRET_KEY=...</code></pre>
     the <b>volatility estimate</b>, not on the score. A different split can mean
     the estimate was off; it says nothing about whether the score works.</p>
   <p><b>Left out, and counted.</b> Entries chosen by hand (not by protocol
-    mode), protocol entries closed by hand before the 4 weeks, and entries with
-    no usable closing price 7 days after their date are left out, and the block
-    always shows how many. If more than a tenth of a look's entries are left
-    out, a line starting <em>Note:</em> says so for as long as that look is
-    shown. The first row names the entry dates the figures cover.</p>
+    mode), protocol entries closed by hand before the 4 weeks, entries still
+    without a usable closing price when the wait below runs out, and entries
+    whose stop was at or past their fill price (no R can be worked out for them)
+    are left out, and the block always shows how many. If more than a tenth of
+    a look's entries are left out, a line starting <em>Note:</em> says so for as
+    long as that look is shown. The first row names the entry dates the figures
+    cover.</p>
+  <p><b>Why a look can wait up to 28 days for a price.</b> Only an entry the
+    book had not closed at its target or stop by its 4-week date needs a closing
+    price, so only slow entries can be missing one. A price can be missing for a
+    while (a failed request, a data provider running late, a holiday) or for good
+    (a symbol that stopped trading, which can itself depend on how the trade was
+    going). Leaving such entries out quickly would leave out slow ones on
+    purpose, so a look waits for them. An entry still without a price is left out
+    only when <b>both</b> have happened: 28 days have passed since its 4-week
+    date, and requests for its price on at least 3 different days, from the 7th
+    day after that date on, could not settle it. The days tried are kept in the
+    record (below), so an agent that was stopped for weeks does not give up after
+    one failed request. The block says until when it waits; the look can come
+    later than that date if the tries are not used up yet or the agent is not
+    running. At worst a look comes about four weeks later.</p>
+  <p><b>The extreme cases.</b> If a look still goes ahead with entries left out
+    for want of a price or closed by hand, the block shows what they could have
+    done to it. Each one is filled in at its own target and at its own stop, the
+    best and worst results it could have had, both known from the day it was
+    filled. z is worked out for every combination (with more than 12 left out,
+    for the two combinations that push the slope furthest each way), and the
+    block shows the lowest and highest z found. <b>These are extreme cases, not
+    estimates and not limits.</b> They are not a guess at what the missing
+    results were, and a mix of results in between can give a z beyond them. A
+    look counts as crossed only when its z and every one of these filled-in cases
+    are past the line on the same side; otherwise it says <em>past the line, but
+    not in every extreme case</em>, and the test goes on. This makes a crossing
+    harder to reach when entries are left out. In simulation (synthetic books, no
+    real data; 4,000 books per case, with a real link of correlation 0.2), with
+    about 3 of 201 entries left out the chance of a crossing fell from about 70%
+    to about 63%, and with about 7 to about 49%. With no link, false alarms fell
+    from 5.5% to 3.8% (12,000 books). The wait above is what keeps left-out
+    entries rare. An entry whose stop was at or past its fill price is not filled
+    in: it has no R, and it was not left out because of how it ended. With
+    nothing left out, this rule changes nothing.</p>
   <div class="callout warn"><b>What a crossing does not mean.</b> It means only
     that the score sorted how past coin-flip paper entries ended after 4 weeks,
     before costs, fees and slippage, with exact fills. It is not a trading edge.
@@ -1136,14 +1173,80 @@ APCA_API_SECRET_KEY=...</code></pre>
     target pays 1.5 while the stop costs 1, so coin-flip entries on trending
     instruments average above 0R. A test like this can also cross by chance
     when there is no link.</div>
-  <p><b>Where it comes from.</b> The agent works it out on each scan, in memory,
-    from the book and Yahoo daily closes (at most one request per symbol a day).
-    Nothing is written to disk; a restart works it out again from the book and
-    fresh closes. A window that follows the agent shows the agent's copy word for
-    word; with an older agent it says <em>Not available from the running
-    agent</em>, and when the copy is more than 26 hours old it says the agent may
-    be stopped. It changes no exit, no row's odds and nothing in the grade above.
-    The design is in ADR 0002.</p>
+  <p><b>Recorded once, and kept.</b> The agent writes each entry's result and
+    each look to a record, a file in the data folder
+    (<code>shadow_ledger.json</code>), the first time it is known, and never
+    changes either afterwards. <b>Recorded</b> means written to that file. A look
+    is shown as a result only once it is recorded, and its line then starts with
+    the date it was recorded (<em>Look 1 of 3, recorded …</em>). This keeps a look
+    from changing after it has been shown: before the record, every restart of
+    the agent (one comes with every install) worked each result out again from
+    that day's prices, and a failed request or a restated price could move a
+    look. A look worked out but not yet recorded says so and shows no z, no
+    crossing and no <em>the test ends here</em>; the agent tries again on its next
+    pass. The block ends with <em>Record kept since …</em>, the day the record was
+    started. Each pass also works the recorded looks out again as a check. If
+    today's version counts different entries, gives a different z, or the test's
+    fixed settings have changed, the block says so and keeps the recorded result,
+    as fixed in advance. Either one may rest on a data error.</p>
+  <p><b>Corrections.</b> A recorded result is never changed, even one later
+    found wrong. If one turns out to rest on a bad price, a person adds an
+    <b>erratum</b> (a correction note: the entry, the reason, the corrected R and
+    the date) to the record by hand, with the agent and the app stopped, under a
+    written note to ADR 0002. The block shows it with the look or looks that
+    counted that result. It never changes whether a look crossed or whether the
+    test ended: deciding what to do only after seeing a wrong result would let
+    the outcome steer the test.</p>
+  <p><b>If the record is missing, or the book was reset.</b> A record that is
+    missing, cannot be read, belongs to another paper book, or is an older copy
+    holding fewer looks is never replaced or started again on its own. Until it
+    is fixed, nothing new is recorded and no look is shown as a result, and the
+    block says which case it is. Three things note that a record exists, so a
+    missing one is noticed: a note in the paper book, a small file beside the
+    record, and its backups. The record is backed up daily like the other state
+    files (§12), and one more copy is made right after a record is started and
+    right after each recorded look, so the newest backup copy holds every recorded
+    look. What to do:</p>
+  <ul>
+    <li><b>Missing, or an older copy:</b> put the newest backup copy in its
+      place: the last one by name, here or off-site. On the day of a look that
+      is the copy with <code>.look</code> in its name; after a reset, the newest
+      copy whose name ends in the start of this record's id (the README says
+      how to find it).</li>
+    <li><b>The paper book was reset on purpose:</b> the old record is not this
+      book's. <b>Retire</b> it: with the agent and the app stopped, rename its
+      file as the README's paper-book reset steps say. Nothing is deleted, and a
+      new record starts. It tests the same kind of entries again, so the block's
+      last line then always says how many records were retired in this folder
+      and when the first was, and that their looks are not counted.</li>
+    <li><b>Only after a reset.</b> Retiring is refused while the paper book's
+      own note names the record: that book was not reset, so the record is
+      reported missing and no new one starts. Restore it instead.</li>
+  </ul>
+  <p>Once the right file is in place, the next pass picks it up without a
+    restart.</p>
+  <p><b>What the record does not do.</b> It is not tamper-proof: a person can
+    edit the file, and only its backups and the <em>Record kept since</em> line
+    would show it. If the copy after a look cannot be made, nothing on screen
+    says so; the next daily backup holds the look. After a power cut during a
+    write, the file can in rare cases be left empty; it then reads as unreadable
+    and has to be restored from a backup. After a reset, the old record's backups
+    rotate out like any other (the last seven copies here, 30 off-site); the
+    retired file is the copy kept for good. The date the block gives for a
+    retired record is when its file was renamed or copied; restoring the folder
+    from a backup can move it. Someone who also deletes the paper book's note
+    by hand, or the retired file, can still start over unseen: the record is not
+    tamper-proof.</p>
+  <p><b>Where it comes from.</b> The agent works it out on each scan from the
+    book and Yahoo daily closes (at most one request per symbol a day), and keeps
+    every recorded result and look across restarts; results not yet recorded are
+    worked out again from the book and that day's closes. Only the agent that
+    holds the book writes the record. A window that follows the agent never reads
+    or writes it, and shows the agent's copy word for word; with an older agent
+    it says <em>Not available from the running agent</em>, and when the copy is
+    more than 26 hours old it says the agent may be stopped. It changes no exit,
+    no row's odds and nothing in the grade above. The design is in ADR 0002 and
+    its Amendment 1.</p>
 
   <h2 id="findings"><span class="n">11</span>What the research found</h2>
   <p>Six studies, each more careful than the last. Five directional nulls and one volatility-shaped survivor.</p>

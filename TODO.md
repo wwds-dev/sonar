@@ -78,11 +78,10 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
 From the review, QA and validation rounds in `docs/audit/qa11-qa13-honest-baselines-*` and the
 spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 
-- [ ] `P1` `research` `@ai` **Calibration is right-censored by score — time-stop shadow built, not yet shipped.**
-      Owner decision 2026-10-12: ADR 0002, spec `docs/specs/shadow-time-stop.md`. On branch
-      `claude/zealous-mclaren-8985d0`, all 2026-10-12: Build, Review (four rounds), Verify (four rounds), Secure
-      and Document (manual §10 "A second grade: every entry at a fixed date", CHANGELOG under Unreleased) are
-      done; reports in `docs/audit/shadow-time-stop-*.md`. Next: Release (owner gate), with the slow suite.
+- [x] `P1` `research` `@ai` ~~Calibration is right-censored by score — time-stop shadow built, not yet shipped.~~
+      **Shipped in v2.260 (2026-10-12)**, CHANGELOG; release record `docs/audit/shadow-time-stop-sre-release.md`.
+      Owner decision 2026-10-12: ADR 0002, spec `docs/specs/shadow-time-stop.md`; reports in
+      `docs/audit/shadow-time-stop-*.md`.
 - [x] `P2` `design` `@me` **Decide the shadow's `SH_FINAL_NONE` wording before Release** (model-validator P2-4,
       domain-finance P3-3; spec "Known limits", owner question 3). ADR 0002 §3 fixes "no evidence that the score
       ranks 4-week results, at the planned size"; the reviews say it overstates a negative and that "planned size"
@@ -90,9 +89,9 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       Done 2026-10-12: ADR 0002 §3 amended, new wording in `SHADOW_WORDS` (ships with the next build).
 - [ ] `P2` `testing` `@me` **Live weekend stamp check for the shadow (TESTPLAN 11.23).** On a Saturday or Sunday
       after 00:00 UTC, note the newest daily-bar stamps of ^GSPC, META, EURCHF=X, TRX-USD and ^N225 and record them
-      in ADR 0002 §5. Outcomes are correct under any convention, but with last-trade or fetch-time stamps the wait
-      before the 7-day "no price" grace runs out leaves only 1.3 days (US holiday) or 0.27 days (^N225 in Golden
-      Week) (code review r4 P3-A). Also look for a crypto row stamped exactly 00:00:00 UTC with the next row
+      in ADR 0002 §5. Outcomes are correct under any convention. The margin before "no price" was 1.3 days (US
+      holiday) or 0.27 days (^N225 in Golden Week) under the 7-day grace (code review r4 P3-A); the ledger's
+      28-day grace plus 3 tried days removes it (shadow-ledger spec). Also look for a crypto row stamped exactly 00:00:00 UTC with the next row
       missing, which grades a day late (QA r4 P3-4). Spec "Known limits" 1–2.
 - [ ] `P2` `testing` `@me` **The shadow's live success measure at its first look (TESTPLAN 11.21)**, on or after
       the look 1 date (about 2026-11-06): screenshot the block on both pages; each of the first 45 protocol
@@ -106,8 +105,8 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P3` `performance` `@ai` **The shadow's daily fetch runs on the scan thread** (security P3-4): up to ~2 min
       once a UTC day with timeouts, not measured. Eased because decided entries are no longer fetched. Cap the due
       list per pass, or check `_stop` and a time budget.
-- [ ] `P3` `design` `@ai` **Shadow copy P3s the domain review deferred** (domain-finance r2 P3-5 to P3-7): a zero
-      stop distance is shown as "no closing price"; `SH_TIP`'s "at that day's close" on a weekend or holiday T;
+- [ ] `P3` `design` `@ai` **Shadow copy P3s the domain review deferred** (domain-finance r2 P3-5 to P3-7): ~~a zero
+      stop distance is shown as "no closing price"~~ (now `no_risk`, shadow ledger); `SH_TIP`'s "at that day's close" on a weekend or holiday T;
       "+{rr}R reached the target" is exact only at the planned entry. (P3-2, "the line" unexplained, is now in
       manual §10.)
 - [x] `P2` `research` `@me` ~~The shadow's real false-positive rate is about 6%, not 5%.~~ **Decided
@@ -116,15 +115,32 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P2` `testing` `@ai` **Run `./run-tests.sh tests/ -m slow` at release** and on any change to the
       shadow's gate code (V-12 at 2,000 and 20,000 books, about a minute). The default suite runs a cheaper
       version.
-- [ ] `P2` `research` `@me` **Persist the shadow's decided outcomes and evaluated looks across restarts?**
-      Fix loop 1 keeps decided outcomes in memory, so within one process a look evaluated once never
-      changes; a failed fetch keeps the closes already held. A holder restart still decides again from
-      fresh closes, and an entry counted as "no price" can still be graded later. Persisting needs an ADR
-      0002 §7 change (spec Build note 6).
-- [ ] `P2` `research` `@me` **Shadow exclusions select by outcome speed** (model-validator P2-2,
-      `docs/audit/shadow-time-stop-model-validator.md`). `no_price` can only hit entries not settled before T
-      (slow resolvers), and delisting is outcome-related. Options: hold a look with any `no_price` member
-      unevaluated, or show a sensitivity bound (excluded members at R = −1 and at +1.5).
+- [ ] `P3` `security` `@ai` **No fsync before the atomic rename** (security P3-6,
+      `docs/audit/shadow-ledger-security-engineer.md`; pre-existing, every state file through
+      `paths.write_atomically`): after a power loss a renamed file can be empty. Flush and
+      `F_FULLFSYNC` before `replace`, then fsync the directory. Deferred by the orchestrator in shadow
+      ledger fix loop 1.
+- [x] `P2` `research` `@me` ~~Persist the shadow's decided outcomes and evaluated looks across restarts?~~
+      **Decided 2026-10-12** (ADR 0002 Amendment 1, spec `docs/specs/shadow-ledger.md`): a write-once
+      ledger with a marker in `portfolio.json`. Built; see the shadow-ledger item below.
+- [x] `P2` `research` `@me` ~~Shadow exclusions select by outcome speed~~ **Decided 2026-10-12**
+      (Amendment 1, G2 (a)): a look is held for a missing price for 28 days and 3 tried days, and a crossing
+      must survive the extreme fills of what is still left out. Built; see the shadow-ledger item below.
+- [ ] `P1` `research` `@ai` **Shadow ledger: Build done 2026-10-12, review round 1 fixed 2026-10-13
+      (fix loop 1), code review r2 and QA findings fixed 2026-10-13 (fix loop 2, branch
+      `shadow-ledger-fl2`), before the first T on 2026-10-20** (spec `docs/specs/shadow-ledger.md` Build
+      notes 16-17, engineer report `docs/audit/shadow-ledger-engineer.md`). Document done 2026-10-13 (manual
+      §10, CHANGELOG under Unreleased, spec Known limits). Next: re-review of fix loop 2 (anchors count looks;
+      the copy after each look; the retire step), domain-finance r3 P1-1 (retiring without a reset re-tests
+      the same entries with no trace; fix or owner deferral), Secure for the new file reads and copies,
+      Release (owner gate). It must be live before look 1 is due.
+- [ ] `P3` `infra` `@ai` **A failed shadow-ledger copy after a look is silent** (engineer report, fix loop
+      2; spec `shadow-ledger.md` Known limit 3): `paths.snapshot` swallows an `OSError`, and the newest copy is
+      then a look behind until the next daily backup. Show it in the block's warning line, or retry the copy
+      on the next pass.
+- [ ] `P3` `docs` `@ai` **Hash each recorded shadow look into the CHANGELOG** at that look's Document phase
+      (validator option; spec `shadow-ledger.md` Risks and Known limit 2): a SHA-256 of the look's record, so
+      a later edit of the file can be seen. First due at look 1 (about 2026-11-06 or later).
 - [ ] `P3` `research` `@me` **Shadow rule 1 before rule 2 is not a stopping rule** (model-validator P3-4): a
       missed stop-crossing daily close is overridden if the book later books a TARGET before the cut. Tiny
       bias; a fix changes ADR 0002 §4.
@@ -693,3 +709,5 @@ need an account and time rather than code are under **Open** above.
       `ui/` and `main.py` and fails on a `Portfolio(` given a broker, any reference to `default_broker`, an
       `AlpacaPaperBroker(` built outside `default_broker`, or a `broker` attribute assigned outside the book's and the
       order guard's constructors (`docs/specs/book-broker-truth.md`, 2026-10-12).
+
+- [ ] P3 · shadow ledger · @ai — The retired-record count on the record line stops at 50 without saying so (`sonar/core.py:879`, `SHADOW_RETIRED_MAX`); show "50 or more" at the cap (domain-finance r4 P3-1, `docs/audit/shadow-ledger-domain-finance-r4.md`).
