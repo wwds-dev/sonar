@@ -140,7 +140,7 @@ Both `./run-tests.sh` modes, twice; measures 1 to 8; mutation list above; `git d
 Architect: 2026-10-13, revised the same day against `docs/audit/trial-ledger-dsr-pbo-architecture-domain-finance.md`
 (4 P1) and `...-architecture-model-validator.md` (6 P1). Playbook `architect.md` is `status: baseline`
 (last-reviewed 2026-10-10; not radar-verified). Stdlib only (Python 3.13 here). Gate applies: new
-persistent state. ADR: `docs/adr/0003-trial-ledger-format.md`. All maths is [mem], not checked against
+persistent state. ADR: `docs/adr/0004-trial-ledger-format.md`. All maths is [mem], not checked against
 the papers; every known-answer constant is labelled "from memory, unverified against paper" until a
 human checks the paper once.
 

@@ -2,7 +2,7 @@
 
 Reviewer: model-validator, 2026-10-13. Read-only; no repo file other than this report was written.
 Reviewed: `.claude/worktrees/agent-a3ed0519d39f51b25/docs/specs/trial-ledger-dsr-pbo.md` (cited S:line),
-`docs/adr/0003-trial-ledger-format.md`, `docs/audit/trial-ledger-dsr-pbo-domain-finance.md`;
+`docs/adr/0004-trial-ledger-format.md`, `docs/audit/trial-ledger-dsr-pbo-domain-finance.md`;
 ground truth `sonar/research/stats.py`, `study.py`, `validate.py`.
 Playbook `model-validator.md`: `status: baseline` (not radar-verified).
 Source honesty: the Bailey/Lopez de Prado papers were NOT fetched by me either. Formula checks

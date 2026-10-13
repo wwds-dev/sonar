@@ -1,4 +1,4 @@
-# 0003. Trial ledger: hash-chained JSON Lines in git, fail closed
+# 0004. Trial ledger: hash-chained JSON Lines in git, fail closed
 
 - Status: proposed (Architect gate)
 - Date: 2026-10-13
