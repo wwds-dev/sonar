@@ -303,6 +303,34 @@ def test_the_lab_tells_the_replay_which_universe_it_covers(window, monkeypatch):
     window.bt_btn.setEnabled(True)
 
 
+def test_the_lab_hands_its_range_to_the_replay(window, monkeypatch):
+    """QA P3-3: the range the Lab's reader picks is the range the replay
+    reads — through the Lab's run and the thread's hand-off to
+    backtest.run — so ten years reaches summarise and is withheld there.
+    Mutation it catches: the range dropped or fixed at either step (QA
+    mutants D12, D13)."""
+    import ui.app as app_mod
+    from sonar import backtest
+    from ui.worker import BacktestThread
+    made = []
+    monkeypatch.setattr(app_mod, "BacktestThread", _thread_stub(made))
+    monkeypatch.setattr(window, "_lab_thread", None)
+    before = window.lab_range.currentIndex()
+    for data in ("1y", "2y", "5y", "10y"):
+        window.lab_range.setCurrentIndex(window.lab_range.findData(data))
+        window._lab_run()
+        assert made[-1]["rng"] == data
+        window._lab_thread = None
+    window.lab_range.setCurrentIndex(before)
+    window.lab_btn.setEnabled(True)
+    seen = {}
+    monkeypatch.setattr(backtest, "run",
+                        lambda symbols, **kw: seen.update(kw) or {"n": 0})
+    for data in ("1y", "5y", "10y"):
+        BacktestThread(["BTC-USD"], 5, rng=data).run()
+        assert seen["rng"] == data
+
+
 def test_the_backtest_thread_hands_the_universe_to_the_replay(monkeypatch):
     from sonar import backtest
     from ui.worker import BacktestThread
@@ -613,6 +641,71 @@ def test_a_ten_year_run_in_the_lab_shows_numbers_and_the_reason(
         assert _INSIDE not in html
 
 
+def test_the_lab_shows_the_survivorship_line_on_every_result(
+        window, monkeypatch):
+    """Owner, after the fix-loop-2 review (domain pass 5 P3-4): the Lab
+    shows the Terminal's survivorship line under every result — judged or
+    withheld, any range — in both wordings, once; a run that compared
+    nothing has no result to qualify.
+    Mutation it catches: the line dropped, shown in one wording only, or
+    only on some readings."""
+    from sonar import backtest
+    from ui import app as app_mod
+    from ui import words
+    line = ("The instruments are today's list; ones that fell away are "
+            "missing, which favours long trades over long ranges.")
+    assert app_mod.SURVIVORSHIP_LINE == line
+    results = [
+        _judged(verdict_state="within"),
+        _judged(range="1y", delta=0.031, std_error=0.009,
+                verdict_state="beats", significant=True, outside_bar=True,
+                randomisation=_rand(0.004),
+                verdict=backtest._verdict(0.031, 0.009, "beats")),
+        _judged(delta=0.031, std_error=0.009, verdict_state="unconfirmed",
+                outside_bar=True, randomisation=_rand(0.31),
+                verdict=backtest._verdict(0.031, 0.009, "unconfirmed")),
+        _judged(range="5y", horizon_days=250, withheld="horizon",
+                verdict_state="withheld"),
+        _judged(range="10y", horizon_days=20, withheld="drift",
+                verdict_state="withheld",
+                verdict=backtest._withheld_verdict("drift", 20, 9000, 481)),
+        {"n": 500, "symbols": 10, "range": "2y", "horizon_days": 5,
+         "hit_rate": 0.393, "predicted": 0.400, "delta": -0.007,
+         "std_error": 0.02, "significant": False, "expectancy_r": -0.02,
+         "implied_edge_sigma": -0.01, "avg_bars_held": 3.0,
+         "verdict": "older summary"},
+    ]
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        for r in results:
+            html = window._lab_html(r)
+            assert html.count(line) == 1, (plain, r.get("verdict_state"))
+            window._backtest_done(r)
+            assert f"  {line}" in window.bt_result.text().splitlines()
+    assert line not in window._lab_html({"n": 0, "verdict": "nothing"})
+
+
+def test_the_short_window_reason_offers_a_range_up_to_five_years(window):
+    """QA P3-6: what would leave room for a run that compared nothing names
+    a longer range up to five years only, and none from a run already at
+    five years or over ten, which are never judged.
+    Mutation it catches: the reason pointing at ten years, or at a longer
+    range from a five-year run."""
+    base = {"n": 0, "verdict": "nothing to compare", "n_timeout": 0,
+            "n_short_window": 40, "longest_comparable_horizon": 166}
+    longer = ("A shorter horizon, or a longer range of five years at most, "
+              "leaves room for that.")
+    for rng in ("1y", "2y", None):
+        r = dict(base) if rng is None else dict(base, range=rng)
+        assert longer in window._lab_html(r), rng
+    for rng in ("5y", "10y"):
+        html = window._lab_html(dict(base, range=rng))
+        assert "A shorter horizon leaves room for that." in html, rng
+        assert "longer range" not in html and "10y" not in html, rng
+        window._backtest_done(dict(base, range=rng))
+        assert "longer range" not in window.bt_result.text(), rng
+
+
 def test_the_lab_names_the_error_bar_not_standard_errors(window):
     """Loop 5 (validator r5): the difference line says what the bar is —
     setups entered on the same day counted together — not '2 s.e.'.
@@ -790,7 +883,8 @@ def test_every_headline_reading_names_the_fixed_direction_residual(
     from sonar import backtest
     from ui import words
     residual = ("A direction fixed per instrument, such as always long, can "
-                "also land outside the bar, because the list holds today's "
+                "also land outside the bar, because each instrument keeps its "
+                "own trend over the years and the list holds only today's "
                 "survivors; this check cannot see that.")
     for state, delta in (("beats", 0.031), ("below", -0.031),
                          ("unconfirmed", 0.031)):
@@ -982,6 +1076,21 @@ def test_the_attribution_footer_names_the_components_tested_together(
     assert ("P-values of the 4 components go through Benjamini-Hochberg "
             "together at q=0.1 (the 2 measured, and those not measured "
             "counting as finding nothing): testing 4 components") in html, html
+    # a run without a verdict judges nothing, so the footer says nothing of
+    # judging together, in either wording (code review P3-5)
+    from sonar import backtest
+    withheld = dict(a, withheld="drift", note=backtest.NOT_JUDGED,
+                    components=[dict(c, verdict="not judged")
+                                if c["ic"] is not None else c
+                                for c in a["components"]])
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = MainWindow._attribution_html(withheld)
+        assert backtest.NOT_JUDGED in html
+        for said in ("judged together", "Benjamini", "how noise gets "
+                     "published"):
+            assert said not in html, (plain, said)
+    monkeypatch.setattr(words, "plain", lambda: False)
     three = dict(a, components=a["components"][:3])
     html = MainWindow._attribution_html(dict(three, components=[
         comp("momentum", 0.01), comp("volatility", -0.02),

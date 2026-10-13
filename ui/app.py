@@ -463,6 +463,13 @@ ATTRIBUTION_VERDICTS = {
     "UNTESTED": "not tested",
 }
 
+#: Survivorship (domain P2-3): the replay runs on today's list. The Terminal
+#: and the Lab show it under every result, in both wordings (owner, after the
+#: fix-loop-2 review; domain pass 5 P3-4).
+SURVIVORSHIP_LINE = ("The instruments are today's list; ones that fell away "
+                     "are missing, which favours long trades over long "
+                     "ranges.")
+
 
 def _px(v: float | None) -> str:
     """A price, to the precision its size wants: two places from 10 up, four
@@ -2791,10 +2798,16 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _short_window_reason(r: dict) -> str:
         """Why a run compared nothing, and what would leave room — the same
-        sentence on the Lab and the Terminal."""
+        sentence on the Lab and the Terminal. A longer range is offered up to
+        five years, and not from a run already that long: ten years is never
+        judged (backtest.offers_longer_range; QA P3-6)."""
+        from sonar import backtest
+        fix = ("A shorter horizon, or a longer range of five years at most, "
+               "leaves room for that." if backtest.offers_longer_range(
+                   r.get("range")) else
+               "A shorter horizon leaves room for that.")
         text = ("A setup is compared only when at least two horizons of bars "
-                "follow it. A longer range or a shorter horizon leaves room for "
-                "that.")
+                f"follow it. {fix}")
         if r.get("longest_comparable_horizon"):
             text += (" On this range the longest series can compare a horizon "
                      f"of up to {r['longest_comparable_horizon']} days.")
@@ -2908,6 +2921,9 @@ class MainWindow(QMainWindow):
                        "twice the share of random-direction reshuffles of "
                        "whole stretches that read at least this far in the "
                        "direction of Δ, at most 1.</p>")
+        # The Terminal's line, on every result in both wordings.
+        out.append(f"<p style='color:#7c8798'>"
+                   f"{html.escape(SURVIVORSHIP_LINE, quote=False)}</p>")
 
         for title, key in (("Momentum buckets", "buckets"),
                            ("Attention buckets", "attention_buckets")):
@@ -3073,6 +3089,10 @@ class MainWindow(QMainWindow):
         if a.get("catalyst"):
             out.append(f"<p style='color:#5c6370'>catalyst — "
                        f"{html.escape(str(a['catalyst']), quote=False)}</p>")
+        # A run without a verdict judges nothing, so no line says what is
+        # judged together (code review P3-5): the note above says why.
+        if a.get("withheld"):
+            return "".join(out)
         # The count today's Benjamini-Hochberg runs over: every component
         # listed, one not measured at p = 1 (backtest.attribute), so the
         # stricter bar is that of all of them, not of the measured alone.
@@ -3726,8 +3746,7 @@ class MainWindow(QMainWindow):
         lines.append("  Price-based half only — historical news is not replayed, "
                      "and costs are excluded (both would push this down).")
         # Survivorship (domain P2-3): the replay runs on today's list.
-        lines.append("  The instruments are today's list; ones that fell away "
-                     "are missing, which favours long trades over long ranges.")
+        lines.append(f"  {SURVIVORSHIP_LINE}")
         self.bt_result.setText("\n".join(lines))
 
     def _trade(self, symbol: str, direction: str) -> None:
