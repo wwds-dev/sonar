@@ -27,6 +27,16 @@ QLIKE, walk-forward and a constant-volatility control (`sonar/research/hourlyvol
 hour-of-day seasonality. **Not present:** any day-of-week term, deflated Sharpe, probability of
 backtest overfitting, reliability diagrams with bands, conformal intervals.
 
+## Timing constraint
+
+The headless agent is on a 30-day clean run from 2026-10-10 to 2026-11-09
+(`docs/specs/v1-product.md`). Restarting it on a new build disturbs that run. So:
+
+- Items 1 and 3 may be built now as offline research code, with nothing wired into the engine.
+- Putting a winning item 1 term into the live forecast waits until after 2026-11-09.
+- Item 4 changes score history, so it also waits until after 2026-11-09.
+- Item 2 is app-side only and does not need an agent restart.
+
 ## Ranked shortlist
 
 ### Do: study first, ship only if it wins
