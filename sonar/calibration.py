@@ -1019,12 +1019,14 @@ def _file_looks(constants: dict) -> tuple:
     return tuple(v) if ok else SHADOW_LOOKS
 
 
-def _check_look(key, lk, boundary: float = SHADOW_BOUNDARY,
-                looks: tuple = SHADOW_LOOKS) -> None:
+def _check_look(key, lk, boundary: float | None = None, looks: tuple | None = None) -> None:
     """One recorded look: its shape, and a verdict that follows from its own
     figures (security P3-7) — a cohort of the size its key says, and a
     crossing only past the line and, with members filled in, robust. The
-    sizes and the line are the file's own (code review r2 P3-N1)."""
+    sizes and the line are the file's own (code review r2 P3-N1); without
+    them, today's, read at the call."""
+    boundary = SHADOW_BOUNDARY if boundary is None else boundary
+    looks = SHADOW_LOOKS if looks is None else looks
     where = f"look {key!r}"
     _fields(lk, LEDGER_LOOK_FIELDS, where)
     _need(_is_int(lk["k"]) and str(lk["k"]) == key and 1 <= lk["k"] <= len(looks)
@@ -1226,11 +1228,11 @@ def ledger_merge(old: dict, readout: dict, now: float, build: str,
         if states.get(pid) != "wait_price" and len(have) >= SHADOW_PRICE_TRIES:
             # No longer waiting (final as "no price" for its looks), with its
             # days recorded: no more are needed. Added every failed day, a
-            # never-priced entry passed
-            # the reader's limit of 400 days about 13 months on, and every
-            # later write failed its read-back (QA P2-1). Days are now added
-            # only while the entry waits; with its tries it waits no later
-            # than 28 days after t_T, so the list stays short.
+            # never-priced entry passed the reader's limit of 400 days about
+            # 13 months on, and every later write failed its read-back (QA
+            # P2-1). Days are now added only while the entry waits; with its
+            # tries it waits no later than 28 days after t_T, so the list
+            # stays short.
             continue
         tries[pid] = sorted(set(have) | set(days))
     for pid in [pid for pid in tries if pid in new["entries"]]:
