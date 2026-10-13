@@ -899,7 +899,8 @@ class LedgerBehindError(LedgerFormatError):
     """A ledger with fewer recorded looks than the book's marker or the
     sidecar says it had: an older copy, from before a look was recorded.
     Entries are not counted: one lost with a newer copy is decided again
-    from the same closes (L-2); a recorded look cannot be redone."""
+    from the closes then available, and is not part of any recorded look
+    (each look keeps its own members); a recorded look cannot be redone."""
 
 
 class LedgerRetiredError(LedgerIdError):
@@ -935,8 +936,9 @@ def ledger_anchor(ledger: dict) -> dict:
     when it began, and how many looks it held at the last write. The count
     only grows, so a file behind it is an older copy. Entries are not
     counted (code review r2 P2-N1): a lost entry is decided again from the
-    same closes, and counting them made the newest daily backup "behind" on
-    any day that decided one."""
+    closes then available, and is not part of any recorded look (each look
+    keeps its own members; code review r3 P3-4). Counting them made the
+    newest daily backup "behind" on any day that decided one."""
     return {"ledger_id": ledger["ledger_id"], "created_at": ledger["created_at"],
             "looks": len(ledger["looks"])}
 

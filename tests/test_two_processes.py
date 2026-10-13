@@ -179,6 +179,9 @@ def test_the_window_drives_once_the_agent_process_is_gone(
         agent.wait(timeout=10)
         assert _wait(lambda: live.engine_lock.held), "the window never took over"
         assert _lock(tmp_path)["pid"] == os.getpid()
+        # `_take_the_book` clears read_only last, after the lock is held: wait
+        # for it rather than race it (code review r3 P3-6).
+        assert _wait(lambda: not live.read_only), "the window never left read-only"
         assert live.following is None and live.read_only is False
     finally:
         _stop(live, thread)

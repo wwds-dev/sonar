@@ -403,7 +403,8 @@ def test_the_memo_lives_in_memory_and_keeps_the_first_decision(live, monkeypatch
     # existed at all).
     assert sorted(p.name for p in live.book.path.parent.iterdir()
                   if p.name.startswith("shadow")) == [
-        "shadow_ledger.id", "shadow_ledger.json", f"shadow_ledger.json.bak.{_today()}"]
+        "shadow_ledger.id", "shadow_ledger.json", f"shadow_ledger.json.bak.{_today()}",
+        f"shadow_ledger.json.bak.{_today()}.created.{_id8(live)}"]
 
 
 def _today(monkeypatch=None):
@@ -419,6 +420,12 @@ def _today(monkeypatch=None):
                     return day
         monkeypatch.setattr(paths, "_dt", _Dt)
     return day.isoformat()
+
+
+def _id8(live):
+    """The first 8 characters of the record's id, as its copies' names end."""
+    return json.loads((live.book.path.parent / "shadow_ledger.json").read_text())[
+        "ledger_id"][:8]
 
 
 def _tree(root):
@@ -442,7 +449,9 @@ def test_r2_a_pass_writes_the_ledger_and_its_marker_and_nothing_else(live, monke
     live._shadow_pass(NOW)
     assert live.shadow["n_reached"] == 3
     after = _tree(tmp_path)
-    ours = {"shadow_ledger.json", "shadow_ledger.id", f"shadow_ledger.json.bak.{_today()}"}
+    # Code review r3 P3-2: a copy right after the new record's first write.
+    ours = {"shadow_ledger.json", "shadow_ledger.id", f"shadow_ledger.json.bak.{_today()}",
+            f"shadow_ledger.json.bak.{_today()}.created.{_id8(live)}"}
     assert set(after) == set(before) | ours
     assert {k: v for k, v in after.items() if k not in ours | {"portfolio.json"}} == \
         {k: v for k, v in before.items() if k != "portfolio.json"}

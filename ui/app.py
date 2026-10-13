@@ -660,6 +660,16 @@ SHADOW_WORDS = {
     # not the spec's expert "ledger": the word holds "edge", which U-1 allows
     # only in its EDGE_ALLOWED phrases.
     "SH_RECORD": ("Record kept since {date}.", "Record since {date}."),
+    # Retired records in the folder are always disclosed (domain r3 P1-1): a
+    # new record after a retirement re-tests the same kind of entries.
+    "SH_RECORD_RETIRED_ONE": ("Record kept since {date}. 1 earlier record was retired in this "
+                              "folder, on {date0}. Its looks are not counted here, and this "
+                              "record re-tests the same kind of entries.",
+                              "Record since {date}; 1 retired ({date0})."),
+    "SH_RECORD_RETIRED": ("Record kept since {date}. {n} earlier records were retired in this "
+                          "folder, the first on {date0}. Their looks are not counted here, and "
+                          "this record re-tests the same kind of entries.",
+                          "Record since {date}; {n} retired (first {date0})."),
     "SH_MISMATCH": ("Worked out again today, look {k} comes out differently ({why}). As fixed "
                     "in advance, the result recorded on {date} is kept. Either one may rest on "
                     "a data error.",
@@ -683,7 +693,8 @@ SHADOW_WORDS = {
                           "automatically. If the book was reset on purpose, retire the old "
                           "record as the README's reset steps say: rename its file, in the same "
                           "folder, to the retired name with its id. The old record and its "
-                          "backups are kept, and a new record starts.",
+                          "backups are kept, and a new record starts; it re-tests the same "
+                          "kind of entries, and the record line says so.",
                           "not this book's; after a deliberate reset, retire the old record "
                           "(README, reset steps)"),
     # LedgerRetiredError: a copy of a retired record left in its place.
@@ -694,9 +705,11 @@ SHADOW_WORDS = {
     # LedgerBehindError (security P3-3). The newest copy holds every recorded
     # look: one is made right after each look is recorded (code review r2 P2-N1).
     "SH_LEDGER_BEHIND": ("It is an older copy: it holds fewer recorded looks than this book's "
-                         "record. Put the newest backup copy in its place: the one with the "
-                         "latest date in its name, here or off-site.",
-                         "older than this book's record; restore the newest backup copy"),
+                         "record. Put the newest backup copy in its place: the last one by "
+                         "name, here or off-site (on a look's day, the one with .look in its "
+                         "name; after a reset, see the README).",
+                         "older than this book's record; restore the newest backup copy, last "
+                         "by name"),
     # "missing", by the anchor that says a record existed (code review r2
     # P2-N2): the book's marker, or only the folder's sidecar or backups.
     "SH_LEDGER_MISSING": ("The record of results is missing, though this book had one since "
@@ -708,38 +721,54 @@ SHADOW_WORDS = {
     "SH_LEDGER_MISSING_UNDATED": ("The record of results is missing, though backups of it "
                                   "exist.",
                                   "record missing (backups exist)"),
+    # Code review r3 P3-1, P3-2: on a look's day two copies carry the date,
+    # and after a reset the folder holds two records' copies.
     "SH_LEDGER_RESTORE": ("It is not started again. Put the newest backup copy in its place: the "
-                          "one with the latest date in its name, here or off-site. If the book "
-                          "was reset on purpose, retire the old record instead, as the README's "
-                          "reset steps say; it is kept, and a new record starts.",
-                          "restore the newest backup copy, or, after a deliberate reset, retire "
-                          "it (README)"),
+                          "last one by name, here or off-site (on a look's day, the one with "
+                          ".look in its name; after a reset, see the README).",
+                          "restore the newest backup copy, last by name (README)"),
+    # Not on the "this book had one" path: the book was not reset, and a
+    # retirement is not honoured while its marker names the record (G3,
+    # domain r3 P1-1).
+    "SH_LEDGER_RESTORE_RETIRE": ("If the book was reset on purpose, retire the old record "
+                                 "instead, as the README's reset steps say; it is kept, and a "
+                                 "new record starts.",
+                                 "after a deliberate reset, retire it (README)"),
     # Refused by the record's own checks (security P2-3): results and looks
     # are counted apart (code review r2 P3-N3).
-    "SH_LEDGER_REFUSED_ONE": ("1 result could not be recorded: it did not pass the record's own "
-                              "checks. It is counted but not recorded.",
-                              "1 result refused by the record's checks; not recorded"),
-    "SH_LEDGER_REFUSED": ("{n} results could not be recorded: they did not pass the record's own "
-                          "checks. They are counted but not recorded.",
-                          "{n} results refused by the record's checks; not recorded"),
-    "SH_LEDGER_REFUSED_LOOK_ONE": ("1 look could not be recorded: it did not pass the record's "
-                                   "own checks, so it is not shown as a result.",
+    # "Written to the record", not "counted but not recorded" (domain r3 P3-1).
+    "SH_LEDGER_REFUSED_ONE": ("1 result could not be written to the record: it did not pass the "
+                              "record's own checks. It is not in the record, so a look that uses "
+                              "it cannot be fully checked against the record.",
+                              "1 result refused by the record's checks; not in record"),
+    "SH_LEDGER_REFUSED": ("{n} results could not be written to the record: they did not pass the "
+                          "record's own checks. They are not in the record, so a look that uses "
+                          "them cannot be fully checked against the record.",
+                          "{n} results refused by the record's checks; not in record"),
+    "SH_LEDGER_REFUSED_LOOK_ONE": ("1 look could not be written to the record: it did not pass "
+                                   "the record's own checks, so it is not shown as a result.",
                                    "1 look refused by the record's checks; no result shown"),
-    "SH_LEDGER_REFUSED_LOOKS": ("{n} looks could not be recorded: they did not pass the record's "
-                                "own checks, so they are not shown as results.",
+    "SH_LEDGER_REFUSED_LOOKS": ("{n} looks could not be written to the record: they did not pass "
+                                "the record's own checks, so they are not shown as results.",
                                 "{n} looks refused by the record's checks; no result shown"),
     "SH_LEDGER_WRITE": ("The latest results could not be recorded ({reason}); the next pass "
                         "tries again.",
                         "record write failed ({reason}); retrying"),
     # It names the look(s) and the corrected R (domain r2 P2-2).
     "SH_ERRATUM": ("Erratum {date}: a result counted in {where} was later found wrong "
-                   "({reason}); corrected R {r}. As fixed in advance, the recorded look is "
+                   "({reason}); {rpart}. As fixed in advance, the recorded look is "
                    "kept, and it may rest on this error.",
-                   "erratum {date}, {where}: {reason}; R → {r}; recorded kept"),
+                   "erratum {date}, {where}: {reason}; {rpart}; recorded kept"),
+    # An erratum may carry no corrected R (domain r3 P3-3).
+    "SH_ERRATUM_R": ("corrected R {r}", "R → {r}"),
+    "SH_ERRATUM_NO_R": ("it has no usable R", "R → none"),
     "SH_ERRATUM_LOOK": ("look {ks}", "look {ks}"),
     "SH_ERRATUM_LOOKS": ("looks {ks}", "looks {ks}"),
     "SH_ERRATUM_NO_LOOK": ("no recorded look", "no look"),
-    "SH_ERRATA_MORE": ("{n} more errata are in the record.", "+{n} errata"),
+    # Errata touching a recorded look come first, then the newest (domain r3
+    # P3-2); the hidden ones say how many touch a look.
+    "SH_ERRATA_MORE": ("{n} more errata are in the record; {m} of them touch a recorded look.",
+                       "+{n} errata ({m} on looks)"),
 }
 #: At most this many errata lines are shown; the rest are counted (security P3-1).
 SHADOW_ERRATA_SHOWN = 5
@@ -1024,7 +1053,15 @@ def shadow_texts(shadow, detail: bool, now: float, t_default: float) -> dict[str
                                 when=time.strftime("%-d %b %H:%M", time.localtime(at))))
     # A restarted record shows (domain P2-6): the date the ledger began.
     if not blocked and _sh_ts(ledger.get("created_at")) is not None:
-        note += " " + _sh_word("SH_RECORD", date=_sh_date(ledger.get("created_at"), now))
+        date = _sh_date(ledger.get("created_at"), now)
+        # Retired records in this folder are always disclosed (domain r3 P1-1).
+        n = _sh_int(ledger.get("retired"))
+        if n > 0:
+            note += " " + _sh_word("SH_RECORD_RETIRED_ONE" if n == 1 else "SH_RECORD_RETIRED",
+                                   date=date, n=n,
+                                   date0=_sh_date(ledger.get("retired_first"), now))
+        else:
+            note += " " + _sh_word("SH_RECORD", date=date)
     out["note"] = note
     return out
 
@@ -1050,7 +1087,12 @@ def _sh_ledger_lines(d: dict, looks: list[dict], now: float, blocked: bool) -> l
                "SH_LEDGER_MISSING" if ledger.get("reason") == "marker" else
                "SH_LEDGER_MISSING_FOLDER")
         head = _sh_word(key, date=_sh_date(ledger.get("created_at"), now) if dated else "")
-        out.append(f"{head} {_sh_word('SH_LEDGER_RESTORE')}")
+        line = f"{head} {_sh_word('SH_LEDGER_RESTORE')}"
+        # The book's own marker names the record, so the book was not reset:
+        # retiring is not offered, and would not be honoured (G3, domain r3 P1-1).
+        if ledger.get("reason") != "marker":
+            line += " " + _sh_word("SH_LEDGER_RESTORE_RETIRE")
+        out.append(line)
     elif err == "write":
         out.append(_sh_word("SH_LEDGER_WRITE", reason=_clean(ledger.get("reason"), 80)))
     for field, one, many in (("refused", "SH_LEDGER_REFUSED_ONE", "SH_LEDGER_REFUSED"),
@@ -1073,19 +1115,34 @@ def _sh_ledger_lines(d: dict, looks: list[dict], now: float, blocked: bool) -> l
             why = _sh_word("SH_WHY_MEMBERS" if mm.get("why") == "members" else "SH_WHY_Z")
             out.append(_sh_word("SH_MISMATCH", k=_sh_int(mm.get("k")), why=why, date=date))
     errata = d.get("errata") if isinstance(d.get("errata"), list) else []
-    for er in errata[:SHADOW_ERRATA_SHOWN]:
-        if isinstance(er, dict):
-            ks = [_sh_int(k) for k in (er.get("looks") if isinstance(er.get("looks"), list)
-                                       else [])][:len(calibration_mod.SHADOW_LOOKS)]
-            ks_text = " and ".join(str(k) for k in ks)
-            where = (_sh_word("SH_ERRATUM_NO_LOOK") if not ks else
-                     _sh_word("SH_ERRATUM_LOOK" if len(ks) == 1 else "SH_ERRATUM_LOOKS",
-                              ks=ks_text))
-            out.append(_sh_word("SH_ERRATUM", date=_sh_day(er.get("date"), now),
-                                reason=_clean(er.get("reason"), 80), r=_sh_r(er.get("r")),
-                                where=where))
-    if len(errata) > SHADOW_ERRATA_SHOWN:
-        out.append(_sh_word("SH_ERRATA_MORE", n=len(errata) - SHADOW_ERRATA_SHOWN))
+    rows = [er for er in errata[:calibration_mod.LEDGER_ERRATA_MAX] if isinstance(er, dict)]
+
+    def looks_of(er) -> list[int]:
+        ks = er.get("looks") if isinstance(er.get("looks"), list) else []
+        return [_sh_int(k) for k in ks][:len(calibration_mod.SHADOW_LOOKS)]
+
+    # Those touching a recorded look first, then the newest (domain r3 P3-2):
+    # the five shown are the ones most likely to matter.
+    rows.sort(key=lambda er: er.get("date") if isinstance(er.get("date"), str) else "",
+              reverse=True)
+    rows.sort(key=lambda er: not looks_of(er))
+    for er in rows[:SHADOW_ERRATA_SHOWN]:
+        ks = looks_of(er)
+        # "1", "1 and 2", "1, 2 and 3" (code review r3 P3-5).
+        ks_text = ", ".join(str(k) for k in ks[:-1]) + f" and {ks[-1]}" if len(ks) > 1 else (
+            "".join(str(k) for k in ks))
+        where = (_sh_word("SH_ERRATUM_NO_LOOK") if not ks else
+                 _sh_word("SH_ERRATUM_LOOK" if len(ks) == 1 else "SH_ERRATUM_LOOKS",
+                          ks=ks_text))
+        r = _sh_num(er.get("r"))
+        rpart = (_sh_word("SH_ERRATUM_R", r=_sh_r(r)) if r is not None
+                 else _sh_word("SH_ERRATUM_NO_R"))
+        out.append(_sh_word("SH_ERRATUM", date=_sh_day(er.get("date"), now),
+                            reason=_clean(er.get("reason"), 80), rpart=rpart, where=where))
+    hidden = rows[SHADOW_ERRATA_SHOWN:]
+    if hidden:
+        out.append(_sh_word("SH_ERRATA_MORE", n=len(hidden),
+                            m=sum(1 for er in hidden if looks_of(er))))
     return out
 
 

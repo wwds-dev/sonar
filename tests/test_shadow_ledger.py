@@ -529,8 +529,9 @@ def test_l15_silent_fresh_start_a_deleted_ledger_is_missing(live, monkeypatch):
     assert not any(lk["recorded"] for lk in again.shadow["looks"])
     t = _no_result_shown(again.shadow)
     assert "The record of results is missing, though this book had one since" in t["warn"]
-    assert "Put the newest backup copy in its place" in t["warn"]
-    assert "retire the old record instead, as the README's reset steps say" in t["warn"]
+    assert "Put the newest backup copy in its place: the last one by name" in t["warn"]
+    # This book was not reset: retiring is not offered (G3, domain r3 P1-1).
+    assert "retire" not in t["warn"]
 
 
 def _crash_after_the_anchors(lv):
@@ -624,10 +625,14 @@ def test_the_day_is_backed_up_before_its_first_overwrite(live, monkeypatch):
     live.book.open.append(model)
     live._shadow_pass(NOW + 60)
     baks = sorted(paths.user_data_base().glob(core.SHADOW_LEDGER_FILE + ".bak.*"))
-    assert len(baks) == 1
-    first = json.loads(baks[0].read_text())
-    assert first["entries"] == {} and first["ledger_id"] == _book_json()["shadow_ledger"][
-        "ledger_id"]
+    lid = _book_json()["shadow_ledger"]["ledger_id"]
+    # The day's backup, and the copy made right after the record's first
+    # write (code review r3 P3-2): both the empty file.
+    assert [p.name for p in baks] == [f"shadow_ledger.json.bak.{_today()}",
+                                      f"shadow_ledger.json.bak.{_today()}.created.{lid[:8]}"]
+    for bak in baks:
+        first = json.loads(bak.read_text())
+        assert first["entries"] == {} and first["ledger_id"] == lid
     assert "late" in json.loads(_ledger_file().read_text())["entries"]
 
 
@@ -1351,7 +1356,7 @@ def test_sec_p2_3_a_record_the_reader_would_refuse_is_left_out_and_counted(live,
     on_disk = json.loads(_ledger_file().read_text())["entries"]
     assert len(on_disk) == 2 and live.book.open[0].id not in on_disk
     t, _ = _texts(live.shadow)
-    assert "1 result could not be recorded: it did not pass" in t["warn"]
+    assert "1 result could not be written to the record: it did not pass" in t["warn"]
     again = _restart()
     again._shadow_pass(NOW + DAY)
     assert again.shadow["ledger"]["error"] is None
@@ -1456,7 +1461,10 @@ def test_sec_p3_1_errata_and_members_are_bounded():
     d = _full_readout({"looks": [], "errata": shown,
                        "mismatches": [{"k": 1, "why": "z", "recorded_at": NOW}] * 50})
     warn = _texts(d)[0]["warn"]
-    assert warn.count("Erratum") == 5 and "995 more errata are in the record." in warn
+    touching = sum(1 for er in shown if er["looks"])
+    assert warn.count("Erratum") == 5 and touching > 5
+    assert (f"995 more errata are in the record; {touching - 5} of them touch a recorded "
+            "look.") in warn
     assert warn.count("comes out differently") == 3
 
 
@@ -1623,7 +1631,9 @@ def test_cr2_p2_n1_lost_after_a_look_the_newest_copy_here_and_off_site_matches(
         assert newest.name == (f"shadow_ledger.json.bak.2026-10-12.look1."
                                f"{led['ledger_id'][:8]}")
         assert json.loads(newest.read_text()) == led
-    assert [p.name for p in _backups()][:-1] == ["shadow_ledger.json.bak.2026-10-12"]
+    assert [p.name for p in _backups()][:-1] == [
+        "shadow_ledger.json.bak.2026-10-12",
+        f"shadow_ledger.json.bak.2026-10-12.created.{led['ledger_id'][:8]}"]
     for where in (None, far):
         _ledger_file().unlink()
         _ledger_file().write_text(_backups(where)[-1].read_text())
@@ -1675,24 +1685,39 @@ def test_cr2_p2_n2_a_deliberate_reset_retires_the_old_record_and_starts_a_new_on
     again = _restart()                                            # and it holds
     again._shadow_pass(NOW + 3 * DAY)
     assert again.shadow["ledger"]["error"] is None
+    # Domain r3 P1-1: the retired record is disclosed beside the new one.
+    led = again.shadow["ledger"]
+    assert (led["retired"], led["retired_first"]) == (1, retired.stat().st_ctime)
+    t, _ = _texts(again.shadow, NOW + 3 * DAY)
+    assert "1 earlier record was retired in this folder, on " in t["note"]
+    assert "Its looks are not counted here, and this record re-tests the same kind of " \
+        "entries." in t["note"]
 
 
-def test_cr2_p2_n2_retiring_without_a_reset_starts_a_new_record_for_the_same_book(
-        live, monkeypatch):
-    """The same step for this book (ADR §7: new settings need a new record):
-    the book's own marker names the retired id, so it anchors nothing.
-    Kills: a retired id in the marker still blocking."""
+@pytest.mark.parametrize("age", [DAY, 60], ids=["a day on", "inside ten minutes"])
+def test_cr3_g3_retiring_without_a_reset_is_not_honoured(live, monkeypatch, age):
+    """Domain r3 P1-1, owner decision G3: retiring is only for a book that
+    was reset. Fix loop 2 let it start a new record for the same book (this
+    test then asserted a new id); that is now refused, a spec change, not a
+    weakening. While the book's own marker names the retired id, the record
+    is "missing" (reason "marker"), no file and no new record are made —
+    not even by the ten-minute rule — and the line does not offer to
+    retire. Kills: a retirement honoured with the book's marker present; the
+    ten-minute rule remaking a retired id."""
     _cohort(live, n=3)
     _fetch(monkeypatch, lambda s: wavy())
     live._shadow_pass(NOW)
     old = json.loads(_ledger_file().read_text())
+    marker = _book_json()["shadow_ledger"]
     _retire(old)
     again = _restart()
-    again._shadow_pass(NOW + DAY)
-    assert again.shadow["ledger"]["error"] is None
-    new = json.loads(_ledger_file().read_text())
-    assert new["ledger_id"] != old["ledger_id"] and set(new["entries"]) == set(old["entries"])
-    assert _book_json()["shadow_ledger"]["ledger_id"] == new["ledger_id"]
+    for k in range(2):
+        again._shadow_pass(NOW + age + k * 60)
+        assert (again.shadow["ledger"]["error"], again.shadow["ledger"]["reason"]) == \
+            ("missing", "marker"), k
+    assert not _ledger_file().exists() and _book_json()["shadow_ledger"] == marker
+    t = _no_result_shown(again.shadow)
+    assert "though this book had one since" in t["warn"] and "retire" not in t["warn"]
 
 
 @pytest.mark.parametrize("case", ["name and contents differ", "a backup of another record",
@@ -1722,18 +1747,32 @@ def test_cr2_p2_n2_a_retirement_frees_only_the_id_it_holds(live, monkeypatch, ca
         "sidecar" if case == "name and contents differ" else "backup")
 
 
+@pytest.mark.parametrize("reset", [True, False], ids=["after a reset", "book not reset"])
 def test_cr2_p2_n2_a_copy_of_a_retired_record_left_in_place_is_never_used(live,
-                                                                         monkeypatch):
-    """Retiring moves the file. A copy left in its place would be adopted,
-    and its later loss would be anchored by nothing, so it is a read error
-    (LedgerRetiredError), never written. Kills: a retired id read as live."""
+                                                                         monkeypatch, reset):
+    """Retiring moves the file. After a reset (no marker), a copy left in its
+    place would be adopted, and its later loss anchored by nothing, so it is
+    a read error (LedgerRetiredError), never written. With the book's own
+    marker naming it (fix loop 3, G3), the retirement is not honoured: the
+    marker still anchors the record, it is read as before, and the record in
+    use is not counted as a retired one. Kills: a retired id read as live
+    after a reset."""
     _crossing_holder(live, monkeypatch)
     old = _ledger_file().read_text()
     (paths.user_data_base() /
      f"shadow_ledger.retired.{json.loads(old)['ledger_id']}.json").write_text(old)
+    if reset:
+        (paths.user_data_base() / "portfolio.json").unlink()
     before = _stamp(_ledger_file())
     again = _restart()
+    if reset:
+        _new_book(again)
     again._shadow_pass(NOW + DAY)
+    if not reset:
+        assert again.shadow["ledger"]["error"] is None
+        assert "retired" not in again.shadow["ledger"]
+        assert again.shadow["looks"][0]["recorded"]
+        return
     assert (again.shadow["ledger"]["error"], again.shadow["ledger"]["reason"]) == \
         ("read", "LedgerRetiredError")
     assert _stamp(_ledger_file()) == before
@@ -1803,7 +1842,8 @@ def test_cr2_p3_n1_n3_a_holder_on_a_stricter_file_refuses_the_look_and_says_so(l
     assert len(on_disk["entries"]) == 45 and on_disk["looks"] == {}
     assert again.shadow["looks"][0]["crossed"] and not again.shadow["looks"][0]["recorded"]
     t = _no_result_shown(again.shadow)
-    assert "1 look could not be recorded" in t["warn"] and "result could not" not in t["warn"]
+    assert "1 look could not be written to the record" in t["warn"]
+    assert "result could not" not in t["warn"]
 
 
 def test_cr2_p3_n1_changed_look_sizes_are_a_constants_mismatch_not_unreadable(monkeypatch):
@@ -1867,12 +1907,12 @@ def test_cr2_p3_n3_refused_results_and_looks_are_counted_apart_in_number(monkeyp
                                       "refused": refused, "refused_looks": refused_looks}})
         return _texts(d)[0]["warn"]
 
-    assert "1 result could not be recorded: it did not pass" in warn(1, 0)
-    assert "2 results could not be recorded: they did not pass" in warn(2, 0)
-    assert "look" not in warn(2, 0)
+    assert "1 result could not be written to the record: it did not pass" in warn(1, 0)
+    assert "2 results could not be written to the record: they did not pass" in warn(2, 0)
+    assert "look could not" not in warn(2, 0) and "looks could not" not in warn(2, 0)
     w = warn(0, 1)
-    assert "1 look could not be recorded" in w and "result could not" not in w
-    assert "2 looks could not be recorded" in warn(0, 2)
+    assert "1 look could not be written to the record" in w and "result could not" not in w
+    assert "2 looks could not be written to the record" in warn(0, 2)
     monkeypatch.setattr(words, "_mode", words.EXPERT)
     assert "1 result refused" in warn(1, 0) and "2 results refused" in warn(2, 0)
     assert "1 look refused" in warn(0, 1)
@@ -2162,3 +2202,116 @@ def test_qa_p3_q64_mismatches_and_errata_are_not_shown_while_the_record_is_block
         warn = _texts(d)[0]["warn"]
         assert ("comes out differently" in warn) is shown, err
         assert ("Erratum" in warn) is shown, err
+
+
+# =========================================================================== #
+# Fix loop 3 (docs/audit/shadow-ledger-domain-finance-r3.md, -code-reviewer-r3.md)
+# =========================================================================== #
+def _note(ledger, mode=None, monkeypatch=None):
+    if mode is not None:
+        from ui import words
+        monkeypatch.setattr(words, "_mode", mode)
+    return _texts(_full_readout({"looks": [], "ledger": ledger}))[0]["note"]
+
+
+def test_cr3_domain_p1_1_retired_records_are_always_disclosed(monkeypatch):
+    """Domain r3 P1-1: whenever retired records are in the folder, the record
+    line says how many and when the first was retired, that their looks are
+    not counted here and that this record re-tests the same kind of entries.
+    None: the plain line. Kills: the disclosure dropped, or singular and
+    plural mixed."""
+    pytest.importorskip("PySide6")
+    from ui import words
+    base = {"created_at": NOW, "error": None, "reason": None}
+    assert _note(base).endswith("Record kept since 12 Oct.")
+    one = _note({**base, "retired": 1, "retired_first": NOW - 3 * DAY})
+    assert one.endswith("Record kept since 12 Oct. 1 earlier record was retired in this "
+                        "folder, on 9 Oct. Its looks are not counted here, and this record "
+                        "re-tests the same kind of entries.")
+    two = _note({**base, "retired": 2, "retired_first": NOW - 5 * DAY})
+    assert two.endswith("Record kept since 12 Oct. 2 earlier records were retired in this "
+                        "folder, the first on 7 Oct. Their looks are not counted here, and "
+                        "this record re-tests the same kind of entries.")
+    assert _note({**base, "retired": 2, "retired_first": NOW - 5 * DAY}, words.EXPERT,
+                 monkeypatch).endswith("Record since 12 Oct; 2 retired (first 7 Oct).")
+    assert _note({**base, "retired": 1, "retired_first": NOW - 3 * DAY}, words.EXPERT,
+                 monkeypatch).endswith("Record since 12 Oct; 1 retired (9 Oct).")
+
+
+def test_cr3_p3_2_after_a_reset_the_new_records_first_copy_restores_it(live, monkeypatch):
+    """Code review r3 P3-2 (walk W4b): on a reset day, before the new record
+    has a look, its only copies were daily ones that may be the old record's.
+    Right after a new record's first write a copy named with its id is made;
+    restoring the newest copy ending in the id's first 8 characters (the
+    README's rule) brings it back. Kills: no copy after the first write."""
+    _crossing_holder(live, monkeypatch)
+    old = json.loads(_ledger_file().read_text())
+    (paths.user_data_base() / "portfolio.json").unlink()
+    _retire(old)
+    b = _restart()
+    _new_book(b, n=3)
+    _fetch(monkeypatch, lambda s: None)              # no result yet: nothing more written
+    b._shadow_pass(NOW + DAY)
+    assert b.shadow["ledger"]["error"] is None
+    lid = json.loads(_sidecar().read_text())["ledger_id"]
+    assert lid != old["ledger_id"]
+    mine = [p for p in _backups() if p.name.endswith(lid[:8])]
+    assert [p.name.split(".bak.")[1].split(".")[1] for p in mine] == ["created"]
+    _ledger_file().unlink()
+    _ledger_file().write_text(mine[-1].read_text())
+    again = _restart()
+    again._shadow_pass(NOW + 2 * DAY)
+    assert again.shadow["ledger"]["error"] is None
+    assert json.loads(_ledger_file().read_text())["ledger_id"] == lid
+
+
+def test_cr3_p3_2_the_look_copy_is_the_last_by_name_on_a_day_with_both():
+    """"created" sorts before "look": on a day a record starts and records a
+    look, the last copy by name is the look's."""
+    names = sorted(["shadow_ledger.json.bak.2026-10-12.look1.ffffffff",
+                    "shadow_ledger.json.bak.2026-10-12.created.ffffffff",
+                    "shadow_ledger.json.bak.2026-10-12"])
+    assert names[-1].endswith(".look1.ffffffff")
+
+
+def test_cr3_p3_3_a_file_lost_under_the_holder_is_this_books_at_once(live, monkeypatch):
+    """Code review r3 P3-3 (walk W5): the file goes while the holder runs.
+    The book's marker names the record, so the very next pass says "this
+    book had one", as a restart would. Kills: "this folder's" for one pass."""
+    _crossing_holder(live, monkeypatch)
+    _ledger_file().unlink()
+    live._shadow_pass(NOW + 60)
+    assert (live.shadow["ledger"]["error"], live.shadow["ledger"]["reason"]) == \
+        ("missing", "marker")
+    t = _no_result_shown(live.shadow)
+    assert "though this book had one since" in t["warn"]
+
+
+def _erratum(date, looks, r=-1.0, pid="x"):
+    return {"id": pid, "reason": f"note {date}", "r": r, "date": date, "looks": looks}
+
+
+def test_cr3_errata_on_looks_first_then_newest_and_how_many_are_hidden(monkeypatch):
+    """Domain r3 P3-2: the five shown are those touching a recorded look,
+    newest first, then the rest, newest first; the hidden ones say how many
+    touch a look. Code review r3 P3-5: "looks 1, 2 and 3". Domain r3 P3-3:
+    no corrected R reads "it has no usable R" / "R → none"."""
+    pytest.importorskip("PySide6")
+    from ui import words
+    errata = ([_erratum(f"2026-11-{d:02d}", []) for d in range(20, 28)]
+              + [_erratum(f"2026-10-{d:02d}", [1]) for d in range(20, 27)]
+              + [_erratum("2026-10-01", [1, 2, 3], r=None)])
+    d = _full_readout({"looks": [], "errata": errata})
+    warn = _texts(d)[0]["warn"]
+    shown = [ln for ln in warn.splitlines() if ln.startswith("Erratum")]
+    assert [ln.split(":")[0] for ln in shown] == [
+        "Erratum 26 Oct", "Erratum 25 Oct", "Erratum 24 Oct", "Erratum 23 Oct",
+        "Erratum 22 Oct"]
+    assert "11 more errata are in the record; 3 of them touch a recorded look." in warn
+    one = _full_readout({"looks": [], "errata": [errata[-1]]})
+    assert ("a result counted in looks 1, 2 and 3 was later found wrong (note 2026-10-01); "
+            "it has no usable R.") in _texts(one)[0]["warn"]
+    monkeypatch.setattr(words, "_mode", words.EXPERT)
+    assert "erratum 1 Oct, looks 1, 2 and 3: note 2026-10-01; R → none; recorded kept" in \
+        _texts(one)[0]["warn"]
+    assert "+11 errata (3 on looks)" in _texts(d)[0]["warn"]
