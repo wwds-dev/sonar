@@ -45,3 +45,10 @@
 {"ts": "2026-10-12T23:43:14", "phase": "build", "state": "start", "spec": "shadow-ledger"}
 {"ts": "2026-10-13T12:37:05", "phase": "build", "state": "done", "spec": "shadow-ledger"}
 {"ts": "2026-10-13T12:37:21", "phase": "verify", "state": "start", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T13:25:46", "phase": "document", "state": "start", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T13:29:54", "phase": "document", "state": "done", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T14:03:58", "phase": "review", "state": "done", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T14:03:58", "phase": "verify", "state": "done", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T14:03:58", "phase": "secure", "state": "done", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T14:03:58", "phase": "document", "state": "done", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T14:03:59", "phase": "release", "state": "blocked", "spec": "shadow-ledger"}

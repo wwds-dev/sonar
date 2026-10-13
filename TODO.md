@@ -647,3 +647,5 @@ need an account and time rather than code are under **Open** above.
       `ui/` and `main.py` and fails on a `Portfolio(` given a broker, any reference to `default_broker`, an
       `AlpacaPaperBroker(` built outside `default_broker`, or a `broker` attribute assigned outside the book's and the
       order guard's constructors (`docs/specs/book-broker-truth.md`, 2026-10-12).
+
+- [ ] P3 · shadow ledger · @ai — The retired-record count on the record line stops at 50 without saying so (`sonar/core.py:879`, `SHADOW_RETIRED_MAX`); show "50 or more" at the cap (domain-finance r4 P3-1, `docs/audit/shadow-ledger-domain-finance-r4.md`).
