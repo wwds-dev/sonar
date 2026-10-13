@@ -50,5 +50,6 @@ the real install round trip. A manual scratch run of the installed v2.190 binary
   the edit.
 - LLM reads were already off under the old agent (no `anthropic` in the venv either): unchanged.
 - Not yet verified: the first off-disk copy written by the app (due at the first save after
-  midnight UTC, about 23:00 local) under `~/Documents/lab/backups/sonar-data` (macOS privacy);
+  local midnight; `.bak` files keep the source mtime, so `ls` shows the previous evening) under
+  `~/Documents/lab/backups/sonar-data` (macOS privacy);
   notifications from the ad hoc binary.

@@ -43,6 +43,7 @@ class FakeAgent:
                           "open": [{"id": "p1", "symbol": "AAA"}], "closed": [],
                           "equity": [{"t": 1, "v": 10_000.0}, {"t": 2, "v": 10_050.0}]}
         self.calibration = {"verdict": "unproven"}
+        self.shadow = {"n_entered": 0, "looks": []}
         self.protocol_on = True
         self.alerts = [{"symbol": "AAA", "message": "woke up", "stale": False,
                         "data_age_s": 0}]
@@ -179,6 +180,17 @@ def test_the_follower_shows_the_holders_state(following):
     assert live.alerts == fake.alerts and live.inst == fake.inst
     assert live.protocol_on is True
     assert "url" in json.loads((live.engine_lock.path).read_text())
+
+
+def test_the_follower_shows_the_holders_shadow_and_never_fetches(following, monkeypatch):
+    """V-15: the time-stop shadow travels in /api/book; a follower shows the
+    holder's copy and never asks for a daily close itself."""
+    live, fake, _ = following
+    calls = []
+    monkeypatch.setattr(core.assets, "fetch_bars", lambda *a, **k: calls.append(a))
+    fake.shadow = {"n_entered": 5, "n_reached": 0, "looks": []}
+    assert _wait(lambda: live.shadow == fake.shadow), "the shadow was not mirrored"
+    assert calls == []
 
 
 def test_the_follower_wears_the_holders_knobs(following):

@@ -17,7 +17,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **2,219 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **2,471 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -45,6 +45,7 @@ running even when short of time — the list doubles as this project's bug histo
 | 0.6 | `gh run list --limit 1` | `completed success` on the commit being signed off |
 | 0.7 | Hover the version in the installed app; then `git cat-file -e <commit>` with the commit it names | The commit exists in the repository and the tooltip does not say *uncommitted changes*. *The v2.132 bundle of 2026-10-08 named a commit that had been amended away — and the badge called it up to date.* |
 | 0.8 | `./run-tests.sh -m network -q` | Every live source answers in the shape SONAR parses: Binance, Coinbase's fallback, Polymarket's hourly market and book, Yahoo, FRED, Nasdaq, the newswires, the central banks, and each ESPN league. Opt-in because it needs the internet — and therefore the one run nobody makes unless it is on this list: the ESPN checks had been broken for a month when it was first run. |
+| 0.9 | `./run-tests.sh tests/ -m slow -q` | 22 passed, in about three minutes: the time-stop shadow's gate holds its 5% ± 1.5 pt size and its planned power on 2,000 seeded books; on 20,000 its size stays at the measured value, 5.7–6.7%; and 4,000 whole synthetic books run through `shadow_time_stop` reject within 3 SE of the measured 6.1% (V-12). The measured size is about 6%, which the owner accepted on 2026-10-12. Run it at release and on any change to the gate code; a cheaper version is in the default suite. |
 
 ---
 
@@ -295,6 +296,16 @@ with another rather than with a value written here. `curl -s
 | 11.11 | | Read the whole grade panel for forecast words | None of *will, should, buy, sell, expect, likely, going to, bullish, bearish*. It describes what happened. |
 | 11.12 | | Toggle protocol mode on **My trades**, come back | The panel's last line follows: *protocol mode is on* / *is off*, and how many of the closed positions protocol opened. |
 | 11.13 | | Narrow the window to 1280×775 | The figures and the curve are on screen first; the page scrolls; nothing clips. |
+| 11.14 | | Read the first sentence under **Every entry, graded at a fixed date** on the landing page, then on **My trades** | Word for word the same. It sits under the existing grade, which still reads exactly as in 11.9 (Design U-3, named 11.9b in the spec). |
+| 11.15 | | Read the second grade (**Every entry, graded at a fixed date**) before its first look is evaluated | It says *Not a test yet* and how far along it is: before any entry has had 4 weeks, the date the first gets there; then the date of the next look (*on or after …*) or how many entries are still to be entered; once a look is due, how many of its entries still wait for a closing price. It never reads like a verdict. Any *running* line starts *running, not a test*, says *before costs*, and ends *an average above 0 here is not a trading edge*. |
+| 11.16 | | `curl -s 127.0.0.1:8787/api/book` and read `shadow` | Its counts add up: `n_reached` + `n_waiting` + `n_wait_price` + `n_left` + `n_no_price` = `n_entered`, and `n_reached` = `n_target` + `n_stop` + `n_time`. The block's header count (*N of M at 4 weeks*) matches. |
+| 11.17 | | Read the second grade's rows for exclusions | Every non-zero exclusion is listed under *left out and counted* (a hand-picked entry is *chosen by hand*), and gap exits have their own line. Nothing shows a dash where a figure is missing. |
+| 11.18 | | Switch the wording to Expert and back | The block keeps the same rows in the same order; only the words change. *Before costs, fees and slippage* and the not-an-edge caveat are there in both. |
+| 11.19 | ⚠ | Run the window while an **older** agent build drives the book | The block says *Not available from the running agent*. With agent and window on the same build, it shows the agent's readout word for word. |
+| 11.20 | | Leave the agent off for more than a day, then open the window | The block's last line says *Not updated for N hours: the agent may be stopped*. Restart the agent: after its first scan the line says *Worked out …* again. |
+| 11.21 | ⚠ | On or after the first look's date (about 2026-11-06), screenshot the block on both pages | Each of the first 45 protocol entries has an outcome (target, stop or time) or a counted exclusion: the sentence names look 1 with its z against ±2.315, or says how many of its entries still wait for a closing price. This is the spec's live success measure. |
+| 11.22 | | Read the first row of the second grade on both pages, and compare it with the oldest and newest protocol entries on **My trades** | *the N with a result opened {first} to {last}*: N and the dates of the oldest and newest graded entry; before any is graded, *entries opened {first} to {last} (none has a result yet)* over all entries. A year only when it is not this one. The same on both pages; Expert reads *N graded: opened … to …* / *… (none graded yet)*. If some covered entries have no readable date, the row adds *(k with no readable date)* (Expert *(k undated)*). Absent when there are no protocol entries. |
+| 11.23 | ⚠ | On a Saturday or Sunday after 00:00 UTC, run `.venv/bin/python -c "from sonar import assets; [print(s, assets.fetch_bars(s, '5d')[-3:]) for s in ('^GSPC', 'META', 'EURCHF=X', 'TRX-USD', '^N225')]"` (market data only, no book) | Note each symbol's newest stamps (UTC). If the finished Friday bar keeps its session-start time (13:30 for US, 23:00 the evening before for FX, 00:00 for crypto, near 00:00 for ^N225), record that in ADR 0002 §5. If it carries a last-trade or fetch time, record that too; the shadow drops such a bar and waits up to 3 days longer (spec Build note 16). Outcomes are right either way; what changes is how much of the 7-day grace is left before an entry counts as *no closing price* (spec Known limits 2). |
 
 ---
 

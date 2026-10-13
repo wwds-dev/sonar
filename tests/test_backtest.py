@@ -2105,7 +2105,7 @@ _HEADLINE_SETS = ((0, 0), (0, 10), (15, 0), (15, 10))
 _HEADLINE_VERDICTS: dict[tuple[int, int], int] = {}
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 @pytest.mark.parametrize("first_world, first_coin", _HEADLINE_SETS)
 def test_a_correlated_coin_rarely_gets_a_verdict(first_world, first_coin):
     """Measure 8, the headline rate test, in four sets of 150 runs. Each
@@ -2143,7 +2143,7 @@ def test_a_correlated_coin_rarely_gets_a_verdict(first_world, first_coin):
         assert pooled <= 43, f"{pooled} of 600 coin runs got a verdict"
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 def test_the_randomisation_alone_rejects_near_its_size():
     """Measure 8 / Architecture §11 test 9: exactness, on the 600 runs of
     the four headline sets. The coin is nested in the test's stretches, so
@@ -2195,7 +2195,7 @@ def _guard(block_days: int, per_class: bool, name: str,
 _GUARD_SETS = (0, 10)
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 @pytest.mark.parametrize("first_coin", _GUARD_SETS)
 def test_a_coin_slower_than_the_stretches_rarely_gets_a_verdict(first_coin):
     """Measure 2's circular-pass guard: one coin per class held for eight
@@ -2215,7 +2215,7 @@ def test_a_coin_slower_than_the_stretches_rarely_gets_a_verdict(first_coin):
     assert v <= 19, f"{v} of 150 runs of the eight-horizon coin got a verdict"
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 @pytest.mark.parametrize("first_coin", _GUARD_SETS)
 def test_a_market_wide_coin_rarely_gets_a_verdict(first_coin):
     """Measure 2's circular-pass guard: one direction per one-horizon
@@ -2230,7 +2230,7 @@ def test_a_market_wide_coin_rarely_gets_a_verdict(first_coin):
     assert v <= 19, f"{v} of 150 runs of the market-wide coin got a verdict"
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 @pytest.mark.parametrize("first_coin", _GUARD_SETS)
 def test_a_market_wide_four_horizon_coin_rarely_gets_a_verdict(first_coin):
     """Measure 2's market-wide four-horizon coin, nested: one direction per
@@ -2247,7 +2247,7 @@ def test_a_market_wide_four_horizon_coin_rarely_gets_a_verdict(first_coin):
     assert v <= 19, f"{v} of 150 runs of the nested four-horizon coin got a verdict"
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 @pytest.mark.parametrize("first_coin", _GUARD_SETS)
 def test_an_off_grid_market_wide_coin_rarely_gets_a_verdict(first_coin):
     """Measure 2's stronger guard, off the grid: one direction per 87-day
@@ -2270,7 +2270,7 @@ def test_an_off_grid_market_wide_coin_rarely_gets_a_verdict(first_coin):
     assert v <= 19, f"{v} of 150 runs of the off-grid market coin got a verdict"
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 def test_a_strong_edge_still_beats_the_prediction():
     """Architecture §11 test 12: the gate is not blind. On world 0 at h15
     (8 stretches), half the setups take the direction that hit its target
@@ -2317,7 +2317,7 @@ def _attribution_world(seed: int) -> tuple[tuple, tuple]:
     return tuple(rows), tuple(timeouts)
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 @pytest.mark.parametrize("first_world", (0, 2))
 def test_a_meaningless_clustered_component_is_rarely_graded(first_world):
     """A regression guard, labelled as one: the attribution size gate is the
@@ -2384,7 +2384,7 @@ def test_a_meaningless_clustered_component_is_rarely_graded(first_world):
     assert ic_z2 / runs <= 2.0, ic_z2 / runs
 
 
-@pytest.mark.slow
+@pytest.mark.rate
 def test_a_real_component_is_still_graded_keep_under_the_gate():
     """The attribution guard's other half: on the guard's first world, a
     real component, one setup at a time (IC about 0.08), still reads KEEP

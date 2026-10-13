@@ -676,3 +676,16 @@ the owner's "After fix-loop-2 review" decisions:
   grows with load passes 600 s at load 150–200. Not caused by this change; making the window
   fixtures delete their windows, or finding why each offscreen window takes about 0.3 s to
   destroy, is a separate item.
+
+Final P3s and the merge of master (2026-10-13), after the final code review of loop 3:
+
+- **Pooled headline bound (code review P3-1).** The separate 600-run test is gone: each headline
+  case records its set's verdicts and the case that completes the four asserts ≤ 43, so no case
+  summarises 600 runs on its own (a case run alone checks its set only). Supersedes measure 8's
+  "its own slow test" above. The ten-year sentence scopes "about 1 in 4" to 20- to 60-day horizons
+  (P3-2).
+- **Marker `slow` → `rate` [A4].** Master (v2.260–v2.266, `docs/specs/shadow-time-stop.md` V-12)
+  made `slow` an opt-in marker deselected by default. Kept as `slow`, the rate tests would no longer
+  run in CI or by `./run-tests.sh`, against [A4]. They are now marked `rate`, which runs by default;
+  the coverage passes use `-m 'not network and not slow and not rate'` and `-m rate`
+  (`docs/company/app-context.md`, `TESTING.md` §7). [A4]'s intent is unchanged; the marker name is.

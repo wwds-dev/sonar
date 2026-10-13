@@ -10,9 +10,15 @@ what it was measured on.
 
 ## 0. Where we are
 
-**2,219 tests**, 80% of statements and branches across `sonar/` and `ui/`
+**2,471 tests**, 80% of statements and branches across `sonar/` and `ui/`
 (2026-10-10; 71% on 2026-09-22, 66% of `sonar/` alone on 2026-09-16), plus 30
-opt-in `-m network` checks of every live source. Run the suite **twice** before
+opt-in `-m network` checks of every live source and 22 opt-in `-m slow` Monte-Carlo
+checks of the time-stop shadow's gate (V-12 of `docs/specs/shadow-time-stop.md`:
+2,000 and 20,000 seeded books on the gate, and 4,000 whole synthetic books through
+`shadow_time_stop`, in chunks of a few seconds each so none nears the 60 s hang
+guard; about three minutes in all; run them at release and on any
+change to the gate code with `./run-tests.sh tests/ -m slow`; a cheaper version
+always runs). Run the suite **twice** before
 a push — natively and under `QT_QPA_PLATFORM=offscreen`, which is how CI runs
 it: the two disagree on font metrics, and CI was red for two days in October
 while the native run was green.
@@ -338,14 +344,16 @@ Several of the failures it looks for only exist in a build.
   `pyproject.toml`'s runtime dependencies, which stay empty.
 
 Re-measure with two passes appended to one data file, both under the external
-watchdog. The slow rate tests (`-m slow`, `tests/test_backtest.py`) can pass
-pytest's 60 s per-test cap under coverage on a loaded machine (57–77 s, QA fix
-loop 1), so their pass lifts that cap while the watchdog stays:
+watchdog. The backtest rate tests (`-m rate`, `tests/test_backtest.py`; they
+run by default, unlike the opt-in `-m slow` Monte-Carlo checks, which coverage
+leaves out) can pass pytest's 60 s per-test cap under coverage on a loaded
+machine (57–77 s, QA fix loop 1), so their pass lifts that cap while the
+watchdog stays:
 
 ```bash
 .venv/bin/python -m coverage erase
-COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow'
-COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m slow -o faulthandler_timeout=0
+COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow and not rate'
+COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m rate -o faulthandler_timeout=0
 .venv/bin/python -m coverage report --skip-empty --sort=cover
 ```
 

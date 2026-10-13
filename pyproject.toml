@@ -37,8 +37,19 @@ faulthandler_exit_on_timeout = true
 # every league in the registry — but a suite that reaches the network is a
 # suite that fails when someone else rate-limits you, and one that varies from
 # 3 to 16 seconds depending on their latency. Both were happening here.
-addopts = "-m 'not network'"
+#
+# Tests marked `slow` are the full Monte-Carlo checks of a statistical design
+# (V-12 of docs/specs/shadow-time-stop.md: 20,000 books). A cheaper version of
+# each always runs; the full one runs at release and on any change to the gate
+# code, with `./run-tests.sh tests/ -m slow`.
+#
+# Tests marked `rate` are the backtest's randomisation rate tests
+# (docs/specs/sign-randomisation-verdicts.md [A4]). They run by default and in
+# CI, each under the 60 s cap; they are marked so that coverage can run them in
+# a pass of their own with that cap lifted (TESTING.md §7).
+addopts = "-m 'not network and not slow'"
 markers = [
     "network: test genuinely needs a live network connection (deselected by default)",
-    "slow: a rate test of many replays, each under the 60 s cap (runs by default; `-m 'not network and not slow'` skips them)",
+    "slow: full Monte-Carlo check, minutes not seconds (deselected by default; -m slow)",
+    "rate: a backtest rate test of many replays, each under the 60 s cap (runs by default; coverage runs them in their own pass, -m rate)",
 ]

@@ -15,9 +15,9 @@ Python 3, PySide6 >= 6.6 (optional `anthropic` for the LLM read panel), pytest, 
 - Tests: `./run-tests.sh` (external watchdog; native), and
   `QT_QPA_PLATFORM=offscreen ./run-tests.sh` (offscreen). Both must pass. Run twice if flaky.
 - Coverage: two passes under the watchdog, appended: `.venv/bin/python -m coverage erase`, then
-  `COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow'` (the fast pass, 60 s
-  per-test cap), then `COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m slow -o
-  faulthandler_timeout=0` (the slow rate tests, uncapped per test; under coverage on a loaded
+  `COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow and not rate'` (the fast
+  pass, 60 s per-test cap), then `COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m rate
+  -o faulthandler_timeout=0` (the backtest rate tests, uncapped per test; under coverage on a loaded
   machine they can pass 60 s), then `.venv/bin/python -m coverage report --skip-empty`. A single
   `coverage run -m pytest tests/` can abort on the per-test cap (TESTING.md).
 - Build: `./build_app.sh`

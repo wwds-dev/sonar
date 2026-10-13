@@ -13,6 +13,7 @@ window never has to mean losing an hour.
 
 from __future__ import annotations
 
+import copy
 import json
 import random
 import sys
@@ -21,7 +22,7 @@ import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from . import (alerts as alerts_mod, assets, enginelock, feeds, horizon,
                institutions, llm, macro, model, news, paths, risk, version)
@@ -130,6 +131,16 @@ PROTOCOL_BOTTOM = 5             # ...and lowest, as the control group
 PROTOCOL_MAX_OPEN = 40          # hard cap on concurrently open protocol rows
 PROTOCOL_MIN_ROWS = 40          # a half-fetched screen is not a ranking
 
+# --- the time-stop shadow of the score grade (docs/adr/0002) --------------- #
+# `Live.shadow` before the first computation, and on a follower whose holder
+# says nothing about it. None means "working it out"; the string means the
+# holder is an older build whose /api/book has no `shadow` key at all.
+SHADOW_UNAVAILABLE = "unavailable"
+# Yahoo ranges, shortest first, with the calendar days each reaches back.
+# The shadow's gap check needs a series that starts on or before the entry.
+SHADOW_RANGES = (("3mo", 90), ("6mo", 182), ("1y", 365), ("2y", 730), ("5y", 1826))
+SHADOW_RANGE_SLACK_DAYS = 7     # a weekend and a holiday before the entry
+
 
 class Live:
     """Shared state between the polling thread and the HTTP handlers."""
@@ -221,6 +232,15 @@ class Live:
         self.positions: dict = {"stats": self.book.stats(), "open": [], "closed": [],
                                 "equity": list(self.book.equity_log)}
         self.calibration: dict = calibration.report(self.book.closed)
+        # The time-stop shadow (see _shadow_pass): None until the holder's
+        # first computation; a dict after; SHADOW_UNAVAILABLE on a follower
+        # of an older holder. Never persisted.
+        self.shadow: dict | str | None = None
+        # symbol -> (UTC day, bars or None): one request per symbol per day,
+        # a failed one included. In memory only, like the shadow itself.
+        self._shadow_bars: dict[str, tuple[str, list | None]] = {}
+        # position id -> its decided shadow outcome (see _shadow_pass).
+        self._shadow_decided: dict[str, dict] = {}
         self._seed_tries = 0        # see _seed_account_history
         self._seed_at = 0.0
         self._scan_at = 0.0
@@ -331,6 +351,8 @@ class Live:
             self._mark_book(ap)
             if not self._stop.is_set():
                 self._seed_account_history()
+            if not self._stop.is_set():
+                self._shadow_pass()
             if self.protocol_on and not self._stop.is_set():
                 try:
                     self._protocol_scan(ap)
@@ -527,6 +549,91 @@ class Live:
                     self.positions = {**self.positions, "equity": list(book.equity_log)}
         except Exception:
             pass               # the curve can wait; the scan it rides on cannot
+
+    def _shadow_pass(self, now: float | None = None) -> None:
+        """Work out the time-stop shadow of the score grade (docs/adr/0002).
+
+        The holder's job alone: a follower shows the holder's copy and never
+        fetches. The book is copied under its lock and the lock released before
+        any request — the same rule as the scan's, for the same frozen window.
+        The pure `calibration.shadow_time_stop` does the rest, and `self.lock`
+        covers the assignment and nothing more. A failure keeps the last good
+        readout on screen with the reason beside it; nothing is guessed.
+
+        Each entry's outcome, once decided, is kept in `_shadow_decided` and
+        handed back on every later pass, so it never changes within this
+        process — not when a day's fetch fails, not when Yahoo rewrites old
+        closes. A look evaluated once stays as it was (ADR 0002 §3). In
+        memory only: a restart decides again from the book and fresh closes.
+
+        Threads: the memo and the bar cache are this method's alone, and it
+        runs only from `_rescan_once`, which every caller enters under
+        `_rescan_lock` (the engine loop, the background step, a settings
+        change's rescan). That lock is what serialises them; nothing else may
+        call this.
+        """
+        if self.following or self.read_only:
+            return
+        now = time.time() if now is None else now
+        try:
+            book = self.book
+            with book.lock:
+                held = [replace(p) for p in book.open]
+                done = [replace(p) for p in book.closed]
+            decided = dict(self._shadow_decided)
+            bars = self._shadow_fetch([p for p in held + done if p.id not in decided], now)
+            result = calibration.shadow_time_stop(held, done, bars, now, decided)
+            # Deep copies: the published readout and the memo share nothing.
+            self._shadow_decided.update(
+                {k: copy.deepcopy(v) for k, v in calibration.shadow_decided(result).items()
+                 if k not in self._shadow_decided})
+        except Exception as exc:
+            with self.lock:
+                last = self.shadow if isinstance(self.shadow, dict) else {}
+                self.shadow = {**last, "error": type(exc).__name__}
+            return
+        with self.lock:
+            self.shadow = result
+
+    def _shadow_fetch(self, positions: list, now: float) -> dict:
+        """Daily closes for the entries whose shadow outcome waits on them: past
+        their fixed date and not settled by the book before it. At most one
+        request per symbol per UTC day — a failed one counts, so an outage costs
+        one try a day rather than one a scan — over a range that reaches back to
+        the symbol's oldest such entry, for the gap check. A failed request
+        keeps the series already held: one bad day must not take away closes
+        that were good yesterday (code review P1-1)."""
+        oldest: dict[str, float] = {}
+        for p in positions:
+            if calibration.shadow_needs_bars(p, now):
+                oldest[p.symbol] = min(p.opened_at, oldest.get(p.symbol, p.opened_at))
+        day = time.strftime("%Y-%m-%d", time.gmtime(now))
+        cache = {s: self._shadow_bars[s] for s in oldest if s in self._shadow_bars}
+        due = sorted(s for s in oldest if cache.get(s, ("",))[0] != day)
+        if due:
+            ranges = {s: self._shadow_range(now - oldest[s]) for s in due}
+
+            def get(symbol: str):
+                try:
+                    return assets.fetch_bars(symbol, ranges[symbol])
+                except Exception:
+                    return None
+
+            with ThreadPoolExecutor(max_workers=assets.FETCH_WORKERS) as ex:
+                got = dict(zip(due, ex.map(get, due), strict=True))
+            for s, b in got.items():
+                cache[s] = (day, b or cache.get(s, (None, None))[1])
+        self._shadow_bars = cache
+        return {s: b for s, (_day, b) in cache.items() if b}
+
+    @staticmethod
+    def _shadow_range(age_s: float) -> str:
+        """The shortest Yahoo range that reaches back past an entry this old."""
+        days = age_s / calibration.DAY_S + SHADOW_RANGE_SLACK_DAYS
+        for rng, reach in SHADOW_RANGES:
+            if reach >= days:
+                return rng
+        return SHADOW_RANGES[-1][0]
 
     def suggestions(self, limit: int = 8) -> list[dict]:
         """What the news is pointing at right now, and what to do about it.
@@ -1052,10 +1159,16 @@ class Live:
         with self.lock:
             self.calibration = report
             self.positions = positions
+            # The holder's shadow, mirrored while following, is not this
+            # engine's: "working it out" until this one's first scan. Its
+            # memo and bar cache, if any, belong to the book just replaced.
+            self.shadow = None
             # The dead holder's mirror, or the "waits for it to stop" notice,
             # must not stay on screen until warmup's first poll — which comes
             # after two history fetches and can take many seconds offline.
             self.snapshot = {"status": "starting"}
+        self._shadow_decided = {}
+        self._shadow_bars = {}
         # Only now may actions write: the book they would write is the one on disk.
         self.read_only = False
         self.conflict = ""
@@ -1201,6 +1314,13 @@ class Live:
                 self.positions = book["positions"]
             if isinstance(book.get("calibration"), dict):
                 self.calibration = book["calibration"]
+            # The holder's time-stop shadow, as it sent it: a follower never
+            # fetches bars or computes it. An older holder sends no key at all,
+            # which is not the same as "still working it out" (None).
+            if "shadow" not in book:
+                self.shadow = SHADOW_UNAVAILABLE
+            elif book["shadow"] is None or isinstance(book["shadow"], dict):
+                self.shadow = book["shadow"]
             if "protocol_on" in book and self._settled_since(gen):
                 self.protocol_on = bool(book["protocol_on"])
 

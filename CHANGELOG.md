@@ -52,17 +52,51 @@ costs, from one replay of past prices, as before.
   IC's randomisation p "before the correction for the {n} components measured". Plain wording gets no
   new number.
 - **Tests.** The two old acceptance tests become rate tests with bounds set in advance from the
-  binomial distribution, slow-marked, each under pytest's 60 s per-test cap. The headline ones are a
+  binomial distribution, marked `rate` (they run by default; `slow` is master's opt-in
+  Monte-Carlo marker), each under pytest's 60 s per-test cap. The headline ones are a
   gate against the code before the check, not proof of 5%. **The attribution suite test is a
   regression guard**: the attribution size gate is the real-bar measurement (measure 3), not yet run at
   full size.
 - **Suite budget 300 s → 600 s** (`run-tests.sh`), for the rate tests on a loaded machine; the 60 s
   per-test cap is unchanged. **Coverage is measured in two appended passes** under the watchdog, the
-  slow one with the per-test cap lifted and a 1200 s budget (`TESTING.md` §7).
+  rate one with the per-test cap lifted and a 1200 s budget (`TESTING.md` §7).
 - **Docs.** Learn tab §7 and §8 explain the check, the readings and the rate with its source;
   `CONFIDENCE.md` records the r7 figures, the residuals and the clustered power figure; TESTPLAN 7.3,
   7.5 and a new 7.13; the glossary adds p-value and survivorship.
 
+## v2.266 — 2026-10-13
+
+- **Plainer wording when the time-stop test ends without a crossing.** The closing line of the
+  *Every entry, graded at a fixed date* block now says "not enough evidence that the score ranks
+  4-week results" instead of "no evidence … at the planned size", and adds that with 201 entries
+  a link of about 0.2 or more, if one existed, would be found about 3 times in 4, so a weaker one could have been
+  missed. If fewer than the planned 201 entries had a result, it says how many and that the test
+  was less sensitive than designed. "Planned size" could be read as position size; "no evidence" overstated a negative.
+  ADR 0002 §3 amended. No behaviour change.
+
+## v2.260 — 2026-10-12
+
+Installed 2026-10-12 from the commit that carries this entry, built in a clean detached worktree
+(stamp `dirty: false`). Release record: `docs/audit/shadow-time-stop-sre-release.md`.
+
+- **A second score grade that leaves no entry out.** The existing grade (*Is the score right?* on
+  the landing page, the calibration panel on My trades) counts only positions closed at their
+  target or stop. The slow ones stay open and outside it, and a quick close is more often the
+  nearer barrier, the stop, so that grade leaned on the quick resolvers. Under it, a new block,
+  **Every entry, graded at a fixed date** (Expert: *Time-stop shadow*), gives every protocol entry
+  a result 4 weeks after it opened (on the week profile): its target or stop if the book closed it
+  there first, otherwise the close after those 4 weeks. The result is in **R**, the result in
+  units of the amount risked. It is a test only at three looks fixed in advance, the first 45, 101
+  and 201 protocol entries, each judged once against a line at ±2.315. Until a look is due it says
+  *Not a test yet*, and from 20 results a line marked *running, not a test* shows the paper
+  average. The first row names the entry dates the figures cover. Entries chosen by hand, closed by
+  hand before the 4 weeks, or with no closing price 7 days after their date are left out and
+  counted on screen. These are paper entries with a coin-flip direction, before costs, fees and
+  slippage, with exact fills; even a crossed line is not a trading edge. The agent works it out on
+  each scan, in memory, from the book and Yahoo daily closes; nothing is written to disk. A window
+  that follows the agent shows the agent's copy, and with an older agent it says *Not available
+  from the running agent*. No exit, no row's odds and nothing in the existing grade or its verdict
+  changes. Manual §10 has the details. (ADR 0002, `docs/specs/shadow-time-stop.md`)
 - CI: `actions/checkout` and `actions/setup-python` move to v7, which run on Node.js 24
   (GitHub is retiring Node.js 20 for actions). No change to the app.
 - The launchd agent runs the installed `SONAR.app` headless instead of the checkout's working tree,
@@ -101,6 +135,14 @@ they have checked.
   (closing UX C-2)
 
 ## Unreleased — 2026-10-12
+
+**The time-stop shadow reads a damaged readout as unreadable.** A look counts as crossed
+only when its flag is `true` and its z is a finite number; otherwise the block says "Could not
+work it out this time (unreadable)" instead of a "crossed" line with z +0.00. Look numbers are
+held to 1 to 3, and the looks, bands and entries it reads are cut to the lengths the engine writes.
+New tests pin the mean-R range, the 7-day price grace and the T bar. ADR 0002 now records that the
+whole design's false-alarm rate measures about 6%, not 5%; the bar stays 2.315 (owner's choice) and
+no on-screen text changes.
 
 **A window follows only an engine on this machine.** The engine lock names
 the running engine's address; the window now follows it only if it is a plain

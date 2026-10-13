@@ -19,15 +19,15 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 # 600s since the randomisation rate tests (tests/test_backtest.py, marked
-# slow): they replay hundreds of runs, about two minutes of CPU, and on a
+# rate): they replay hundreds of runs, about two minutes of CPU, and on a
 # loaded machine the whole suite ran past 300s while every test stayed well
 # under pytest's 60s per-test cap. The budget catches a wedge, not a slow run.
 BUDGET="${TEST_BUDGET_S:-600}"
 PYTHON="${PYTHON:-.venv/bin/python}"
 
 # Coverage appends, so a fast pass and an uncapped slow pass add up to one
-# figure: under coverage on a loaded machine the slow rate tests can pass
-# pytest's 60 s per-test cap (QA P2-A), and the slow pass lifts that cap
+# figure: under coverage on a loaded machine the rate tests can pass
+# pytest's 60 s per-test cap (QA P2-A), and the rate pass lifts that cap
 # while this watchdog stays (TESTING.md, docs/company/app-context.md).
 if [ -n "${COVERAGE:-}" ]; then
     "$PYTHON" -m coverage run --append --branch --source=sonar,ui \

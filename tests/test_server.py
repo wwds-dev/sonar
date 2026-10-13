@@ -444,6 +444,7 @@ class FakeBookLive(FakeLive):
         self.positions = {"stats": {"n_open": 1}, "open": [{"id": "p1"}],
                           "closed": [], "equity": []}
         self.calibration = {"verdict": "unproven"}
+        self.shadow = {"n_entered": 0, "looks": []}
         self.protocol_on = True
         self.alerts = [{"symbol": "AAA"}]
         self.inst = {"n": 0}
@@ -479,7 +480,7 @@ def test_the_book_is_served_with_its_grading_and_switch(book_daemon):
     base, live = book_daemon
     got = json.loads(get(base, "/api/book")[2])
     assert got == {"positions": live.positions, "calibration": live.calibration,
-                   "protocol_on": True}
+                   "shadow": live.shadow, "protocol_on": True}
 
 
 def test_the_wire_serves_alerts_and_institutions(book_daemon):

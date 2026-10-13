@@ -76,10 +76,61 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
 From the review, QA and validation rounds in `docs/audit/qa11-qa13-honest-baselines-*` and the
 spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 
-- [ ] `P1` `research` `@me` **Calibration is right-censored by score — needs its own owner decision.** The
-      calibration table grades closed positions only, and the book has no time stop, so high-score positions are
-      the ones still open (60–80 band: 1 of 7 closed on 2026-10-11). The rank IC and the 2σ gate are not
-      interpretable until this is handled (`docs/audit/calibration-censoring-by-score.md`).
+- [ ] `P1` `research` `@ai` **Calibration is right-censored by score — time-stop shadow built, not yet shipped.**
+      Owner decision 2026-10-12: ADR 0002, spec `docs/specs/shadow-time-stop.md`. On branch
+      `claude/zealous-mclaren-8985d0`, all 2026-10-12: Build, Review (four rounds), Verify (four rounds), Secure
+      and Document (manual §10 "A second grade: every entry at a fixed date", CHANGELOG under Unreleased) are
+      done; reports in `docs/audit/shadow-time-stop-*.md`. Next: Release (owner gate), with the slow suite.
+- [x] `P2` `design` `@me` **Decide the shadow's `SH_FINAL_NONE` wording before Release** (model-validator P2-4,
+      domain-finance P3-3; spec "Known limits", owner question 3). ADR 0002 §3 fixes "no evidence that the score
+      ranks 4-week results, at the planned size"; the reviews say it overstates a negative and that "planned size"
+      can read as position size. Keep it, or amend the ADR and take one of the suggested wordings.
+      Done 2026-10-12: ADR 0002 §3 amended, new wording in `SHADOW_WORDS` (ships with the next build).
+- [ ] `P2` `testing` `@me` **Live weekend stamp check for the shadow (TESTPLAN 11.23).** On a Saturday or Sunday
+      after 00:00 UTC, note the newest daily-bar stamps of ^GSPC, META, EURCHF=X, TRX-USD and ^N225 and record them
+      in ADR 0002 §5. Outcomes are correct under any convention, but with last-trade or fetch-time stamps the wait
+      before the 7-day "no price" grace runs out leaves only 1.3 days (US holiday) or 0.27 days (^N225 in Golden
+      Week) (code review r4 P3-A). Also look for a crypto row stamped exactly 00:00:00 UTC with the next row
+      missing, which grades a day late (QA r4 P3-4). Spec "Known limits" 1–2.
+- [ ] `P2` `testing` `@me` **The shadow's live success measure at its first look (TESTPLAN 11.21)**, on or after
+      the look 1 date (about 2026-11-06): screenshot the block on both pages; each of the first 45 protocol
+      entries has an outcome or a counted exclusion.
+- [ ] `P3` `security` `@ai` **A follower takes the shadow's `crossed` and `evaluated` on trust** (security P3-1,
+      `docs/audit/shadow-time-stop-security-engineer.md`): a truthy `"crossed": "no"` renders a crossing. Require
+      `is True`, re-derive crossed from `abs(z) >= SHADOW_BOUNDARY`, check `k` and `n` against `SHADOW_LOOKS`.
+- [ ] `P3` `security` `@ai` **The shadow's `looks` and `bands` lists from the holder have no size bound**
+      (security P3-2): 20,000 bands took 9 s to render. Slice to `len(SHADOW_LOOKS)` and `len(BUCKETS)`; cap the
+      response size in `Live._fetch`.
+- [ ] `P3` `performance` `@ai` **The shadow's daily fetch runs on the scan thread** (security P3-4): up to ~2 min
+      once a UTC day with timeouts, not measured. Eased because decided entries are no longer fetched. Cap the due
+      list per pass, or check `_stop` and a time budget.
+- [ ] `P3` `design` `@ai` **Shadow copy P3s the domain review deferred** (domain-finance r2 P3-5 to P3-7): a zero
+      stop distance is shown as "no closing price"; `SH_TIP`'s "at that day's close" on a weekend or holiday T;
+      "+{rr}R reached the target" is exact only at the planned entry. (P3-2, "the line" unexplained, is now in
+      manual §10.)
+- [x] `P2` `research` `@me` ~~The shadow's real false-positive rate is about 6%, not 5%.~~ **Decided
+      2026-10-12:** the owner accepts the measured 5.9–6.2%; ADR 0002 is not amended and the boundary stays
+      2.315 (spec Build note 15).
+- [ ] `P2` `testing` `@ai` **Run `./run-tests.sh tests/ -m slow` at release** and on any change to the
+      shadow's gate code (V-12 at 2,000 and 20,000 books, about a minute). The default suite runs a cheaper
+      version.
+- [ ] `P2` `research` `@me` **Persist the shadow's decided outcomes and evaluated looks across restarts?**
+      Fix loop 1 keeps decided outcomes in memory, so within one process a look evaluated once never
+      changes; a failed fetch keeps the closes already held. A holder restart still decides again from
+      fresh closes, and an entry counted as "no price" can still be graded later. Persisting needs an ADR
+      0002 §7 change (spec Build note 6).
+- [ ] `P2` `research` `@me` **Shadow exclusions select by outcome speed** (model-validator P2-2,
+      `docs/audit/shadow-time-stop-model-validator.md`). `no_price` can only hit entries not settled before T
+      (slow resolvers), and delisting is outcome-related. Options: hold a look with any `no_price` member
+      unevaluated, or show a sensitivity bound (excluded members at R = −1 and at +1.5).
+- [ ] `P3` `research` `@me` **Shadow rule 1 before rule 2 is not a stopping rule** (model-validator P3-4): a
+      missed stop-crossing daily close is overridden if the book later books a TARGET before the cut. Tiny
+      bias; a fix changes ADR 0002 §4.
+- [ ] `P3` `research` `@ai` **A late fill keeps its acceptance `opened_at`** (model-validator P3-6) and could
+      join an evaluated cohort. Latent: the internal paper broker fills at once.
+- [ ] `P3` `docs` `@me` **ADR 0002 §3's numbers** (model-validator P3-7): "HC3 2.8–3.3% at n = 400" reads
+      about 4.6% at 10,000 books; the rank-IC bias is stronger than stated (7.7%). The ADR file is the
+      owner's to amend.
 - [ ] `P2` `research` `@ai` **Sign-randomisation test for the backtest's error bar.** The date-clustered bar still
       lets a direction picked at random per class and block get a verdict on 11.4% of judged real-bar runs (target
       ≤ 5%; validator r5 (a), r6 (d)). The same test should calibrate the attribution grades (meaningless

@@ -27,7 +27,7 @@ Re-verified 2026-10-12 on the resumed run. Worktree had other sessions' uncommit
 | Secrets, working tree | `gitleaks detect --no-git --redact -c <scratch config excluding build, dist*, .venv, __pycache__, .git>` | no leaks found (17.7 MB) |
 | Dependencies | `uvx pip-audit -r requirements.txt` | no known vulnerabilities (requirements.txt lists only `PySide6>=6.6`; `anthropic` is commented out, so it was not audited) |
 | Tests + coverage | `QT_QPA_PLATFORM=offscreen COVERAGE_FILE=<tmp> .venv/bin/python -m coverage run --branch --source=sonar,ui -m pytest tests/ -q` (cap 300 s when measured) | 1861 passed, 30 deselected, 87 s; total branch coverage 84% (10370 statements, 2662 branches) |
-| Tests + coverage, since 2026-10-12 | `.venv/bin/python -m coverage erase`; `COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow'`; `COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m slow -o faulthandler_timeout=0`; `.venv/bin/python -m coverage report --skip-empty` (fix loop 2 ran it natively, not offscreen) | see the paragraph below |
+| Tests + coverage, since 2026-10-12 | `.venv/bin/python -m coverage erase`; `COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow and not rate'`; `COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m rate -o faulthandler_timeout=0` (the rate tests were marked `slow` until master's opt-in `slow` Monte-Carlo checks arrived in the merge of 2026-10-13); `.venv/bin/python -m coverage report --skip-empty` (fix loop 2 ran it natively, not offscreen) | see the paragraph below |
 
 Coverage floor: **83%** (measured 84 minus 1). The project's own bar is 80% branch.
 The suite cap went from 300 s to 600 s on 2026-10-12 with `run-tests.sh`'s budget (spec
