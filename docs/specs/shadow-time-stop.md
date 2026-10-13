@@ -665,9 +665,11 @@ Code: `sonar/calibration.py` (the shadow section), `sonar/core.py` (`_shadow_pas
     - Dates go through `_sh_date` (with the year when it differs from now) and the payload clamp. A
       bad value reads n/a and never raises.
 
-### Known limits *(tech-writer, 2026-10-12, from the review reports)*
+### Known limits *(tech-writer, 2026-10-12, from the review reports; updated 2026-10-13)*
 What ships with this build and is not fixed in it. Limits 1 and 2 and every owner question have a
-backlog entry in `TODO.md`.
+backlog entry in `TODO.md`. *2026-10-13:* owner questions 1 and 2 are answered by ADR 0002
+Amendment 1 and built in [`shadow-ledger.md`](shadow-ledger.md), which also removes limit 2; that
+spec has its own Known limits.
 
 **Limits, recorded, no code change planned:**
 1. **A crypto bar restamped at exactly 00:00:00 UTC** (QA r4 P3-4,
@@ -682,18 +684,27 @@ backlog entry in `TODO.md`.
    reach 5.7 days (US holiday) and 6.73 days (^N225 in Golden Week), leaving 1.3 and 0.27 days before
    the 7-day grace (Build note 16). An entry that passes the limit counts as `no_price`, which a look
    treats as final but the memo does not keep. TESTPLAN 11.23 settles which convention Yahoo uses.
+   *Resolved by the shadow ledger (2026-10-13, not yet released):* the grace is now 28 days after
+   t_T plus tries on 3 distinct UTC days from t_T + 7 days (`calibration.py`
+   `SHADOW_PRICE_GRACE_DAYS`, `SHADOW_PRICE_TRIES`, `SHADOW_TRY_AFTER_DAYS`), far beyond the
+   6.73-day worst wait.
 3. **One wrong but plausible close mid-series** still grades a gap exit; it cannot be told from a
    real move (Build note 19).
 
 **Open owner questions, not built** (each needs an owner decision; some need an ADR 0002 change):
-1. **A persisted, write-once look ledger** (model-validator P1-1 option b,
+1. ~~**A persisted, write-once look ledger**~~ (model-validator P1-1 option b,
    `docs/audit/shadow-time-stop-model-validator.md`). Without it, "each look is evaluated once" holds
    within one process only; a restart decides again from fresh closes (Build notes 6 and 20). Needs
-   an ADR 0002 §7 amendment.
-2. **`no_price` selects slow resolvers** (model-validator P2-2). Only entries not settled before T
+   an ADR 0002 §7 amendment. **Answered 2026-10-12** (owner, G1): ADR 0002 Amendment 1 adds a
+   write-once ledger, `shadow_ledger.json`, anchored in `portfolio.json`; a look is shown as a result
+   only once recorded. Built (spec [`shadow-ledger.md`](shadow-ledger.md)), not yet released.
+2. ~~**`no_price` selects slow resolvers**~~ (model-validator P2-2). Only entries not settled before T
    can lack a price, and delisting is related to the outcome. Options: hold a look with any
    `no_price` member unevaluated, or show a sensitivity bound (excluded members at R = −1 and at
-   +1.5).
+   +1.5). **Answered 2026-10-12** (owner, G2 (a)): both, in order. A look is held for up to 28 days
+   plus 3 tried days; what is still left out (`no_price` or `left`) is filled in at each member's own
+   barrier R, and a crossing counts only when every fill crosses on the same side. Built (spec
+   [`shadow-ledger.md`](shadow-ledger.md)), not yet released.
 3. **The `SH_FINAL_NONE` wording** (model-validator P2-4; domain-finance P3-3,
    `docs/audit/shadow-time-stop-domain-finance-r2.md` and `-r3.md`). ADR 0002 §3 fixes the sentence
    "no evidence that the score ranks 4-week results, at the planned size". The validator finds it

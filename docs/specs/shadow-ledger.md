@@ -461,3 +461,56 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
       (Q08, Q10, Q12), an undefined vertex (Q18), anchor edges (Q37, Q38, Q43), each half of
       "behind" (Q39, Q40, adapted to looks only), change detection (Q48, Q51), blocked lines
       (Q64), and the engine test's backup date pinned to its NOW.
+
+## Known limits *(tech-writer, 2026-10-13, from the review reports and Build notes 16-17)*
+What ships unfixed. Each was checked against the code at `aa3de64`; figures are simulated on synthetic
+books (no real data), with the sample size given.
+
+1. **No fsync before the rename** (security P3-6, `shadow-ledger-security-engineer.md`; backlog,
+   `TODO.md` P3 security). `paths.write_atomically` (`sonar/paths.py:131-145`) writes a temporary
+   file and renames it, with no flush to disk in between. After a power loss the renamed file can be
+   empty. That fails safe: it is a `read` error, nothing is written, and the record is restored from
+   the newest backup copy. Pre-existing for every state file.
+2. **Not tamper-evident** (Risks; ADR 0002 Amendment 1). A person can edit the file. The cross-checks
+   are the anchors (marker and sidecar count recorded looks, so a file with fewer is refused), the
+   daily, per-look and off-site copies, and the "Record kept since" line. Nothing detects an edit
+   that keeps the id and the look count. The validator's optional SHA-256 of each recorded look in
+   CHANGELOG is left to the Document phase of each look; no look is recorded yet.
+3. **A failed copy after a look is silent** (engineer report, fix loop 2, "Not done"). `paths.snapshot`
+   (`sonar/paths.py:107-127`) returns `None` on an `OSError`, and a failed off-site copy only prints
+   a line to the agent's log (`_copy_offsite`). Nothing is shown on screen. The newest copy is then
+   one look behind until the next daily backup, which is taken before the first write of a day on
+   which something is written.
+4. **Old backups rotate out after a reset** (engineer report, fix loop 2). Retired and new records
+   share the stem `shadow_ledger.json.bak.*`; rotation keeps the 7 newest names here (`BACKUP_KEEP`,
+   daily and per-look copies together) and 30 off-site (`OFFSITE_KEEP`). The retired file
+   `shadow_ledger.retired.<id>.json` is the copy kept for good. A reset on a day that already has a
+   daily backup of the old record costs the new record that day's daily backup (the name is taken;
+   `daily_backup` skips it).
+5. **The robust rule costs power** (validator P2-1; ADR 0002 Amendment 1, "Cost, stated").
+   Validator `q1c` (synthetic books, exclusions on slow resolvers only, independent of R; size from
+   12,000 null books, power at a correlation of 0.2 from 4,000 books per row): with about 3
+   exclusions per 201, size 5.48% → 3.78% and power 70.2% → 62.5% against gating on the rest; with
+   about 6.7, power 67.2% → 48.8%. Against no exclusions at all the power is 72.3%. L-14
+   (`tests/test_calibration.py`, slow, 2,000 books) measured 0.729 → 0.632 and 5.75% → 4.05% at
+   build. The rule can only remove crossings. The 28-day hold is what keeps exclusions rare.
+6. **The extreme fills are not a bound on z** (validator Q1a, Q1b). A point between the fills can
+   lie beyond them: up to 0.85 z beyond the far end in validator `q1b` (12,000 synthetic cohorts,
+   k = 1 to 10, n = 45 and 101). The validator's analysis (Q1, b) puts the side that decides a robust
+   crossing at a fill (a vertex), so enumerating every vertex, as is done for k ≤ 12, decides it
+   exactly. For k > 12 only the two
+   slope-extreme fills are used; they were within 0.113 z of the full enumeration and gave no
+   different decision in those 12,000 cohorts, which reached k = 10 only, so the k > 12 shortcut is
+   measured below the range it is used in, not in it. The UI says "not estimates and not limits" /
+   "(not a bound)" and never "from … to".
+7. **The check is not a re-grade** (validator P2-2). Recorded outcomes are never derived again from
+   new closes; the check compares membership and constants only. A wrong recorded outcome is found
+   only by a person, and corrected only by an erratum.
+8. **The retire step has been tested on scratch directories only** (engineer report, fix loop 2);
+   nobody has walked through it by hand.
+9. **Retiring without a reset re-tests the same entries, with no trace on screen**
+   (`shadow-ledger-domain-finance-r3.md` P1-1, open at this writing: fix or owner deferral before
+   Release). Build note 17 lets the retire step start a new record for the same book; the test
+   `test_cr2_p2_n2_retiring_without_a_reset_starts_a_new_record_for_the_same_book` pins it. The
+   readout then shows only "Record kept since {new date}". The manual (§10, "What the record does
+   not do") and the CHANGELOG say so; the README's reset paragraph describes the reset case only.

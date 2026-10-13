@@ -76,11 +76,10 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
 From the review, QA and validation rounds in `docs/audit/qa11-qa13-honest-baselines-*` and the
 spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 
-- [ ] `P1` `research` `@ai` **Calibration is right-censored by score — time-stop shadow built, not yet shipped.**
-      Owner decision 2026-10-12: ADR 0002, spec `docs/specs/shadow-time-stop.md`. On branch
-      `claude/zealous-mclaren-8985d0`, all 2026-10-12: Build, Review (four rounds), Verify (four rounds), Secure
-      and Document (manual §10 "A second grade: every entry at a fixed date", CHANGELOG under Unreleased) are
-      done; reports in `docs/audit/shadow-time-stop-*.md`. Next: Release (owner gate), with the slow suite.
+- [x] `P1` `research` `@ai` ~~Calibration is right-censored by score — time-stop shadow built, not yet shipped.~~
+      **Shipped in v2.260 (2026-10-12)**, CHANGELOG; release record `docs/audit/shadow-time-stop-sre-release.md`.
+      Owner decision 2026-10-12: ADR 0002, spec `docs/specs/shadow-time-stop.md`; reports in
+      `docs/audit/shadow-time-stop-*.md`.
 - [ ] `P2` `design` `@me` **Decide the shadow's `SH_FINAL_NONE` wording before Release** (model-validator P2-4,
       domain-finance P3-3; spec "Known limits", owner question 3). ADR 0002 §3 fixes "no evidence that the score
       ranks 4-week results, at the planned size"; the reviews say it overstates a negative and that "planned size"
@@ -127,9 +126,18 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P1` `research` `@ai` **Shadow ledger: Build done 2026-10-12, review round 1 fixed 2026-10-13
       (fix loop 1), code review r2 and QA findings fixed 2026-10-13 (fix loop 2, branch
       `shadow-ledger-fl2`), before the first T on 2026-10-20** (spec `docs/specs/shadow-ledger.md` Build
-      notes 16-17, engineer report `docs/audit/shadow-ledger-engineer.md`). Next: re-review of fix loop 2
-      (anchors count looks; the copy after each look; the retire step), Secure for the new file reads and
-      copies, Document (manual §10, CHANGELOG), Release (owner gate). It must be live before look 1 is due.
+      notes 16-17, engineer report `docs/audit/shadow-ledger-engineer.md`). Document done 2026-10-13 (manual
+      §10, CHANGELOG under Unreleased, spec Known limits). Next: re-review of fix loop 2 (anchors count looks;
+      the copy after each look; the retire step), domain-finance r3 P1-1 (retiring without a reset re-tests
+      the same entries with no trace; fix or owner deferral), Secure for the new file reads and copies,
+      Release (owner gate). It must be live before look 1 is due.
+- [ ] `P3` `infra` `@ai` **A failed shadow-ledger copy after a look is silent** (engineer report, fix loop
+      2; spec `shadow-ledger.md` Known limit 3): `paths.snapshot` swallows an `OSError`, and the newest copy is
+      then a look behind until the next daily backup. Show it in the block's warning line, or retry the copy
+      on the next pass.
+- [ ] `P3` `docs` `@ai` **Hash each recorded shadow look into the CHANGELOG** at that look's Document phase
+      (validator option; spec `shadow-ledger.md` Risks and Known limit 2): a SHA-256 of the look's record, so
+      a later edit of the file can be seen. First due at look 1 (about 2026-11-06 or later).
 - [ ] `P3` `research` `@me` **Shadow rule 1 before rule 2 is not a stopping rule** (model-validator P3-4): a
       missed stop-crossing daily close is overridden if the book later books a TARGET before the cut. Tiny
       bias; a fix changes ADR 0002 §4.
