@@ -168,6 +168,10 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
         residual names both causes (each instrument's own trend, today's survivors); no "judged together"
         footer on a withheld run; drift order, the Lab's range hand-off and the 600-run ≤ 43 bound pinned;
         measure 8 "≤ 0.88 (sets share worlds)"; tooling baseline labels 87% as combined (branch-only 79.5%).
+  - [x] `P3` `research` `@ai` **Final review P3s and the merge of master (2026-10-13)**: "about 1 in 4" scoped
+        to 20- to 60-day horizons; the 600-run bound asserted inside the headline cases (no separate test);
+        the empty ten-year run pinned; the module docstring states the current rule. Merging master (v2.266),
+        whose `slow` marker is opt-in, moved the rate tests to a `rate` marker that runs by default.
   - [x] `P2` `docs` `@ai` **Tech-writer: restate the rule and the rate** (done 2026-10-13: Learn tab §7–§8,
         `CONFIDENCE.md`, TESTPLAN 7.3/7.5/7.13, README, CHANGELOG "Unreleased") in `static/docs.html` (the lines measure
         9 lists), `CONFIDENCE.md:618-625` and the Design section of `qa11-qa13-honest-baselines.md`; the Learn tab
