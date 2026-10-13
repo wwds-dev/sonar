@@ -59,3 +59,7 @@
 {"ts": "2026-10-13T12:37:40", "phase": "release", "state": "start", "spec": "shadow-final-none"}
 {"ts": "2026-10-13T12:41:17", "phase": "release", "state": "done", "spec": "shadow-final-none"}
 {"ts": "2026-10-13T14:58:55", "phase": "release", "state": "done", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T14:05:01", "phase": "define", "state": "start", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T14:05:01", "phase": "define", "state": "start", "spec": "trial-ledger-dsr-pbo"}
+{"ts": "2026-10-13T14:09:36", "phase": "define", "state": "blocked", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T14:09:36", "phase": "define", "state": "blocked", "spec": "trial-ledger-dsr-pbo"}
