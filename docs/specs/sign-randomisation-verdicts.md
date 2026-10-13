@@ -665,3 +665,14 @@ the owner's "After fix-loop-2 review" decisions:
   slow test (QA P3-1; in the exactness test it would push that test past the 60 s cap run alone:
   measured 63 s at load 127). Measure 8's catch probability reads "≤ 0.88 (sets share worlds)"
   (code review P3-4, owner).
+- **Offscreen teardown "hang" (QA P2-1), measured, not changed.** Final runs at load < 50 (start):
+  offscreen exit 0 twice (495 s, 370 s), native exit 0 twice (184 s each). A scratch timing plugin
+  showed `pytest_unconfigure` (conftest's Qt teardown) deleting 814 leftover top-level widgets,
+  89 `MainWindow`s and 712 `QFrame`s, in 22–47 s offscreen at load 30–100; base 049b930 has the
+  same 814 widgets and took 24 s at load 65. Running the slow rate tests first barely changes the
+  live objects (140k vs 136k) and the teardown times overlap (29–41 s with them, 22–32 s
+  without). QA's watchdog sample is spread across `~QMainWindowWrapper` and other deletions, so
+  the process was busy, not deadlocked: an offscreen suite of 330–450 s plus a teardown that
+  grows with load passes 600 s at load 150–200. Not caused by this change; making the window
+  fixtures delete their windows, or finding why each offscreen window takes about 0.3 s to
+  destroy, is a separate item.
