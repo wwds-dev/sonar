@@ -101,3 +101,23 @@ No P0, P1 or P2.
 
 ### Verdict
 No P0/P1/P2. Ready for Verify. P3-1 and P3-4 need the owner. P3-3 is a cheap test gap.
+
+## Final review of fix loop 3 (`8991772..HEAD -- sonar ui tests`)
+
+**What was run:**
+- Fast tests: 123 passed offscreen; 46 passed native for the Lab file.
+- The new 600-run test passes alone in 41.4 s (load ~65), and in under 5 ms in suite order (cache hit).
+- Mutation check: 9 of 9 mutants killed (drift order, `offers_longer_range`, span tip, rng passthrough, footer skip, survivorship line, `_short_window_reason`).
+- Ruff: 97 at HEAD, with identical findings on the changed files.
+- The full suite and coverage were not run.
+
+### Findings
+No P0, P1 or P2.
+- **P3-1.** The 600-run test stays under the 60 s cap only because of the cache. Run alone above load ~100, it can trip the faulthandler abort. Document it as the exception, or pool the counts inside the headline cases.
+- **P3-2.** "About 1 in 4" appears on every 10y horizon but was measured only at h20 and h60 (`backtest.py:1001-1002`). The error is in the cautious direction. Scope the figure to "at 20- to 60-day horizons", or have the owner accept it as is.
+- **P3-3.** The comment at `backtest.py:996` claims both figures are quoted, but only r5 is.
+- **P3-4.** The removed `summarise([], rng="10y")["n"] == 0` assertion leaves the empty-run path unpinned. Restore it.
+- **P3-5.** `tests/test_backtest.py:2116` is 103 characters.
+
+### Verdict
+No P0/P1/P2. Ready for Verify. The P3s are cheap and optional; P3-2 is a wording call.
