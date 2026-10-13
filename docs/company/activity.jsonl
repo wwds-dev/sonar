@@ -35,3 +35,4 @@
 {"ts": "2026-10-12T22:28:41", "phase": "define", "state": "done", "spec": "shadow-final-none"}
 {"ts": "2026-10-12T23:00:01", "phase": "define", "state": "done", "spec": "shadow-final-none"}
 {"ts": "2026-10-13T12:37:40", "phase": "release", "state": "start", "spec": "shadow-final-none"}
+{"ts": "2026-10-13T12:41:17", "phase": "release", "state": "done", "spec": "shadow-final-none"}
