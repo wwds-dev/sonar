@@ -1,7 +1,7 @@
 # Spec: Weekend / hour-of-week term in the hourly BTC volatility forecast (study only)
 
 - Status: draft (revision 2, after `docs/audit/hourly-weekend-vol-study-domain-finance.md`)
-- Owner approval: pending (GATE: new work). **Approval freezes every number below.**
+- Owner approval: approved by the owner on 2026-10-13: "approve both as proposed". Every open question is settled as this spec proposes it. **This approval freezes every number below.**
 - Priority: P2 (research; nothing user-visible, nothing live depends on it)
 - Source: `docs/research/2026-10-industry-techniques-shortlist.md`, item 1
 - Playbook: `docs/playbooks/product-manager.md` is `status: baseline` (never radar-verified); unverified guidance.

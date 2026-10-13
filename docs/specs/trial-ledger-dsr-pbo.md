@@ -1,7 +1,7 @@
 # Spec: Trial ledger, deflated Sharpe ratio and probability of backtest overfitting
 
 - Status: draft (revised after `docs/audit/trial-ledger-dsr-pbo-domain-finance.md`, 8 P1 fixed)
-- Owner approval: pending (Define gate)
+- Owner approval: Define gate approved by the owner on 2026-10-13: "approve both as proposed". Every open question is settled as this spec proposes it. An Architect section and its gate still come before Build.
 - Priority: **P2** (research integrity; nothing user-visible; not blocking any release)
 - Source: `docs/research/2026-10-industry-techniques-shortlist.md` item 3. PM playbook is
   `status: baseline` (stale: not radar-verified).
