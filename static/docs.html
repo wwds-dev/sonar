@@ -1080,15 +1080,24 @@ APCA_API_SECRET_KEY=...</code></pre>
     block says which case it is. Three things note that a record exists, so a
     missing one is noticed: a note in the paper book, a small file beside the
     record, and its backups. The record is backed up daily like the other state
-    files (§12), and one more copy is made right after each recorded look, so the
-    newest backup copy holds every recorded look. What to do:</p>
+    files (§12), and one more copy is made right after a record is started and
+    right after each recorded look, so the newest backup copy holds every recorded
+    look. What to do:</p>
   <ul>
     <li><b>Missing, or an older copy:</b> put the newest backup copy in its
-      place, the one with the latest date in its name, here or off-site.</li>
+      place: the last one by name, here or off-site. On the day of a look that
+      is the copy with <code>.look</code> in its name; after a reset, the newest
+      copy whose name ends in the start of this record's id (the README says
+      how to find it).</li>
     <li><b>The paper book was reset on purpose:</b> the old record is not this
       book's. <b>Retire</b> it: with the agent and the app stopped, rename its
       file as the README's paper-book reset steps say. Nothing is deleted, and a
-      new record starts.</li>
+      new record starts. It tests the same kind of entries again, so the block's
+      last line then always says how many records were retired in this folder
+      and when the first was, and that their looks are not counted.</li>
+    <li><b>Only after a reset.</b> Retiring is refused while the paper book's
+      own note names the record: that book was not reset, so the record is
+      reported missing and no new one starts. Restore it instead.</li>
   </ul>
   <p>Once the right file is in place, the next pass picks it up without a
     restart.</p>
@@ -1099,10 +1108,11 @@ APCA_API_SECRET_KEY=...</code></pre>
     write, the file can in rare cases be left empty; it then reads as unreadable
     and has to be restored from a backup. After a reset, the old record's backups
     rotate out like any other (the last seven copies here, 30 off-site); the
-    retired file is the copy kept for good. Retiring is meant for a book that
-    was reset. Retiring the record of a book that was not reset starts the test
-    again on the same entries, and the block then shows only the new record's
-    start date, with no sign of the earlier one.</p>
+    retired file is the copy kept for good. The date the block gives for a
+    retired record is when its file was renamed or copied; restoring the folder
+    from a backup can move it. Someone who also deletes the paper book's note
+    by hand, or the retired file, can still start over unseen: the record is not
+    tamper-proof.</p>
   <p><b>Where it comes from.</b> The agent works it out on each scan from the
     book and Yahoo daily closes (at most one request per symbol a day), and keeps
     every recorded result and look across restarts; results not yet recorded are

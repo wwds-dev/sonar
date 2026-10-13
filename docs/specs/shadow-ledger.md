@@ -251,13 +251,13 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
 | Case | Behaviour |
 |---|---|
 | No marker, no file | Start a ledger (marker first, then file). |
-| Marker, no file | `ledger_error: "missing"` ("this book had one since …"); nothing written; no look shown as a result. Restore the newest backup copy, or retire (below). |
+| Marker, no file | `ledger_error: "missing"` ("this book had one since …"); nothing written; no look shown as a result. Restore the newest backup copy. Retiring is not offered and not honoured: the book was not reset (G3; fix loop 3). |
 | Sidecar only, no file (fix loop 1) | `"missing"`, worded "this folder had one since …": the sidecar belongs to the data folder, not the book. Same two ways out. |
 | Backups only, no file (fix loop 1) | `"missing"`, worded "backups of it exist". A backup is attributed by the `ledger_id` in its own JSON; one that cannot be read or names no id still anchors. |
-| File behind the anchors (fix loop 1, fix loop 2) | Fewer recorded looks than the marker or sidecar counts: `"read"` (`LedgerBehindError`). Entries are not counted: lost ones are decided again from the same closes (L-2). A copy is made, here and off-site, right after each write that records a look, so the newest copy always holds every recorded look. |
+| File behind the anchors (fix loop 1, fix loop 2) | Fewer recorded looks than the marker or sidecar counts: `"read"` (`LedgerBehindError`). Entries are not counted: lost ones are decided again from the closes then available, and are not part of any recorded look (each look keeps its own members). A copy is made, here and off-site, right after each write that records a look, so the newest copy holds every recorded look unless that copy failed (Known limit 3). |
 | File unreadable, wrong schema or wrong id | `ledger_error: "read"`; the file is never overwritten, moved or repaired; no look shown as a result. |
-| Another book's file (a reset, G3) | `"read"` (`LedgerIdError`). To start a new record, **retire** the old one: move `shadow_ledger.json` to `shadow_ledger.retired.<its ledger_id>.json` in the same folder. Its id then anchors nothing: the marker, the sidecar and every backup, here or off-site, that carries it no longer block a new record, and nothing is deleted. |
-| Retired (fix loop 2) | A `shadow_ledger.retired.<id>.json` retires `<id>` only if its own `ledger_id` is `<id>`. A `shadow_ledger.json` whose id is retired (a copy left in place of a moved one) is `"read"` (`LedgerRetiredError`), never used. |
+| Another book's file (a reset, G3) | `"read"` (`LedgerIdError`). To start a new record, **retire** the old one: move `shadow_ledger.json` to `shadow_ledger.retired.<its ledger_id>.json` in the same folder. Its id then anchors nothing: the sidecar and every backup, here or off-site, that carries it no longer block a new record, and nothing is deleted. The new record's line always discloses the retired records (fix loop 3). |
+| Retired (fix loops 2, 3) | A `shadow_ledger.retired.<id>.json` retires `<id>` only if its own `ledger_id` is `<id>`, **and only while `portfolio.json`'s marker is absent or names another id** (G3: retiring is for a reset book). While the marker names it, the retirement is not honoured: with no file the record is `"missing"` (reason `marker`), the 10-minute rule does not remake it, and no new record starts. Without such a marker, a `shadow_ledger.json` whose id is retired (a copy left in place of a moved one) is `"read"` (`LedgerRetiredError`), never used. |
 | Write fails | `ledger_error: "write"`; the memo keeps outcomes stable in this process; looks not yet recorded show no result; the next pass retries. |
 | Crash between marker and file | The next pass sees "marker, no file" and reports missing. To avoid this, the marker write and the first file write happen in one pass, and a marker whose `created_at` is under 10 minutes old with no file is retried once, not reported. |
 | Crash between file write and publish | Harmless: the record is on disk, and the next pass shows it. |
@@ -419,8 +419,10 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
     `shadow-ledger-qa-engineer.md`; owner approved the loop):
     - **The anchors count looks only** (r2 P2-N1). Marker and sidecar carry the id, the start and
       the number of recorded looks; a file with fewer looks is `LedgerBehindError`. Entries are
-      not counted: a lost entry is decided again from the same closes (L-2), and counting them made
-      the newest daily backup "behind" on any day that decided one. A marker with an `entries`
+      not counted: a lost entry is decided again from the closes then available, and is not part of
+      any recorded look (each look keeps its own members; wording corrected in fix loop 3, code
+      review r3 P3-4), and counting them made the newest daily backup "behind" on any day that
+      decided one. A marker with an `entries`
       count (fix loop 1) is still read, and the count dropped. The 10-minute rule now applies to
       an anchor that counts no look.
     - **A copy after each look.** Right after a write that records a look, the file is copied to
@@ -436,8 +438,9 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
       old one and all its backups are kept. The retired file must hold that id itself; a backup is
       attributed by its own `ledger_id` (bounded `O_NOFOLLOW` reader, id-only parse); at most 50
       retired files are read. A live file whose id is retired is `LedgerRetiredError`. The same
-      step starts a new record for the same book (ADR §7: new settings need a new record). The old
-      backups then rotate as usual; the retired file is the copy kept for good.
+      step started a new record for the same book (ADR §7: new settings need a new record) —
+      **replaced in fix loop 3** (Build note 18): not while the book's marker names the record. The
+      old backups then rotate as usual; the retired file is the copy kept for good.
     - **"Missing" says whose** (r2 P2-N2): the reason is `marker`, `sidecar` or `backup`; "this book
       had one since …" only for `marker`, "this folder had one since …" for the sidecar, "backups
       of it exist" otherwise. Every missing line ends with the restore and retire steps; the
@@ -461,8 +464,48 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
       (Q08, Q10, Q12), an undefined vertex (Q18), anchor edges (Q37, Q38, Q43), each half of
       "behind" (Q39, Q40, adapted to looks only), change detection (Q48, Q51), blocked lines
       (Q64), and the engine test's backup date pinned to its NOW.
+18. **Fix loop 3** (2026-10-13; reports `shadow-ledger-domain-finance-r3.md` and
+    `shadow-ledger-code-reviewer-r3.md`; orchestrator's decisions, enforcing owner decision G3):
+    - **Retiring is only for a reset book** (domain r3 P1-1). A retirement is not honoured while
+      `portfolio.json`'s own marker names the retired id: the record is `"missing"` (reason
+      `marker`), the 10-minute rule never remakes a retired id, and no new record starts. Only with
+      no marker, or one naming another id, does a retired id stop anchoring. Without such a marker
+      a live file whose id is retired is still `LedgerRetiredError`; with it, the retirement is
+      ignored and the file read as before. This replaces Build note 17's "the same step starts a
+      new record for the same book"; the test that pinned that now pins the refusal (a spec
+      change, not a weakening).
+    - **Retired records are always disclosed** (domain r3 P1-1). `ledger.retired` (how many retired
+      records are in the folder, other than the one in use; present only when there is one) and
+      `ledger.retired_first` (the earliest retired file's status-change time, `st_ctime`, which a
+      rename or a copy sets) feed the record line: "Record kept since {date}. {n} earlier
+      record(s) were retired in this folder, the first on {date0}. Their looks are not counted
+      here, and this record re-tests the same kind of entries." (singular: "1 earlier record was
+      retired in this folder, on {date0}. Its looks …") / "Record since {date}; {n} retired (first
+      {date0})." At most 50 retired files are read (`SHADOW_RETIRED_MAX`).
+    - **No retire step on the "this book" path.** `SH_LEDGER_RESTORE` names only the restore; the
+      retire sentence (`SH_LEDGER_RESTORE_RETIRE`) follows only a sidecar- or backup-anchored
+      "missing". The foreign line adds that the new record re-tests the same kind of entries.
+    - **A copy after a record's first write** (code review r3 P3-2):
+      `shadow_ledger.json.bak.<date>.created.<id8>`, here and off-site, right after a new record's
+      first successful write (at open, or at the first record write if that one failed). "created"
+      sorts before "look", so on a day with both, the look's copy is the last by name. The
+      coordinator's suggested tag was `start`; it would sort after `look1` on the same day.
+    - **Restore wording** (code review r3 P3-1, P3-2): "the last one by name, here or off-site (on a
+      look's day, the one with .look in its name; after a reset, see the README)"; the README adds
+      "the newest copy whose name ends in the first 8 characters of the id in `shadow_ledger.id`".
+      Failure modes: "unless that copy failed".
+    - **A file lost under the holder is "this book's" at once** (code review r3 P3-3): the refresh
+      reports reason `marker` when the book's marker names the record.
+    - **Copy** (domain r3 P3-1 to P3-3, code review r3 P3-5): refused results "could not be written
+      to the record … It is not in the record, so a look that uses it cannot be fully checked
+      against the record." / "not in record"; errata touching a recorded look first, then newest,
+      and "{n} more errata are in the record; {m} of them touch a recorded look." / "+{n} errata ({m}
+      on looks)"; an erratum with no corrected R says "it has no usable R" / "R → none"; "looks 1,
+      2 and 3".
+    - **Test race** (code review r3 P3-6): `test_two_processes` waits for `read_only` to clear
+      rather than asserting it as soon as the lock is held.
 
-## Known limits *(tech-writer, 2026-10-13, from the review reports and Build notes 16-17)*
+## Known limits *(tech-writer, 2026-10-13, from the review reports and Build notes 16-17; limit 9 replaced in fix loop 3)*
 What ships unfixed. Each was checked against the code at `aa3de64`; figures are simulated on synthetic
 books (no real data), with the sample size given.
 
@@ -508,9 +551,12 @@ books (no real data), with the sample size given.
    only by a person, and corrected only by an erratum.
 8. **The retire step has been tested on scratch directories only** (engineer report, fix loop 2);
    nobody has walked through it by hand.
-9. **Retiring without a reset re-tests the same entries, with no trace on screen**
-   (`shadow-ledger-domain-finance-r3.md` P1-1, open at this writing: fix or owner deferral before
-   Release). Build note 17 lets the retire step start a new record for the same book; the test
-   `test_cr2_p2_n2_retiring_without_a_reset_starts_a_new_record_for_the_same_book` pins it. The
-   readout then shows only "Record kept since {new date}". The manual (§10, "What the record does
-   not do") and the CHANGELOG say so; the README's reset paragraph describes the reset case only.
+9. **A retirement after a reset re-tests the same kind of entries** (domain r3 P1-1, fixed in fix
+   loop 3, Build note 18). Retiring is honoured only when `portfolio.json`'s marker does not name
+   the record, so a book that was not reset cannot start over by retiring
+   (`test_cr3_g3_retiring_without_a_reset_is_not_honoured`). After a reset it can, and the new
+   record re-tests the same kind of entries; the record line then always says how many records were
+   retired in the folder and when the first was (`test_cr3_domain_p1_1_…`). What is left: that date
+   is the retired file's status-change time, which a later metadata change (a restore from a
+   backup, a permission change) moves; and someone who also deletes the marker by hand, or the
+   retired file, defeats both the refusal and the disclosure (Known limit 2: not tamper-evident).

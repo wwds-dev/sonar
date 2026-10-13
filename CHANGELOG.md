@@ -52,25 +52,32 @@ crossed line is not a trading edge. (ADR 0002 Amendment 1, `docs/specs/shadow-le
   restated close), a person adds an erratum to the record by hand (position, reason, corrected R,
   date) under a written ADR note, with the agent and the app stopped. The block shows it with the
   look(s) that counted the result; it never changes whether a look crossed or the test ended. The
-  app never writes errata.
+  app never writes errata. The five shown are those touching a recorded look, newest first; the
+  rest are counted, with how many of them touch a look. An erratum with no corrected R says so.
 - **A missing, unreadable or other book's record is an error, never a fresh start.** Nothing is
   recorded and no look is shown as a result until it is fixed, and the block says which case it is:
   unreadable; missing (this book had one, this folder had one, or backups of it exist); an older
   copy holding fewer looks; another book's record; or a copy of a retired one. The paper book
   (`portfolio.json`) and a file beside the record (`shadow_ledger.id`) note that a record exists. A
-  copy is made right after each recorded look, here and off-site, besides the daily backup, so the
-  newest backup copy holds every recorded look. Putting the right file back clears the error on the
-  next pass.
-- **Retiring a record.** After a deliberate reset of the paper book, the old record is refused
-  ("It does not belong to this book"). To start a new one, stop the agent and the app and rename
-  `shadow_ledger.json` to `shadow_ledger.retired.<its ledger_id>.json` in the same folder. Nothing
-  is deleted, and a new record starts. README, under the paper-book reset.
+  copy is made right after a record's first write and right after each recorded look, here and
+  off-site, besides the daily backup, so the newest backup copy holds every recorded look (unless
+  that copy failed). The newest copy is the last one by name; on a look's day, the `.look<k>` copy;
+  after a reset, the newest one whose name ends in the first 8 characters of the id in
+  `shadow_ledger.id`. Putting the right file back clears the error on the next pass.
+- **Retiring a record, only after a reset.** After a deliberate reset of the paper book, the old
+  record is refused ("It does not belong to this book"). To start a new one, stop the agent and the
+  app and rename `shadow_ledger.json` to `shadow_ledger.retired.<its ledger_id>.json` in the same
+  folder. Nothing is deleted, and a new record starts. It re-tests the same kind of entries, so the
+  block's last line always says how many records were retired in the folder and when the first was
+  ("Record kept since … 1 earlier record was retired in this folder, on … Its looks are not
+  counted here, and this record re-tests the same kind of entries."). A retirement is refused while
+  the paper book's own note names the record: that book was not reset, so the record is reported
+  missing and no new one starts. README, under the paper-book reset.
 - Not fixed in this build (spec `shadow-ledger.md`, Known limits): no fsync before the file is
   renamed into place; the record is not tamper-evident; a copy after a look that fails is not
   reported; the old record's backups rotate out after a reset; the robust rule's power cost above;
-  the extreme fills are not a bound on z; retiring the record of a book that was not reset starts
-  the test again on the same entries, and the block does not show the earlier record (domain-finance
-  r3 P1-1, open).
+  the extreme fills are not a bound on z; the date given for a retired record is when its file
+  last changed status, which a restore from a backup moves.
 
 ## v2.260 — 2026-10-12
 
