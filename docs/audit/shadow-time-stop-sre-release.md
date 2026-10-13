@@ -32,7 +32,7 @@ Native 2398 passed, 1 skipped, exit 0. Offscreen 2398 passed, 1 skipped, exit 0 
 ## Note 2026-10-13: default-budget rerun (load-affected, partly inconclusive)
 Fresh worktree from v2.260 (`.venv` symlinked, `sonar/macro` and `sonar/playmaker` rsynced without `.git`), default 300 s watchdog, machine load 110-160 throughout (never under 4; SYNDUSTRYX, a VM and other SONAR runs were active).
 - **Native:** 2396 passed, 3 skipped, exit 0, 146 s. Passes at the default budget even under load.
-- **Offscreen:** killed at 300 s (exit 137) at 96%, not 100%. This was a wall-clock overrun under load; the v2.260 wedge in Qt teardown did not reproduce. Inconclusive.
+- **Offscreen:** killed at 300 s (exit 137) at 96%, not 100%. This was a wall-clock overrun under load. The run ended before the suite finished, so it never reached Qt teardown and cannot show whether the v2.260 wedge reproduces. Inconclusive.
 - **Slow (`-m slow`):** killed at 300 s (exit 137) with 17 tests done. Budget overrun under load. Inconclusive.
 - The `sample` output of both kills shows one busy main thread in `builtin_exec`, with no teardown frame identified.
 - **Skip count (3 in handoff, 1 in v2.260):** the 3 skips here are `test_ci_pins.py:37` twice (nested repos have no `.git` in this copy) and `test_version.py:254` (Lab Project Monitor not beside the checkout). The main checkout's nested repos have `.git`, so only the monitor test skips there (1). Not a change in the tests.
