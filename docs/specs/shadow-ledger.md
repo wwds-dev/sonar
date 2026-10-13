@@ -242,7 +242,8 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
   sets `ledger_error: "missing"` and never starts a new file. Restoring from a backup clears it. A
   file whose `ledger_id` differs from the marker is a read error. Moving the file aside therefore
   leaves a trace (domain P2-6). Starting a new record for a reset book means removing the marker as
-  well, which is a deliberate act.
+  well, which is a deliberate act. *(Fix loop 2: the deliberate act is now the retire step in the
+  Failure modes table; it keeps the old record and its backups. See Build note 17.)*
 - A follower and a read-only engine never read or write the file or the marker. The engine lock
   makes the holder the only writer.
 
@@ -250,8 +251,13 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
 | Case | Behaviour |
 |---|---|
 | No marker, no file | Start a ledger (marker first, then file). |
-| Marker, no file | `ledger_error: "missing"`; nothing written; no look shown as a result. |
+| Marker, no file | `ledger_error: "missing"` ("this book had one since …"); nothing written; no look shown as a result. Restore the newest backup copy, or retire (below). |
+| Sidecar only, no file (fix loop 1) | `"missing"`, worded "this folder had one since …": the sidecar belongs to the data folder, not the book. Same two ways out. |
+| Backups only, no file (fix loop 1) | `"missing"`, worded "backups of it exist". A backup is attributed by the `ledger_id` in its own JSON; one that cannot be read or names no id still anchors. |
+| File behind the anchors (fix loop 1, fix loop 2) | Fewer recorded looks than the marker or sidecar counts: `"read"` (`LedgerBehindError`). Entries are not counted: lost ones are decided again from the same closes (L-2). A copy is made, here and off-site, right after each write that records a look, so the newest copy always holds every recorded look. |
 | File unreadable, wrong schema or wrong id | `ledger_error: "read"`; the file is never overwritten, moved or repaired; no look shown as a result. |
+| Another book's file (a reset, G3) | `"read"` (`LedgerIdError`). To start a new record, **retire** the old one: move `shadow_ledger.json` to `shadow_ledger.retired.<its ledger_id>.json` in the same folder. Its id then anchors nothing: the marker, the sidecar and every backup, here or off-site, that carries it no longer block a new record, and nothing is deleted. |
+| Retired (fix loop 2) | A `shadow_ledger.retired.<id>.json` retires `<id>` only if its own `ledger_id` is `<id>`. A `shadow_ledger.json` whose id is retired (a copy left in place of a moved one) is `"read"` (`LedgerRetiredError`), never used. |
 | Write fails | `ledger_error: "write"`; the memo keeps outcomes stable in this process; looks not yet recorded show no result; the next pass retries. |
 | Crash between marker and file | The next pass sees "marker, no file" and reports missing. To avoid this, the marker write and the first file write happen in one pass, and a marker whose `created_at` is under 10 minutes old with no file is retried once, not reported. |
 | Crash between file write and publish | Harmless: the record is on disk, and the next pass shows it. |
@@ -409,3 +415,49 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
       "ledger" on purpose (Build note 1; domain r2 P3-4 not taken).
     - **Deferred:** an fsync before the atomic rename (security P3-6), as for every state file;
       in the backlog.
+17. **Fix loop 2** (2026-10-13; reports `shadow-ledger-code-reviewer-r2.md` and
+    `shadow-ledger-qa-engineer.md`; owner approved the loop):
+    - **The anchors count looks only** (r2 P2-N1). Marker and sidecar carry the id, the start and
+      the number of recorded looks; a file with fewer looks is `LedgerBehindError`. Entries are
+      not counted: a lost entry is decided again from the same closes (L-2), and counting them made
+      the newest daily backup "behind" on any day that decided one. A marker with an `entries`
+      count (fix loop 1) is still read, and the count dropped. The 10-minute rule now applies to
+      an anchor that counts no look.
+    - **A copy after each look.** Right after a write that records a look, the file is copied to
+      `shadow_ledger.json.bak.<date>.look<k>.<first 8 characters of its id>`, beside it and
+      off-site (`paths.snapshot`, the daily backup's rotation and `_copy_offsite`). The name sorts
+      after that day's daily backup, so "the newest copy" is the newest name, and it matches the
+      anchors. The id in the name keeps a retired record's copy of the same day and look from being
+      written over. The UI says "Put the newest backup copy in its place: the one with the latest
+      date in its name, here or off-site", which is now true.
+    - **Retiring a record** (r2 P2-N2, G3). Moving the file to
+      `shadow_ledger.retired.<its ledger_id>.json` in the data folder retires that id: a marker,
+      sidecar or backup naming it no longer anchors, so a reset book starts a new record and the
+      old one and all its backups are kept. The retired file must hold that id itself; a backup is
+      attributed by its own `ledger_id` (bounded `O_NOFOLLOW` reader, id-only parse); at most 50
+      retired files are read. A live file whose id is retired is `LedgerRetiredError`. The same
+      step starts a new record for the same book (ADR §7: new settings need a new record). The old
+      backups then rotate as usual; the retired file is the copy kept for good.
+    - **"Missing" says whose** (r2 P2-N2): the reason is `marker`, `sidecar` or `backup`; "this book
+      had one since …" only for `marker`, "this folder had one since …" for the sidecar, "backups
+      of it exist" otherwise. Every missing line ends with the restore and retire steps; the
+      foreign line names the retire step. The file names are not spelled out on screen (they hold
+      "edge", Build note 1); the README gives them.
+    - **The file's own constants** (r2 P3-N1): the reader and the merge both check a look against
+      the file's `boundary` and `looks` when well-typed (else today's), so a changed module constant
+      is a `constants` mismatch, and a new look the file's constants do not support is refused, not
+      written.
+    - **An anchor save that failed after the file was read or written is retried** at the start of
+      each pass (r2 P3-N2).
+    - **Refused counts** (r2 P3-N3): `ledger.refused` counts results and `ledger.refused_looks`
+      looks, each with singular and plural wording. The expert erratum line says "no look",
+      "look 1", "looks 1 and 2".
+    - **Tried days stop when no longer needed** (QA P2-1): a day is added to `price_tries` only
+      while the entry waits for a price, or while fewer than 3 are recorded. Build note 5's "days
+      are only added" holds; none is removed until the entry is decided.
+    - **QA test gaps closed** (QA P2-2 to P3): S4 gating (Q57, Q61, Q65), a foreign record with
+      entries only (Q45), "same side" (Q21; `shadow_looks` and `_check_look` already agreed), the
+      grace edge (Q26), `price_until` (Q30), memo tries while writes fail (Q29), parser checks
+      (Q08, Q10, Q12), an undefined vertex (Q18), anchor edges (Q37, Q38, Q43), each half of
+      "behind" (Q39, Q40, adapted to looks only), change detection (Q48, Q51), blocked lines
+      (Q64), and the engine test's backup date pinned to its NOW.

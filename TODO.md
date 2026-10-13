@@ -125,10 +125,11 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       (Amendment 1, G2 (a)): a look is held for a missing price for 28 days and 3 tried days, and a crossing
       must survive the extreme fills of what is still left out. Built; see the shadow-ledger item below.
 - [ ] `P1` `research` `@ai` **Shadow ledger: Build done 2026-10-12, review round 1 fixed 2026-10-13
-      (fix loop 1), before the first T on 2026-10-20** (spec `docs/specs/shadow-ledger.md`, engineer
-      report `docs/audit/shadow-ledger-engineer.md`). Next: re-review of fix loop 1, Verify (L-1 to L-18,
-      `-m slow` for L-14), Document (manual §10, CHANGELOG), Release (owner gate). It must be live before
-      look 1 is due.
+      (fix loop 1), code review r2 and QA findings fixed 2026-10-13 (fix loop 2, branch
+      `shadow-ledger-fl2`), before the first T on 2026-10-20** (spec `docs/specs/shadow-ledger.md` Build
+      notes 16-17, engineer report `docs/audit/shadow-ledger-engineer.md`). Next: re-review of fix loop 2
+      (anchors count looks; the copy after each look; the retire step), Secure for the new file reads and
+      copies, Document (manual §10, CHANGELOG), Release (owner gate). It must be live before look 1 is due.
 - [ ] `P3` `research` `@me` **Shadow rule 1 before rule 2 is not a stopping rule** (model-validator P3-4): a
       missed stop-crossing daily close is overridden if the book later books a TARGET before the cut. Tiny
       bias; a fix changes ADR 0002 §4.

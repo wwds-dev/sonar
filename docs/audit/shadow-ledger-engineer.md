@@ -254,3 +254,80 @@ scratchpad as `build/fl1-*.txt`. The load average was about 150.
 The suite size is 2,523 (`TESTPLAN.md`, `TESTING.md`, `README.md`, `static/testplan.html`).
 ruff found nothing new in the changed files: `core.py` has 2 findings, `portfolio.py` 1 and
 `ui/app.py` 5, the same counts as before the loop.
+
+## Fix loop 2 (2026-10-13)
+Inputs: `shadow-ledger-code-reviewer-r2.md` (CR2) and `shadow-ledger-qa-engineer.md` (QA), both on
+HEAD `4ada4d1`. Branch `shadow-ledger-fl2` from `4ada4d1`, in an isolated worktree. Code and tests
+are in `c09819f`, `e76df3d` and `b4b6484`; docs in the commit after them. Choices are in spec Build note 17.
+All tests named below are in `tests/test_shadow_ledger.py` unless another file is given. Playbook
+still `status: baseline` (stale). Synthetic books and pytest scratch directories only.
+
+| # | Finding | Fix (file:line at `b4b6484`) | Test |
+|---|---|---|---|
+| 1 | CR2 P2-N1: the newest backup is usually "behind" | Anchors count looks only (`calibration.ledger_anchor` :933; behind check `core.py` :809; marker parse drops a legacy `entries`). After a write that adds a look, `paths.snapshot` (:107) copies the file to `….bak.<date>.look<k>.<id8>` here and off-site, before the anchors move (`core.py` :973-983). `SH_LEDGER_BEHIND` and `SH_LEDGER_RESTORE` say "the newest backup copy … latest date in its name, here or off-site" | `test_cr2_p2_n1_lost_on_a_day_that_added_entries_the_newest_copy_restores`, `test_cr2_p2_n1_lost_after_a_look_the_newest_copy_here_and_off_site_matches` |
+| 2 | CR2 P2-N2: a reset cannot start a new record without deleting backups | Retire step: `shadow_ledger.retired.<id>.json` (`core.py` :156-163, `_shadow_retired` :851) retires an id its own JSON holds. Retired marker and sidecar are dropped (:752-754); backups are attributed by their `ledger_id` (`_shadow_ledger_backups` :831, `calibration.ledger_id_of` :1143). A live file with a retired id is `LedgerRetiredError` (:795-798, `SH_LEDGER_RETIRED`). "Missing" carries its anchor as the reason; the UI says "this book" only for `marker` (`ui/app.py` :1045-1053, `SH_LEDGER_MISSING_FOLDER`). Steps named in `SH_LEDGER_FOREIGN`, `SH_LEDGER_RESTORE`, the README reset paragraph and the spec's Failure modes table (rows for sidecar, backups, behind, another book's file, retired) | `test_cr2_p2_n2_a_deliberate_reset_retires_the_old_record_and_starts_a_new_one` (end to end), `…retiring_without_a_reset_…`, `…a_retirement_frees_only_the_id_it_holds[3]`, `…a_copy_of_a_retired_record_left_in_place_is_never_used`, `…missing_says_this_book_only_when_the_book_says_so` |
+| 3 | CR2 P3-N1: merge and reader use different constants | `_file_boundary`, `_file_looks` (`calibration.py` :1006-1019) feed `_check_look` in `ledger_parse` and `ledger_merge` | `test_cr2_p3_n1_the_merge_judges_a_look_by_the_files_own_line` (boundary probe), `test_cr2_p3_n1_changed_look_sizes_are_a_constants_mismatch_not_unreadable` (looks probe), `test_cr2_p3_n1_n3_a_holder_on_a_stricter_file_refuses_the_look_and_says_so` |
+| 4 | CR2 P3-N2: a failed anchor save is not retried | `_ledger_needs_anchor`, set from every anchor save after a read or write and retried at the start of each pass (`core.py` :738-741, :817, :983; reset in `_take_the_book`) | `test_cr2_p3_n2_a_failed_anchor_save_after_adoption_is_tried_again` |
+| 5 | CR2 P3-N3: copy nits | `ledger.refused` (results) and `ledger.refused_looks` (`ledger_merge(…, refused_looks)`); `SH_LEDGER_REFUSED_ONE` / `_REFUSED` / `_REFUSED_LOOK_ONE` / `_REFUSED_LOOKS`; expert `SH_ERRATUM` uses `{where}`: "no look", "look 1", "looks 1 and 2" | `test_cr2_p3_n3_…`; pinned `test_sec_p2_3_…` now expects "1 result could not be recorded" |
+| 6 | QA P2-1: `price_tries` grows past the reader's 400 days | `ledger_merge` adds a day only while the entry is `wait_price`, or while fewer than 3 are recorded (`calibration.py` :1222-1237). Build note 5's "days are only added" still holds | `test_qa_p2_1_tried_days_stop_growing_once_no_longer_waiting` (450 days; the QA probe's 402) |
+| 7 | QA P2-2: S4 gating unpinned | test only | `test_qa_p2_2_q57_…`, `test_qa_p2_2_q61_q65_…` |
+| 8 | QA P2-3: a foreign record with entries only | test only | `test_qa_p2_3_q45_…` |
+| 9 | QA P2-4: "same side" | No code change: `shadow_looks` (:683-685) and `_check_look` already use the same rule. A natural cohort (8 fills at ±6 R) gives z 3.92, z_lo −2.66, z_hi 5.24: not crossed, no look closed, and the reader refuses it as crossed | `test_qa_p2_4_q21_…` |
+| 10 | QA P3 | tests: Q18, Q26, Q30, Q29, Q08/Q10, Q12 (the check already existed), Q38/Q43, Q37, Q39/Q40 (adapted: fewer looks with every entry is behind; fewer entries with every look is read), Q51, Q48, Q64. `test_shadow_engine.py` `_today(monkeypatch)` pins `paths._dt` to the date of the tests' NOW | `test_qa_p3_*` |
+
+**Existing tests changed in this loop** (each to the new rule, none loosened):
+- L-1 and L-15: the readout's `ledger` carries `refused_looks: 0`; L-15's reason is `marker` and
+  its line names the restore and retire steps.
+- `test_l15_a_young_marker_that_counts_records_…` became `…counts_a_look_…`: entries are no longer
+  counted, so the anchor that must not be remade is one that counts a look.
+- Marker shape without `entries`: `test_a_ledger_with_no_marker_…`, `test_cr_p1_1_a_marker_less_…`,
+  `test_the_marker_is_checked_too`.
+- `test_cr_p1_1_another_books_ledger_…`: the foreign line's new wording (the retire step).
+- `test_sec_p2_3_…`: "1 result could not be recorded".
+- `test_sec_p3_3_…`: picks the day's backup by name (a look copy now sits beside it) and expects
+  the new behind wording.
+- `test_shadow_engine.py`: the two tests that list the day's backup pin its date.
+
+**Mutation check.** In a scratch copy of HEAD (`git archive` plus the nested repos), never the
+worktree; each mutant applied by exact text, the four shadow test files run with `-x`, and every
+file restored and checked byte-equal. Scripts and logs: scratchpad `fl2/mut.py`, `mut_log.txt`,
+`mut_log2.txt`, `mut_k.py`, `mut_k_log.txt`.
+- 22 mutants of this loop's code (F01-F22) and QA's 18 surviving mutants re-applied to today's
+  code (Q08, Q10, Q12, Q18, Q21, Q26, Q29, Q30, Q37, Q38, Q43, Q45, Q48, Q51, Q57, Q61, Q64, Q65):
+  **40 of 40 killed**, after one fix.
+- **F16 (the reader on today's look sizes) first survived.** `_check_look`'s defaults were bound
+  when the module loaded, so patching `calibration.SHADOW_LOOKS` in the looks probe changed
+  nothing. The defaults are now read at the call (`b4b6484`); F16 is killed by the looks probe and
+  F15 still by the boundary probe.
+- Where `-x` stopped at an earlier test, the mutant was run again against the test written for it
+  alone (`-k`): F01 (anchors count entries) by the "lost on a day that added entries" test, F03 (no
+  id in the copy's name) by the end-to-end reset test (A's same-day look copy would be overwritten),
+  F14 by the "missing says this book" test, F19 by the P3-N3 test. All killed.
+- Q39 and Q40 (each half of "behind") are adapted rather than re-run: the entries half no longer
+  exists, so F01 puts it back (killed) and F06 removes the looks half (killed).
+
+**Runs** (`TEST_BUDGET_S=900`; output in scratchpad `fl2/`; load average 150-230):
+
+| Run | Tree | Exit | Result |
+|---|---|---|---|
+| Native | `e76df3d` (before the `_check_look` fix) | 0 | 2,555 passed, 3 skipped, 61 deselected (2:06) |
+| Offscreen (`QT_QPA_PLATFORM=offscreen`) | `b4b6484` | **0** | 2,555 passed, 3 skipped, 61 deselected (4:01) |
+| Native | `b4b6484` | **0** | 2,555 passed, 3 skipped, 61 deselected (2:17) |
+| Slow (`-m slow`) over `test_shadow_ledger`, `_engine`, `_ui`, `test_calibration` | `b4b6484` | 0 | 31 passed (3:40) |
+
+The suite size is 2,558 (`TESTPLAN.md`, `TESTING.md`, `README.md`, `static/testplan.html`), up
+from 2,523. No flake in any run. The offscreen run prints the known `StubLive._stop` watchdog
+noise from `test_server.py` (QA P3 (8), pre-existing). ruff (`uvx --offline ruff` 0.17.0) on
+every changed code file: `core.py` 2 and `ui/app.py` 5 findings, the same as before; `paths.py`,
+`calibration.py` and the two test files none.
+
+**Not done, and not verified.**
+- No CHANGELOG, VERSION or manual change (Document phase). No build, install, push or `launchctl`.
+- The retire step was tested on scratch directories only; nobody has walked through it by hand.
+- The look copy is swallowed on failure, like the daily backup: if it fails, the newest copy is
+  "behind" until the next day's backup. Not surfaced on screen.
+- After a reset the old record's backups rotate out over the following 7 days locally and 30
+  off-site, as every backup does; the retired file is the copy kept. A reset on the same day as
+  an old daily backup costs the new record that day's daily backup (the name is taken).
+- `docs/company/activity.jsonl` got a `build start` line in this worktree; it is not committed
+  (shared log, concurrent sessions).
