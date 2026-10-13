@@ -1206,17 +1206,16 @@ def test_v12_quick_the_design_has_its_planned_power():
 
 @pytest.mark.slow
 def test_v12_the_design_holds_its_size_where_the_closed_only_grade_does_not():
-    """V-12 as the spec states it: 2,000 seeded books. The design rejects 5% ±
-    1.5 pt; the closed-only snapshot statistic on the same books (n ≈ 200)
+    """V-12 as the spec states it: 2,000 seeded books. The design rejects about
+    6% ± 1.5 pt (4.5-7.5%; owner decision 2026-10-13); the closed-only snapshot statistic on the same books (n ≈ 200)
     rejects measurably more; with a planted correlation of 0.2 the power is
     0.73 within Monte-Carlo error. Run with ``./run-tests.sh tests/ -m slow``."""
     lib = _walk_library(*V12_LIBRARY)
     design, shut, shut_n = _v12_null(V12_BOOKS, V12_NULL_SEED, lib)
     # The whole design's size is about 6% (5.5-6.5%; spec Build notes 15, 22:
-    # 6.095% over 40,000 books), not the 5% the band is centred on. The band
-    # holds only because the seed is fixed: another seed's 2,000-book rate has
-    # SE 0.5 pt and would leave 6.5% in reach. Thresholds are the owner's call.
-    assert 0.035 <= design <= 0.065, design
+    # 6.095% over 40,000 books). The band is centred on that measured rate,
+    # not on 5%, so another seed's 2,000-book rate (SE 0.5 pt) stays inside it.
+    assert 0.045 <= design <= 0.075, design
     se = math.sqrt(design * (1 - design) / V12_BOOKS + shut * (1 - shut) / V12_BOOKS)
     assert shut - design > 3 * se, (shut, design)
     assert 150 <= shut_n <= 250, shut_n
@@ -1268,7 +1267,7 @@ def test_v12_slow_the_design_size_to_a_fifth_of_a_point():
     5% comes from look 1, where the HC3 z has slightly heavy tails at n = 45;
     the owner accepted it on 2026-10-12 (spec Build note 15). The bar is the
     measured value ± 3 SE (QA P1-1), so a regression either way shows; the
-    spec's 5 ± 1.5 pt test is the 2,000-book one above. It averages the
+    spec's 6 ± 1.5 pt test is the 2,000-book one above. It averages the
     chunks run in this session: run it with them (``-m slow``); alone it
     skips, and with only some of them it fails."""
     _v12_all_chunks_or_skip(_v12_rates, V12_PRECISION_CHUNKS, "test_v12_slow_size_chunk")
