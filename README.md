@@ -265,10 +265,20 @@ versus the checkout's `data/state.json`). `SONAR_DATA` points a source run at an
 agent's plist sets it to the app's, so the agent and the installed app share one book. The active risk profile
 is saved with the state; delete the state file to reset to a clean $10,000.
 
+The shadow grade's write-once record, `shadow_ledger.json`, survives a reset on purpose (ADR 0002 Amendment 1):
+after the paper book is reset, SONAR refuses to use the old record or to start a new one ("It does not belong to
+this book"). To start a new record, **retire** the old one: with the agent and the app stopped, move
+`shadow_ledger.json` to `shadow_ledger.retired.<its ledger_id>.json` in the same folder (the id is the file's
+`"ledger_id"`, also in `shadow_ledger.id`). Nothing is deleted: the retired file keeps the old record, and its
+backups (`shadow_ledger.json.bak.*`, here and off-site) stay where they are and no longer block. If the record is
+**missing** instead, put the newest backup copy in its place — the `shadow_ledger.json.bak.*` file with the latest
+date in its name, here or off-site; one is made right after every recorded look — or, after a deliberate reset,
+retire it: copy that newest backup to the retired name.
+
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 2,523 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 2,558 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
