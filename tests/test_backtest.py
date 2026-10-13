@@ -704,8 +704,9 @@ _CAVEAT = (
     "about 1 run in 10, and about 1 in 5 at some settings. That rate is per "
     "run, so trying many settings makes a chance verdict likely, and nearby "
     "settings can disagree. A direction fixed per instrument, such as "
-    "always long, can also land outside the bar, because the list holds "
-    "today's survivors; this check cannot see that.")
+    "always long, can also land outside the bar, because each instrument "
+    "keeps its own trend over the years and the list holds only today's "
+    "survivors; this check cannot see that.")
 
 
 def test_the_verdicts_name_the_error_bar_and_what_it_misses():
@@ -747,8 +748,9 @@ def test_the_verdicts_name_the_error_bar_and_what_it_misses():
         "bar (±1.8), but directions picked at random over stretches of time "
         "across the watchlist land this far out often enough that this is "
         "not told apart from chance. A direction fixed per instrument, such "
-        "as always long, can also land outside the bar, because the list "
-        "holds today's survivors; this check cannot see that. From one "
+        "as always long, can also land outside the bar, because each "
+        "instrument keeps its own trend over the years and the list holds "
+        "only today's survivors; this check cannot see that. From one "
         "replay of past prices.")
     assert "can read above the prediction" in backtest._withheld_verdict(
         "horizon", 250, 1234, 300)
@@ -762,9 +764,12 @@ def test_too_few_stretches_names_the_fix_the_reader_has():
     from one replay of past prices (QA P3-5). A sample that cannot be
     swapped whole says that instead, and never blames the range or the
     horizon (code review P3-3).
+    A run already at five years is pointed at the horizon alone, and so is
+    one over ten, which is never judged (owner, after the fix-loop-2
+    review).
     Mutation it catches: the Terminal told to pick a longer range, the Lab
-    pointed at ten years, or the unpaired run given the few-stretches
-    advice."""
+    pointed at ten years or past five from a five-year run, or the unpaired
+    run given the few-stretches advice."""
     lab = backtest.few_clusters_verdict(3, 60)
     term = backtest.few_clusters_verdict(3, 60, terminal=True)
     assert lab == backtest._withheld_verdict("few_clusters", 60, 4000, 300,
@@ -775,6 +780,17 @@ def test_too_few_stretches_names_the_fix_the_reader_has():
     assert "A longer range or" not in lab
     assert "A shorter profile gives more." in term
     assert "range" not in term
+    assert backtest.LONGEST_JUDGED_RANGE == "5y"
+    assert backtest.few_clusters_verdict(3, 60, rng="2y") == lab
+    assert backtest.few_clusters_verdict(3, 60, rng="1y") == lab
+    for long in ("5y", "10y"):
+        at = backtest.few_clusters_verdict(3, 60, rng=long)
+        assert at == backtest._withheld_verdict(
+            "few_clusters", 60, 4000, 300, clusters=3, rng=long)
+        assert "A shorter horizon gives more. The numbers" in at, at
+        assert "range" not in at, at
+        assert backtest.few_clusters_verdict(3, 60, terminal=True,
+                                             rng=long) == term
     for v in (lab, term):
         assert "before costs, from one replay of past prices" in v
     unpaired = backtest._withheld_verdict("unpaired", 5, 4000, 300)
@@ -1084,19 +1100,31 @@ def test_a_ten_year_run_shows_its_numbers_without_a_verdict(monkeypatch):
     assert ten["attribution"]["blend_ranks_backwards"] is False
     assert ten["verdict"] == (
         "No verdict on ten years. Over ten years of today's list, a direction "
-        "fixed per instrument, such as always long, lands outside the bar far "
+        "fixed per instrument, such as always long, lands outside the bar "
         "more often than the chance rate a verdict quotes (about 1 run in "
-        "10), because the list holds only today's survivors: instruments "
-        "that fell away are missing. So ten-year runs are not judged; five "
-        "years or less can be. The numbers are shown without a verdict, "
-        "before costs, from one replay of past prices.")
-    # the horizon still comes first, and a hand-built sample without a
-    # range is not held to the rule [A11]
-    assert backtest.summarise([], rng="10y")["n"] == 0
+        "10); on one set of past bars about 1 in 4, because each instrument "
+        "keeps its own trend over the years and the list holds only today's "
+        "survivors; this check cannot see that. So ten-year runs are not "
+        "judged; five years or less can be. The numbers are shown without a "
+        "verdict, before costs, from one replay of past prices.")
+    assert "far more often" not in ten["verdict"]
+    # the horizon and the universe still come first; ten years comes before
+    # the reasons that depend on the sample, so a sparse ten-year run reads
+    # drift, not too few or span (code review P3-3, QA P3-2); and a
+    # hand-built sample without a range is not held to the rule [A11]
     rows = _rigged_rows(400)
     assert backtest.summarise(rows, horizon_days=150, rng="10y",
                               universe="all", timeouts=[])[
         "withheld"] == "horizon"
+    assert backtest.summarise(rows, horizon_days=5, rng="10y",
+                              universe="Equity", timeouts=[])[
+        "withheld"] == "single_class"
+    sparse = _rigged_rows(50)
+    assert backtest.summarise(sparse, horizon_days=5, universe="all",
+                              timeouts=[])["withheld"] == "too_few"
+    assert backtest.summarise(sparse, horizon_days=5, rng="10y",
+                              universe="all", timeouts=[])[
+        "withheld"] == "drift"
     assert backtest.summarise(rows)["withheld"] is None
 
 
@@ -1131,17 +1159,26 @@ def test_no_verdict_unless_the_entries_span_five_horizons():
     # the fix stops at five years: ten are never judged (owner, Lab 10y)
     assert v.endswith("A shorter horizon spreads them out, or a longer range "
                       "up to five years."), v
+    # a run already at five years is pointed at the horizon alone (owner,
+    # after the fix-loop-2 review); two years still gets the range
+    at_two = backtest.summarise(_span_of(rows, 36), horizon_days=5, rng="2y")
+    assert at_two["verdict"] == v
+    at_five = backtest.summarise(_span_of(rows, 36), horizon_days=5, rng="5y")
+    assert at_five["withheld"] == "span"
+    assert at_five["verdict"].endswith("counts trading days). A shorter "
+                                       "horizon spreads them out."), at_five
     assert backtest.summarise(_span_of(rows, 19))["withheld"] is None
 
 
 def test_why_a_verdict_is_withheld_has_one_fixed_order():
     """When several reasons apply the reader gets one, always the same one:
-    horizon, then single class, then too few, then span, then a sample that
-    cannot be swapped whole (its timeouts not passed), then too few
-    stretches. The two a reader can change by picking another setting come
-    before those that depend on the sample. Each step below lifts one reason
-    and the next shows.
-    Mutation it catches: any two of the six checks swapped (QA r3 G2)."""
+    horizon, then single class, then a range never judged (ten years), then
+    too few, then span, then a sample that cannot be swapped whole (its
+    timeouts not passed), then too few stretches. The three a reader can
+    change by picking another setting come before those that depend on the
+    sample. Each step below lifts one reason and the next shows.
+    Mutation it catches: any two of the seven checks swapped (QA r3 G2;
+    drift, code review P3-3 and QA P3-2)."""
     few_close = _paired(_span_of(_seventy_in_a_hundred(99), 19))
     many_close = _paired(_span_of(_seventy_in_a_hundred(1000), 19))
     many_wide = _paired(_spread(_seventy_in_a_hundred(1000), dates=20, every=50))
@@ -1150,18 +1187,20 @@ def test_why_a_verdict_is_withheld_has_one_fixed_order():
                      for i, t in enumerate(_seventy_at_random(1000))])
     # None: the timeouts not passed, so the sample cannot be swapped whole
     steps = [
-        (few_close, 121, "Equity", None, "horizon"),
-        (few_close, 120, "Equity", None, "single_class"),
-        (few_close, 120, "all", None, "too_few"),
-        (many_close, 120, "all", None, "span"),
-        (many_wide, 120, "all", None, "unpaired"),
-        (many_wide, 120, "all", [], "few_clusters"),
-        (wider, 120, "all", [], None),
+        (few_close, 121, "Equity", None, "10y", "horizon"),
+        (few_close, 120, "Equity", None, "10y", "single_class"),
+        (few_close, 120, "all", None, "10y", "drift"),
+        (few_close, 120, "all", None, "5y", "too_few"),
+        (many_close, 120, "all", None, "5y", "span"),
+        (many_wide, 120, "all", None, "5y", "unpaired"),
+        (many_wide, 120, "all", [], "5y", "few_clusters"),
+        (wider, 120, "all", [], "5y", None),
     ]
-    for trials, h, universe, timeouts, why in steps:
+    for trials, h, universe, timeouts, rng, why in steps:
         s = backtest.summarise(trials, horizon_days=h, universe=universe,
-                               timeouts=timeouts)
-        assert s["withheld"] == why, (h, universe, len(trials), s["verdict"])
+                               timeouts=timeouts, rng=rng)
+        assert s["withheld"] == why, (h, universe, rng, len(trials),
+                                      s["verdict"])
         assert s["significant"] is (why is None)
 
 
@@ -1647,6 +1686,14 @@ def test_too_few_stretches_is_withheld_and_says_how_to_get_more():
         "A shorter horizon gives more, or a longer range up to five years. "
         "The numbers are shown without a verdict, before costs, from one "
         "replay of past prices.")
+    # summarise reads the tip off the range it is given: none past five
+    # years from a five-year run (owner, after the fix-loop-2 review)
+    five = backtest.summarise(_in_stretches(rows, 7), horizon_days=5,
+                              universe="all", timeouts=[], rng="5y")
+    assert five["withheld"] == "few_clusters"
+    assert five["verdict"] == seven["verdict"].replace(
+        ", or a longer range up to five years.", ".")
+    assert five["verdict"] != seven["verdict"]
     hand = backtest.summarise(_in_stretches(rows, 7), horizon_days=5)
     assert hand["withheld"] is None and hand["randomisation"] is None
     assert hand["verdict_state"] == "beats"
@@ -2065,8 +2112,8 @@ def test_a_correlated_coin_rarely_gets_a_verdict(first_world, first_coin):
     (the gate removed) the four sets read 14, 10, 18 and 13 verdicts (7, 3,
     9 and 5 'beats'): the third fails. At today's rate on these worlds,
     9.2% (QA, 10 world sets: 7.7–12.8%), one set fails with probability
-    about 0.41 and at least one of the four about 0.88, counting the
-    verdict bound alone. With the randomisation the sets read 6, 5, 7 and 2
+    about 0.41 and at least one of the four with probability ≤ 0.88 (sets
+    share worlds), counting the verdict bound alone. With the randomisation the sets read 6, 5, 7 and 2
     (3, 2, 4 and 1 'beats'). Proof of 5% is measure 1, on real bars at full
     scale.
     Mutation it catches, over the four sets: the randomisation gate
@@ -2087,6 +2134,7 @@ def test_the_randomisation_alone_rejects_near_its_size():
     It reads each run's randomisation alone, not the whole summary — the
     same stretches and p as summarise, checked on the first three runs — so
     it stays well under the 60 s cap run on its own (code review P2-4).
+    The verdicts of the same 600 runs are bounded in the next test.
     Mutation it catches: a dead statistic (never rejects) or an inverted
     one (the wrong tail)."""
     for coin in range(3):
@@ -2098,6 +2146,27 @@ def test_the_randomisation_alone_rejects_near_its_size():
     assert all(r["q"] == 8 and r["method"] == "enumerate" for r in runs)
     rejected = sum(r["p_tail"] < 0.05 for r in runs)
     assert 13 <= rejected <= 37, rejected
+
+
+@pytest.mark.slow
+def test_the_four_headline_sets_together_rarely_get_a_verdict():
+    """Measure 8 over all 600 runs of the four headline sets (QA P3-1): at
+    most 43 verdicts, the 99th percentile of Binomial(600, 5%)
+    (P(X ≤ 43) = 0.992), set in advance. With the randomisation they read
+    20; with the error bar alone (the gate removed), 55 — so this one bound
+    catches the gate removed, where of the four sets only [15-0] does.
+
+    A test of its own, not a line in the exactness test, which must stay
+    under the 60 s cap run alone (code review P2-4): the four headline tests
+    have already summarised these runs, so in the suite this reads their
+    cache in about no time; run alone it summarises all 600 (about 50–65 s
+    on a loaded machine; ``-o faulthandler_timeout=0``, as TESTING.md's
+    slow pass).
+    Mutation it catches: the randomisation gate removed."""
+    verdicts = sum(s in ("beats", "below")
+                   for first in _HEADLINE_SETS
+                   for _w, s, _p, _q in _per_class_h_coin(*first))
+    assert verdicts <= 43, f"{verdicts} of 600 coin runs got a verdict"
 
 
 def _guard(block_days: int, per_class: bool, name: str,

@@ -138,13 +138,20 @@ _TRADING_DAYS_PER_YEAR = 252
 WHOLE_WATCHLIST = "all"
 # No verdict on these ranges (owner, Lab 10y, 2026-10-12; domain pass 4
 # P2-1). Over ten years of today's list a direction fixed per instrument
-# landed outside the bar far more often than the rate the verdicts quote: a
-# coin fixed per symbol read 22.5–31% at 10y h20–h60 on the r5 bars and
-# 10–12.5% held out, and always long read "beats" at 10y h20 (validator r7
-# P1-2), because the list holds today's survivors. Swapping whole stretches
-# of time cannot see that, so a run over one is withheld ("drift"), and
-# range_for_horizon never picks one. The caller says which range it read.
+# landed outside the bar more often than the rate the verdicts quote (9.11%):
+# a coin fixed per symbol read 10–12.5% at 10y h20–h60 held out and 22.5–31%
+# on the r5 bars, and always long read "beats" at 10y h20 (validator r7
+# P1-2; domain pass 5 P3-1: not "far more often", which only the r5 bars
+# show). Two causes: each instrument keeps its own trend over the years,
+# and the list holds only today's survivors (domain pass 5 P3-2). Swapping
+# whole stretches of time cannot see either, so a run over one is withheld
+# ("drift"), and range_for_horizon never picks one. The caller says which
+# range it read.
 NO_VERDICT_RANGES = ("10y",)
+# The longest range a verdict is given on. The tips that point the Lab's
+# reader at a longer range stop here, and on a run already this long they
+# name only the shorter horizon (owner, after the fix-loop-2 review).
+LONGEST_JUDGED_RANGE = "5y"
 
 # The direction randomisation (owner decisions at the Build gate, 2026-10-12;
 # docs/adr/0003). A verdict needs Δ outside its error bar *and* the run's
@@ -177,10 +184,14 @@ CHANCE_VERDICT_RATE_WORST = "about 1 in 5"
 # stretches of time leaves a direction fixed per instrument where it was.
 # Worded to fit beats, below and not told apart alike, and not as a tip
 # (code review P3-3, domain P3-1).
+# Both causes are named, not survivorship alone: a coin fixed per symbol
+# reads outside the bar from each instrument's own lasting trend too (domain
+# pass 5 P3-2).
 FIXED_PER_INSTRUMENT = ("A direction fixed per instrument, such as always "
-                        "long, can also land outside the bar, because the "
-                        "list holds today's survivors; this check cannot see "
-                        "that.")
+                        "long, can also land outside the bar, because each "
+                        "instrument keeps its own trend over the years and "
+                        "the list holds only today's survivors; this check "
+                        "cannot see that.")
 
 # What attribution says of every measured component on a run with no verdict.
 NOT_JUDGED = ("Not judged: this run gets no verdict, so no component of the "
@@ -878,7 +889,7 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
         "verdict": (_withheld_verdict(
                         withheld, horizon_days, n, len(days),
                         universe=universe, span_days=span_days,
-                        clusters=(randomisation or {}).get("q", 0))
+                        clusters=(randomisation or {}).get("q", 0), rng=rng)
                     if withheld else _verdict(delta, se, verdict_state)),
     }
 
@@ -973,22 +984,29 @@ def _classes(symbols: set[str]) -> dict[str, int]:
 
 def _withheld_verdict(why: str, horizon_days: int | None, n: int,
                       dates: int, *, universe: str | None = None,
-                      span_days: int = 0, clusters: int = 0) -> str:
-    """Why a run is shown without a verdict. The numbers stay on screen."""
+                      span_days: int = 0, clusters: int = 0,
+                      rng: str | None = None) -> str:
+    """Why a run is shown without a verdict. The numbers stay on screen.
+    ``rng`` is the range the bars were read over: the span and few-stretches
+    tips offer a longer one only where :func:`offers_longer_range`."""
     if why == "drift":
         # The range, which the Lab's reader picks; the Terminal never reads
         # one (range_for_horizon). The figure it outruns is the one the
         # beats and below sentences quote (owner, Lab 10y).
+        # Both measured figures, held out and r5, not "far more often"
+        # (domain pass 5 P3-1), and both causes (P3-2).
         return ("No verdict on ten years. Over ten years of today's list, a "
                 "direction fixed per instrument, such as always long, lands "
-                "outside the bar far more often than the chance rate a "
-                f"verdict quotes ({CHANCE_VERDICT_RATE}), because the list "
-                "holds only today's survivors: instruments that fell away "
-                "are missing. So ten-year runs are not judged; five years or "
-                "less can be. The numbers are shown without a verdict, "
-                "before costs, from one replay of past prices.")
+                "outside the bar more often than the chance rate a verdict "
+                f"quotes ({CHANCE_VERDICT_RATE}); on one set of past bars "
+                "about 1 in 4, because each instrument keeps its own trend "
+                "over the years and the list holds only today's survivors; "
+                "this check cannot see that. So ten-year runs are not "
+                "judged; five years or less can be. The numbers are shown "
+                "without a verdict, before costs, from one replay of past "
+                "prices.")
     if why == "few_clusters":
-        return few_clusters_verdict(clusters, horizon_days)
+        return few_clusters_verdict(clusters, horizon_days, rng=rng)
     if why == "unpaired":
         # Not the range or the horizon: the sample itself cannot be swapped
         # whole, so no setting the reader picks would fix it (code review
@@ -1012,8 +1030,9 @@ def _withheld_verdict(why: str, horizon_days: int | None, n: int,
                 "market move, so a verdict needs them spread over at least "
                 f"{MIN_VERDICT_SPAN_HORIZONS} times the horizon "
                 f"({min_verdict_span_days(horizon_days):,} days; a horizon "
-                "counts trading days). A shorter horizon spreads them out, "
-                "or a longer range up to five years.")
+                "counts trading days). A shorter horizon spreads them out"
+                + (", or a longer range up to five years."
+                   if offers_longer_range(rng) else "."))
     if why == "horizon":
         return (f"No verdict at a {horizon_days}-day horizon. At horizons this "
                 "long an instrument's own trend dominates the comparison — "
@@ -1026,18 +1045,33 @@ def _withheld_verdict(why: str, horizon_days: int | None, n: int,
             "shown without one.")
 
 
+def offers_longer_range(rng: str | None) -> bool:
+    """Whether a tip may point the Lab's reader at a longer range, up to
+    :data:`LONGEST_JUDGED_RANGE`: not from a run already that long, nor from
+    one never judged (:data:`NO_VERDICT_RANGES`). A hand-built sample
+    without a range (``None``) keeps the tip (owner, after the fix-loop-2
+    review)."""
+    return rng not in (LONGEST_JUDGED_RANGE, *NO_VERDICT_RANGES)
+
+
 def few_clusters_verdict(clusters: int, horizon_days: int | None,
-                         terminal: bool = False) -> str:
+                         terminal: bool = False,
+                         rng: str | None = None) -> str:
     """The ``few_clusters`` sentence. It names the fix, as the span sentence
     does: the stretches are a property of the range and the horizon. The
     Lab's reader picks both; the Terminal's picks only the profile, whose
     range is :func:`range_for_horizon`'s (domain P3-5). The Lab's longer
     range stops at five years: ten is never judged (:data:`NO_VERDICT_RANGES`,
-    owner, Lab 10y)."""
+    owner, Lab 10y), and a run over ``rng`` already at five years is pointed
+    at the horizon alone (:func:`offers_longer_range`)."""
     stretch = (f" of {randomisation_block_days(horizon_days):,} days"
                if horizon_days else "")
-    fix = ("A shorter profile gives more." if terminal else
-           "A shorter horizon gives more, or a longer range up to five years.")
+    if terminal:
+        fix = "A shorter profile gives more."
+    elif offers_longer_range(rng):
+        fix = "A shorter horizon gives more, or a longer range up to five years."
+    else:
+        fix = "A shorter horizon gives more."
     return ("Too few separate stretches of time, across asset classes, "
             f"to judge: these setups fall in {clusters} stretch"
             f"{'' if clusters == 1 else 'es'}{stretch} (four holding "
