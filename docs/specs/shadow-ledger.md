@@ -363,9 +363,49 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
     added only when the due look has members waiting for a price.
 14. **The file** is JSON with `indent=1` (errata are added by hand), written with
     `allow_nan=False`, refused above 64 MB on read, and stale temporary files beside it are swept
-    at load. It is written when something was added, a try was counted, or this tenure has not
-    yet written it. `created_by` and `build` are `version.provenance()["version"]`.
+    at load. It is written when something was added or a try was counted, and, for a ledger this
+    tenure has just started, at once with its anchors (fix loop 1; the first version said "when
+    this tenure has not yet written it", which held only for a new ledger, code review P3-7).
+    `created_by` and `build` are `version.provenance()["version"]`.
 15. **Tests.** `scratch_data` (conftest) sets `SONAR_DATA` to the test's `tmp_path` after
     `refuse_live_data`. It also clears `SONAR_BACKUP_DIR`, so a scratch backup is never copied
     off-site. `isolated_state` now refuses a `tmp_path` under the live directory too. The check
     compares paths as text before resolving anything.
+16. **Fix loop 1** (2026-10-13; reports `shadow-ledger-code-reviewer.md`,
+    `shadow-ledger-security-engineer.md`, `shadow-ledger-domain-finance-r2.md`; orchestrator's
+    decisions):
+    - **Three anchors.** The marker in `portfolio.json`, a sidecar `shadow_ledger.id` beside the
+      file (no older build writes or strips it), and any `shadow_ledger.json.bak.*` here or
+      off-site. With any anchor and no file the record is `missing`. Marker and sidecar carry the
+      id, the start and the counts of recorded looks and entries at the last write; the counts only
+      grow, and a file with fewer is a `read` error (`LedgerBehindError`). The 10-minute rule
+      applies only to an anchor that counts nothing. `Portfolio` keeps top-level keys it does not
+      know, so a later build's key survives a save by this one.
+    - **Build note 7 replaced.** With no marker in the book, a file is taken only if it is empty or
+      every recorded entry and look member is a protocol position of this book; otherwise it is a
+      `read` error (`LedgerIdError`), never adopted or written. The sidecar names the data
+      directory's record, not the book's, so it does not lift this check. The read line says that
+      after a reset the old record has to be moved aside on purpose (G3).
+    - **The file can change under the holder.** Before each pass and each write, the file's inode,
+      size and mtime are compared with what this tenure last read or wrote. If they differ it is
+      read again: with the same id its errata are taken over (nothing else); gone, unreadable or
+      another id stops the tenure's copy and nothing is written. Errata are still best added with
+      the agent and the window stopped.
+    - **What is written is what reads back.** `ledger_merge` checks each new entry and look with
+      the reader's own checks and leaves out what fails (counted as `ledger.refused` and shown);
+      the serialised text is parsed again before `write_atomically`.
+    - **The empty file** is written right after the marker and the sidecar, before any fetch.
+    - **No write after a stop or without the engine lock**, and no readout published then.
+    - **Reading** uses `O_NOFOLLOW | O_NONBLOCK` and accepts only a regular file, read to at most
+      64 MB + 1 byte. `constants` is a typed mapping (a key added or removed is a `constants`
+      mismatch). Errata are capped at 1,000. A recorded look must have the size its key says, a
+      crossing only past the line and, with members filled in, robust; `design_closed` is false
+      and no look follows a crossing. The window shows at most 5 errata and 3 mismatches, and a
+      crossing only when `crossed is True`.
+    - **Wording** (domain r2): the extremes are "the lowest z found … not estimates and not
+      limits"; an erratum names its look(s) and the corrected R; a blocked look says "not shown as
+      a result while the record cannot be used"; a not-robust look carries its own caveat; and
+      extremes that could not be worked out say so. The expert copy keeps "record" for the spec's
+      "ledger" on purpose (Build note 1; domain r2 P3-4 not taken).
+    - **Deferred:** an fsync before the atomic rename (security P3-6), as for every state file;
+      in the backlog.

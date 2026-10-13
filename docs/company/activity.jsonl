@@ -42,3 +42,5 @@
 {"ts": "2026-10-12T23:31:22", "phase": "build", "state": "done", "spec": "shadow-ledger"}
 {"ts": "2026-10-12T23:31:22", "phase": "review", "state": "start", "spec": "shadow-ledger"}
 {"ts": "2026-10-12T23:31:22", "phase": "secure", "state": "start", "spec": "shadow-ledger"}
+{"ts": "2026-10-12T23:43:14", "phase": "build", "state": "start", "spec": "shadow-ledger"}
+{"ts": "2026-10-13T12:37:05", "phase": "build", "state": "done", "spec": "shadow-ledger"}

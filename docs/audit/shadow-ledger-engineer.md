@@ -181,3 +181,76 @@ check still refused. The whole-guard mutant was killed.
 - `ruff` is not installed in `.venv`. It was run from uv's offline cache (`uvx --offline ruff`
   0.17.0): no new findings in the changed files. The 2 findings in `core.py`, 1 in `portfolio.py`
   and 5 in `ui/app.py` are older, at the same count as HEAD.
+
+## Fix loop 1 (2026-10-13)
+Round-1 findings: `shadow-ledger-code-reviewer.md` (CR), `shadow-ledger-security-engineer.md` (SEC),
+`shadow-ledger-domain-finance-r2.md` (domain r2). Code and tests are in commit `49e6da4`; docs
+come in the commit after it. All tests named below are in `tests/test_shadow_ledger.py` unless
+another file is given.
+
+| # | Finding | Fix (file:line at `49e6da4`) | Test |
+|---|---|---|---|
+| 1 | CR P1-1: a foreign ledger with no marker is adopted | With no marker in the book, the file is taken only if `calibration.ledger_belongs` (:1112) holds; otherwise `("read", "LedgerIdError")`, and nothing is written (`core.py:774`). The read line adds `SH_LEDGER_FOREIGN` (`ui/app.py:680`) | `test_cr_p1_1_another_books_ledger_is_never_adopted[kept,removed]`, `test_cr_p1_1_a_marker_less_ledger_of_this_book_is_adopted` |
+| 2 | CR P2-1, SEC P2-2: a dropped marker means a fresh start | Anchor = marker, or the sidecar `shadow_ledger.id` (`core.py:155`, `:792`, `:812`), or any local or off-site backup (`:804`). Any anchor with no file is `missing`. `Portfolio` keeps unknown top-level keys (`portfolio.py:188`, `:232`, `:240`) | `test_cr_p2_1_an_older_build_drops_the_marker_then_the_file_goes_missing`, `…a_backup_alone_is_an_anchor`, `…an_off_site_backup_is_an_anchor`, `test_sec_p2_2_an_unknown_top_level_key_survives_a_save` |
+| 3 | SEC P2-1: an erratum added mid-tenure is overwritten | `_shadow_ledger_refresh` (`core.py:841`) compares inode, size and mtime_ns before each pass and each write. With the same id it re-reads and takes over the errata; otherwise `read` or `missing`, with no write | `test_sec_p2_1_an_erratum_added_while_the_holder_runs_survives_its_next_write`, `test_sec_p2_1_a_file_replaced_under_the_holder_is_never_written_over[another id,unreadable,deleted]` |
+| 4 | SEC P2-3, CR P3-3: the writer writes what the reader refuses | `ledger_merge(…, refused)` (`calibration.py:1121`) checks each new record and leaves out and counts failures (`ledger.refused`, `SH_LEDGER_REFUSED`). `_shadow_ledger_write` (`core.py:871`) parses the text back before `write_atomically` | `test_sec_p2_3_…[65-character symbol, lowercase direction, NaN rr]`, `test_cr_p3_3_what_is_written_is_first_read_back` |
+| 5 | CR P3-1: writes after stop or a lock handover | `_may_write_shadow` (`core.py:689`) is checked before the anchors, before the file and before publishing | `test_cr_p3_1_…[stop, lock lost]` |
+| 6 | CR P3-2: crash window between marker and file | The empty file is written right after the anchors in `_shadow_ledger_open` (`core.py:700`). The 10-minute rule stays, now only for an anchor that counts nothing | `test_cr_p3_2_the_empty_file_is_written_with_the_anchors`, `test_l15_a_young_marker_…[±1 s]`, `test_l15_a_young_marker_that_counts_records_is_missing_not_remade` |
+| 7 | CR P3-4: a constants key change makes the file unreadable | `_check_constants` (`calibration.py:1038`) type-checks a mapping; a key change shows as a `constants` mismatch | `test_cr_p3_4_…[added, removed]` |
+| 8 | CR P3-5: the warning line shows for an unrecorded look | `_sh_warnings` uses `_sh_shown` (`ui/app.py:1205`) | `test_cr_p3_5_no_left_out_warning_for_a_look_that_is_not_a_result` |
+| 9 | CR P3-6, SEC P3-5: environment leaks into tests | `isolated_state` clears `SONAR_BACKUP_DIR` and `SONAR_DATA` (`tests/conftest.py:205-209`) | `test_cr_p3_6_isolated_state_clears_the_data_and_backup_variables` |
+| 10 | SEC P3-1: errata cost and screen size unbounded | Errata indexed once (`calibration.py:1213`) and capped at 1,000 (`:882`). Members are sized by the look. The window shows 5 errata plus a count, and at most 3 mismatches and looks | `test_sec_p3_1_errata_and_members_are_bounded` |
+| 11 | SEC P3-2: the read follows symlinks and special files | `_read_regular` (`core.py:158`): `O_NOFOLLOW \| O_NONBLOCK`, `S_ISREG` only, at most limit + 1 bytes read | `test_sec_p3_2_…[symlink, fifo, directory]` |
+| 12 | SEC P3-3: a restored backup drops recorded looks | Marker and sidecar carry `looks` / `entries` counts (`calibration.ledger_anchor`, :926), updated after each write. A file with fewer is `LedgerBehindError` (:898), with the line `SH_LEDGER_BEHIND` | `test_sec_p3_3_a_restored_copy_behind_the_anchors_is_refused` |
+| 13 | SEC P3-4: the guard is case-sensitive | `_folded` (NFD + casefold) in `refuse_live_data` (`tests/conftest.py:53-80`) | `test_l18_sec_p3_4_any_letter_case_…` (2 cases) |
+| 14 | SEC P3-7: a recorded verdict is trusted as written | `_check_look` (`calibration.py:996`) enforces n = `SHADOW_LOOKS[k-1]`, crossed ⇒ \|z\| ≥ boundary and robust when filled, `design_closed` false. `_check_looks_order` (:1029) allows no look after a crossing. The UI requires `crossed is True` (`ui/app.py:1057`) | `test_sec_p3_7_a_recorded_verdict_must_follow_from_its_figures` (7 cases), `test_sec_p3_7_only_a_crossed_that_is_true_is_a_crossing` |
+| 15 | Domain r2 P2-1, P2-2, P3-1, P3-2, P3-3 | `SH_EXTREMES` (:566), `SH_ERRATUM` with look(s) and corrected R (:702), `SH_LOOK_BLOCKED` (:562), `SH_CAVEAT_NOT_ROBUST` (:549), `SH_LOOK_NOT_ROBUST_NA` and `SH_ROW_PAST_LOOK_NA` (:541). Domain P3-4 not taken, as instructed | `test_the_not_robust_look_line_and_the_extremes`, `test_l16_…` (exact erratum text), `test_l6_…` (blocked line), `test_domain_r2_p3_3_…` |
+| 16 | CR P3-7: Build note 14 is wrong | Corrected in the spec; fix loop 1 is recorded as Build note 16 | — |
+| — | SEC P3-6: no fsync before rename | Deferred to `TODO.md` (P3 security), as instructed | — |
+
+**Probes:**
+- The code reviewer's probes, rerun against the fix:
+  - The foreign ledger is now `read` / `LedgerIdError`.
+  - "Marker dropped, then file lost" is now `missing`.
+  - The blocked line says "not shown as a result while the record cannot be used", and no
+    left-out warning appears.
+  - The "stop" probe still finds a marker and a file. They are made when the record is opened,
+    before the fetch it interrupts (CR P3-2). Nothing after the stop is written or published
+    (`test_cr_p3_1`).
+- The security probes were not rerun as written: they need the repo's conftest fixtures. Each
+  scenario is a test above instead.
+
+**Existing tests changed in this loop:**
+- L-1 and L-15: the readout's `ledger` now carries `refused: 0`.
+- L-6: the blocked line's wording (domain r2 P3-1).
+- L-15 young marker: rebuilt as a crash after the anchors, ±1 s around 600 s. The old version
+  deleted a file holding records, and that is `missing` under SEC P3-3.
+- `test_a_ledger_with_no_marker_is_taken_as_this_books`: the marker now includes the counts.
+- Backup test: the day's copy is the empty file written at creation.
+- L-16: the exact erratum wording.
+- Marker parse: the counts default to 0.
+- `test_the_not_robust_look_line_and_the_extremes`: the new extremes and caveat wording.
+- L-4: random looks now have the size their key says, as the reader requires.
+- L-17: also asserts that merging records nothing for the `no_price` member and refuses nothing.
+- `test_shadow_engine.py`: the sidecar and the day's backup are now among the shadow files.
+
+**Mutation check (fix loop 1):**
+- 18 new mutants, all killed (scratchpad `build/mut/run2.py`, `result2.txt`).
+- "Sidecar ignored" first survived: a backup also anchored that case. The test now removes the
+  backups, so the sidecar alone has to anchor the record, and the mutant is killed.
+- The 22 original mutants were rerun after updating 4 patterns for the new code. All are killed.
+- The original L-17 mutant (`no_price` written as final) is also stopped by the merge's own
+  check, which refuses it. L-17 now asserts that nothing is refused, so the mutant is killed.
+
+**Results on `49e6da4`.** Every run used `TEST_BUDGET_S=900`; output is in the session
+scratchpad as `build/fl1-*.txt`. The load average was about 150.
+
+| Run | Exit | Result |
+|---|---|---|
+| Native | **0** | 2,520 passed, 3 skipped, 61 deselected (2:38) |
+| Offscreen (`QT_QPA_PLATFORM=offscreen`) | **0** | 2,520 passed, 3 skipped, 61 deselected (4:01) |
+| Slow (`-m slow`) over `test_calibration`, `test_shadow_ledger`, `test_shadow_engine` and `test_shadow_ui` | 0 | 31 passed (V-12 slow, end-to-end slow, L-14), 4:12 |
+
+The suite size is 2,523 (`TESTPLAN.md`, `TESTING.md`, `README.md`, `static/testplan.html`).
+ruff found nothing new in the changed files: `core.py` has 2 findings, `portfolio.py` 1 and
+`ui/app.py` 5, the same counts as before the loop.

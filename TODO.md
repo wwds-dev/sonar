@@ -113,17 +113,22 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P2` `testing` `@ai` **Run `./run-tests.sh tests/ -m slow` at release** and on any change to the
       shadow's gate code (V-12 at 2,000 and 20,000 books, about a minute). The default suite runs a cheaper
       version.
+- [ ] `P3` `security` `@ai` **No fsync before the atomic rename** (security P3-6,
+      `docs/audit/shadow-ledger-security-engineer.md`; pre-existing, every state file through
+      `paths.write_atomically`): after a power loss a renamed file can be empty. Flush and
+      `F_FULLFSYNC` before `replace`, then fsync the directory. Deferred by the orchestrator in shadow
+      ledger fix loop 1.
 - [x] `P2` `research` `@me` ~~Persist the shadow's decided outcomes and evaluated looks across restarts?~~
       **Decided 2026-10-12** (ADR 0002 Amendment 1, spec `docs/specs/shadow-ledger.md`): a write-once
       ledger with a marker in `portfolio.json`. Built; see the shadow-ledger item below.
 - [x] `P2` `research` `@me` ~~Shadow exclusions select by outcome speed~~ **Decided 2026-10-12**
       (Amendment 1, G2 (a)): a look is held for a missing price for 28 days and 3 tried days, and a crossing
       must survive the extreme fills of what is still left out. Built; see the shadow-ledger item below.
-- [ ] `P1` `research` `@ai` **Shadow ledger: Build done 2026-10-12, before the first T on 2026-10-20**
-      (spec `docs/specs/shadow-ledger.md`, engineer report `docs/audit/shadow-ledger-engineer.md`). Next:
-      Review (code-reviewer and domain-finance), Verify (L-1 to L-18, `-m slow` for L-14), Secure (a new
-      file write under `SONAR_DATA`, a new `portfolio.json` key, parsing a hand-editable file), Document
-      (manual §10, CHANGELOG), Release (owner gate). It must be live before look 1 is due.
+- [ ] `P1` `research` `@ai` **Shadow ledger: Build done 2026-10-12, review round 1 fixed 2026-10-13
+      (fix loop 1), before the first T on 2026-10-20** (spec `docs/specs/shadow-ledger.md`, engineer
+      report `docs/audit/shadow-ledger-engineer.md`). Next: re-review of fix loop 1, Verify (L-1 to L-18,
+      `-m slow` for L-14), Document (manual §10, CHANGELOG), Release (owner gate). It must be live before
+      look 1 is due.
 - [ ] `P3` `research` `@me` **Shadow rule 1 before rule 2 is not a stopping rule** (model-validator P3-4): a
       missed stop-crossing daily close is overridden if the book later books a TARGET before the cut. Tiny
       bias; a fix changes ADR 0002 §4.
