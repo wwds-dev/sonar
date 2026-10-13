@@ -27,25 +27,33 @@ within its own window), which is 39.46% at the shipped 1.5:1, not the untimed
 data that fewer than two horizons of bars follow it is not compared at all,
 only counted: over a window that short the driftless baseline's thin tail
 calls a far target nearly unreachable, and real prices, which jump, reach it
-far more often. Equal means no edge, and that is the
-honest null result. Higher is a reason to look closer. It can also come out
-lower, which the code reports too — without reading it as worse than a coin
-flip, since a direction picked at random can land that far below as well.
+more often (:data:`MIN_WINDOW_HORIZONS`). Inside the error bar the run is not
+shown to differ from the prediction, which is not the same as no difference;
+that is the honest null result. Outside it, above or below, is a reason to
+look closer, not a finding, and only when the direction randomisation below
+agrees; otherwise the run is "not told apart from chance". Below is never read
+as worse than a coin flip, since a direction picked at random can land that
+far below as well.
 
 Some runs get the numbers and no verdict. Above a 120-day horizon an
 instrument's own trend dominates the comparison, so even a coin-flip direction
 can read above the prediction; a single asset class tends to move together on
 one trend, so only the whole watchlist is judged; under 100 compared setups, or
-setups entered on under 20 different days, there is too little to judge; and
-setups entered within five horizons of each other are mostly one market move
+setups entered on under 20 different days, there is too little to judge;
+setups entered within five horizons of each other are mostly one market move;
+and setups that fall in under eight separate stretches of four holding periods,
+across every class at once, are too few separate readings
 (:data:`MAX_VERDICT_HORIZON`, :data:`WHOLE_WATCHLIST`,
 :data:`MIN_VERDICT_TRIALS`, :data:`MIN_VERDICT_DATES`,
-:data:`MIN_VERDICT_SPAN_HORIZONS`). A run without a verdict claims no finding
-on attention or on the score's components either. The error bar a verdict is
-read against counts the setups entered on one day, across instruments, as
-one reading, and lets it run on through the days their holds share
-(:func:`_dk_se`): instruments move together, and momentum points a whole
-class the same way at once.
+:data:`MIN_VERDICT_SPAN_HORIZONS`, :data:`MIN_VERDICT_CLUSTERS`). A run without
+a verdict claims no finding on attention or on the score's components either.
+The error bar a verdict is read against counts the setups entered on one day,
+across instruments, as one reading, and lets it run on through the days their
+holds share (:func:`_dk_se`): instruments move together, and momentum points a
+whole class the same way at once. A verdict also needs the run's directions to
+read further from the prediction than directions picked at random for whole
+stretches of time (:func:`_randomisation`, docs/adr/0003); outside the bar
+without that, the run is "not told apart from chance".
 
 What this does *not* test
 -------------------------
@@ -108,7 +116,7 @@ MAX_VERDICT_HORIZON = 120
 # No verdict on fewer compared setups than this, or from fewer distinct entry
 # dates (owner decision P1-B). Near the floor's edge a run can compare a few
 # dozen setups entered within days of each other — one market move read as
-# many — and still clear two standard errors (model-validator r2, P1-B).
+# many — and still land outside its error bar (model-validator r2, P1-B).
 MIN_VERDICT_TRIALS = 100
 MIN_VERDICT_DATES = 20
 # No verdict unless the compared entries span at least this many horizons
@@ -131,6 +139,62 @@ _TRADING_DAYS_PER_YEAR = 252
 # Commodity at h ≤ 120, the whole watchlist stayed clean (model-validator r3,
 # P1-C). The caller says which universe it ran; it is never inferred.
 WHOLE_WATCHLIST = "all"
+# No verdict on these ranges (owner, Lab 10y, 2026-10-12; domain pass 4
+# P2-1). Over ten years of today's list a direction fixed per instrument
+# landed outside the bar more often than the rate the verdicts quote (9.11%):
+# a coin fixed per symbol read 10–12.5% at 10y h20–h60 held out and 22.5–31%
+# on the r5 bars, and always long read "beats" at 10y h20 (validator r7
+# P1-2; domain pass 5 P3-1: not "far more often", which only the r5 bars
+# show). Two causes: each instrument keeps its own trend over the years,
+# and the list holds only today's survivors (domain pass 5 P3-2). Swapping
+# whole stretches of time cannot see either, so a run over one is withheld
+# ("drift"), and range_for_horizon never picks one. The caller says which
+# range it read.
+NO_VERDICT_RANGES = ("10y",)
+# The longest range a verdict is given on. The tips that point the Lab's
+# reader at a longer range stop here, and on a run already this long they
+# name only the shorter horizon (owner, after the fix-loop-2 review).
+LONGEST_JUDGED_RANGE = "5y"
+
+# The direction randomisation (owner decisions at the Build gate, 2026-10-12;
+# docs/adr/0003). A verdict needs Δ outside its error bar *and* the run's
+# directions to read further from the prediction than directions swapped for
+# the opposite ones over whole stretches of time: one stretch is a block of
+# MAX_HOLD_MULTIPLE horizons, in calendar days, across every asset class at
+# once, its edges anchored at Unix day 0. With the bar alone, a direction
+# picked at random for a whole class over a stretch of days got a verdict on
+# 11.4% of 2,040 judged real-bar runs (model-validator r6). The gate can only
+# take a verdict away. Under MIN_VERDICT_CLUSTERS stretches the run is
+# withheld ("few_clusters"): at 8 the smallest one-sided share is 1/256.
+MIN_VERDICT_CLUSTERS = 8
+# The gate: the randomisation p in the direction of Δ (twice its tail) must be
+# under this, so "beats" alone is a one-sided 2.5% test.
+RANDOMISATION_ALPHA = 0.05
+
+# The share of meaningless runs that still get a verdict either way, as the
+# beats and below sentences quote it (measure 9; owner, after validator r7,
+# 2026-10-12). The worst held-out figure across measures 1–2: one direction
+# per class held for eight holding periods, 105 of 1,152 judged held-out runs
+# = 9.11% [7.6–10.9], 52.9% of runs withheld (held-out manifest 404f5a77…;
+# docs/audit/sign-randomisation-verdicts-model-validator-r7.md). The worst
+# setting band for that placebo read about 1 in 5 (5y, h30–59). Any verdict,
+# not beats alone (beats alone was 5.12%): the owner picked the pooled figure.
+# A test fails while either holds a "{" (tests/test_backtest.py).
+CHANCE_VERDICT_RATE = "about 1 run in 10"
+CHANCE_VERDICT_RATE_WORST = "about 1 in 5"
+# The residual the randomisation cannot see, named in every headline sentence
+# that reads outside the bar (owner, after validator r7 P1-2): swapping whole
+# stretches of time leaves a direction fixed per instrument where it was.
+# Worded to fit beats, below and not told apart alike, and not as a tip
+# (code review P3-3, domain P3-1).
+# Both causes are named, not survivorship alone: a coin fixed per symbol
+# reads outside the bar from each instrument's own lasting trend too (domain
+# pass 5 P3-2).
+FIXED_PER_INSTRUMENT = ("A direction fixed per instrument, such as always "
+                        "long, can also land outside the bar, because each "
+                        "instrument keeps its own trend over the years and "
+                        "the list holds only today's survivors; this check "
+                        "cannot see that.")
 
 # What attribution says of every measured component on a run with no verdict.
 NOT_JUDGED = ("Not judged: this run gets no verdict, so no component of the "
@@ -341,14 +405,48 @@ def min_verdict_span_days(horizon_days: int) -> int:
     return -(-need // _TRADING_DAYS_PER_YEAR)
 
 
+# The shortest range whose compared setups fall in at least
+# MIN_VERDICT_CLUSTERS stretches, by horizon (assumption A15, as amended by
+# the owner after validator r7, 2026-10-12): from the measured map of
+# stretches per range and horizon (momentum, step 3, whole watchlist),
+# judged up to 2y h15 and 5y h40, with a margin. Never ten years: there a
+# direction fixed per instrument, such as always long on today's list, read
+# "beats" (validator r7 P1-2), so the Terminal's 60-day line is not judged.
+_RANGE_FOR_CLUSTERS = ((10, "2y"), (30, "5y"))
+
+
 def range_for_horizon(horizon_days: int) -> str:
-    """The Yahoo range a backtest at this horizon needs: two years unless one
-    horizon of history before the first entry and :data:`MIN_WINDOW_HORIZONS`
-    after the last, plus the lookback, run past two years of bars — then
-    five. The 250-day "This year" profile on two years compared nothing
-    (code-review r2, P2-1)."""
+    """The Yahoo range the Terminal's backtest reads at this horizon.
+
+    The shorter of two and five years whose setups fall in enough separate
+    stretches for a verdict (:data:`MIN_VERDICT_CLUSTERS`): two years up to
+    10 days, five up to 30 (A15, amended). Without it the 20-day profile
+    would always be withheld for too few stretches. Past 30 days the
+    Terminal shows the numbers without a verdict, on the range that compares
+    anything at all: two years unless one horizon of history before the
+    first entry and :data:`MIN_WINDOW_HORIZONS` after the last, plus the
+    lookback, run past two years of bars — then five. The 250-day "This
+    year" profile on two years compared nothing (code-review r2, P2-1)."""
+    for longest, rng in _RANGE_FOR_CLUSTERS:
+        if horizon_days <= longest:
+            return rng
     need = MIN_LOOKBACK + (1 + MIN_WINDOW_HORIZONS) * horizon_days
     return "2y" if need <= _TWO_YEARS_BARS else "5y"
+
+
+def randomisation_block_days(horizon_days: int) -> int:
+    """The calendar days of one stretch the direction randomisation swaps as
+    a whole: :data:`MAX_HOLD_MULTIPLE` horizons of trading days at 365/252,
+    rounded up per horizon — 32 at 5 days, 116 at 20, 348 at 60. A hold
+    lasts at most that long, so it reaches at most into the next stretch."""
+    return MAX_HOLD_MULTIPLE * math.ceil(horizon_days * 365
+                                         / _TRADING_DAYS_PER_YEAR)
+
+
+def _block_of(t: float, block_days: int) -> int:
+    """The stretch a setup entered at ``t`` (seconds, UTC) belongs to: by its
+    UTC entry date, edges anchored at Unix day 0, never at the sample."""
+    return int(t // 86400) // block_days
 
 
 def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
@@ -373,7 +471,15 @@ def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
     rows that are not: those that touched neither barrier in time
     (``outcome: "TIMEOUT"``) and the short-window ones. Both carry
     ``predicted: None`` — so a consumer that forgets to filter them fails
-    loudly instead of quietly counting them."""
+    loudly instead of quietly counting them.
+
+    Every row also says how the opposite direction would have gone from the
+    same bar, volatility and window (``opp_outcome``, ``opp_bars_held``, and
+    ``opp_predicted``, ``None`` if it timed out): the direction randomisation
+    swaps them in (:func:`_randomisation`). The opposite is never a row of
+    its own. A short-window row carries ``None`` in all three and is not
+    resolved the other way. A caller that forces ``build_plan`` to one side
+    forces the opposite plan too, so it must pair the rows itself."""
     from . import events as events_mod
     from .research import earnings as earnings_mod
 
@@ -408,12 +514,25 @@ def run_symbol(bars: Bars, horizon_days: int, step: int = 3,
         short = horizons < MIN_WINDOW_HORIZONS
         if (outcome == "TIMEOUT" or short) and not keep_timeouts:
             continue                                 # not a comparable result
+        # The same driftless chance for either direction: the barriers sit
+        # at the same distances and the window is the same.
+        q_hit = (None if short else
+                 scoring.resolved_hit_probability(k_target, k_stop, horizons))
+        opp_outcome = opp_held = opp_predicted = None
+        if not short:
+            opp = scoring.build_plan(
+                price, vol, horizon_days,
+                "SHORT" if plan.direction == "LONG" else "LONG",
+                k_target=k_target, k_stop=k_stop)
+            opp_outcome, opp_held = _resolve(bars, i, opp.direction,
+                                             opp.target, opp.stop, max_bars)
+            opp_predicted = None if opp_outcome == "TIMEOUT" else q_hit
         row = {"symbol": bars.symbol, "t": bars.time[i],
                "direction": plan.direction, "momentum": mom,
                "vol": vol, "outcome": outcome, "bars_held": held,
-               "predicted": (None if outcome == "TIMEOUT" or short else
-                             scoring.resolved_hit_probability(
-                                 k_target, k_stop, horizons)),
+               "predicted": None if outcome == "TIMEOUT" else q_hit,
+               "opp_outcome": opp_outcome, "opp_bars_held": opp_held,
+               "opp_predicted": opp_predicted,
                "rr": plan.rr, "k_target": k_target, "k_stop": k_stop,
                "window": window, "horizons": horizons,
                "truncated": window < max_bars, "short_window": short,
@@ -554,10 +673,11 @@ def _implied_drift(trials: list[dict], hit: float, predicted: float,
 
 
 def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
-              timeouts: list[dict] | tuple = (),
+              timeouts: list[dict] | tuple | None = None,
               short_windows: list[dict] | tuple = (),
               horizon_days: int | None = None,
-              universe: str | None = None) -> dict:
+              universe: str | None = None,
+              rng: str | None = None) -> dict:
     """Realised hit rate against what the barrier maths predicted for a
     market with nothing in it, given each setup resolved in its own window.
 
@@ -574,13 +694,36 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
     :data:`MIN_VERDICT_TRIALS` setups entered on at least
     :data:`MIN_VERDICT_DATES` distinct days, counted from each trial's entry
     time ``t`` (UTC; a trial without one counts no date), and when those
-    entry dates span at least :func:`min_verdict_span_days`. Otherwise
+    entry dates span at least :func:`min_verdict_span_days`, and when the
+    compared setups fall in at least :data:`MIN_VERDICT_CLUSTERS` stretches
+    (:func:`randomisation_block_days`), and when the range ``rng`` the bars
+    were read over is not one of :data:`NO_VERDICT_RANGES`. Otherwise
     ``significant`` is False and ``withheld`` says why — ``"horizon"``,
-    ``"single_class"``, ``"too_few"`` or ``"span"``, the first that applies
-    in that order: the two a reader changes by picking another setting come
-    before the two that depend on the sample. A hand-built sample without a
-    ``horizon_days`` or ``universe`` (``None``) is not held to the horizon,
-    span or universe rules."""
+    ``"single_class"``, ``"drift"``, ``"too_few"``, ``"span"``,
+    ``"unpaired"`` or ``"few_clusters"``, the first that applies in that
+    order: the three a reader changes by picking another setting come
+    before those that depend on the sample. A hand-built sample without a
+    ``horizon_days``, ``universe`` or ``rng`` (``None``) is not held to the
+    horizon, span, universe or range rules, and one without a ``universe``
+    is not held to the stretch count or the randomisation either.
+
+    A judged run reads ``verdict_state``: ``"within"`` its error bar;
+    ``"beats"`` or ``"below"`` when Δ is outside it (``outside_bar``) and
+    the direction randomisation agrees (``randomisation["p_tail"]`` under
+    :data:`RANDOMISATION_ALPHA`); ``"unconfirmed"`` when Δ is outside the bar
+    and the randomisation does not agree — an internal value, which users
+    read as "not told apart from chance". A withheld run reads
+    ``"withheld"``. ``significant`` is ``verdict_state`` in beats or below.
+
+    A run over a ``universe`` is swapped whole, so it needs every compared
+    row's opposite outcome (:func:`run_symbol`) and entry time, a
+    ``horizon_days``, and its ``timeouts`` passed (an empty list when none
+    timed out): a timeout one way can resolve the other, and a sample
+    without them would be swapped on the setups its own directions resolved.
+    Missing any of these, it is withheld ``"unpaired"`` (fail closed)."""
+    # None, not (): a run over a universe must say it passed its timeouts.
+    paired_input = timeouts is not None
+    timeouts = () if timeouts is None else timeouts
     n_timeout = len(timeouts)
     n_data_end = sum(1 for t in timeouts if t.get("truncated"))
     if not trials:
@@ -632,7 +775,9 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
     # date across instruments with a Bartlett lag of one average hold. On
     # correlated synthetic walks that brings the clustered coin's verdicts
     # from 18.9% to 7.5% of runs: closer to the 4.6% a right 2-se bar gives,
-    # not on it (tests/test_backtest.py, the clustered coin).
+    # not on it — which is why a verdict also needs the direction
+    # randomisation below (docs/adr/0003; the rate tests in
+    # tests/test_backtest.py).
     lag_days = _dk_lag_days(avg_held)
     se_dk = _dk_se(trials, lag_days)
     se = max(se, se_dk)
@@ -645,6 +790,8 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
         withheld = "horizon"
     elif universe is not None and universe != WHOLE_WATCHLIST:
         withheld = "single_class"
+    elif rng in NO_VERDICT_RANGES:
+        withheld = "drift"
     elif n < MIN_VERDICT_TRIALS or len(days) < MIN_VERDICT_DATES:
         withheld = "too_few"
     elif (horizon_days is not None
@@ -652,7 +799,34 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
         withheld = "span"
     else:
         withheld = None
-    significant = withheld is None and abs(delta) > 2 * se
+    # The direction randomisation, for a run over a stated universe; a
+    # hand-built sample without one is not held to it [A11].
+    randomisation = None
+    if universe is not None:
+        block_days = (randomisation_block_days(horizon_days)
+                      if horizon_days else None)
+        swappable = list(trials) + list(timeouts)
+        unpaired = (not paired_input or not block_days
+                    or not _all_paired(swappable))
+        clusters, lines = (([], []) if unpaired else
+                           _direction_clusters(swappable, block_days))
+        if withheld is None and unpaired:
+            withheld = "unpaired"
+        elif withheld is None and len(clusters) < MIN_VERDICT_CLUSTERS:
+            withheld = "few_clusters"
+        randomisation = _randomisation(clusters, lines, horizon_days,
+                                       block_days, judged=withheld is None)
+    outside_bar = withheld is None and abs(delta) > 2 * se
+    if withheld:
+        verdict_state = "withheld"
+    elif not outside_bar:
+        verdict_state = "within"
+    elif (randomisation is None
+          or randomisation["p_tail"] < RANDOMISATION_ALPHA):
+        verdict_state = "beats" if delta > 0 else "below"
+    else:
+        verdict_state = "unconfirmed"
+    significant = verdict_state in ("beats", "below")
     symbols = {t["symbol"] for t in trials if t.get("symbol")}
 
     # Each trial at its own ratio, not the shipped constant: a run at 3:1
@@ -691,6 +865,9 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
         "se_dk": round(se_dk, 4),
         "dk_lag_days": lag_days,
         "significant": significant,
+        "outside_bar": outside_bar,
+        "verdict_state": verdict_state,
+        "randomisation": randomisation,
         "implied_edge_sigma": round(edge, 4),
         "expectancy_r": round(expectancy, 4),
         "expectancy_vs_null_r": round(vs_null, 4),
@@ -712,10 +889,83 @@ def summarise(trials: list[dict], rr: float | None = None, step: int = 1,
         "entry_span_horizons": (round(_span_horizons(span_days, horizon_days), 2)
                                 if horizon_days else None),
         "withheld": withheld,
-        "verdict": (_withheld_verdict(withheld, horizon_days, n, len(days),
-                                      universe=universe, span_days=span_days)
-                    if withheld else _verdict(delta, se, significant)),
+        "verdict": (_withheld_verdict(
+                        withheld, horizon_days, n, len(days),
+                        universe=universe, span_days=span_days,
+                        clusters=(randomisation or {}).get("q", 0), rng=rng)
+                    if withheld else _verdict(delta, se, verdict_state)),
     }
+
+
+def _all_paired(rows: list[dict]) -> bool:
+    """Whether every compared row carries its opposite outcome and an entry
+    time, as :func:`_direction_clusters` needs; a short window is skipped."""
+    return all(t.get("opp_outcome") is not None and t.get("t") is not None
+               for t in rows if not t.get("short_window"))
+
+
+def _direction_clusters(rows: list[dict], block_days: int | None
+                        ) -> tuple[list[tuple[tuple[float, int],
+                                              tuple[float, int]]], list[str]]:
+    """The compared setups in stretches, as the direction randomisation reads
+    them, and one content line per setup for its seed.
+
+    Each stretch (:func:`_block_of`, across every class) carries the sum of
+    win − predicted over its resolved setups and their count, as the run took
+    them and with each setup's direction swapped for the opposite one
+    (``opp_outcome``, ``opp_predicted``); a timeout adds nothing to either.
+    The sums go through :func:`math.fsum`, so the row order does not matter.
+    A stretch where nothing resolved either way is not counted. A compared
+    row without its opposite outcome or an entry time, or a run without a
+    stretch length, gives no stretches at all (fail closed): a run that
+    cannot be swapped whole is not judged."""
+    if not block_days:
+        return [], []
+    by_block: dict[int, tuple[list[float], list[float]]] = {}
+    lines = []
+    for t in rows:
+        if t.get("short_window"):
+            continue
+        opp = t.get("opp_outcome")
+        if opp is None or t.get("t") is None:
+            return [], []
+        kept, swapped = by_block.setdefault(_block_of(t["t"], block_days),
+                                            ([], []))
+        if t["outcome"] != "TIMEOUT":
+            kept.append((1.0 if t["outcome"] == "TARGET" else 0.0)
+                        - t["predicted"])
+        if opp != "TIMEOUT":
+            swapped.append((1.0 if opp == "TARGET" else 0.0)
+                           - t["opp_predicted"])
+        lines.append(f'{t.get("symbol")}|{t["t"]}|{t.get("direction")}|'
+                     f'{t["outcome"]}|{opp}')
+    clusters = [((math.fsum(k), len(k)), (math.fsum(sw), len(sw)))
+                for _b, (k, sw) in sorted(by_block.items()) if k or sw]
+    return clusters, lines
+
+
+def _randomisation(clusters: list, lines: list[str],
+                   horizon_days: int | None, block_days: int | None,
+                   judged: bool) -> dict:
+    """The direction randomisation's reading of a run (docs/adr/0003).
+
+    Every pattern of swapping whole stretches for the opposite directions —
+    all 2^q of them up to 12 stretches, else
+    :data:`sonar.randomisation.B_DRAWS` drawn from a seed of the run's own
+    content — is scored with the stretch-clustered t of the gap, and
+    ``p_tail`` is twice the share that reads at least as far as the run in
+    the direction of Δ (ties count against the run). ``p`` is the
+    equal-tailed p, kept as a field and not shown. Computed only for a
+    judged run; a withheld one carries its stretch count ``q`` alone."""
+    from . import randomisation as rnd
+    out = {"p": None, "p_tail": None, "q": len(clusters), "draws": 0,
+           "method": None, "block_days": block_days, "seed": None}
+    if judged:
+        seed = rnd.content_seed("headline", horizon_days, lines)
+        r = rnd.direction_p(clusters, seed)
+        out.update(p=r["p"], p_tail=r["p_tail"], draws=r["draws"],
+                   method=r["method"], seed=seed)
+    return out
 
 
 def _span_horizons(span_days: int, horizon_days: int) -> float:
@@ -737,8 +987,40 @@ def _classes(symbols: set[str]) -> dict[str, int]:
 
 def _withheld_verdict(why: str, horizon_days: int | None, n: int,
                       dates: int, *, universe: str | None = None,
-                      span_days: int = 0) -> str:
-    """Why a run is shown without a verdict. The numbers stay on screen."""
+                      span_days: int = 0, clusters: int = 0,
+                      rng: str | None = None) -> str:
+    """Why a run is shown without a verdict. The numbers stay on screen.
+    ``rng`` is the range the bars were read over: the span and few-stretches
+    tips offer a longer one only where :func:`offers_longer_range`."""
+    if why == "drift":
+        # The range, which the Lab's reader picks; the Terminal never reads
+        # one (range_for_horizon). The figure it outruns is the one the
+        # beats and below sentences quote (owner, Lab 10y).
+        # The held-out figure (10-12.5%) is only said to be above the
+        # chance rate; the r5 one is quoted, at the horizons it was measured
+        # at, h20 and h60 (code review P3-2, P3-3). Not "far more often"
+        # (domain pass 5 P3-1), and both causes (P3-2).
+        return ("No verdict on ten years. Over ten years of today's list, a "
+                "direction fixed per instrument, such as always long, lands "
+                "outside the bar more often than the chance rate a verdict "
+                f"quotes ({CHANCE_VERDICT_RATE}); on one set of past bars "
+                "about 1 in 4 at 20- to 60-day horizons, because each "
+                "instrument keeps its own trend over the years and the list "
+                "holds only today's survivors; this check cannot see that. "
+                "So ten-year runs are not judged; five years or less can be. "
+                "The numbers are shown without a verdict, before costs, from "
+                "one replay of past prices.")
+    if why == "few_clusters":
+        return few_clusters_verdict(clusters, horizon_days, rng=rng)
+    if why == "unpaired":
+        # Not the range or the horizon: the sample itself cannot be swapped
+        # whole, so no setting the reader picks would fix it (code review
+        # P3-3, validator r7 P3-1).
+        return ("No verdict: the check against directions picked at random "
+                "needs every setup's opposite direction, its entry time, the "
+                "horizon and the setups that ran out of time, and this sample "
+                "lacks some of them. The numbers are shown without one, "
+                "before costs, from one replay of past prices.")
     if why == "single_class":
         return (f"No verdict on {universe} alone. The instruments in one class "
                 "tend to move together on one trend, so a run over a single "
@@ -753,8 +1035,9 @@ def _withheld_verdict(why: str, horizon_days: int | None, n: int,
                 "market move, so a verdict needs them spread over at least "
                 f"{MIN_VERDICT_SPAN_HORIZONS} times the horizon "
                 f"({min_verdict_span_days(horizon_days):,} days; a horizon "
-                "counts trading days). A longer range or a shorter horizon "
-                "spreads them out.")
+                "counts trading days). A shorter horizon spreads them out"
+                + (", or a longer range up to five years."
+                   if offers_longer_range(rng) else "."))
     if why == "horizon":
         return (f"No verdict at a {horizon_days}-day horizon. At horizons this "
                 "long an instrument's own trend dominates the comparison — "
@@ -767,30 +1050,93 @@ def _withheld_verdict(why: str, horizon_days: int | None, n: int,
             "shown without one.")
 
 
-def _verdict(delta: float, se: float, significant: bool) -> str:
-    if not significant:
-        return (f"Realised hit rate is within {2*se*100:.1f} points of the "
-                "barrier model's prediction — no edge detected. This is what "
-                "no edge is supposed to look like.")
+def offers_longer_range(rng: str | None) -> bool:
+    """Whether a tip may point the Lab's reader at a longer range, up to
+    :data:`LONGEST_JUDGED_RANGE`: not from a run already that long, nor from
+    one never judged (:data:`NO_VERDICT_RANGES`). A hand-built sample
+    without a range (``None``) keeps the tip (owner, after the fix-loop-2
+    review)."""
+    return rng not in (LONGEST_JUDGED_RANGE, *NO_VERDICT_RANGES)
+
+
+def few_clusters_verdict(clusters: int, horizon_days: int | None,
+                         terminal: bool = False,
+                         rng: str | None = None) -> str:
+    """The ``few_clusters`` sentence. It names the fix, as the span sentence
+    does: the stretches are a property of the range and the horizon. The
+    Lab's reader picks both; the Terminal's picks only the profile, whose
+    range is :func:`range_for_horizon`'s (domain P3-5). The Lab's longer
+    range stops at five years: ten is never judged (:data:`NO_VERDICT_RANGES`,
+    owner, Lab 10y), and a run over ``rng`` already at five years is pointed
+    at the horizon alone (:func:`offers_longer_range`)."""
+    stretch = (f" of {randomisation_block_days(horizon_days):,} days"
+               if horizon_days else "")
+    if terminal:
+        fix = "A shorter profile gives more."
+    elif offers_longer_range(rng):
+        fix = "A shorter horizon gives more, or a longer range up to five years."
+    else:
+        fix = "A shorter horizon gives more."
+    return ("Too few separate stretches of time, across asset classes, "
+            f"to judge: these setups fall in {clusters} stretch"
+            f"{'' if clusters == 1 else 'es'}{stretch} (four holding "
+            "periods each, every asset class together), and a verdict "
+            f"needs at least {MIN_VERDICT_CLUSTERS}. {fix} The numbers are "
+            "shown without a verdict, before costs, from one replay of past "
+            "prices.")
+
+
+def _chance_caveat() -> str:
+    """What the beats and below sentences say of the rate, read with the
+    constants at call time: the measured figure and its scope, that it is
+    per run, and the residual the randomisation cannot see."""
+    return ("That is not a guarantee: in our tests, directions picked at "
+            "random and held for up to eight holding periods still got a "
+            f"verdict either way {CHANCE_VERDICT_RATE}, and "
+            f"{CHANCE_VERDICT_RATE_WORST} at some settings. That rate is per "
+            "run, so trying many settings makes a chance verdict likely, and "
+            f"nearby settings can disagree. {FIXED_PER_INSTRUMENT}")
+
+
+def _verdict(delta: float, se: float, state: str) -> str:
+    """The sentence for a judged run's ``verdict_state``: within, beats,
+    below, or unconfirmed — the last worded "not told apart from chance",
+    never with its internal name, and never "within"."""
+    if state == "within":
+        # Not "no edge": a gap inside its bar is not shown, which is not the
+        # same as shown to be absent (measure 9).
+        return (f"Before costs, the realised hit rate is within "
+                f"{2*se*100:.1f} points of the barrier model's prediction: "
+                "not shown to differ from the prediction, which is not the "
+                "same as no difference. From one replay of past prices.")
     # The bar is the widest of three, and still not a calibrated 2-se test:
-    # a direction picked at random for a whole asset class landed outside it
-    # on about 1 run in 10 of real prices, against the 1 in 20 "two standard
-    # errors" promises (model-validator r5, P2-A and P2-B; 11.4% of 2,040
-    # judged runs). So the copy names the bar and its measured miss rate, not
-    # a number of standard errors.
+    # alone, a direction picked at random for a whole asset class landed
+    # outside it on 11.4% of 2,040 judged real-bar runs (model-validator r5
+    # and r6). So the copy names the bar, not a number of standard errors,
+    # and a verdict also needs the direction randomisation (docs/adr/0003).
     bar = f"outside its error bar (±{2*se*100:.1f})"
+    if state == "unconfirmed":
+        side = "above" if delta > 0 else "under"
+        return (f"Before costs, {abs(delta)*100:.1f} points {side} the "
+                f"prediction, {bar}, but directions picked at random over "
+                "stretches of time across the watchlist land this far out "
+                "often enough that this is not told apart from chance. "
+                f"{FIXED_PER_INSTRUMENT} From one replay of past prices.")
+    # "beats" and "below" carry the sign, and read the same way: the
+    # reading, then the measured chance rate and what it does not cover
+    # (code review P2-2: under the gate "below" is a one-sided 2.5% reading
+    # too, so it no longer says it does not show a worse lean).
     if delta > 0:
-        # "beats" carries the sign, as "below" does.
         return (f"Hit rate beats the prediction by {delta*100:.1f} points, "
-                f"{bar}. That bar is not a guarantee: in our tests on these "
-                "prices, a direction picked at random for a whole asset class "
-                "landed outside it about 1 run in 10. Before costs, from one "
-                "replay of past prices: a reason to look closer, not a "
-                "finding.")
+                f"{bar}, and further above it than directions picked at "
+                "random over stretches of time across the watchlist usually "
+                f"land. {_chance_caveat()} Before costs, from one replay of "
+                "past prices: a reason to look closer, not a finding.")
     return (f"Hit rate is {abs(delta)*100:.1f} points below the prediction, "
-            f"{bar}. A direction picked at random can land this far below "
-            "too, so this does not show the lean is worse than a coin flip. "
-            "Before costs, from one replay of past prices.")
+            f"{bar}, and further below it than directions picked at random "
+            "over stretches of time across the watchlist usually land. "
+            f"{_chance_caveat()} Before costs, from one replay of past "
+            "prices: a reason to look closer, not a finding.")
 
 
 def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
@@ -856,7 +1202,7 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
 
     summary = summarise(trials, step=step, timeouts=timeouts,
                         short_windows=short, horizon_days=horizon_days,
-                        universe=universe)
+                        universe=universe, rng=rng)
     summary["symbols"] = fetched
     # What the longest series fetched could compare at all: the screen's
     # answer to "nothing to compare — so what would work?"
@@ -872,7 +1218,8 @@ def run(symbols: list[str], horizon_days: int = 5, rng: str = "2y",
     summary["news_verdict"] = _news_verdict(summary["attention_buckets"],
                                             withheld)
     summary["timing"] = timing(trials)
-    summary["attribution"] = attribute(trials, withheld=withheld)
+    summary["attribution"] = attribute(trials, withheld=withheld,
+                                       horizon_days=horizon_days)
     return summary
 
 
@@ -1010,7 +1357,9 @@ def _quintile_spread(trials: list[dict], key: str) -> dict:
 
 
 def attribute(trials: list[dict], q: float = 0.10,
-              withheld: str | None = None) -> dict:
+              withheld: str | None = None,
+              horizon_days: int | None = None, *,
+              gate: bool = True) -> dict:
     """Which components of the confidence score actually earn their weight.
 
     The score blends four components with fixed weights. This asks, of each one,
@@ -1043,7 +1392,30 @@ def attribute(trials: list[dict], q: float = 0.10,
     :func:`summarise`) every reading is still computed, but no measured
     component is graded: each is ``"not judged"`` and the result carries
     :data:`NOT_JUDGED` as its ``note``.
+
+    A run at a ``horizon_days`` also puts each component's IC through a
+    sign change of its per-stretch scores — the centred products summed over
+    the same stretches as the headline's randomisation, four holding periods
+    across every class (:func:`randomisation_block_days`) — and those
+    ``p_rand`` through Benjamini-Hochberg at ``q`` together. A grade needs
+    both (``confirmed``): a component today's rule would grade KEEP or
+    INVERTED that the randomisation does not confirm is ``"UNCONFIRMED"``, an
+    internal name users read as "not told apart from chance". "Ranks
+    backwards" also needs the blend's ``blend_p_rand`` at the claim bar. The
+    quintile spread keeps its date-clustered bar. A component the
+    randomisation could not test (``p_rand`` None) is not confirmed either:
+    it is ``"UNTESTED"``, read "not tested", and says so. The top-level
+    ``randomisation`` carries ``measured``, the number of components its
+    BH ran over. It does not cover a component that is a fixed trait of
+    each instrument, such as volatility: no time-block randomisation can
+    (docs/adr/0003).
+
+    The randomisation fails closed: a call without a ``horizon_days`` is
+    withheld ``"unpaired"`` and grades nothing, unless it says ``gate=False``
+    — a hand-built sample graded on today's rule alone [A11] (code review
+    P3-5). :func:`run` always passes its horizon.
     """
+    from . import randomisation as rnd
     from .research import stats
 
     resolved = [t for t in trials if t.get("outcome") in ("TARGET", "STOP")]
@@ -1055,7 +1427,14 @@ def attribute(trials: list[dict], q: float = 0.10,
     names = {"c_momentum": "momentum", "c_volatility": "volatility",
              "c_news": "news", "c_catalyst": "catalyst"}
 
-    rows, pvals = [], []
+    # The randomisation runs on a judged run with a known stretch length;
+    # without one it grades nothing, unless the caller opts out (gate=False).
+    if gate and horizon_days is None and not withheld:
+        withheld = "unpaired"
+    gated = gate and not withheld
+    block_days = randomisation_block_days(horizon_days) if gated else None
+
+    rows, pvals, p_rand = [], [], {}
     for key, label in names.items():
         have = [t for t in resolved if t.get(key) is not None]
         if len(have) < 50:
@@ -1070,6 +1449,9 @@ def attribute(trials: list[dict], q: float = 0.10,
         pv = stats.normal_p(_ic_t(xs, ys, [t.get("t") for t in have],
                                   _dk_lag_of(have)))
         spread = _quintile_spread(have, key)
+        if gated:
+            p_rand[len(rows)] = _ic_rand_p(have, xs, ys, block_days,
+                                           label, horizon_days)
         rows.append({"component": label, "n": len(have),
                      "ic": None if ic is None else round(ic, 4),
                      "p": round(pv, 4), "spread": spread,
@@ -1077,11 +1459,21 @@ def attribute(trials: list[dict], q: float = 0.10,
         pvals.append(pv)
 
     keep = stats.benjamini_hochberg(pvals, q=q)
+    # The randomisation's p go through BH together across the measured
+    # components; a component it cannot test (under two stretches, or a
+    # setup without an entry time) counts as p = 1, so it is not confirmed.
+    measured = [i for i, row in enumerate(rows) if row.get("ic") is not None]
+    rand_keep = dict(zip(measured, stats.benjamini_hochberg(
+        [1.0 if p_rand.get(i) is None else p_rand[i] for i in measured],
+        q=q), strict=True)) if gated else {}
     blend = _blend_series(resolved, list(names))
     blend_ic = None if blend is None else stats.spearman(*blend[:2])
     blend_t = None if blend is None else _ic_t(
         *blend[:2], [t.get("t") for t in blend[2]], _dk_lag_of(blend[2]))
-    for row, survives in zip(rows, keep):
+    blend_p_rand = (None if not gated or blend is None else
+                    _ic_rand_p(blend[2], blend[0], blend[1], block_days,
+                               "blend", horizon_days))
+    for i, (row, survives) in enumerate(zip(rows, keep)):
         if row.get("ic") is None:
             continue
         without = _blend_ic(resolved, [k for k in names if names[k] != row["component"]])
@@ -1090,22 +1482,40 @@ def attribute(trials: list[dict], q: float = 0.10,
         row["loo_cost"] = (None if (blend_ic is None or without is None)
                            else round(blend_ic - without, 4))
         row["survives_fdr"] = bool(survives)
+        row["p_rand"] = (None if p_rand.get(i) is None
+                         else round(p_rand[i], 4))
+        row["confirmed"] = bool(survives) and (not gated or rand_keep[i])
         row.update(_verdict_for(row))
         if withheld:
-            row.update(survives_fdr=False, verdict="not judged", why=NOT_JUDGED)
+            row.update(survives_fdr=False, confirmed=False,
+                       verdict="not judged", why=NOT_JUDGED)
     catalyst_measured = any(
         r["component"] == "catalyst" and r.get("ic") is not None for r in rows)
     # "The score as a whole ranks the wrong way round" is a finding, so it
     # takes the components' own test on the blend, at the claim bar, and a
     # run that gets a verdict; otherwise the blend IC is only a number
-    # (code-review r4 P2-1).
+    # (code-review r4 P2-1). The randomisation's p must clear the same bar,
+    # which it can only do at 10 stretches or more (2/2^9 is 0.0039).
     from .calibration import Z_CLAIM
     backwards = (not withheld and blend_ic is not None and blend_ic < 0
-                 and blend_t is not None and blend_t <= -Z_CLAIM)
+                 and blend_t is not None and blend_t <= -Z_CLAIM
+                 and (not gated or (blend_p_rand is not None and
+                                    blend_p_rand <= stats.normal_p(Z_CLAIM))))
+    q_all = (len({_block_of(t["t"], block_days) for t in resolved
+                  if t.get("t") is not None}) if gated else 0)
     out = {"n": len(resolved), "components": rows,
            "blend_ic": None if blend_ic is None else round(blend_ic, 4),
            "blend_ic_t": None if blend_t is None else round(blend_t, 2),
            "blend_ranks_backwards": backwards,
+           "blend_p_rand": (None if blend_p_rand is None
+                            else round(blend_p_rand, 4)),
+           # ``measured``: the components the randomisation's BH ran over.
+           "randomisation": ({"q": q_all,
+                              "draws": (2 ** q_all
+                                        if q_all <= rnd.ENUMERATE_MAX
+                                        else rnd.B_DRAWS),
+                              "block_days": block_days,
+                              "measured": len(measured)} if gated else None),
            "fdr_q": q, "withheld": withheld,
            # Kept as an explicit line either way: an untested component must
            # not read as a passing one, and once tested the note says so.
@@ -1118,6 +1528,31 @@ def attribute(trials: list[dict], q: float = 0.10,
     if withheld:
         out["note"] = NOT_JUDGED
     return out
+
+
+def _ic_rand_p(rows: list[dict], xs: list[float], ys: list[float],
+               block_days: int, label: str,
+               horizon_days: int | None) -> float | None:
+    """The sign-change p of a component's IC: its centred products
+    (x − x̄)(y − ȳ), the numerator :func:`_ic_t` tests, summed per stretch
+    (:func:`_block_of`, every class together) and put through
+    :func:`sonar.randomisation.sign_flip_p`, seeded from the setups and the
+    component's own readings under ``ic|<label>``. ``None`` when a setup has
+    no entry time or there are under two stretches."""
+    from . import randomisation as rnd
+    if any(t.get("t") is None for t in rows):
+        return None
+    mx, my = math.fsum(xs) / len(xs), math.fsum(ys) / len(ys)
+    by_block: dict[int, list[float]] = {}
+    for t, x, y in zip(rows, xs, ys, strict=True):
+        by_block.setdefault(_block_of(t["t"], block_days), []).append(
+            (x - mx) * (y - my))
+    scores = [math.fsum(v) for _b, v in sorted(by_block.items())]
+    seed = rnd.content_seed(
+        f"ic|{label}", horizon_days,
+        (f'{t.get("symbol")}|{t["t"]}|{t.get("direction")}|{t["outcome"]}|'
+         f'{x!r}' for t, x in zip(rows, xs, strict=True)))
+    return rnd.sign_flip_p(scores, seed)["p"]
 
 
 def _live_weight(label: str) -> float:
@@ -1189,6 +1624,9 @@ def _verdict_for(row: dict) -> dict:
                      and abs(spread) > 2 * se and abs(spread) >= SPREAD_KEEP)
     loo = row.get("loo_cost")
     significant = bool(row.get("survives_fdr")) and abs(ic or 0.0) >= IC_KEEP
+    # A row from a run held to the randomisation says whether it agreed; a
+    # hand-built one without the field is graded on today's rule alone.
+    confirmed = row.get("confirmed", True)
 
     def phrase() -> str:
         if spread is None:
@@ -1197,17 +1635,38 @@ def _verdict_for(row: dict) -> dict:
         return (f"the top quintile {verb} the bottom by "
                 f"{abs(spread) * 100:.1f} points")
 
+    if significant and strong_spread and not confirmed:
+        # Never "survives FDR", "confirmed" or "verified", and never the
+        # internal name (domain P3-B): the reading, then why it is not one.
+        backwards = " backwards" if (ic or 0) < 0 else ""
+        if row.get("p_rand") is None:
+            # Untested, not outread: no reshuffle ran (code review P3-4), so
+            # it has a label of its own (domain P3-2).
+            return {"verdict": "UNTESTED",
+                    "why": f"IC {ic:+.3f}: it looks like it ranks setups"
+                           f"{backwards} on this replay, but the check "
+                           "against random stretches of time could not run "
+                           "on it (a setup without an entry time, or under "
+                           "two stretches), so it is not graded. Before "
+                           "costs, from one replay of past prices."}
+        return {"verdict": "UNCONFIRMED",
+                "why": f"IC {ic:+.3f}: it looks like it ranks setups"
+                       f"{backwards} on this replay, but a meaningless "
+                       "reading held for stretches of time ranked them this "
+                       "well often enough that this is not told apart from "
+                       "chance. Before costs, from one replay of past prices."}
     if significant and strong_spread and (ic or 0) < 0:
         return {"verdict": "INVERTED",
                 "why": f"IC {ic:+.3f} is significant and *negative* — {phrase()}. "
                        "Added with a positive weight, this component would push "
                        "the wrong instruments up the board. Worth testing with "
-                       "its sign flipped, or dropped. From one replay of past "
-                       "prices: a reason to look closer, not a finding."}
+                       "its sign flipped, or dropped. Before costs, from one "
+                       "replay of past prices: a reason to look closer, not a "
+                       "finding."}
     if significant and strong_spread:
         return {"verdict": "KEEP",
-                "why": f"IC {ic:+.3f} survives FDR and {phrase()} — from one "
-                       "replay of past prices"}
+                "why": f"IC {ic:+.3f} survives FDR and {phrase()} — before "
+                       "costs, from one replay of past prices"}
     if loo is not None and loo <= 0:
         return {"verdict": "DROP",
                 "why": "removing it does not lower the blend's IC — the weight "

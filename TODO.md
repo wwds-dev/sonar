@@ -73,6 +73,8 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
 
 ### After QA-11 / QA-13 (honest baselines) — recorded 2026-10-12, not built
 
+- [ ] P3 — Offscreen suite teardown: conftest's `pytest_unconfigure` deletes ~814 leftover top-level windows (89 MainWindow, 712 QFrame), which takes 22–47 s offscreen and grows with load. The merged offscreen suite takes 330–400 s under load and once hit the 600 s watchdog at load ~190. Have the window fixtures delete their own windows, or find out why each offscreen window takes ~0.3 s to destroy. Owner: keep 600 s for now (2026-10-13). Source: `docs/specs/sign-randomisation-verdicts.md` §14 loop-3 notes.
+
 From the review, QA and validation rounds in `docs/audit/qa11-qa13-honest-baselines-*` and the
 spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 
@@ -152,7 +154,58 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       ≤ 5%; validator r5 (a), r6 (d)). The same test should calibrate the attribution grades (meaningless
       components graded KEEP/INVERTED on 4.6–7.1%, validator r6 (a)) and settle the component IC's lag (its IC
       z² still runs 1.4–1.5× nominal; QA r6 P2-1, mutant E4). The two acceptance tests are regression guards fitted
-      to their seeds, not proof of the target. Owner signs off the method.
+      to their seeds, not proof of the target. Owner signs off the method. Spec (Define, at the owner gate):
+      `docs/specs/sign-randomisation-verdicts.md`.
+      **Built 2026-10-12** on branch `sign-randomisation-verdicts` (`sonar/randomisation.py`, the gate in
+      `summarise` and `attribute`, `verdict_state`, `few_clusters`, A15 in `range_for_horizon`, rate tests);
+      not merged. Next: Review, then Verify (measures 1–7 and 10 at full scale on the frozen bars and the
+      held-out set). Still open:
+  - [x] `P2` `research` `@ai` **Validator: the worst held-out false-verdict figure** across measures 1–2 (r7,
+        2026-10-12): the 8h per-class coin, 9.11% [7.6–10.9] of 1,152 judged held-out runs, 52.9% withheld.
+        **Owner chose the pooled any-verdict figure** over beats-only (5.12%, "1 in 19"; domain P2-1):
+        `CHANCE_VERDICT_RATE = "about 1 run in 10"`, worded "got a verdict either way" in both the beats and
+        the below sentence, with "about 1 in 5 at some settings" (5y h30–59). Fix loop 1: a test fails while
+        either figure holds a `{` (in the default suite since fix loop 2).
+  - [x] `P2` `research` `@ai` **Fix loop 1 (review, QA, domain pass 3, validator r7)**: the R4 tail test; the
+        rate tests share their worlds (no slow test over ~22 s alone at load ~85); the nested 88-day and the
+        off-grid 87-day market-wide coins; the `unpaired` withheld reason (a run over a universe without its
+        timeouts, pairs, entry times or horizon); `attribute(gate=False)` explicit; the "below" sentence reads
+        as "beats" does; every headline reading names the fixed-per-instrument residual; A15 amended (no 10y:
+        the Terminal's 60-day line shows numbers without a verdict); the Terminal's survivorship line.
+  - [x] `P2` `research` `@ai` **Fix loop 2 (re-review, QA re-verify, domain pass 4, owner's Lab 10y)**: the Lab
+        withholds 10y (`"drift"`, keyed on the run's range in `summarise`; attribution not judged); the Lab's
+        few_clusters tip stops at five years; the fixed-per-instrument residual reworded for beats, below and
+        unconfirmed; the expert IC line names the {n} components BH ran over; untested components read "not
+        tested"; KEEP/INVERTED say before costs; a `gate=False` test (G3); strict zips (ruff 97 → 97); release
+        marker dropped; rate tests in 150-run sets; module teardown of the world caches; coverage in two
+        appended passes (`COVERAGE=1 ./run-tests.sh`).
+  - [x] `P2` `research` `@ai` **Fix loop 3 (loop-2 reviews, domain pass 5, QA re-verify, owner's after-loop-2
+        decisions)**: the survivorship line under every Lab result; the span and few_clusters tips drop the
+        longer-range clause on a 5y run (`offers_longer_range`), and the "nothing to compare" reason stops at
+        five years; the drift sentence without "far more often" and with the r5 figure (about 1 in 4); the
+        residual names both causes (each instrument's own trend, today's survivors); no "judged together"
+        footer on a withheld run; drift order, the Lab's range hand-off and the 600-run ≤ 43 bound pinned;
+        measure 8 "≤ 0.88 (sets share worlds)"; tooling baseline labels 87% as combined (branch-only 79.5%).
+  - [x] `P3` `research` `@ai` **Final review P3s and the merge of master (2026-10-13)**: "about 1 in 4" scoped
+        to 20- to 60-day horizons; the 600-run bound asserted inside the headline cases (no separate test);
+        the empty ten-year run pinned; the module docstring states the current rule. Merging master (v2.266),
+        whose `slow` marker is opt-in, moved the rate tests to a `rate` marker that runs by default.
+  - [x] `P2` `docs` `@ai` **Tech-writer: restate the rule and the rate** (done 2026-10-13: Learn tab §7–§8,
+        `CONFIDENCE.md`, TESTPLAN 7.3/7.5/7.13, README, CHANGELOG "Unreleased") in `static/docs.html` (the lines measure
+        9 lists), `CONFIDENCE.md:618-625` and the Design section of `qa11-qa13-honest-baselines.md`; the Learn tab
+        says the check does not cover traits fixed per instrument. CHANGELOG: the new state and withheld reason,
+        DROP still uncalibrated (deferred), and the attribution test now a regression guard whose size gate is
+        measure 3 on real bars. After validator r7 the docs also need: the rate as "about 1 run in 10" for any
+        verdict, directions held up to eight holding periods, about 1 in 5 at some settings, with the date, N,
+        interval, withheld share and held-out manifest; measure 2 not met and disclosed; the fixed-per-instrument
+        residual (always long on today's list); the Terminal's 60-day line shown without a verdict (no 10y);
+        `static/testplan.html:246`, `CONFIDENCE.md:600`. The verdict strings in code are done and pinned.
+        After fix loop 2 also: ten-year Lab runs shown without a verdict (survivorship), the reworded residual,
+        and the "not tested" grade. After fix loop 3 the residual reads "…can also land outside the bar, because
+        each instrument keeps its own trend over the years and the list holds only today's survivors; this check
+        cannot see that."; the ten-year sentence quotes about 1 run in 10 and about 1 in 4 on one set of past
+        bars; the Lab shows the survivorship line on every result; `static/docs.html:716` range advice stops at
+        five years.
 - [ ] `P2` `research` `@me` **The h = 1 Terminal verdict sits on the daily-bar tie residual.** At a 1-day horizon a
       bar that touches both barriers scores a loss; a coin-flip direction read "below" on 11 of 38 seeds in QA r4
       (P2-A). Live 2y h = 1 now reads Δ −0.99 within ±1.4 (QA r6 §4). Options: a placebo baseline, or no verdict
@@ -167,10 +220,13 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
       `python3 -m sonar.research.hourlyvol_weekend --power` on the Mac (Binance is blocked in the sandbox).
       Review, QA and a statistician's look at lag 168 / DM validity are still open.
 - [ ] `P3` `research` `@me` **2y h = 60 is one regime.** QA r4 P2-B: a 2y "beats" at h = 60 was not confirmed on 5y
-      (long-only +8.7 pt), and the coin was clean. Option: the Terminal reads 5y at h ≥ 40.
+      (long-only +8.7 pt), and the coin was clean. Option: the Terminal reads 5y at h ≥ 40. Once the
+      sign-randomisation change merges, 2y h = 60 falls in under 8 stretches and is withheld (`few_clusters`),
+      so the Terminal shows no verdict there; this item then only matters if the stretch rule changes.
 - [ ] `P3` `research` `@ai` **DROP has no error bar.** It is read from the point estimate of the leave-one-out cost
       (as small as −0.0018 on the Lab default), fires on 18–28% of noise, is now the main real-run grade
-      (volatility on 10 of 12 settings) and is shown in red (validator r6 P3).
+      (volatility on 10 of 12 settings) and is shown in red (validator r6 P3). Deferred by the owner out of the
+      sign-randomisation change (2026-10-12): the randomisation gate does not touch it.
 - [ ] `P3` `research` `@ai` **Same-day pageviews include hours after the US close** (`sonar/backtest.py`
       `attention_z`), a minor look-ahead in the attention series (validator r5 P3).
 - [ ] `P3` `research` `@ai` **`replay.py` still compares against the untimed `1/(1+R:R)`** (`Session.scorecard`),
@@ -194,6 +250,11 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
 - [ ] `P3` `testing` `@ai` **The attribution placebo test is the slowest in the suite** — about 16–18 s under load
       against the 60 s `faulthandler_timeout` (code review r6 P3-2, QA r6). Mark it `slow` or use fewer placebos
       per world (bounds refitted). Also: the step-1 `longest_comparable_horizon` mutant survives (r3 P3-7).
+- [ ] `P3` `testing` `@ai` **Branch-only coverage is 79.5%, under app-context's "80% branch".** The 87% (and the
+      84% / 83% floor) in `docs/company/tooling-baseline.md` is coverage.py's combined statement + branch TOTAL;
+      branch-only read 79.5% (QA re-verify after sign-randomisation fix loop 2). This predates that change; the
+      owner accepted it for this release. Fix the label (app-context and the baseline say which figure the bar
+      means) and set an honest floor on the figure the bar names.
 
 From the v2.190 release (`docs/audit/qa11-qa13-honest-baselines-sre-release.md`):
 

@@ -10,7 +10,7 @@ what it was measured on.
 
 ## 0. Where we are
 
-**2,646 tests**, 80% of statements and branches across `sonar/` and `ui/`
+**2,638 tests**, 80% of statements and branches across `sonar/` and `ui/`
 (2026-10-10; 71% on 2026-09-22, 66% of `sonar/` alone on 2026-09-16), plus 30
 opt-in `-m network` checks of every live source and 22 opt-in `-m slow` Monte-Carlo
 checks of the time-stop shadow's gate (V-12 of `docs/specs/shadow-time-stop.md`:
@@ -22,6 +22,12 @@ always runs). Run the suite **twice** before
 a push — natively and under `QT_QPA_PLATFORM=offscreen`, which is how CI runs
 it: the two disagree on font metrics, and CI was red for two days in October
 while the native run was green.
+
+**Release copy** is checked in the default suite, not behind a marker: a check
+nothing runs is no check (code review, fix loop 2).
+`test_no_verdict_ships_with_an_unfilled_figure` fails while the chance rate the
+backtest's verdicts quote (`CHANCE_VERDICT_RATE`), any judged verdict sentence or
+the ten-year sentence still holds a `{` placeholder.
 
 > **2026-10-10 QA pass.** A risk-ranked plan (kept outside the repo, findings
 > QA-1…QA-14) and the tests it called for: the landing page's figures checked
@@ -313,7 +319,7 @@ suite cannot tell you the bundle is correct.
 
 ## 6. Manual acceptance
 
-Moved to **[`TESTPLAN.md`](TESTPLAN.md)** — 80 cases across every tab, 20 of
+Moved to **[`TESTPLAN.md`](TESTPLAN.md)** — 150 cases across every tab, 18 of
 them marked as regressions that have caught a real bug before. Two documents
 that both claim to be the manual checklist is one too many, so this section is
 a pointer rather than a copy.
@@ -337,10 +343,17 @@ Several of the failures it looks for only exist in a build.
   `uv pip install --python .venv/bin/python coverage`. It is deliberately not in
   `pyproject.toml`'s runtime dependencies, which stay empty.
 
-Re-measure with:
+Re-measure with two passes appended to one data file, both under the external
+watchdog. The backtest rate tests (`-m rate`, `tests/test_backtest.py`; they
+run by default, unlike the opt-in `-m slow` Monte-Carlo checks, which coverage
+leaves out) can pass pytest's 60 s per-test cap under coverage on a loaded
+machine (57–77 s, QA fix loop 1), so their pass lifts that cap while the
+watchdog stays:
 
 ```bash
-.venv/bin/python -m coverage run --source=sonar,ui --branch -m pytest tests/ -q
+.venv/bin/python -m coverage erase
+COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow and not rate'
+COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m rate -o faulthandler_timeout=0
 .venv/bin/python -m coverage report --skip-empty --sort=cover
 ```
 

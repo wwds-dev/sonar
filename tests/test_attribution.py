@@ -29,13 +29,13 @@ def _trials(n, mom_wins=False, vol_wins=False, seed=1):
 
 
 def test_too_few_setups_refuses_to_attribute():
-    out = backtest.attribute(_trials(20))
+    out = backtest.attribute(_trials(20), gate=False)
     assert out["components"] == []
     assert "too few" in out["note"]
 
 
 def test_a_component_that_predicts_is_kept():
-    out = backtest.attribute(_trials(1500, mom_wins=True))
+    out = backtest.attribute(_trials(1500, mom_wins=True), gate=False)
     mom = next(c for c in out["components"] if c["component"] == "momentum")
     assert mom["verdict"] == "KEEP", mom
     assert mom["ic"] > 0
@@ -46,7 +46,7 @@ def test_a_component_scored_backwards_is_called_inverted_not_kept():
     carried with a positive weight is worse than dead weight — it pushes the
     wrong instruments up the board. Calling that KEEP because the p-value
     passed would be exactly the wrong conclusion."""
-    out = backtest.attribute(_trials(1500, vol_wins=True))
+    out = backtest.attribute(_trials(1500, vol_wins=True), gate=False)
     vol = next(c for c in out["components"] if c["component"] == "volatility")
     assert vol["verdict"] == "INVERTED", vol
     assert vol["ic"] < 0
@@ -54,7 +54,7 @@ def test_a_component_scored_backwards_is_called_inverted_not_kept():
 
 
 def test_pure_noise_is_not_called_a_keeper():
-    out = backtest.attribute(_trials(1500, seed=7))
+    out = backtest.attribute(_trials(1500, seed=7), gate=False)
     for c in out["components"]:
         if c.get("ic") is not None:
             assert c["verdict"] != "KEEP", c
@@ -62,18 +62,18 @@ def test_pure_noise_is_not_called_a_keeper():
 
 def test_an_unmeasured_component_is_not_a_passing_one():
     """news has no historical series here; silence must not read as approval."""
-    out = backtest.attribute(_trials(1500))
+    out = backtest.attribute(_trials(1500), gate=False)
     news = next(c for c in out["components"] if c["component"] == "news")
     assert news["verdict"] == "not measured"
 
 
 def test_catalyst_is_reported_as_untested(): 
-    out = backtest.attribute(_trials(1500))
+    out = backtest.attribute(_trials(1500), gate=False)
     assert "not measured" in out["catalyst"]
 
 
 def test_leave_one_out_is_reported(): 
-    out = backtest.attribute(_trials(1500, mom_wins=True))
+    out = backtest.attribute(_trials(1500, mom_wins=True), gate=False)
     mom = next(c for c in out["components"] if c["component"] == "momentum")
     assert mom["blend_ic_without"] is not None
     assert mom["loo_cost"] is not None

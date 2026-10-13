@@ -26,9 +26,23 @@ Re-verified 2026-10-12 on the resumed run. Worktree had other sessions' uncommit
 | Secrets, history (matches CI) | `gitleaks detect --redact -c .gitleaks.toml` | no leaks found (315 commits, 4.75 MB) |
 | Secrets, working tree | `gitleaks detect --no-git --redact -c <scratch config excluding build, dist*, .venv, __pycache__, .git>` | no leaks found (17.7 MB) |
 | Dependencies | `uvx pip-audit -r requirements.txt` | no known vulnerabilities (requirements.txt lists only `PySide6>=6.6`; `anthropic` is commented out, so it was not audited) |
-| Tests + coverage | `QT_QPA_PLATFORM=offscreen COVERAGE_FILE=<tmp> .venv/bin/python -m coverage run --branch --source=sonar,ui -m pytest tests/ -q` (cap 300 s) | 1861 passed, 30 deselected, 87 s; total branch coverage 84% (10370 statements, 2662 branches) |
+| Tests + coverage | `QT_QPA_PLATFORM=offscreen COVERAGE_FILE=<tmp> .venv/bin/python -m coverage run --branch --source=sonar,ui -m pytest tests/ -q` (cap 300 s when measured) | 1861 passed, 30 deselected, 87 s; total branch coverage 84% (10370 statements, 2662 branches) |
+| Tests + coverage, since 2026-10-12 | `.venv/bin/python -m coverage erase`; `COVERAGE=1 ./run-tests.sh tests/ -q -m 'not network and not slow and not rate'`; `COVERAGE=1 TEST_BUDGET_S=1200 ./run-tests.sh tests/ -q -m rate -o faulthandler_timeout=0` (the rate tests were marked `slow` until master's opt-in `slow` Monte-Carlo checks arrived in the merge of 2026-10-13); `.venv/bin/python -m coverage report --skip-empty` (fix loop 2 ran it natively, not offscreen) | see the paragraph below |
 
 Coverage floor: **83%** (measured 84 minus 1). The project's own bar is 80% branch.
+The suite cap went from 300 s to 600 s on 2026-10-12 with `run-tests.sh`'s budget (spec
+`sign-randomisation-verdicts.md`, Build notes): the slow-marked randomisation rate tests replay
+hundreds of runs. Without coverage each stays under pytest's 60 s per-test cap, but under coverage
+on a loaded machine they took 57–77 s and aborted a one-pass run (QA P2-2, P2-A). So coverage is
+measured in two passes appended to one data file (row above; `COVERAGE=1` in `run-tests.sh`):
+the fast pass under the usual caps, then the slow pass with the per-test cap lifted
+(`-o faulthandler_timeout=0`) and the external watchdog at 1200 s. QA's equivalent fallback plus
+slow pass read 87% (fix loop 1). Fix loop 2 ran the documented command once, natively (not
+offscreen) at load 136–181: fast pass exit 0 in 324 s (2195 passed), slow pass exit 0 in 629 s
+(17 passed; the slowest rate test 62 s under coverage, 14 s at most without), total coverage
+**87% combined statement + branch**, coverage.py's TOTAL under `--branch` (10888 statements,
+2872 branches); **branch-only 79.5%** (QA re-verify after fix loop 2). The 84% and 83% above are
+the same combined figure. The slow pass ran past 600 s, hence its 1200 s budget.
 Not wired into CI: the existing `tests.yml` was left alone, so no floor step runs yet.
 
 ## Branch triggers
@@ -37,7 +51,7 @@ runs on every branch; no mismatch with the real branch (`master`, remote `origin
 `security.yml` has the same unfiltered triggers.
 
 ## Contradictions with app-context.md
-- None in commands. The "30 deselected" tests are the `network`-marked tests (`addopts = "-m 'not network'"` in pyproject.toml).
+- None in commands. The "30 deselected" tests are the `network`-marked tests (`addopts = "-m 'not network'"` in pyproject.toml). A `release` marker was added and dropped again on 2026-10-12 (code review P3-1): its one test runs in the default suite.
 
 ## UNVERIFIED
 - Native (non-offscreen) run: only the offscreen run was done; app-context requires both to pass.

@@ -12,7 +12,7 @@ import math
 
 import pytest
 
-from sonar import backtest, scoring
+from sonar import backtest, randomisation, scoring
 
 
 def synthetic(drift_per_bar: float, n: int = 900, vol: float = 0.01,
@@ -61,6 +61,19 @@ def _dated(trials: list[dict], dates: int | None = None) -> list[dict]:
     return [dict(t, t=(i % dates) * 86400) for i, t in enumerate(trials)]
 
 
+def _paired(trials: list[dict]) -> list[dict]:
+    """Hand-built trials with the opposite direction's outcome, as run_symbol
+    gives every row: the mirror of each (a win the other way is a loss), at
+    the same prediction. A run over a stated universe is judged only with
+    them (docs/adr/0003); a hand-built one without a universe needs none."""
+    flip = {"TARGET": "STOP", "STOP": "TARGET", "TIMEOUT": "TIMEOUT"}
+    return [dict(t, opp_outcome=flip[t["outcome"]],
+                 opp_bars_held=t.get("bars_held"),
+                 opp_predicted=(None if t["outcome"] == "TIMEOUT"
+                                else t.get("predicted")))
+            for t in trials]
+
+
 def test_summary_calls_a_real_edge_significant():
     trials = [{"outcome": "TARGET", "predicted": 0.4, "bars_held": 3,
                "momentum": 0.03, "rr": 1.5} for _ in range(700)]
@@ -75,12 +88,17 @@ def test_summary_calls_a_real_edge_significant():
     assert "doing something" not in s["verdict"]
 
 
-def test_summary_calls_a_matching_rate_no_edge():
+def test_summary_calls_a_matching_rate_not_shown_to_differ():
+    """A gap inside its bar is not shown, which is not the same as shown to
+    be absent: the sentence says so and never 'no edge' (measure 9)."""
     trials = [{"outcome": "TARGET" if i < 400 else "STOP", "predicted": 0.4,
                "bars_held": 3, "momentum": 0.03, "rr": 1.5} for i in range(1000)]
     s = backtest.summarise(_dated(trials))
     assert s["significant"] is False and s["withheld"] is None
-    assert "no edge" in s["verdict"].lower()
+    assert s["verdict_state"] == "within" and s["outside_bar"] is False
+    assert ("not shown to differ from the prediction, which is not the same "
+            "as no difference") in s["verdict"]
+    assert "no edge" not in s["verdict"].lower()
 
 
 def test_summary_flags_a_harmful_signal():
@@ -90,11 +108,13 @@ def test_summary_flags_a_harmful_signal():
     assert s["significant"] is True
     # QA-13 copy: says what happened on these setups, not "lost money".
     assert "lost money" not in s["verdict"]
-    # Loop 5 (validator r5 P2-B): a direction picked at random lands this far
-    # below about 1 run in 12, so "below" no longer reads as "worse than a
-    # coin flip" — it says it does not show that.
-    assert ("does not show the lean is worse than a coin flip"
+    # Under the gate "below" is a one-sided 2.5% reading, as "beats" is, so
+    # it reads the same way (code review P2-2): the reading, then the
+    # measured chance rate — and no longer "does not show … a coin flip".
+    assert ("further below it than directions picked at random"
             in s["verdict"]), s["verdict"]
+    assert backtest.CHANCE_VERDICT_RATE in s["verdict"]
+    assert "coin flip" not in s["verdict"]
     assert "did worse" not in s["verdict"]
     # "below" already carries the sign: 10% against 40% is 30 points below,
     # not "-30.0 points below" (code-review P3-2).
@@ -443,10 +463,16 @@ def test_a_short_window_cannot_pass_a_jump_off_as_a_finding(monkeypatch):
     on the other half — and without the floor that run says the hit rate
     *beats the prediction*. With the floor nothing here is compared: the run
     says so, and how many ran out of time and of data.
-    Mutation it catches: the floor removed (the floored run would read
-    'beats the prediction'). 120 instruments entering on 120 different days,
-    so the unfloored run clears the minimum sample for a verdict (P1-B)."""
-    walks = {f"J{i}": _wobble_then_a_jump(10, up=i % 2 == 0, day=i)
+    Mutation it catches: the floor removed (the floored run would compare
+    the 120 jumps). 120 instruments entering on 120 different days three
+    days apart, so the unfloored run clears the minimum sample for a verdict
+    (P1-B) and falls in a dozen stretches. Since the direction
+    randomisation (docs/adr/0003) the unfloored run lands outside its bar
+    and still gets no verdict: the jump favours whichever direction it
+    happens to go, so the opposite directions land as far above the
+    prediction, and the run is not told apart from chance — the second
+    defence against the same false positive."""
+    walks = {f"J{i}": _wobble_then_a_jump(10, up=i % 2 == 0, day=3 * i)
              for i in range(120)}
     monkeypatch.setattr(backtest, "fetch_bars", lambda sym, rng: walks[sym])
 
@@ -455,8 +481,12 @@ def test_a_short_window_cannot_pass_a_jump_off_as_a_finding(monkeypatch):
         unfloored = backtest.run(list(walks), horizon_days=5, step=20)
     assert unfloored["n"] == 120 and unfloored["hit_rate"] == pytest.approx(0.5)
     assert unfloored["predicted"] < 0.2
-    assert unfloored["significant"] and unfloored["delta"] > 0.3
-    assert "beats the prediction" in unfloored["verdict"]
+    assert unfloored["withheld"] is None and unfloored["delta"] > 0.3
+    assert unfloored["outside_bar"] is True
+    assert unfloored["verdict_state"] == "unconfirmed"
+    assert not unfloored["significant"]
+    assert "not told apart from chance" in unfloored["verdict"]
+    assert "beats" not in unfloored["verdict"]
 
     r = backtest.run(list(walks), horizon_days=5, step=20)   # the shipped floor
     assert r["n"] == 0
@@ -480,29 +510,33 @@ def test_a_run_where_every_setup_runs_out_still_says_how_many(monkeypatch):
 
 
 def test_no_backtest_verdict_promises_anything():
-    """T11-8's copy guard, for the backtest (QA P3-6). Every branch of
-    _verdict, either sign, small and large: no 'edge' beyond the two phrases
-    that deny one, no profit, no money, no certainty. A reader without finance
-    training takes these sentences at face value. 'not a guarantee' is a
-    denial, as the two edge phrases are; a bare 'guarantee' still fails.
-    None counts standard errors either: the bar is not a calibrated 2-se
-    test (validator r5 P2-A)."""
-    allowed = ("no edge detected", "what no edge is supposed to look like",
-               "not a guarantee")
+    """T11-8's copy guard, for the backtest (QA P3-6). Every verdict state,
+    either sign, small and large: no edge, no profit, no money, no
+    certainty, no luck. A reader without finance training takes these
+    sentences at face value. 'not a guarantee' is a denial; a bare
+    'guarantee' still fails. None counts standard errors (the bar is not a
+    calibrated 2-se test, validator r5 P2-A), none says 'confirmed' or
+    'verified' (measure 11), and every one says it is before costs and from
+    one replay of past prices (Design)."""
+    allowed = ("not a guarantee",)
     cases = {
-        "within": [(0.004, 0.005, False), (-0.009, 0.005, False)],
-        "beats": [(0.031, 0.01, True), (0.25, 0.002, True)],
-        "below": [(-0.031, 0.01, True), (-0.30, 0.002, True)],
+        "within": [(0.004, 0.005, "within"), (-0.009, 0.005, "within")],
+        "beats": [(0.031, 0.01, "beats"), (0.25, 0.002, "beats")],
+        "below": [(-0.031, 0.01, "below"), (-0.30, 0.002, "below")],
+        "not told apart from chance": [(0.031, 0.01, "unconfirmed"),
+                                       (-0.031, 0.01, "unconfirmed")],
     }
     for marker, args in cases.items():
-        for delta, se, significant in args:
-            verdict = backtest._verdict(delta, se, significant)
+        for delta, se, state in args:
+            verdict = backtest._verdict(delta, se, state)
             assert marker in verdict, (marker, verdict)
             low = verdict.lower()
+            assert "before costs" in low and "one replay of past prices" in low
             for phrase in allowed:
                 low = low.replace(phrase, "")
             for banned in ("edge", "profit", "money", "whale", "guarantee",
-                           "certain", "doing something", "standard error"):
+                           "certain", "doing something", "standard error",
+                           "confirmed", "verified", "luck"):
                 assert banned not in low, (marker, banned, verdict)
             # one sign, in words or in digits, never both
             assert "below the prediction" not in verdict or "-" not in verdict
@@ -517,6 +551,18 @@ def _seventy_in_a_hundred(n: int) -> list[dict]:
     return [{"outcome": "TARGET" if i % 10 < 7 else "STOP", "predicted": 0.4,
              "bars_held": 3, "momentum": 0.03, "rr": 1.5, "symbol": "S"}
             for i in range(n)]
+
+
+def _seventy_at_random(n: int, seed: int = 1) -> list[dict]:
+    """As _seventy_in_a_hundred, but each setup a win with chance 0.7 on its
+    own. The randomisation's t is clustered by stretch, and stretches with
+    exactly the same mix of wins leave it no spread between stretches to
+    read (V = 0, so t = 0: fail closed); real samples always have one."""
+    import random
+    rng = random.Random(seed)
+    return [{"outcome": "TARGET" if rng.random() < 0.7 else "STOP",
+             "predicted": 0.4, "bars_held": 3, "momentum": 0.03, "rr": 1.5,
+             "symbol": "S"} for _ in range(n)]
 
 
 def test_no_verdict_above_a_120_day_horizon():
@@ -545,14 +591,17 @@ def test_no_verdict_above_a_120_day_horizon():
 def test_a_whole_run_at_a_long_horizon_gives_no_verdict(monkeypatch):
     """P1-A through run(): the horizon reaches summarise. A rigged upward
     drift beats the prediction at 120 days and is shown without a verdict
-    at 125. The walks are 1,300 bars so the 120-day entries span the five
-    horizons (870 days) a verdict also needs (loop 3).
+    at 125. The walks are 7,000 bars so the 120-day entries span the five
+    horizons (870 days) a verdict also needs (loop 3), and fall in at least
+    eight stretches of 696 days (docs/adr/0003).
     Mutation it catches: run() not passing the horizon on."""
-    walks = {f"D{i}": synthetic(0.004, n=1300, seed=7 + i) for i in range(2)}
+    walks = {f"D{i}": synthetic(0.004, n=7000, seed=7 + i) for i in range(2)}
     monkeypatch.setattr(backtest, "fetch_bars", lambda sym, rng: walks[sym])
     at = backtest.run(list(walks), horizon_days=120, step=3)
     assert at["n"] >= backtest.MIN_VERDICT_TRIALS
+    assert at["randomisation"]["q"] >= backtest.MIN_VERDICT_CLUSTERS
     assert at["significant"] and at["delta"] > 0 and at["withheld"] is None
+    assert at["verdict_state"] == "beats"
     above = backtest.run(list(walks), horizon_days=125, step=3)
     assert above["n"] >= backtest.MIN_VERDICT_TRIALS and above["delta"] > 0
     assert above["significant"] is False and above["withheld"] == "horizon"
@@ -626,9 +675,11 @@ def test_the_error_bar_floor_leaves_an_ordinary_sample_alone():
 
 
 def test_withheld_verdicts_promise_nothing_either():
-    """T11-8's copy guard over the two new verdicts."""
+    """T11-8's copy guard over the withheld verdicts."""
     texts = [backtest._withheld_verdict("horizon", 250, 1234, 300),
-             backtest._withheld_verdict("too_few", 120, 15, 9)]
+             backtest._withheld_verdict("too_few", 120, 15, 9),
+             backtest._withheld_verdict("few_clusters", 20, 4000, 300,
+                                        clusters=5)]
     for verdict in texts:
         low = verdict.lower()
         for banned in ("edge", "profit", "money", "whale", "guarantee",
@@ -640,34 +691,132 @@ def test_withheld_verdicts_promise_nothing_either():
 
 def test_a_positive_verdict_has_one_sign_in_words():
     """'beats … by +3.1 points' says the sign twice (QA r2 P3)."""
-    v = backtest._verdict(0.031, 0.01, True)
+    v = backtest._verdict(0.031, 0.01, "beats")
     assert "beats the prediction by 3.1 points" in v and "+" not in v
+    u = backtest._verdict(-0.031, 0.01, "unconfirmed")
+    assert "3.1 points under the prediction" in u and "-" not in u
+
+
+# What beats and below say of the chance rate (owner, after validator r7).
+_CAVEAT = (
+    "That is not a guarantee: in our tests, directions picked at random and "
+    "held for up to eight holding periods still got a verdict either way "
+    "about 1 run in 10, and about 1 in 5 at some settings. That rate is per "
+    "run, so trying many settings makes a chance verdict likely, and nearby "
+    "settings can disagree. A direction fixed per instrument, such as "
+    "always long, can also land outside the bar, because each instrument "
+    "keeps its own trend over the years and the list holds only today's "
+    "survivors; this check cannot see that.")
 
 
 def test_the_verdicts_name_the_error_bar_and_what_it_misses():
-    """Loop 5 (validator r5 P2-A, P2-B). The verdicts say Δ is outside its
-    error bar, not 'more than two standard errors': on these prices a
-    direction picked at random for a whole asset class landed outside it
-    about 1 run in 10, not 1 in 20. 'beats' says so; 'below' no longer says
-    the lean did worse than a coin flip. 'within' is unchanged.
-    Mutation it catches: the old copy back, or the bar left out."""
-    assert backtest._verdict(0.031, 0.009, True) == (
+    """Measure 9: every sentence restates the rule — outside the error bar
+    *and* further out than directions picked at random over stretches of
+    time. 'beats' and 'below' read the same way (code review P2-2) and
+    quote the measured chance rate of any verdict (validator r7: 9.11%,
+    'about 1 run in 10', the worst setting band about 1 in 5), per run,
+    with its scope of up to eight holding periods, never a pre-filled
+    '1 in 20'. 'within' is not 'no edge'. Outside the bar without the
+    randomisation is 'not told apart from chance', never 'within'. Every
+    sentence that reads outside the bar names the residual a direction
+    fixed per instrument leaves (owner, after validator r7 P1-2), in words
+    that fit a 'below' reading too and are not a tip (code review P3-3,
+    domain P3-1).
+    Mutation it catches: the old copy back, the bar left out, the scope
+    back at four holding periods, or the residual dropped."""
+    assert backtest.CHANCE_VERDICT_RATE == "about 1 run in 10"
+    assert backtest.CHANCE_VERDICT_RATE_WORST == "about 1 in 5"
+    assert backtest._verdict(0.031, 0.009, "beats") == (
         "Hit rate beats the prediction by 3.1 points, outside its error bar "
-        "(±1.8). That bar is not a guarantee: in our tests on these prices, a "
-        "direction picked at random for a whole asset class landed outside it "
-        "about 1 run in 10. Before costs, from one replay of past prices: a "
-        "reason to look closer, not a finding.")
-    assert backtest._verdict(-0.031, 0.009, True) == (
+        "(±1.8), and further above it than directions picked at random over "
+        "stretches of time across the watchlist usually land. " + _CAVEAT +
+        " Before costs, from one replay of past prices: a reason to look "
+        "closer, not a finding.")
+    assert backtest._verdict(-0.031, 0.009, "below") == (
         "Hit rate is 3.1 points below the prediction, outside its error bar "
-        "(±1.8). A direction picked at random can land this far below too, "
-        "so this does not show the lean is worse than a coin flip. Before "
-        "costs, from one replay of past prices.")
-    assert backtest._verdict(0.011, 0.009, False) == (
-        "Realised hit rate is within 1.8 points of the barrier model's "
-        "prediction — no edge detected. This is what no edge is supposed to "
-        "look like.")
+        "(±1.8), and further below it than directions picked at random over "
+        "stretches of time across the watchlist usually land. " + _CAVEAT +
+        " Before costs, from one replay of past prices: a reason to look "
+        "closer, not a finding.")
+    assert backtest._verdict(0.011, 0.009, "within") == (
+        "Before costs, the realised hit rate is within 1.8 points of the "
+        "barrier model's prediction: not shown to differ from the "
+        "prediction, which is not the same as no difference. From one "
+        "replay of past prices.")
+    assert backtest._verdict(0.031, 0.009, "unconfirmed") == (
+        "Before costs, 3.1 points above the prediction, outside its error "
+        "bar (±1.8), but directions picked at random over stretches of time "
+        "across the watchlist land this far out often enough that this is "
+        "not told apart from chance. A direction fixed per instrument, such "
+        "as always long, can also land outside the bar, because each "
+        "instrument keeps its own trend over the years and the list holds "
+        "only today's survivors; this check cannot see that. From one "
+        "replay of past prices.")
     assert "can read above the prediction" in backtest._withheld_verdict(
         "horizon", 250, 1234, 300)
+
+
+def test_too_few_stretches_names_the_fix_the_reader_has():
+    """The few_clusters sentence names the fix (domain P3-5): the Lab's
+    reader picks a range and a horizon, the Terminal's only a profile. The
+    Lab's longer range stops at five years, which ten-year runs are not
+    judged past (owner, Lab 10y). Both say the numbers are before costs,
+    from one replay of past prices (QA P3-5). A sample that cannot be
+    swapped whole says that instead, and never blames the range or the
+    horizon (code review P3-3).
+    A run already at five years is pointed at the horizon alone, and so is
+    one over ten, which is never judged (owner, after the fix-loop-2
+    review).
+    Mutation it catches: the Terminal told to pick a longer range, the Lab
+    pointed at ten years or past five from a five-year run, or the unpaired
+    run given the few-stretches advice."""
+    lab = backtest.few_clusters_verdict(3, 60)
+    term = backtest.few_clusters_verdict(3, 60, terminal=True)
+    assert lab == backtest._withheld_verdict("few_clusters", 60, 4000, 300,
+                                             clusters=3)
+    assert "3 stretches of 348 days" in lab and "3 stretches of 348" in term
+    assert ("A shorter horizon gives more, or a longer range up to five "
+            "years.") in lab
+    assert "A longer range or" not in lab
+    assert "A shorter profile gives more." in term
+    assert "range" not in term
+    assert backtest.LONGEST_JUDGED_RANGE == "5y"
+    assert backtest.few_clusters_verdict(3, 60, rng="2y") == lab
+    assert backtest.few_clusters_verdict(3, 60, rng="1y") == lab
+    for long in ("5y", "10y"):
+        at = backtest.few_clusters_verdict(3, 60, rng=long)
+        assert at == backtest._withheld_verdict(
+            "few_clusters", 60, 4000, 300, clusters=3, rng=long)
+        assert "A shorter horizon gives more. The numbers" in at, at
+        assert "range" not in at, at
+        assert backtest.few_clusters_verdict(3, 60, terminal=True,
+                                             rng=long) == term
+    for v in (lab, term):
+        assert "before costs, from one replay of past prices" in v
+    unpaired = backtest._withheld_verdict("unpaired", 5, 4000, 300)
+    assert "opposite direction" in unpaired
+    for word in ("range", "horizon gives", "stretches of", "longer"):
+        assert word not in unpaired, word
+    assert "before costs, from one replay of past prices" in unpaired
+
+
+def test_no_verdict_ships_with_an_unfilled_figure():
+    """Release gate (code review P2-1, domain P1-1): the chance rate the
+    beats and below sentences quote is the validator's measured figure,
+    never a placeholder. It runs in the default suite (about 0 s; code
+    review P3-1: a deselected check nothing ran), so a "{" or "}" left in
+    the figure, a judged sentence or the ten-year one fails every run.
+    Mutation it catches: a placeholder such as "{measured}" put back."""
+    for figure in (backtest.CHANCE_VERDICT_RATE,
+                   backtest.CHANCE_VERDICT_RATE_WORST,
+                   backtest.FIXED_PER_INSTRUMENT):
+        assert "{" not in figure and "}" not in figure, figure
+    for state, delta in (("beats", 0.031), ("below", -0.031),
+                         ("unconfirmed", 0.031), ("within", 0.011)):
+        v = backtest._verdict(delta, 0.009, state)
+        assert "{" not in v and "}" not in v, (state, v)
+    drift = backtest._withheld_verdict("drift", 20, 9000, 481)
+    assert "{" not in drift and "}" not in drift, drift
 
 
 # --------------------------------------------------------------------------- #
@@ -727,17 +876,84 @@ def test_a_run_reports_the_longest_horizon_its_data_can_compare(monkeypatch):
         backtest.longest_comparable_horizon(300, step=3)
 
 
-def test_the_terminal_range_covers_the_profiles_horizon():
-    """code-review r2 P2-1: the 'This year' profile (250 days) on two years of
-    bars compared nothing. A horizon needs one horizon of history and two
-    after the entry, so past ~156 days the replay reads five years."""
+def _weekday_walk(years: int, end=(2026, 10, 9)) -> backtest.Bars:
+    """A driftless walk on a weekday calendar of ``years`` years of bars
+    ending on a fixed Friday, 21:00 UTC: the calendar Yahoo's range gives
+    an equity."""
+    import datetime as dt
+    import random
+    rng = random.Random(years)
+    last = dt.date(*end)
+    d, times = last.replace(year=last.year - years), []
+    while d <= last:
+        if d.weekday() < 5:
+            times.append(int(dt.datetime(d.year, d.month, d.day, 21,
+                                         tzinfo=dt.timezone.utc).timestamp()))
+        d += dt.timedelta(days=1)
+    bars, p = backtest.Bars(symbol="WK"), 100.0
+    for t in times:
+        o = hi = lo = p
+        for _ in range(4):
+            p *= math.exp(rng.gauss(0, 0.005))
+            hi, lo = max(hi, p), min(lo, p)
+        bars.time.append(t)
+        bars.open.append(o)
+        bars.high.append(hi)
+        bars.low.append(lo)
+        bars.close.append(p)
+    return bars
+
+
+def _stretches(bars: backtest.Bars, h: int) -> int:
+    """How many stretches the compared setups of one replay fall in, as the
+    direction randomisation counts them."""
+    rows = [t for t in backtest.run_symbol(bars, h, step=3, keep_timeouts=True)
+            if not t["short_window"]]
+    clusters, _lines = backtest._direction_clusters(
+        rows, backtest.randomisation_block_days(h))
+    return len(clusters)
+
+
+def test_the_terminal_range_gives_its_horizon_enough_stretches():
+    """[A15], as amended by the owner after validator r7 (2026-10-12): the
+    Terminal reads the shorter of two and five years whose setups fall in
+    the eight stretches a verdict needs — two years to 10 days, five to 30
+    — and never ten years, where a direction fixed per instrument read
+    "beats" (validator r7 P1-2). Checked on a weekday calendar: each rule
+    edge gives at least 8, and two years gives fewer at the 20-day profile,
+    which it left always withheld. Past 30 days the range is the one that
+    compares anything (code-review r2 P2-1: the 250-day profile on two
+    years compared nothing, so past ~156 days it reads five years), and the
+    60-day profile falls in under 8 stretches there: numbers, no verdict.
+    Mutation it catches: the rule dropped, an edge moved, or ten years back."""
     from sonar import horizon
-    assert backtest.range_for_horizon(5) == "2y"
+    assert backtest.range_for_horizon(1) == "2y"
+    assert backtest.range_for_horizon(10) == "2y"
+    assert backtest.range_for_horizon(11) == "5y"
+    assert backtest.range_for_horizon(30) == "5y"
+    assert backtest.range_for_horizon(31) == "2y"
+    assert backtest.range_for_horizon(80) == "2y"
     assert backtest.range_for_horizon(156) == "2y"
     assert backtest.range_for_horizon(157) == "5y"
     assert backtest.range_for_horizon(horizon.YEAR.momentum_days) == "5y"
-    for hz in (horizon.INTRADAY, horizon.WEEK, horizon.MONTH, horizon.QUARTER):
-        assert backtest.range_for_horizon(hz.momentum_days) == "2y", hz.name
+    assert all(backtest.range_for_horizon(h) in ("2y", "5y")
+               for h in range(1, 300))
+    years = {"2y": 2, "5y": 5}
+    walks = {n: _weekday_walk(n) for n in (2, 5)}
+    for h in (1, 10, 30):
+        assert _stretches(walks[years[backtest.range_for_horizon(h)]], h) \
+            >= backtest.MIN_VERDICT_CLUSTERS, h
+    for hz, rng, shorter in ((horizon.INTRADAY, "2y", None),
+                             (horizon.WEEK, "2y", None),
+                             (horizon.MONTH, "5y", 2)):
+        h = hz.momentum_days
+        assert backtest.range_for_horizon(h) == rng, hz.name
+        assert _stretches(walks[years[rng]], h) >= 8, hz.name
+        if shorter:
+            assert _stretches(walks[shorter], h) < 8, hz.name
+    quarter = horizon.QUARTER.momentum_days
+    assert backtest.range_for_horizon(quarter) == "2y"
+    assert _stretches(walks[2], quarter) < backtest.MIN_VERDICT_CLUSTERS
 
 
 def test_data_end_timeouts_count_only_the_compared_windows(monkeypatch):
@@ -820,9 +1036,11 @@ def test_no_verdict_on_a_single_class_universe():
     sample (None) is not gated.
     Mutation it catches: the single-class gate removed, or applied to "all"."""
     assert backtest.WHOLE_WATCHLIST == "all"
-    trials = _dated(_seventy_in_a_hundred(1000))
-    whole = backtest.summarise(trials, horizon_days=5, universe="all")
-    equity = backtest.summarise(trials, horizon_days=5, universe="Equity")
+    trials = _paired(_dated(_seventy_in_a_hundred(1000)))
+    whole = backtest.summarise(trials, horizon_days=5, universe="all",
+                               timeouts=[])
+    equity = backtest.summarise(trials, horizon_days=5, universe="Equity",
+                                timeouts=[])
     assert whole["significant"] is True and whole["withheld"] is None
     assert equity["significant"] is False and equity["withheld"] == "single_class"
     for key in ("n", "hit_rate", "predicted", "delta", "std_error",
@@ -847,6 +1065,71 @@ def test_a_run_over_one_class_gives_no_verdict(monkeypatch):
     assert one["n"] == whole["n"] and one["delta"] == whole["delta"]
     assert one["significant"] is False and one["withheld"] == "single_class"
     assert one["verdict"].startswith("No verdict on Crypto alone.")
+
+
+def test_a_ten_year_run_shows_its_numbers_without_a_verdict(monkeypatch):
+    """Owner, Lab 10y (domain pass 4 P2-1): the range reaches summarise, and
+    a run over ten years is withheld 'drift' — over ten years of today's
+    list a direction fixed per instrument lands outside the bar far more
+    often than the rate a verdict quotes (validator r7 P1-2), so the run
+    is not judged. The numbers stay; no component is graded, and the
+    attention buckets read as numbers only, as on every withheld run. Five
+    years of the same bars is judged. The sentence says why in plain words,
+    before costs, from one replay of past prices, and gives no tip.
+    Mutation it catches: run() not passing the range on, the rule dropped,
+    or ten years graded in attribution."""
+    walks = {f"D{i}": synthetic(0.004, n=900, seed=7 + i) for i in range(2)}
+    monkeypatch.setattr(backtest, "fetch_bars", lambda sym, rng: walks[sym])
+    assert backtest.NO_VERDICT_RANGES == ("10y",)
+    five = backtest.run(list(walks), horizon_days=20, step=3, rng="5y")
+    assert five["significant"] and five["withheld"] is None
+    assert any(c["verdict"] != "not judged"
+               for c in five["attribution"]["components"]
+               if c.get("ic") is not None)
+    ten = backtest.run(list(walks), horizon_days=20, step=3, rng="10y")
+    assert ten["range"] == "10y"
+    assert ten["n"] == five["n"] and ten["delta"] == five["delta"]
+    assert ten["withheld"] == "drift" and ten["verdict_state"] == "withheld"
+    assert ten["significant"] is False and ten["outside_bar"] is False
+    assert ten["randomisation"]["p_tail"] is None
+    assert ten["attribution"]["withheld"] == "drift"
+    measured = [c for c in ten["attribution"]["components"]
+                if c.get("ic") is not None]
+    assert measured and all(c["verdict"] == "not judged" and
+                            c["why"] == backtest.NOT_JUDGED for c in measured)
+    assert ten["attribution"]["blend_ranks_backwards"] is False
+    assert ten["verdict"] == (
+        "No verdict on ten years. Over ten years of today's list, a direction "
+        "fixed per instrument, such as always long, lands outside the bar "
+        "more often than the chance rate a verdict quotes (about 1 run in "
+        "10); on one set of past bars about 1 in 4 at 20- to 60-day "
+        "horizons, because each instrument keeps its own trend over the years "
+        "and the list holds only today's survivors; this check cannot see "
+        "that. So ten-year runs are not judged; five years or less can be. "
+        "The numbers are shown without a verdict, before costs, from one "
+        "replay of past prices.")
+    assert "far more often" not in ten["verdict"]
+    # the horizon and the universe still come first; ten years comes before
+    # the reasons that depend on the sample, so a sparse ten-year run reads
+    # drift, not too few or span (code review P3-3, QA P3-2); and a
+    # hand-built sample without a range is not held to the rule [A11]
+    rows = _rigged_rows(400)
+    assert backtest.summarise(rows, horizon_days=150, rng="10y",
+                              universe="all", timeouts=[])[
+        "withheld"] == "horizon"
+    assert backtest.summarise(rows, horizon_days=5, rng="10y",
+                              universe="Equity", timeouts=[])[
+        "withheld"] == "single_class"
+    sparse = _rigged_rows(50)
+    assert backtest.summarise(sparse, horizon_days=5, universe="all",
+                              timeouts=[])["withheld"] == "too_few"
+    assert backtest.summarise(sparse, horizon_days=5, rng="10y",
+                              universe="all", timeouts=[])[
+        "withheld"] == "drift"
+    assert backtest.summarise(rows)["withheld"] is None
+    # an empty ten-year run compares nothing and still summarises (code
+    # review P3-4)
+    assert backtest.summarise([], rng="10y")["n"] == 0
 
 
 def test_no_verdict_unless_the_entries_span_five_horizons():
@@ -877,28 +1160,51 @@ def test_no_verdict_unless_the_entries_span_five_horizons():
     assert v.startswith("Too close together to judge: these setups were "
                         "entered over 36 days, 4.9 times the 5-day horizon."), v
     assert "at least 5 times the horizon (37 days;" in v
+    # the fix stops at five years: ten are never judged (owner, Lab 10y)
+    assert v.endswith("A shorter horizon spreads them out, or a longer range "
+                      "up to five years."), v
+    # a run already at five years is pointed at the horizon alone (owner,
+    # after the fix-loop-2 review); two years still gets the range
+    at_two = backtest.summarise(_span_of(rows, 36), horizon_days=5, rng="2y")
+    assert at_two["verdict"] == v
+    at_five = backtest.summarise(_span_of(rows, 36), horizon_days=5, rng="5y")
+    assert at_five["withheld"] == "span"
+    assert at_five["verdict"].endswith("counts trading days). A shorter "
+                                       "horizon spreads them out."), at_five
     assert backtest.summarise(_span_of(rows, 19))["withheld"] is None
 
 
 def test_why_a_verdict_is_withheld_has_one_fixed_order():
     """When several reasons apply the reader gets one, always the same one:
-    horizon, then single class, then too few, then span. The two a reader
-    can change by picking another setting come before the two that depend
-    on the sample. Each step below lifts one reason and the next shows.
-    Mutation it catches: any two of the four checks swapped (QA r3 G2)."""
-    few_close = _span_of(_seventy_in_a_hundred(99), 19)
-    many_close = _span_of(_seventy_in_a_hundred(1000), 19)
-    many_wide = _spread(_seventy_in_a_hundred(1000), dates=20, every=50)
+    horizon, then single class, then a range never judged (ten years), then
+    too few, then span, then a sample that cannot be swapped whole (its
+    timeouts not passed), then too few stretches. The three a reader can
+    change by picking another setting come before those that depend on the
+    sample. Each step below lifts one reason and the next shows.
+    Mutation it catches: any two of the seven checks swapped (QA r3 G2;
+    drift, code review P3-3 and QA P3-2)."""
+    few_close = _paired(_span_of(_seventy_in_a_hundred(99), 19))
+    many_close = _paired(_span_of(_seventy_in_a_hundred(1000), 19))
+    many_wide = _paired(_spread(_seventy_in_a_hundred(1000), dates=20, every=50))
+    # 20 dates 400 days apart: eleven 696-day stretches
+    wider = _paired([dict(t, t=(i // 50) * 400 * 86400)
+                     for i, t in enumerate(_seventy_at_random(1000))])
+    # None: the timeouts not passed, so the sample cannot be swapped whole
     steps = [
-        (few_close, 121, "Equity", "horizon"),
-        (few_close, 120, "Equity", "single_class"),
-        (few_close, 120, "all", "too_few"),
-        (many_close, 120, "all", "span"),
-        (many_wide, 120, "all", None),
+        (few_close, 121, "Equity", None, "10y", "horizon"),
+        (few_close, 120, "Equity", None, "10y", "single_class"),
+        (few_close, 120, "all", None, "10y", "drift"),
+        (few_close, 120, "all", None, "5y", "too_few"),
+        (many_close, 120, "all", None, "5y", "span"),
+        (many_wide, 120, "all", None, "5y", "unpaired"),
+        (many_wide, 120, "all", [], "5y", "few_clusters"),
+        (wider, 120, "all", [], "5y", None),
     ]
-    for trials, h, universe, why in steps:
-        s = backtest.summarise(trials, horizon_days=h, universe=universe)
-        assert s["withheld"] == why, (h, universe, len(trials), s["verdict"])
+    for trials, h, universe, timeouts, rng, why in steps:
+        s = backtest.summarise(trials, horizon_days=h, universe=universe,
+                               timeouts=timeouts, rng=rng)
+        assert s["withheld"] == why, (h, universe, rng, len(trials),
+                                      s["verdict"])
         assert s["significant"] is (why is None)
 
 
@@ -922,10 +1228,14 @@ def test_the_new_withheld_verdicts_promise_nothing_either():
     assert "201 days" in texts[1] and "120-day horizon" in texts[1]
 
 
-def _rigged_rows(n: int, dates: int = 100, seed: int = 1) -> list[dict]:
+def _rigged_rows(n: int, dates: int = 100, seed: int = 1,
+                 every: int = 3) -> list[dict]:
     """Compared rows as run_symbol returns them, in which momentum and an
     attention spike both genuinely sort winners from losers — so, judged,
-    the attention test reports a finding and attribution keeps momentum."""
+    the attention test reports a finding and attribution keeps momentum.
+    Entered on ``dates`` days ``every`` calendar days apart: 100 dates three
+    days apart fall in ten 32-day stretches at h = 5. Each row carries its
+    opposite outcome, the mirror of its own (docs/adr/0003)."""
     import random
     rng = random.Random(seed)
     out = []
@@ -934,7 +1244,7 @@ def _rigged_rows(n: int, dates: int = 100, seed: int = 1) -> list[dict]:
         spike = i % 2 == 0
         att = 3.0 if spike else -1.0
         p = 0.1 + 0.5 * m + (0.25 if spike else 0.0)
-        out.append({"symbol": "AAPL", "t": (i % dates) * 86400,
+        out.append({"symbol": "AAPL", "t": (i % dates) * every * 86400,
                     "direction": "LONG", "momentum": 0.2 * m, "vol": 0.01,
                     "outcome": "TARGET" if rng.random() < p else "STOP",
                     "bars_held": 3, "predicted": 0.4, "rr": 1.5,
@@ -943,7 +1253,7 @@ def _rigged_rows(n: int, dates: int = 100, seed: int = 1) -> list[dict]:
                     "attention": att, "c_momentum": m, "c_volatility": 0.3,
                     "c_news": max(0.0, min(1.0, (att + 1.0) / 4.0)),
                     "c_catalyst": None})
-    return out
+    return _paired(out)
 
 
 def _rigged_run(monkeypatch, rows, **kw) -> dict:
@@ -953,7 +1263,8 @@ def _rigged_run(monkeypatch, rows, **kw) -> dict:
     return backtest.run(["AAPL"], step=3, **kw)
 
 
-_JUDGED = {"KEEP", "DROP", "INVERTED", "WEAK", "UNCLEAR"}
+_JUDGED = {"KEEP", "DROP", "INVERTED", "WEAK", "UNCLEAR", "UNCONFIRMED",
+           "UNTESTED"}
 
 
 def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
@@ -962,7 +1273,8 @@ def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
     without a verdict still printed 'A news spike shifts the odds … beyond
     two standard errors' and attribution KEEP/DROP/INVERTED on the same page.
     Now, whatever the reason — a 121-day horizon, one class, 99 setups, a
-    short span — every attention bucket is not significant, the attention
+    short span, too few stretches, ten years — every attention bucket is not
+    significant, the attention
     sentence says there is no reading, and every measured component is 'not
     judged'. The numbers stay. The control, judged, shows both findings,
     each worded as one replay's reading (validator r6 P2-A).
@@ -984,16 +1296,17 @@ def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
     assert spread > 0
     assert mom["why"] == (f"IC {mom['ic']:+.3f} survives FDR and the top "
                           f"quintile beats the bottom by {spread * 100:.1f} "
-                          "points — from one replay of past prices"), mom
+                          "points — before costs, from one replay of past "
+                          "prices"), mom
     inv = backtest._verdict_for(dict(mom, ic=-mom["ic"],
                                      spread=dict(mom["spread"], spread=-spread)))
     assert inv == {"verdict": "INVERTED", "why": (
         f"IC {-mom['ic']:+.3f} is significant and *negative* — the top "
         f"quintile trails the bottom by {spread * 100:.1f} points. Added with "
         "a positive weight, this component would push the wrong instruments "
-        "up the board. Worth testing with its sign flipped, or dropped. From "
-        "one replay of past prices: a reason to look closer, not a "
-        "finding.")}, inv
+        "up the board. Worth testing with its sign flipped, or dropped. "
+        "Before costs, from one replay of past prices: a reason to look "
+        "closer, not a finding.")}, inv
     for why in (mom["why"], inv["why"]):
         for banned in ("edge", "profit", "money", "guarantee", "certain",
                        "flip its sign or drop"):
@@ -1003,7 +1316,10 @@ def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
         "single_class": (_rigged_rows(1000),
                          {"horizon_days": 5, "universe": "Equity"}),
         "too_few": (_rigged_rows(99), {"horizon_days": 5}),
-        "span": (_rigged_rows(1000, dates=30), {"horizon_days": 5}),
+        "span": (_rigged_rows(1000, dates=30, every=1), {"horizon_days": 5}),
+        "few_clusters": (_rigged_rows(1000, dates=100, every=1),
+                         {"horizon_days": 5}),
+        "drift": (_rigged_rows(1000), {"horizon_days": 5, "rng": "10y"}),
     }
     for why, (rows, kw) in cases.items():
         r = _rigged_run(monkeypatch, rows, **kw)
@@ -1028,11 +1344,33 @@ def test_a_run_without_a_verdict_claims_no_attention_or_attribution_finding(
 
 
 def test_attribution_without_a_reason_is_judged_as_before():
-    """attribute() with no reason to withhold is unchanged."""
+    """attribute() with no reason to withhold, on a hand-built sample that
+    opts out of the randomisation (gate=False), is graded as before."""
     rows = _rigged_rows(1000)
-    assert backtest.attribute(rows) == backtest.attribute(rows, withheld=None)
-    assert {c["verdict"] for c in backtest.attribute(rows)["components"]
-            if c.get("ic") is not None} <= _JUDGED
+    assert backtest.attribute(rows, gate=False) == backtest.attribute(
+        rows, withheld=None, gate=False)
+    assert {c["verdict"] for c in backtest.attribute(rows, gate=False)[
+        "components"] if c.get("ic") is not None} <= _JUDGED
+
+
+def test_attribution_without_a_horizon_fails_closed():
+    """Code review P3-5: the randomisation's exemption is explicit. A call
+    without a horizon cannot build the stretches, so unless it says
+    gate=False it grades nothing — withheld 'unpaired', every measured
+    component 'not judged', the readings kept — rather than grading on
+    today's rule alone, as it used to by default.
+    Mutation it catches: the exemption keyed on the horizon again."""
+    rows = _rigged_rows(1000)
+    closed = backtest.attribute(rows)
+    assert closed["withheld"] == "unpaired" and closed["randomisation"] is None
+    assert closed["note"] == backtest.NOT_JUDGED
+    open_ = backtest.attribute(rows, gate=False)
+    for c, o in zip(closed["components"], open_["components"], strict=True):
+        if c.get("ic") is None:
+            continue
+        assert c["verdict"] == "not judged" and c["ic"] == o["ic"]
+    assert {c["verdict"] for c in open_["components"]
+            if c.get("ic") is not None} & {"KEEP", "INVERTED"}
 
 
 # --------------------------------------------------------------------------- #
@@ -1140,7 +1478,8 @@ def test_setups_entered_on_the_same_day_are_one_reading():
     dk = math.sqrt(625 * (18 * 0.55 ** 2 + 22 * 0.45 ** 2)) / 1000
     assert a["se_dk"] == pytest.approx(dk, abs=5e-5)
     assert a["std_error"] == a["se_dk"] and a["significant"] is False
-    assert "no edge detected" in a["verdict"]
+    assert a["verdict_state"] == "within"
+    assert "not shown to differ from the prediction" in a["verdict"]
     assert b["se_dk"] < b["std_error"] == pytest.approx(
         math.sqrt(0.45 * 0.55 / 1000), abs=5e-5)
     assert b["significant"] is True and "beats the prediction" in b["verdict"]
@@ -1204,142 +1543,864 @@ def _correlated_world(seed: int, per_class: int = 6, n: int = 504,
     return walks, cls
 
 
-def _clustered_coin_runs(monkeypatch, worlds, horizons, coins) -> list[dict]:
-    """Every (world, horizon, coin) summary of a clustered coin: one random
-    direction per (class, block of one horizon in calendar days), shared by
-    every instrument of the class — correlated across instruments the way
-    momentum is, and carrying no information. Each instrument is replayed
-    forced LONG and forced SHORT once; a coin picks one row of each pair."""
-    import random
-    import zlib
+# --------------------------------------------------------------------------- #
+# The direction randomisation (owner decisions at the Build gate, 2026-10-12;
+# docs/adr/0003)
+# --------------------------------------------------------------------------- #
+def test_every_row_carries_the_opposite_directions_outcome(monkeypatch):
+    """The replay contract: each row says how the opposite direction would
+    have gone from the same bar, volatility and window — exactly the row a
+    replay forced to that side gives, row for row — and the opposite is
+    never a row of its own. A short-window row carries None and is not
+    resolved the other way. At 3:1 some setups time out one way and resolve
+    the other, so n changes under a swap.
+    Mutation it catches: the opposite resolved with the chosen direction,
+    over a different window, or from a different bar."""
     real_plan = scoring.build_plan
+    walk = _driftless_walk(400, 3)
+    rows = backtest.run_symbol(walk, 5, step=2, k_target=3.0, keep_timeouts=True)
+    forced = {}
+    for side in ("LONG", "SHORT"):
+        monkeypatch.setattr(scoring, "build_plan",
+                            lambda price, vol, days, _d, side=side, **kw:
+                            real_plan(price, vol, days, side, **kw))
+        forced[side] = backtest.run_symbol(walk, 5, step=2, k_target=3.0,
+                                           keep_timeouts=True)
+    monkeypatch.setattr(scoring, "build_plan", real_plan)
+    assert len(rows) == len(forced["LONG"]) == len(forced["SHORT"])
+    for r, lng, sht in zip(rows, forced["LONG"], forced["SHORT"], strict=True):
+        same, opp = (lng, sht) if r["direction"] == "LONG" else (sht, lng)
+        assert r["t"] == opp["t"] == same["t"]
+        assert (r["outcome"], r["bars_held"], r["predicted"]) == (
+            same["outcome"], same["bars_held"], same["predicted"])
+        if r["short_window"]:
+            assert (r["opp_outcome"], r["opp_bars_held"],
+                    r["opp_predicted"]) == (None, None, None)
+        else:
+            assert (r["opp_outcome"], r["opp_bars_held"],
+                    r["opp_predicted"]) == (opp["outcome"], opp["bars_held"],
+                                            opp["predicted"])
+    assert any(r["outcome"] == "TIMEOUT" and r["opp_outcome"] in ("TARGET", "STOP")
+               for r in rows)
+    assert any(r["opp_outcome"] == "TIMEOUT" and r["outcome"] != "TIMEOUT"
+               for r in rows)
+    # the default output carries them too, and run() hands them on
+    assert all(r["opp_outcome"] for r in backtest.run_symbol(walk, 5, step=2))
+
+
+def test_a_whole_run_is_swapped_from_its_own_opposite_outcomes(monkeypatch):
+    """run() supplies the opposite outcomes, so a whole-watchlist run is
+    held to the randomisation: it reports its stretches, method and p.
+    Mutation it catches: run() dropping the opposite fields (the run would
+    be withheld for no stretches)."""
+    walks = {f"S{i}": _driftless_walk(600, 50 + i) for i in range(3)}
+    monkeypatch.setattr(backtest, "fetch_bars", lambda sym, rng: walks[sym])
+    r = backtest.run(list(walks), horizon_days=5, step=3)
+    rand = r["randomisation"]
+    assert rand["block_days"] == 32 and rand["q"] >= 8
+    assert r["withheld"] is None and rand["p_tail"] is not None
+    assert rand["method"] == "monte_carlo" and rand["draws"] == 11_999
+    assert r["verdict_state"] in ("within", "unconfirmed", "beats", "below")
+    assert r["attribution"]["randomisation"]["block_days"] == 32
+
+
+def test_the_stretches_are_four_horizons_across_every_class():
+    """[A6]: a stretch is MAX_HOLD_MULTIPLE horizons of trading days in
+    calendar days, across every class at once, edges at Unix day 0, by UTC
+    entry date. A timeout adds nothing to its side's sums; a stretch where
+    nothing resolved either way is not counted; a short window is skipped;
+    sums are exact whatever the row order; a row without its opposite gives
+    no stretches at all (fail closed).
+    Mutation it catches: the class put back into the key, the edges moved
+    to the sample, timeouts counted, or a missing pair let through."""
+    assert [backtest.randomisation_block_days(h) for h in (1, 5, 15, 20, 60)] \
+        == [8, 32, 88, 116, 348]
+    day = 86400
+    q = 0.39
+    rows = [
+        # stretch 0: two classes, one stretch; a timeout either way
+        {"symbol": "AAPL", "t": 3 * day, "outcome": "TARGET", "predicted": q,
+         "opp_outcome": "STOP", "opp_predicted": q},
+        {"symbol": "BTC-USD", "t": 31 * day + 82000, "outcome": "TIMEOUT",
+         "predicted": None, "opp_outcome": "TARGET", "opp_predicted": q},
+        {"symbol": "GC=F", "t": 10 * day, "outcome": "STOP", "predicted": q,
+         "opp_outcome": "TIMEOUT", "opp_predicted": None},
+        # stretch 1 starts on day 32, the day after stretch 0's last
+        {"symbol": "EURUSD=X", "t": 32 * day, "outcome": "STOP",
+         "predicted": q, "opp_outcome": "STOP", "opp_predicted": q},
+        # stretch 2 (day 64): nothing resolved either way, not counted, and
+        # a short window that is skipped
+        {"symbol": "AAPL", "t": 64 * day, "outcome": "TIMEOUT",
+         "predicted": None, "opp_outcome": "TIMEOUT", "opp_predicted": None},
+        {"symbol": "EURUSD=X", "t": 65 * day, "outcome": "TARGET",
+         "predicted": None, "opp_outcome": None, "short_window": True},
+    ]
+    clusters, lines = backtest._direction_clusters(rows, 32)
+    assert clusters == [((1 - q + 0 - q, 2), (0 - q + 1 - q, 2)),
+                        ((-q, 1), (-q, 1))]
+    assert len(lines) == 5
+    assert backtest._direction_clusters(list(reversed(rows)), 32) == (
+        clusters, list(reversed(lines)))
+    # edges are Unix-day multiples of the stretch, not the first entry: a
+    # day later, day 31's timeout and day 32's setup share stretch 1
+    shifted = [dict(r, t=r["t"] + day) for r in rows]
+    assert backtest._direction_clusters(shifted, 32)[0] == [
+        ((1 - q - q, 2), (-q, 1)), ((-q, 1), (1 - q - q, 2))]
+    # a compared row without its opposite outcome: no stretches at all
+    assert backtest._direction_clusters(rows + [{"symbol": "X", "t": 0,
+                                                 "outcome": "STOP",
+                                                 "predicted": q}], 32) == ([], [])
+    assert backtest._direction_clusters(rows, None) == ([], [])
+
+
+def _in_stretches(trials: list[dict], stretches: int, per: int = 20,
+                  offset: int = 0) -> list[dict]:
+    """Entries on ``per`` days in each of the first ``stretches`` 32-day
+    stretches (h = 5), starting ``offset`` days into each."""
+    days = [k * 32 + offset + d for k in range(stretches) for d in range(per)]
+    return [dict(t, t=days[i % len(days)] * 86400) for i, t in enumerate(trials)]
+
+
+def test_too_few_stretches_is_withheld_and_says_how_to_get_more():
+    """[A2]: under 8 stretches the run is withheld 'few_clusters', after the
+    span rule, and the sentence names the fix as the span one does: a
+    shorter horizon, or a longer range up to five years (owner, Lab 10y).
+    7 stretches is withheld, 8 is
+    judged. A hand-built sample without a universe is not held to it [A11].
+    Mutation it catches: the minimum dropped, `<` turned into `<=`, or the
+    hand-built exemption lost."""
+    assert backtest.MIN_VERDICT_CLUSTERS == 8
+    rows = _paired(_seventy_at_random(1000))
+    seven = backtest.summarise(_in_stretches(rows, 7), horizon_days=5,
+                               universe="all", timeouts=[])
+    eight = backtest.summarise(_in_stretches(rows, 8), horizon_days=5,
+                               universe="all", timeouts=[])
+    assert seven["randomisation"]["q"] == 7 and eight["randomisation"]["q"] == 8
+    assert seven["withheld"] == "few_clusters" and not seven["significant"]
+    assert seven["verdict_state"] == "withheld"
+    assert seven["randomisation"]["p_tail"] is None
+    assert seven["hit_rate"] == eight["hit_rate"]                 # numbers kept
+    assert eight["withheld"] is None and eight["verdict_state"] == "beats"
+    assert eight["randomisation"]["method"] == "enumerate"
+    assert eight["randomisation"]["draws"] == 256
+    assert seven["verdict"] == (
+        "Too few separate stretches of time, across asset classes, to judge: "
+        "these setups fall in 7 stretches of 32 days (four holding periods "
+        "each, every asset class together), and a verdict needs at least 8. "
+        "A shorter horizon gives more, or a longer range up to five years. "
+        "The numbers are shown without a verdict, before costs, from one "
+        "replay of past prices.")
+    # summarise reads the tip off the range it is given: none past five
+    # years from a five-year run (owner, after the fix-loop-2 review)
+    five = backtest.summarise(_in_stretches(rows, 7), horizon_days=5,
+                              universe="all", timeouts=[], rng="5y")
+    assert five["withheld"] == "few_clusters"
+    assert five["verdict"] == seven["verdict"].replace(
+        ", or a longer range up to five years.", ".")
+    assert five["verdict"] != seven["verdict"]
+    hand = backtest.summarise(_in_stretches(rows, 7), horizon_days=5)
+    assert hand["withheld"] is None and hand["randomisation"] is None
+    assert hand["verdict_state"] == "beats"
+
+
+def test_a_sample_that_cannot_be_swapped_whole_is_withheld_unpaired():
+    """Fail closed (code review P3-3, validator r7 P2-2): a run over a
+    universe needs every compared row's opposite outcome and entry time, a
+    horizon, and its timeouts passed — without them a timeout that resolved
+    the other way is missing from the swap, which then reads only the
+    setups the run's own directions resolved. Each is withheld 'unpaired',
+    with its own sentence and none of the few-stretches advice; the same
+    sample with all of them is judged.
+    Mutation it catches: any of the four checks dropped, or the unpaired
+    run read as too few stretches."""
+    rows = _in_stretches(_paired(_seventy_at_random(1000)), 8)
+    judged = backtest.summarise(rows, horizon_days=5, universe="all",
+                                timeouts=[])
+    assert judged["withheld"] is None and judged["verdict_state"] == "beats"
+    cases = {
+        "timeouts not passed": dict(rows=rows, horizon_days=5),
+        "no opposite outcome": dict(
+            rows=[dict(t, opp_outcome=None) if i == 7 else t
+                  for i, t in enumerate(rows)], horizon_days=5, timeouts=[]),
+        "no entry time": dict(
+            rows=[dict(t, t=None) if i == 7 else t
+                  for i, t in enumerate(rows)], horizon_days=5, timeouts=[]),
+        "a timeout without its opposite": dict(
+            rows=rows, horizon_days=5,
+            timeouts=[{"symbol": "S", "t": 0, "outcome": "TIMEOUT",
+                       "predicted": None, "bars_held": 20}]),
+        "no horizon": dict(rows=rows, horizon_days=None, timeouts=[]),
+    }
+    for name, kw in cases.items():
+        s = backtest.summarise(kw.pop("rows"), universe="all", **kw)
+        assert s["withheld"] == "unpaired", (name, s["withheld"])
+        assert s["verdict_state"] == "withheld" and not s["significant"], name
+        assert s["randomisation"]["q"] == 0, name
+        assert s["verdict"] == backtest._withheld_verdict(
+            "unpaired", 5, 0, 0), name
+        assert "stretches of" not in s["verdict"], name
+    # a hand-built sample without a universe needs none of them [A11]
+    assert backtest.summarise(_in_stretches(_seventy_at_random(1000), 8),
+                              horizon_days=5)["withheld"] is None
+
+
+def test_the_gate_reads_the_tail_in_the_direction_of_the_gap():
+    """QA P2-1 (mutant R4): Δ is above the prediction and outside its bar,
+    but the opposite directions read further above it still, so almost every
+    swap reads higher: p_hi 255/256, p_lo 2/256. The gate reads the tail in
+    Δ's direction, p_tail = min(1, 2·p_hi) = 1, and the run is not told
+    apart from chance. Reading the smaller tail instead (2·min(p_hi, p_lo)
+    = 0.0156) would call it 'beats'.
+    Mutation it catches: p_tail = 2·min(p_hi, p_lo)."""
+    rows = []
+    for i, t in enumerate(_in_stretches(_seventy_in_a_hundred(1000), 8)):
+        # even stretches 90% wins, odd ones 30%; the other way 95% everywhere
+        win = i % 10 < 9 if int(t["t"] // 86400) // 32 % 2 == 0 else i % 10 < 3
+        rows.append(dict(t, outcome="TARGET" if win else "STOP",
+                         opp_outcome="TARGET" if i % 20 < 19 else "STOP",
+                         opp_predicted=0.4, opp_bars_held=3))
+    s = backtest.summarise(rows, horizon_days=5, universe="all", timeouts=[])
+    r = s["randomisation"]
+    assert s["withheld"] is None and r["q"] == 8 and r["method"] == "enumerate"
+    assert s["delta"] > 0 and s["outside_bar"] is True
+    clusters, _lines = backtest._direction_clusters(rows, 32)
+    full = randomisation.direction_p(clusters, r["seed"])
+    assert full["p_lo"] < full["p_hi"]
+    assert (full["p_hi"], full["p_lo"]) == (255 / 256, 2 / 256)
+    assert r["p_tail"] == min(1.0, 2 * full["p_hi"]) == 1.0
+    assert s["verdict_state"] == "unconfirmed" and s["significant"] is False
+
+
+def test_outside_the_bar_but_not_told_apart_from_chance_is_its_own_state():
+    """Measure 11 (P1-1). Δ outside its bar, where the opposite directions
+    read the same (every swap ties, p_tail = 1): verdict_state
+    'unconfirmed', not significant, a sentence that says 'not told apart
+    from chance' and names the bar — never 'within', 'no edge', 'beats',
+    'below' or the internal name. The mirror (the opposite directions read
+    the other way, p_tail small) still reads 'beats', and 'below' for a run
+    below the prediction.
+    Mutation it catches: the gate removed, or the wrong tail read."""
+    up = _dated(_seventy_in_a_hundred(1000))
+    down = _dated([dict(t, outcome="STOP" if t["outcome"] == "TARGET"
+                        else "TARGET") for t in _seventy_in_a_hundred(1000)])
+    for rows, word in ((up, "beats"), (down, "below")):
+        same = [dict(t, opp_outcome=t["outcome"], opp_predicted=t["predicted"],
+                     opp_bars_held=t["bars_held"]) for t in rows]
+        s = backtest.summarise(same, horizon_days=5, universe="all",
+                               timeouts=[])
+        assert s["withheld"] is None and s["outside_bar"] is True
+        assert s["randomisation"]["p_tail"] == 1.0
+        assert s["verdict_state"] == "unconfirmed" and s["significant"] is False
+        v = s["verdict"]
+        assert "not told apart from chance" in v and "outside its error bar" in v
+        low = v.lower()
+        for banned in ("within", "no edge", "beats", "below", "unconfirmed",
+                       "confirmed", "verified"):
+            assert banned not in low, (banned, v)
+        mirror = backtest.summarise(_paired(rows), horizon_days=5,
+                                    universe="all", timeouts=[])
+        assert mirror["verdict_state"] == word and mirror["significant"]
+        assert mirror["randomisation"]["p_tail"] < 0.05
+        assert mirror["delta"] == s["delta"] and mirror["std_error"] == s["std_error"]
+
+
+def _two_stretch_component(n_per_day: int = 20, strong: tuple = (0, 1),
+                           seed: int = 2) -> list[dict]:
+    """Setups over eight 32-day stretches (20 entry days each, 20 setups a
+    day): the component x sorts winners from losers strongly in the
+    ``strong`` stretches and not at all in the others."""
+    import random
+    rng = random.Random(seed)
+    rows = []
+    for k in range(8):
+        for d in range(20):
+            for j in range(n_per_day):
+                x = rng.random()
+                p = 0.05 + 0.9 * x if k in strong else 0.4
+                rows.append({"symbol": f"S{j}", "t": (k * 32 + d) * 86400,
+                             "outcome": "TARGET" if rng.random() < p else "STOP",
+                             "predicted": 0.4, "bars_held": 3,
+                             "c_momentum": x, "c_volatility": None,
+                             "c_news": None, "c_catalyst": None})
+    return rows
+
+
+def test_a_component_not_told_apart_from_chance_is_not_graded():
+    """Measure 11 for attribution. A component that ranks setups in two of
+    eight stretches and not in the others passes today's rule (its IC
+    survives FDR and its quintile spread clears its bar: KEEP on a
+    hand-built sample, which is not held to the randomisation), but a sign
+    change of whole stretches reads that well often enough: 'UNCONFIRMED',
+    worded 'not told apart from chance', never 'survives FDR', 'confirmed'
+    or 'verified'. Ranking in every stretch, it is KEEP under the gate too.
+    Mutation it catches: the gate removed from the grade."""
+    rows = _two_stretch_component()
+    today = backtest.attribute(rows, gate=False)["components"][0]
+    gated_a = backtest.attribute(rows, horizon_days=5)
+    gated = gated_a["components"][0]
+    assert today["component"] == gated["component"] == "momentum"
+    assert today["verdict"] == "KEEP" and today["confirmed"] is True
+    # the one measured component: BH at q = 0.10 asks p_rand ≤ 0.10
+    assert gated["survives_fdr"] is True and gated["p_rand"] > 0.10
+    assert gated["confirmed"] is False and gated["verdict"] == "UNCONFIRMED"
+    assert gated_a["randomisation"] == {"q": 8, "draws": 256, "block_days": 32,
+                                        "measured": 1}
+    why = gated["why"]
+    assert why.startswith(f"IC {gated['ic']:+.3f}: it looks like it ranks "
+                          "setups on this replay, but a meaningless reading "
+                          "held for stretches of time ranked them this well "
+                          "often enough that this is not told apart from "
+                          "chance."), why
+    low = why.lower()
+    for banned in ("survives fdr", "unconfirmed", "confirmed", "verified",
+                   "edge", "profit", "beats", "certain"):
+        assert banned not in low, (banned, why)
+    assert "before costs" in low
+    every = backtest.attribute(_two_stretch_component(strong=tuple(range(8))),
+                               horizon_days=5)["components"][0]
+    assert every["verdict"] == "KEEP" and every["confirmed"] is True
+    assert every["p_rand"] <= 0.10
+    assert "before costs" in every["why"]
+    # the same reading the other way round is 'ranks setups backwards'
+    inv = backtest._verdict_for(dict(gated, ic=-gated["ic"], spread=dict(
+        gated["spread"], spread=-gated["spread"]["spread"])))
+    assert inv["verdict"] == "UNCONFIRMED"
+    assert "it looks like it ranks setups backwards on this replay" in inv["why"]
+
+
+def test_a_component_the_randomisation_could_not_test_says_so():
+    """Code review P3-4, QA P3-4: a component whose setups include one
+    without an entry time cannot be put through the sign change
+    (_ic_rand_p gives None). It counts as p = 1, so it is not graded — and
+    its label and sentence say the check could not run, not that a
+    reshuffle read it as chance: 'UNTESTED', an internal name read "not
+    tested" (domain P3-2). The same component with every entry time is KEEP.
+    Mutation it catches: the untested component graded, or given the
+    reshuffle's label or sentence."""
+    rows = _two_stretch_component(strong=tuple(range(8)))
+    rows[5] = dict(rows[5], t=None)
+    c = backtest.attribute(rows, horizon_days=5)["components"][0]
+    assert c["p_rand"] is None and c["survives_fdr"] is True
+    assert c["confirmed"] is False and c["verdict"] == "UNTESTED"
+    assert c["why"] == (
+        f"IC {c['ic']:+.3f}: it looks like it ranks setups on this replay, "
+        "but the check against random stretches of time could not run on it "
+        "(a setup without an entry time, or under two stretches), so it is "
+        "not graded. Before costs, from one replay of past prices.")
+    assert "meaningless reading" not in c["why"]
+
+
+def test_no_keep_or_inverted_sentence_says_confirmed_or_verified():
+    """Measure 11: a grade that passed the randomisation still reads as one
+    replay's reading, never 'confirmed' or 'verified', and says it is before
+    costs (domain P3-3).
+    Mutation it catches: 'before costs' dropped from either why line."""
+    keep = backtest._verdict_for({"ic": 0.05, "survives_fdr": True,
+                                  "confirmed": True, "loo_cost": 0.01,
+                                  "spread": {"spread": 0.06, "se": 0.01}})
+    inv = backtest._verdict_for({"ic": -0.05, "survives_fdr": True,
+                                 "confirmed": True, "loo_cost": 0.01,
+                                 "spread": {"spread": -0.06, "se": 0.01}})
+    assert keep["verdict"] == "KEEP" and inv["verdict"] == "INVERTED"
+    assert "before costs, from one replay of past prices" in keep["why"]
+    assert "Before costs, from one replay of past prices" in inv["why"]
+    for text in (keep["why"], inv["why"], backtest._verdict(0.03, 0.01, "beats"),
+                 backtest._verdict(-0.03, 0.01, "below")):
+        assert "confirmed" not in text.lower() and "verified" not in text.lower()
+
+
+def test_a_caller_that_opts_out_of_the_gate_grades_on_todays_rule():
+    """[A11], code review P3-5, QA P3-A: attribute(rows, horizon_days=h,
+    gate=False) grades on today's rule even with a horizon — the
+    two-stretch component that the gate would not grade is KEEP, with no
+    p_rand and no randomisation block.
+    Mutation it catches (G3): the horizon alone switching the gate on."""
+    a = backtest.attribute(_two_stretch_component(), horizon_days=5,
+                           gate=False)
+    c = a["components"][0]
+    assert c["verdict"] == "KEEP" and c["confirmed"] is True
+    assert c["p_rand"] is None and a["randomisation"] is None
+    assert a["blend_p_rand"] is None and a["withheld"] is None
+
+
+def test_ranking_backwards_needs_ten_stretches_under_the_gate():
+    """[A7]: 'the score ranks backwards' also needs the blend's randomisation
+    p at the claim bar (normal_p(Z_CLAIM), 0.0027). At 9 stretches the
+    smallest p is 2/512 = 0.0039, so it cannot fire; at 10 it can (2/1024).
+    The same strongly backwards setups, put in 9 and in 10 stretches.
+    Mutation it catches: the blend's randomisation left out of the claim."""
+    from sonar import calibration
+    from sonar.research import stats
+    assert stats.normal_p(calibration.Z_CLAIM) == pytest.approx(0.0027, abs=1e-4)
+    rows = _blend_trials(1500, 1, backwards=True)
+    nine = [dict(t, t=(i % 180) // 20 * 32 * 86400 + (i % 20) * 86400)
+            for i, t in enumerate(rows)]
+    ten = [dict(t, t=(i % 200) // 20 * 32 * 86400 + (i % 20) * 86400)
+           for i, t in enumerate(rows)]
+    a9 = backtest.attribute(nine, horizon_days=5)
+    a10 = backtest.attribute(ten, horizon_days=5)
+    assert a9["randomisation"]["q"] == 9 and a10["randomisation"]["q"] == 10
+    assert a9["blend_ic_t"] <= -calibration.Z_CLAIM
+    assert a9["blend_p_rand"] == pytest.approx(2 / 512, abs=1e-4)
+    assert a9["blend_ranks_backwards"] is False
+    assert a10["blend_p_rand"] == pytest.approx(2 / 1024, abs=1e-4)
+    assert a10["blend_ranks_backwards"] is True
+    assert backtest.attribute(nine, gate=False)[
+        "blend_ranks_backwards"] is True                               # [A11]
+
+
+# The rate tests (docs/specs/sign-randomisation-verdicts.md, measure 8 and
+# Architecture §11, tests 8–12). Bounds are set in advance from Binomial(N, p),
+# never fitted to the seeds.
+_H15 = 15
+# The keys summarise reads, so the cached worlds stay small.
+_SLIM = ("symbol", "t", "direction", "outcome", "bars_held", "predicted",
+         "opp_outcome", "opp_bars_held", "opp_predicted", "rr", "k_target",
+         "k_stop", "window", "horizons", "truncated", "short_window")
+
+
+def _both_ways(seed: int, h: int = _H15) -> list[tuple]:
+    """Every decision of one correlated world at horizon ``h``, both ways:
+    (class, entry time, the row taken LONG, the row taken SHORT). Each
+    instrument is replayed once: run_symbol resolves the opposite direction
+    of every decision too (pinned row for row against a forced replay in
+    test_every_row_carries_the_opposite_directions_outcome), so swapping a
+    row's outcome for its opposite one gives the other forced row, with its
+    opposite outcome attached as the pair. A short-window row is counted
+    only, so it is the same either way."""
+    walks, cls = _correlated_world(seed)
     out = []
-    for seed in worlds:
-        walks, cls = _correlated_world(seed)
-        for h in horizons:
-            pairs = {}
-            for sym, bars in walks.items():
-                sides = []
-                for side in ("LONG", "SHORT"):
-                    monkeypatch.setattr(
-                        scoring, "build_plan",
-                        lambda price, vol, days, _d, side=side, **kw:
-                        real_plan(price, vol, days, side, **kw))
-                    sides.append(backtest.run_symbol(bars, h, step=3,
-                                                     keep_timeouts=True))
-                monkeypatch.setattr(scoring, "build_plan", real_plan)
-                pairs[sym] = list(zip(*sides, strict=True))
-            block = math.ceil(h * 365 / 252) * 86400
-            for coin in coins:
-                side, resolved, timeouts, short = {}, [], [], []
-                for sym, rows in pairs.items():
-                    for long_row, short_row in rows:
-                        key = (cls[sym], long_row["t"] // block)
-                        if key not in side:
-                            side[key] = random.Random(zlib.crc32(
-                                f"{seed}|{h}|{coin}|{key}".encode())).random() < 0.5
-                        row = long_row if side[key] else short_row
-                        (short if row["short_window"] else
-                         timeouts if row["outcome"] == "TIMEOUT" else
-                         resolved).append(row)
-                out.append(backtest.summarise(
-                    resolved, step=3, timeouts=timeouts, short_windows=short,
-                    horizon_days=h, universe=backtest.WHOLE_WATCHLIST))
+    for sym, bars in walks.items():
+        for row in backtest.run_symbol(bars, h, step=3, keep_timeouts=True):
+            kept = {k: row[k] for k in _SLIM}
+            if row["short_window"]:
+                out.append((cls[sym], row["t"], kept, kept))
+                continue
+            other = dict(kept, direction=("SHORT" if row["direction"] == "LONG"
+                                          else "LONG"),
+                         outcome=row["opp_outcome"],
+                         bars_held=row["opp_bars_held"],
+                         predicted=row["opp_predicted"],
+                         opp_outcome=row["outcome"],
+                         opp_bars_held=row["bars_held"],
+                         opp_predicted=row["predicted"])
+            long_row, short_row = ((kept, other) if row["direction"] == "LONG"
+                                   else (other, kept))
+            out.append((cls[sym], row["t"], long_row, short_row))
     return out
 
 
-def test_a_correlated_coin_rarely_gets_a_verdict(monkeypatch):
-    """P1-D's acceptance test: the clustered coin. Directions that move
-    together across a class, as momentum's do, and mean nothing. 5 worlds of
-    30 correlated instruments over two years, at the Lab's 5 days and the
-    Terminal's 20, 6 coins each: 60 judged runs.
-
-    Measured on 720 such runs (60 worlds): a verdict 18.9% [16.2–21.9] of the
-    time with the binomial / Newey-West bar alone, 7.5% [5.8–9.7] with the
-    date-clustered floor; the mean z² falls from 2.23 to 1.30. A 2-se
-    verdict would be wrong 4.6% of the time if the bar were right, so the
-    floor narrows the gap without closing it (the validator's real-bar
-    clustered coin: 59% → 11%). Bound: at most 7 of these 60 (11.7%) and a
-    mean z² of at most 1.5. These 60 read 5 and 1.35 with the floor, 9 and
-    2.32 without it; across twelve disjoint sets of 60 the floored count
-    ranged 1–7 and z² 0.78–1.57, the unfloored 2–16 and 1.31–2.60.
-    Mutation it catches: the date-clustered floor left out of the headline."""
-    runs = _clustered_coin_runs(monkeypatch, worlds=range(5), horizons=(5, 20),
-                                coins=range(6))
-    assert len(runs) == 60
-    assert all(s["withheld"] is None and s["n"] > 2000 for s in runs)
-    false = sum(1 for s in runs if s["significant"])
-    assert false <= 7, f"{false} of 60 runs gave a verdict on a coin"
-    z2 = sum((s["delta"] / s["std_error"]) ** 2 for s in runs) / len(runs)
-    assert z2 <= 1.5, z2
-    # the floor is what moved: the clustered bar is the wider one on average
-    assert sum(s["se_dk"] for s in runs) > 1.2 * sum(
-        math.sqrt(s["hit_rate"] * (1 - s["hit_rate"]) / s["n"]) for s in runs)
+# Worlds 0–29 at h15, replayed once per session and shared by the two
+# headline tests, the exactness test, the guards and the power test. A
+# replay is cheap (about a quarter of a second a world); the cost is the
+# summarise of each coin run, so no test summarises a run another needs:
+# the exactness test reads the randomisation alone (code review P2-4).
+_cached_world = functools.lru_cache(maxsize=30)(_both_ways)
 
 
-def test_a_meaningless_clustered_component_is_rarely_graded():
-    """Loop 5 (model-validator r5 P1-A, QA r5 P2-1): attribution's tests
-    count setups entered on the same day together. The placebo: a news
-    component that is one random value per (class, block of one horizon in
-    calendar days), plus a little per-setup noise, and says nothing about
-    the outcome; replayed with momentum's own directions on correlated walks
-    of 20 instruments a class (100), the watchlist's breadth. On real bars
-    it was graded KEEP or INVERTED on 24% of judged runs.
+@pytest.fixture(autouse=True, scope="module")
+def _drop_the_cached_worlds():
+    """The rate tests' caches hold about 225 MB; once this module is done
+    nothing reads them, so they go with it (code review P3-4)."""
+    yield
+    _cached_world.cache_clear()
+    _per_class_h_coin.cache_clear()
+    _attribution_world.cache_clear()
 
-    Measured on 360 such runs (60 worlds, h = 20): KEEP or INVERTED 14.7%
-    [11.4–18.8] with the Newey-West IC and binomial spread alone, 5.6%
-    [3.6–8.4] with the date-clustered floor on both; the mean spread z² from
-    4.29 to 1.37, the IC's from 2.29 to 1.52. Over 15 disjoint sets of 24
-    the floored spread z² ranged 0.88–1.89 and the unfloored 2.66–5.71; the
-    graded count 0–4 against 0–7. These 24 (worlds 0–3) read 2, 1.61 and
-    1.57 with the floor; 6, 2.59 and 5.55 without. Bound: at most 3 of 24
-    graded, spread z² at most 2.2, IC z² at most 2.0. A regression guard,
-    fitted like the clustered coin's: the IC still runs over its nominal
-    rate, because a block outlasts the one-hold lag.
-    A real component, one setup at a time (IC about 0.08), still reads KEEP.
-    Mutation it catches: the date-clustered floor left out of the IC test
-    or of the quintile spread."""
+
+def _coin_rows(world: list[tuple], tag: str, block_days: int,
+               per_class: bool) -> tuple[list, list, list]:
+    """The rows one coin takes — resolved, timed out, short-window — when it
+    picks one direction per (class, stretch of ``block_days`` calendar days
+    from Unix day 0), or per stretch for the whole watchlist when not
+    ``per_class``, shared by every instrument it covers: correlated the way
+    momentum is, and meaning nothing."""
+    import random
+    import zlib
+    side: dict = {}
+    resolved, timeouts, short = [], [], []
+    for cls, t, long_row, short_row in world:
+        key = (cls if per_class else "ALL", int(t // 86400) // block_days)
+        if key not in side:
+            side[key] = random.Random(zlib.crc32(
+                f"{tag}|{key}".encode())).random() < 0.5
+        row = long_row if side[key] else short_row
+        (short if row["short_window"] else
+         timeouts if row["outcome"] == "TIMEOUT" else resolved).append(row)
+    return resolved, timeouts, short
+
+
+def _coin_run(world: list[tuple], tag: str, block_days: int,
+              per_class: bool, h: int = _H15) -> dict:
+    """One coin run (:func:`_coin_rows`), summarised as run() would."""
+    resolved, timeouts, short = _coin_rows(world, tag, block_days, per_class)
+    return backtest.summarise(resolved, step=3, timeouts=timeouts,
+                              short_windows=short, horizon_days=h,
+                              universe=backtest.WHOLE_WATCHLIST)
+
+
+def _coin_block(multiple: int, h: int = _H15) -> int:
+    """A coin's stretch: ``multiple`` horizons of trading days in calendar
+    days, rounded up once — 22 days at h15, 87 for four horizons, 174 for
+    eight. The one-horizon coin is nested in the test's 88-day stretches
+    (4 × 22); the 87- and 174-day coins cut across them. The test rounds up
+    per horizon (backtest.randomisation_block_days, 4 × 22 = 88), which is
+    the nested four-horizon coin."""
+    return math.ceil(multiple * h * 365 / 252)
+
+
+def _headline_tag(seed: int, coin: int) -> str:
+    return f"{seed}|{_H15}|{coin}|cls"
+
+
+@functools.lru_cache(maxsize=4)
+def _per_class_h_coin(first_world: int, first_coin: int) -> tuple[tuple, ...]:
+    """The 150 runs of one headline set — 15 worlds from ``first_world`` ×
+    10 per-class one-horizon coins from ``first_coin`` at h15 — as
+    (withheld, verdict_state, p_tail, stretches)."""
+    out = []
+    for seed in range(first_world, first_world + 15):
+        world = _cached_world(seed)
+        for coin in range(first_coin, first_coin + 10):
+            s = _coin_run(world, _headline_tag(seed, coin), _coin_block(1),
+                          per_class=True)
+            r = s["randomisation"]
+            out.append((s["withheld"], s["verdict_state"], r["p_tail"], r["q"]))
+    return tuple(out)
+
+
+def _headline_randomisation(seed: int, coin: int) -> dict:
+    """The randomisation of one headline run on its own, as summarise reads
+    it — the same stretches (:func:`backtest._direction_clusters`) and the
+    same p (:func:`backtest._randomisation`) — without the rest of the
+    summary, which is most of a run's cost."""
+    resolved, timeouts, _short = _coin_rows(
+        _cached_world(seed), _headline_tag(seed, coin), _coin_block(1),
+        per_class=True)
+    block = backtest.randomisation_block_days(_H15)
+    clusters, lines = backtest._direction_clusters(resolved + timeouts, block)
+    return backtest._randomisation(clusters, lines, _H15, block, judged=True)
+
+
+def _assert_headline_rate(runs: tuple[tuple, ...]) -> int:
+    """Bound one headline set; return its verdicts for the pooled bound."""
+    assert len(runs) == 150
+    # Every run judged, at exactly 8 stretches: a change in the calendar
+    # fails here, loudly, instead of quietly withholding runs.
+    assert all(w is None for w, _s, _p, _q in runs), [w for w, *_ in runs]
+    assert all(q == 8 for _w, _s, _p, q in runs), {q for *_, q in runs}
+    verdicts = sum(s in ("beats", "below") for _w, s, _p, _q in runs)
+    beats = sum(s == "beats" for _w, s, _p, _q in runs)
+    assert verdicts <= 14, f"{verdicts} of 150 coin runs got a verdict"
+    assert beats <= 9, f"{beats} of 150 coin runs read 'beats'"
+    return verdicts
+
+
+# The four headline sets, (first world, first coin): worlds 0–14 and 15–29 ×
+# coins 0–9 and 10–19 — the 600 runs of the two earlier 300-run tests, split
+# so that no test nears the 60 s cap (code review P3-2, QA P2-A).
+_HEADLINE_SETS = ((0, 0), (0, 10), (15, 0), (15, 10))
+# Each headline case records its set's verdicts here, and the case that
+# completes the four checks the pooled bound (code review P3-1).
+_HEADLINE_VERDICTS: dict[tuple[int, int], int] = {}
+
+
+@pytest.mark.rate
+@pytest.mark.parametrize("first_world, first_coin", _HEADLINE_SETS)
+def test_a_correlated_coin_rarely_gets_a_verdict(first_world, first_coin):
+    """Measure 8, the headline rate test, in four sets of 150 runs. Each
+    set: 15 worlds of 30 correlated instruments over two years × 10 coins
+    that pick one direction per (class, one-horizon stretch) — the
+    validator's per-class coin — at h15: 150 judged runs, every one at
+    exactly 8 stretches. Bounds, set in advance from the binomial and not
+    from these seeds: at most 14 verdicts, the 99th percentile of
+    Binomial(150, 5%) (P(X ≤ 14) = 0.992), and at most 9 'beats', that of
+    Binomial(150, 2.5%) (P(X ≤ 9) = 0.995).
+
+    A gate against today's code, not proof of 5%. With the error bar alone
+    (the gate removed) the four sets read 14, 10, 18 and 13 verdicts (7, 3,
+    9 and 5 'beats'): the third fails. At today's rate on these worlds,
+    9.2% (QA, 10 world sets: 7.7–12.8%), one set fails with probability
+    about 0.41 and at least one of the four with probability ≤ 0.88 (sets
+    share worlds), counting the verdict bound alone. With the randomisation
+    the sets read 6, 5, 7 and 2 (3, 2, 4 and 1 'beats'). Proof of 5% is
+    measure 1, on real bars at full scale.
+
+    Pooled (QA P3-1): the case that completes the four sets in one session
+    also bounds all 600 runs at 43 verdicts, the 99th percentile of
+    Binomial(600, 5%) (P(X ≤ 43) = 0.992), set in advance. With the
+    randomisation they read 20; with the error bar alone, 55 — so the pooled
+    bound catches the gate removed, where of the four sets only [15-0] does.
+    It reads the counts the cases recorded rather than summarising the 600
+    runs again, so no case nears the 60 s cap run alone (code review P3-1);
+    a case run on its own checks its set only.
+    Mutation it catches, over the four sets: the randomisation gate
+    removed."""
+    verdicts = _assert_headline_rate(_per_class_h_coin(first_world, first_coin))
+    _HEADLINE_VERDICTS[(first_world, first_coin)] = verdicts
+    if len(_HEADLINE_VERDICTS) == len(_HEADLINE_SETS):
+        pooled = sum(_HEADLINE_VERDICTS.values())
+        assert pooled <= 43, f"{pooled} of 600 coin runs got a verdict"
+
+
+@pytest.mark.rate
+def test_the_randomisation_alone_rejects_near_its_size():
+    """Measure 8 / Architecture §11 test 9: exactness, on the 600 runs of
+    the four headline sets. The coin is nested in the test's stretches, so
+    the randomisation alone (p_tail < 0.05, outside the bar or not) is exact
+    for it: measured 33 of 600 (5.5%) here, and 22–32 on ten other world
+    sets (QA), against 4.0% expected, under 5% because an enumerated p at 8
+    stretches steps in 1/256. The count must lie in 13–37, the 0.5–99.5%
+    band of Binomial(600, 4.0%).
+
+    It reads each run's randomisation alone, not the whole summary — the
+    same stretches and p as summarise, checked on the first three runs — so
+    it stays well under the 60 s cap run on its own (code review P2-4).
+    The verdicts of the same 600 runs are bounded in the headline cases.
+    Mutation it catches: a dead statistic (never rejects) or an inverted
+    one (the wrong tail)."""
+    for coin in range(3):
+        s = _coin_run(_cached_world(0), _headline_tag(0, coin),
+                      _coin_block(1), per_class=True)
+        assert s["randomisation"] == _headline_randomisation(0, coin)
+    runs = [_headline_randomisation(seed, coin)
+            for seed in range(30) for coin in range(20)]
+    assert all(r["q"] == 8 and r["method"] == "enumerate" for r in runs)
+    rejected = sum(r["p_tail"] < 0.05 for r in runs)
+    assert 13 <= rejected <= 37, rejected
+
+
+def _guard(block_days: int, per_class: bool, name: str,
+           first_coin: int) -> int:
+    """Verdicts of one guard coin over worlds 0–14, 10 coins each from
+    ``first_coin``: 150 runs, every one judged at exactly 8 stretches."""
+    verdicts, judged, stretches = 0, 0, set()
+    for seed in range(15):
+        world = _cached_world(seed)
+        for coin in range(first_coin, first_coin + 10):
+            s = _coin_run(world, f"{seed}|{_H15}|{coin}|{name}", block_days,
+                          per_class)
+            judged += s["withheld"] is None
+            stretches.add(s["randomisation"]["q"])
+            verdicts += s["significant"]
+    assert judged == 150, judged
+    assert stretches == {8}, stretches
+    return verdicts
+
+
+# Each guard runs in two sets of 150, coins 0–9 and 10–19 on worlds 0–14
+# (the 300 runs of the earlier single tests), split for the 60 s cap (code
+# review P3-2, QA P2-A). Bound per set: at most 19 verdicts, the 99th
+# percentile of Binomial(150, 7.5%) (P(X ≤ 19) = 0.991), measure 2's bar.
+_GUARD_SETS = (0, 10)
+
+
+@pytest.mark.rate
+@pytest.mark.parametrize("first_coin", _GUARD_SETS)
+def test_a_coin_slower_than_the_stretches_rarely_gets_a_verdict(first_coin):
+    """Measure 2's circular-pass guard: one coin per class held for eight
+    horizons (174 days at h15), longer than the test's 88-day stretches and
+    not nested in them, so the randomisation is not exact for it. 150
+    judged runs a set; at most 19 verdicts (Binomial(150, 7.5%), 99th
+    percentile), measure 2's bar, set before the rate was measured: 12 and
+    9 here, 36 and 27 with the gate removed (both fail).
+
+    A regression guard, not measure 2. On real bars this coin reads 9.48%
+    [8.0–11.3] (r5) and 9.11% [7.6–10.9] held out (validator r7), so
+    measure 2 is not met; the owner accepted that and the copy discloses it
+    (spec, decisions after validator r7). This bound cannot tell 7.5% from
+    9%: it catches the gate gone, not a rate a little over the bar."""
+    v = _guard(_coin_block(8), per_class=True, name="cls8h",
+               first_coin=first_coin)
+    assert v <= 19, f"{v} of 150 runs of the eight-horizon coin got a verdict"
+
+
+@pytest.mark.rate
+@pytest.mark.parametrize("first_coin", _GUARD_SETS)
+def test_a_market_wide_coin_rarely_gets_a_verdict(first_coin):
+    """Measure 2's circular-pass guard: one direction per one-horizon
+    stretch for the whole watchlist at once — the failure that forced the
+    all-class stretch (8.2% at full scale under (class, stretch) clusters).
+    Nested in the test's stretches. 150 judged runs a set; at most 19
+    verdicts (Binomial(150, 7.5%), 99th percentile). Measured 6 and 8 here
+    (13 and 17 with the gate removed, so this guard does not catch that);
+    real bars 4.17% (r5) and 3.73% held out (validator r7)."""
+    v = _guard(_coin_block(1), per_class=False, name="mkt1h",
+               first_coin=first_coin)
+    assert v <= 19, f"{v} of 150 runs of the market-wide coin got a verdict"
+
+
+@pytest.mark.rate
+@pytest.mark.parametrize("first_coin", _GUARD_SETS)
+def test_a_market_wide_four_horizon_coin_rarely_gets_a_verdict(first_coin):
+    """Measure 2's market-wide four-horizon coin, nested: one direction per
+    stretch for the whole watchlist, its stretch rounded as the test rounds
+    its own (backtest.randomisation_block_days: 4 × 22 = 88 days at h15),
+    so the coin's stretches are the test's (21.9% at full scale under
+    (class, stretch) clusters). 150 judged runs a set; at most 19 verdicts
+    (Binomial(150, 7.5%), 99th percentile). Measured 4 and 10 here, 28 and
+    32 with the gate removed (both fail); real bars 5.88% (r5) and 6.25%
+    held out (validator r7)."""
+    block = backtest.randomisation_block_days(_H15)
+    assert block == 4 * _coin_block(1) == 88
+    v = _guard(block, per_class=False, name="mkt4h88", first_coin=first_coin)
+    assert v <= 19, f"{v} of 150 runs of the nested four-horizon coin got a verdict"
+
+
+@pytest.mark.rate
+@pytest.mark.parametrize("first_coin", _GUARD_SETS)
+def test_an_off_grid_market_wide_coin_rarely_gets_a_verdict(first_coin):
+    """Measure 2's stronger guard, off the grid: one direction per 87-day
+    stretch for the whole watchlist (four horizons rounded up once,
+    ceil(4 × 15 × 365/252)), so its edges drift one day a stretch across
+    the test's 88-day ones — the shifted-edge failure, which the nested
+    coin cannot show. 150 judged runs a set; at most 19 verdicts
+    (Binomial(150, 7.5%), 99th percentile). Measured 14 and 10 here, 35 and
+    23 with the gate removed (both fail); real bars 8.66% [7.2–10.4] (r5)
+    and 5.73% held out (validator r7).
+
+    Its weakness, stated: at a true 8.7% rate a set passes about 96% of the
+    time (Binomial(150, 8.7%); validator r7 P2-1). Telling 8.7% from 7.5%
+    needs thousands of runs, so this catches the gate gone, not a rate a
+    little over the bar. Measure 2 is not met and is disclosed (owner,
+    after validator r7)."""
+    assert _coin_block(4) == 87
+    v = _guard(_coin_block(4), per_class=False, name="mkt4h",
+               first_coin=first_coin)
+    assert v <= 19, f"{v} of 150 runs of the off-grid market coin got a verdict"
+
+
+@pytest.mark.rate
+def test_a_strong_edge_still_beats_the_prediction():
+    """Architecture §11 test 12: the gate is not blind. On world 0 at h15
+    (8 stretches), half the setups take the direction that hit its target
+    when exactly one of the two did, the rest a per-setup coin: Δ about +8
+    points, and the run reads 'beats' with the randomisation's agreement.
+    Mutation it catches: the gate reading the wrong tail, or a dead
+    statistic."""
+    import random
+    rng = random.Random(15)
+    resolved, timeouts, short = [], [], []
+    for _cls, _t, long_row, short_row in _cached_world(0):
+        lw, sw = (long_row["outcome"] == "TARGET",
+                  short_row["outcome"] == "TARGET")
+        if rng.random() < 0.5 and lw != sw:
+            row = long_row if lw else short_row
+        else:
+            row = long_row if rng.random() < 0.5 else short_row
+        (short if row["short_window"] else
+         timeouts if row["outcome"] == "TIMEOUT" else resolved).append(row)
+    s = backtest.summarise(resolved, step=3, timeouts=timeouts,
+                           short_windows=short, horizon_days=_H15,
+                           universe=backtest.WHOLE_WATCHLIST)
+    assert s["withheld"] is None and s["randomisation"]["q"] == 8
+    assert s["delta"] > 0.05, s["delta"]
+    assert s["verdict_state"] == "beats", (s["delta"], s["randomisation"])
+    assert s["randomisation"]["p_tail"] < backtest.RANDOMISATION_ALPHA
+
+
+@functools.lru_cache(maxsize=4)
+def _attribution_world(seed: int) -> tuple[tuple, tuple]:
+    """One correlated world of 20 instruments a class (100), the
+    watchlist's breadth, replayed at h15 with momentum's own directions:
+    its resolved rows, each tagged with its class, and its timeouts. Built
+    once per session for the attribution guard and its real-component
+    check."""
+    walks, cls = _correlated_world(seed, per_class=20)
+    rows, timeouts = [], []
+    for sym, bars in walks.items():
+        for row in backtest.run_symbol(bars, _H15, step=3, keep_timeouts=True):
+            if row["short_window"]:
+                continue
+            (timeouts if row["outcome"] == "TIMEOUT" else rows).append(
+                dict(row, cls=cls[sym]))
+    return tuple(rows), tuple(timeouts)
+
+
+@pytest.mark.rate
+@pytest.mark.parametrize("first_world", (0, 2))
+def test_a_meaningless_clustered_component_is_rarely_graded(first_world):
+    """A regression guard, labelled as one: the attribution size gate is the
+    real-bar figure of measure 3 (n ≥ 480 per design), not this test. It
+    runs in two sets of 12 — worlds 0–1 and 2–3, the 24 runs of the
+    earlier single test — so that neither nears the 60 s cap (code review
+    P3-2, QA P2-A).
+
+    The placebo: a news component that is one random value per (class,
+    one-horizon stretch), plus a little per-setup noise, and says nothing
+    about the outcome; replayed with momentum's own directions on correlated
+    walks of 20 instruments a class (100), the watchlist's breadth, at h15 —
+    where these two-year worlds fall in 8 stretches, so the run is judged
+    (at h20, as this test used to run, they fall in 6 and are withheld).
+
+    Measured before the bound was set, on 240 runs (40 worlds, 6 draws):
+    KEEP or INVERTED 2.5% (6) on today's rule, the error bars alone; 0.8%
+    (2) with the randomisation, 4 more not told apart from chance. Over ten
+    disjoint sets of 24 the graded count was 0–1, the mean spread z² 0.97–
+    1.59 and the IC z² 0.48–1.67; with the quintile spread's date-clustered
+    bar removed the spread z² was 2.35–4.00. Bounds per set of 12: at most
+    3 graded, the 99th percentile of Binomial(12, 5%) (P(X ≤ 3) = 0.998),
+    measure 3's bar; the spread and IC z² bounds of 2.2 and 2.0 are kept
+    from the h20 version (a mean over 24 above 2.2 puts at least one set of
+    12 above it). Today the two sets read 0 and 0 graded, spread z² 0.99
+    and 0.98, IC z² 1.16 and 0.81. It cannot tell the gate from no gate (QA P3-2); the
+    UNCONFIRMED fixtures above pin the gate.
+    Mutation it catches: the date-clustered floor left out of the quintile
+    spread. (The IC's floor is pinned by
+    test_the_ic_test_counts_setups_entered_on_the_same_day_together: at h15
+    its removal moved the IC z² to 0.65–3.63, which this guard catches on
+    half the sets only.)"""
     import random
     import zlib
     from statistics import NormalDist
-    h, block = 20, math.ceil(20 * 365 / 252) * 86400
+    h, block = _H15, _coin_block(1)
     graded, ic_z2, sp_z2, runs = 0, 0.0, 0.0, 0
-    for seed in range(4):
-        walks, cls = _correlated_world(seed, per_class=20)
-        rows = []
-        for sym, bars in walks.items():
-            for row in backtest.run_symbol(bars, h, step=3, keep_timeouts=True):
-                if not row["short_window"] and row["outcome"] != "TIMEOUT":
-                    rows.append(dict(row, cls=cls[sym]))
-        s = backtest.summarise(rows, step=3, horizon_days=h,
+    for seed in range(first_world, first_world + 2):
+        cached, timeouts = _attribution_world(seed)
+        rows = [dict(t) for t in cached]
+        s = backtest.summarise(rows, step=3, timeouts=list(timeouts),
+                               horizon_days=h,
                                universe=backtest.WHOLE_WATCHLIST)
         assert s["withheld"] is None and s["n"] > 10000
         for k in range(6):
             noise = random.Random(zlib.crc32(f"p|{seed}|{h}|{k}|cls".encode()))
             draws: dict = {}
             for t in rows:
-                key = (t["cls"], t["t"] // block)
+                key = (t["cls"], int(t["t"] // 86400) // block)
                 if key not in draws:
                     draws[key] = random.Random(zlib.crc32(
                         f"{seed}|{h}|{k}|cls|{key}".encode())).random()
                 t["c_news"] = 0.8 * draws[key] + 0.2 * noise.random()
-            news = next(c for c in backtest.attribute(rows)["components"]
-                        if c["component"] == "news")
+            a = backtest.attribute(rows, horizon_days=h)
+            assert a["randomisation"]["q"] == 8
+            news = next(c for c in a["components"] if c["component"] == "news")
             graded += news["verdict"] in ("KEEP", "INVERTED")
             ic_z2 += NormalDist().inv_cdf(1 - max(news["p"], 1e-12) / 2) ** 2
             sp_z2 += (news["spread"]["spread"] / news["spread"]["se"]) ** 2
             runs += 1
-        if seed == 0:
-            real = random.Random(3)
-            for t in rows:
-                t["c_news"] = 0.05 * (t["outcome"] == "TARGET") + real.random()
-            news = next(c for c in backtest.attribute(rows)["components"]
-                        if c["component"] == "news")
-            assert news["verdict"] == "KEEP", news
-    assert runs == 24
-    assert graded <= 3, f"{graded} of 24 meaningless components graded"
+    assert runs == 12
+    assert graded <= 3, f"{graded} of 12 meaningless components graded"
     assert sp_z2 / runs <= 2.2, sp_z2 / runs
     assert ic_z2 / runs <= 2.0, ic_z2 / runs
+
+
+@pytest.mark.rate
+def test_a_real_component_is_still_graded_keep_under_the_gate():
+    """The attribution guard's other half: on the guard's first world, a
+    real component, one setup at a time (IC about 0.08), still reads KEEP
+    with the randomisation's agreement — the gate is not blind for
+    attribution either.
+    Mutation it catches: the gate reading a dead statistic."""
+    import random
+    cached, _timeouts = _attribution_world(0)
+    rows = [dict(t) for t in cached]
+    real = random.Random(3)
+    for t in rows:
+        t["c_news"] = 0.05 * (t["outcome"] == "TARGET") + real.random()
+    news = next(c for c in backtest.attribute(
+        rows, horizon_days=_H15)["components"] if c["component"] == "news")
+    assert news["verdict"] == "KEEP", news
+    assert news["confirmed"] is True
 
 
 def test_the_ic_test_counts_setups_entered_on_the_same_day_together():
@@ -1386,7 +2447,7 @@ def test_the_ic_test_counts_setups_entered_on_the_same_day_together():
              "c_news": None, "c_catalyst": None}
             for x, y, t in zip(xs, ys, ts, strict=True)]
     assert backtest._dk_lag_of(rows) == 8
-    mom = backtest.attribute(rows)["components"][0]
+    mom = backtest.attribute(rows, gate=False)["components"][0]
     assert mom["component"] == "momentum"
     at = {lag: round(stats.normal_p(backtest._ic_t(xs, ys, ts, lag)), 4)
           for lag in (4, 8)}
@@ -1631,16 +2692,18 @@ def test_the_blend_ranks_backwards_only_when_judged_and_significant():
     dropped, or the withheld gate dropped."""
     from sonar import calibration
     from sonar.research import stats
-    strong = backtest.attribute(_blend_trials(1500, 1, backwards=True))
+    strong = backtest.attribute(_blend_trials(1500, 1, backwards=True),
+                                gate=False)
     assert strong["blend_ic"] < 0
     assert strong["blend_ic_t"] <= -calibration.Z_CLAIM
     assert strong["blend_ranks_backwards"] is True
     withheld = backtest.attribute(_blend_trials(1500, 1, backwards=True),
-                                  withheld="span")
+                                  withheld="span", gate=False)
     assert withheld["blend_ic"] == strong["blend_ic"]
     assert withheld["blend_ranks_backwards"] is False
     # noise past two standard errors, inside the claim bar (t −2.56)
-    noise = backtest.attribute(_blend_trials(1500, 43, backwards=False))
+    noise = backtest.attribute(_blend_trials(1500, 43, backwards=False),
+                               gate=False)
     assert noise["blend_ic"] < 0, noise["blend_ic"]
     assert -calibration.Z_CLAIM < noise["blend_ic_t"] < -2
     assert noise["blend_ranks_backwards"] is False

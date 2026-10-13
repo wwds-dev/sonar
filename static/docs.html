@@ -188,6 +188,13 @@
     <tr><td>Backtest</td><td>Running a strategy over history to see what it
       would have done. Useful, and easy to abuse: see §11 for five that were
       run properly and found nothing.</td></tr>
+    <tr><td>p-value</td><td>How often chance alone would give a reading at
+      least this strong. Small means chance rarely does it; it never means the
+      reading is certain, and it is per test: run enough tests and some will
+      come out small by chance.</td></tr>
+    <tr><td>Survivorship</td><td>Studying only what is still around today.
+      Companies that failed and coins that stopped trading drop out, so a
+      test on today's list flatters anything that bet on things going up.</td></tr>
     <tr><td>Brier score</td><td>A mark out of one for a set of probability
       guesses, where lower is better. 0 is perfect foresight, 0.25 is a coin
       flip on everything.</td></tr>
@@ -566,18 +573,36 @@ APCA_API_SECRET_KEY=...</code></pre>
     and <b class="down">INVERTED</b>. The last one is the one to look at first:
     a component with a significant <em>negative</em> IC, carried with a
     positive weight, would push the wrong instruments up the board.
-    p-values go through Benjamini-Hochberg together, because testing four
-    components and reporting the best one is how noise gets published. The
-    IC's p-value and the spread's error bar both count setups entered on the
-    same day, across instruments, as one reading — the same rule as the
-    headline's error bar in §8.</p>
-  <p>Read the grades as a reason to look closer, never as a finding. They are
-    not calibrated tests: in our tests on real prices, a component that meant
-    nothing but moved with a whole asset class, or stayed fixed per instrument,
-    was still graded KEEP or INVERTED on about 5–7% of runs. DROP has no error
-    bar at all — it is read from one number, how much the blend's IC falls
-    without the component. And a run that gets no verdict grades nothing: every
-    component reads <b>not judged</b>.</p>
+    p-values (a p-value is how often chance alone would give a reading at
+    least this strong) go through Benjamini-Hochberg together, because testing
+    several components and reporting the best one is how noise gets
+    published. The IC's p-value and the spread's error bar both count setups
+    entered on the same day, across instruments, as one reading — the same
+    rule as the headline's error bar in §8.</p>
+  <p>A KEEP or INVERTED also has to pass the same kind of check against chance
+    as the headline (§8): the component's ranking is compared with what a
+    meaningless reading, held for whole stretches of time, gives. Two more
+    labels say why a component got no grade:</p>
+  <ul>
+    <li><b>not told apart from chance</b> — it would read KEEP or INVERTED,
+      but a meaningless reading held for stretches of time ranked setups this
+      well often enough to explain it;</li>
+    <li><b>not tested</b> — the check against random stretches could not run
+      on it (a setup without an entry time, or under two stretches), so it is
+      not graded.</li>
+  </ul>
+  <p>The check does not cover traits fixed per instrument, such as
+    volatility: swapping whole stretches of time leaves a trait that each
+    instrument always has where it was. The Lab says so under the table.</p>
+  <p>Read the grades as a reason to look closer, never as a finding. Before
+    this check, a component that meant nothing but moved with a whole asset
+    class, or stayed fixed per instrument, was graded KEEP or INVERTED on
+    about 5–7% of runs on real prices. How often that happens with the check
+    has not yet been measured at full size. DROP has no error bar at all and
+    is not calibrated — it is read from one number, how much the blend's IC
+    falls without the component; giving it one is deferred. And a run that
+    gets no verdict grades nothing: every component reads <b>not
+    judged</b>.</p>
   <p>The catalyst component spent a year reporting <b>not measured</b> — an
     untested component must not read as a validated one. In September 2026 it
     got its trial: a historical earnings calendar built from EDGAR's own
@@ -647,31 +672,107 @@ APCA_API_SECRET_KEY=...</code></pre>
       R:R 1.50, about <b>39.4%</b> rather than 40% (39.44% on the default
       two-year run; the Lab shows the 40% beside it as "with unlimited
       time").</td></tr>
-    <tr><td>Error bar</td><td>Two standard errors on the difference (a standard
-      error is how far the rate typically wanders by chance alone), with
-      setups entered on the same day across instruments counted together,
-      because instruments move together. Even so, a direction that means
-      nothing lands outside it about 1 run in 10 on real prices (validator
-      tests, 2026-10-12, 2,040 runs), not 1 in 20. This is the number that
-      decides, and it is not a guarantee.</td></tr>
+    <tr><td>Error bar</td><td>How far the difference can wander by chance
+      alone, drawn at twice the standard error (a standard error is how far
+      the rate typically wanders by chance), with setups entered on the same
+      day across instruments counted together, because instruments move
+      together. Landing outside it is needed for a verdict, but it is not
+      enough on its own and it is not a guarantee: see the check against
+      chance below.</td></tr>
   </table>
-  <div class="callout"><b>The only question that matters on the first pass.</b>
-    Is the realised rate outside its error bar from the predicted rate? If it
-    sits inside, the answer is <em>"no drift was found"</em> — and that is a
-    result, not a failure. SONAR prints it that way deliberately.</div>
+  <div class="callout"><b>The first question.</b> Is the realised rate
+    outside its error bar from the predicted rate? If it sits inside, the Lab
+    says the difference was <em>not shown to differ from the prediction, which
+    is not the same as no difference</em>: a small difference can hide inside
+    a wide bar. That is a result, not a failure.</div>
+
+  <h3>The check against chance</h3>
+  <p>Outside the bar is not enough for a verdict. Momentum points many
+    instruments the same way for weeks at a time, and a direction picked at
+    random and held that long can land outside the bar too. So the Lab also
+    asks whether the run's directions beat directions picked at random:</p>
+  <ul>
+    <li>It cuts the replay into <b>stretches</b> of four holding periods each
+      (32 days at a 5-day horizon), the same stretches for every instrument
+      and every asset class.</li>
+    <li>It scores the run again many times, each time with the direction
+      swapped for the opposite one over whole stretches at a time, across the
+      whole watchlist.</li>
+    <li>A verdict needs the real run to land further out than nearly all of
+      those reshuffles, <b>on the same side as the difference</b> (Δ, the
+      realised rate minus the predicted one): twice the share of reshuffles
+      that read at least as far must be under 5%. That figure is the run's
+      p-value; the expert wording shows it as <em>p vs random directions, in
+      the direction of Δ</em>, with the number of stretches.</li>
+    <li>It needs at least <b>8</b> stretches; with fewer the run gets no
+      verdict (next section).</li>
+  </ul>
+  <p>So a run can read one of these:</p>
+  <table>
+    <tr><th>The Lab says</th><th>What it means</th></tr>
+    <tr><td><b class="gold">beats</b> or <b class="gold">below</b> the
+      prediction</td><td>Outside the bar, and further out than random
+      directions over stretches of time usually land. A reason to look
+      closer, not a finding.</td></tr>
+    <tr><td><b>within</b> its error bar (grey)</td><td>Not shown to differ
+      from the prediction, which is not the same as no difference.</td></tr>
+    <tr><td><b>not told apart from chance</b> (grey)</td><td>Outside the bar,
+      but random directions over stretches of time land this far out often
+      enough that it is not told apart from chance. Never read as "within",
+      and never as a finding.</td></tr>
+    <tr><td>no verdict</td><td>The numbers are shown and the reason is given:
+      for example too few separate stretches, a missing piece of the sample,
+      or a ten-year range (next section).</td></tr>
+  </table>
+  <p><b>How often a meaningless direction still gets a verdict.</b> In our
+    tests on past prices, directions picked at random and held for up to
+    eight holding periods still got a verdict either way (beats or below)
+    <b>about 1 run in 10</b>: 9.11% (interval 7.6–10.9%) of 1,152 judged
+    runs. That set was kept apart from the one the check was designed on: the
+    watchlist's daily bars from January 2006 to September 2016 (110 of the
+    129 instruments; data file fingerprint <code>404f5a77…</code>), measured
+    by the model validator on 2026-10-12. On that set 53% of runs got no
+    verdict at all, mostly for too few separate stretches, and are not in the
+    figure. What to take from it:</p>
+  <ul>
+    <li><b>The rate is per run.</b> Trying many settings makes a chance
+      verdict somewhere likely. Nearby settings can disagree, so a verdict at
+      one horizon and not the next is what chance looks like.</li>
+    <li><b>It varies by setting.</b> One band of settings (five years,
+      horizons of 30 to 59 days) read about 1 in 5.</li>
+    <li><b>It covers directions held up to eight holding periods.</b> Patterns
+      that last longer can land outside the bar more often by chance.</li>
+    <li><b>It misses its own target.</b> The aim was at most 7.5% for
+      directions held eight holding periods; 9.11% is above it. The owner
+      chose to keep the check and state the miss, so the measured figure is
+      the one every verdict quotes.</li>
+  </ul>
+  <p><b>What the check cannot see.</b> Swapping whole stretches of time
+    leaves anything fixed per instrument where it was. A direction fixed per
+    instrument, such as always long, can also land outside the bar, because
+    each instrument keeps its own trend over the years and the list holds
+    only today's survivors; this check cannot see that. Every reading outside
+    the bar says so, and under every result the Lab adds: <em>"The
+    instruments are today's list; ones that fell away are missing, which
+    favours long trades over long ranges."</em> That is why ten-year runs get
+    no verdict: over ten years of today's list, a direction fixed per
+    instrument landed outside the bar more often than about 1 run in 10, and
+    on one set of past bars about 1 in 4 at 20- to 60-day horizons. Every
+    verdict, and every number around it, is before costs, from one replay of
+    past prices.</p>
 
   <h3>How much data before a number means anything</h3>
   <p>At a 40% baseline, if every trial were an independent reading, the error
-    bar on the hit rate — two standard errors, the Lab's rule — would be
-    (the textbook 95% band uses 1.96 and reads a little narrower, ±21.5 at 20
-    trials):</p>
+    bar on the hit rate — drawn at twice the standard error, as the Lab draws
+    it — would be (the textbook 95% band uses 1.96 and reads a little
+    narrower, ±21.5 at 20 trials):</p>
   <table>
-    <tr><th>Trials</th><th>Bar if independent</th><th>What it can detect</th></tr>
-    <tr><td>20</td><td class="down">±21.9 points</td><td>Essentially nothing — and the Lab gives no verdict under 100.</td></tr>
-    <tr><td>50</td><td class="down">±13.9 points</td><td>Only an enormous effect. Still no verdict.</td></tr>
-    <tr><td>100</td><td class="gold">±9.8 points</td><td>A large effect.</td></tr>
-    <tr><td>400</td><td class="up">±4.9 points</td><td>A realistic one.</td></tr>
-    <tr><td>2,000</td><td class="up">±2.2 points</td><td>A small one.</td></tr>
+    <tr><th>Trials</th><th>Bar if independent</th><th>What it means</th></tr>
+    <tr><td>20</td><td class="down">±21.9 points</td><td>A reading this wide says almost nothing — and the Lab gives no verdict under 100.</td></tr>
+    <tr><td>50</td><td class="down">±13.9 points</td><td>Still no verdict.</td></tr>
+    <tr><td>100</td><td class="gold">±9.8 points</td><td>The fewest setups a verdict can come from.</td></tr>
+    <tr><td>400</td><td class="up">±4.9 points</td><td>Narrower, but only the floor: a real run's bar is wider (below).</td></tr>
+    <tr><td>2,000</td><td class="up">±2.2 points</td><td>The same: the floor, not the bar you will see.</td></tr>
   </table>
   <p>That column is the <em>narrowest</em> the bar can be, and on a real run
     the bar is wider. The default run — whole watchlist, two years, a 5-day
@@ -700,8 +801,9 @@ APCA_API_SECRET_KEY=...</code></pre>
 
   <h3>When a run gets no verdict</h3>
   <p>Some runs show the numbers and say why there is no verdict, instead of
-    giving one. Each rule is there because a direction picked at random got
-    "beats the prediction" too often without it:</p>
+    giving one. Each rule is there because without it a direction picked at
+    random got a verdict too often, or the check against chance could not
+    run:</p>
   <table>
     <tr><th>The run</th><th>Why no verdict</th></tr>
     <tr><td>A horizon above <b>120 days</b></td><td>Over holds that long an
@@ -713,9 +815,27 @@ APCA_API_SECRET_KEY=...</code></pre>
     <tr><td>Under <b>100</b> compared setups, or setups entered on under
       <b>20</b> different days</td><td>Too few to judge.</td></tr>
     <tr><td>Setups entered within <b>5 horizons</b> of each other</td><td>Setups
-      entered close together mostly share one market move. A longer range or a
-      shorter horizon spreads them out.</td></tr>
+      entered close together mostly share one market move. A shorter horizon
+      spreads them out, or a longer range up to five years.</td></tr>
+    <tr><td>Setups that fall in under <b>8</b> separate stretches of time (four
+      holding periods each, every asset class together)</td><td>Too few
+      separate readings for the check against chance. A shorter horizon gives
+      more, or a longer range up to five years.</td></tr>
+    <tr><td>A <b>ten-year</b> range</td><td>A direction fixed per instrument,
+      such as always long, lands outside the bar more often than the chance
+      rate a verdict quotes, because each instrument keeps its own trend over
+      the years and the list holds only today's survivors; the check cannot see
+      that. Five years or less can be judged.</td></tr>
+    <tr><td>A sample missing some setups' opposite direction, entry time,
+      horizon, or the setups that ran out of time</td><td>The check against
+      chance needs all of them. No setting fixes this; it is a gap in the
+      sample.</td></tr>
   </table>
+  <p>On a run already at five years the tips name only the shorter horizon.
+    The <b>run backtest</b> button picks its own range (§10): two years for the
+    day and week profiles and five for the month, enough separate stretches to
+    judge; the quarter and year profiles show the numbers without a
+    verdict.</p>
   <p>Separately, a setup decided less than <b>2 horizons</b> before the end of
     the data is never compared, only counted ("too near the end of the data"):
     over a window that short the barrier maths calls a far target nearly
@@ -777,9 +897,12 @@ APCA_API_SECRET_KEY=...</code></pre>
     first</span> — a component with a significant <em>negative</em> IC, carried
     with a positive weight, would push the wrong instruments up the board. The
     Lab says it is worth testing with its sign flipped, or dropped; from one
-    replay of past prices that is a reason to look closer, not a finding. Even
-    a meaningless component gets KEEP or INVERTED on about 5–7% of runs (§7),
-    and a grade only counts on a run that gets a verdict.</p>
+    replay of past prices that is a reason to look closer, not a finding. A
+    grade also has to pass the check against random stretches of time;
+    without it the component reads <b>not told apart from chance</b>, and
+    where the check could not run, <b>not tested</b> (§7). That check does
+    not cover traits fixed per instrument, such as volatility, and a grade
+    only counts on a run that gets a verdict.</p>
   <p>The same goes for the attention table, when the run includes attention.
     Only some instruments have an attention series, so each attention level is
     read against the setups that carry one ("vs setups with attention"), not
@@ -833,8 +956,9 @@ APCA_API_SECRET_KEY=...</code></pre>
   <p>Concretely, so it can be checked rather than felt:</p>
   <ul>
     <li>Realised hit rate <b>above</b> the predicted rate by more than its error
-      bar, on thousands of trials over the whole watchlist — and, because that
-      bar is not a guarantee, the same again on another range.</li>
+      bar and past the check against chance, on thousands of trials over the
+      whole watchlist — and, because a direction picked at random still gets
+      a verdict about 1 run in 10, the same again on another range.</li>
     <li>The same sign in <b>at least 5 of 6</b> time blocks.</li>
     <li>At least one component surviving Benjamini-Hochberg, with a quintile
       spread whose error bar excludes zero.</li>

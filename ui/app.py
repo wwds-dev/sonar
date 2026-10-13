@@ -469,7 +469,19 @@ ATTRIBUTION_HEADS = {
 ATTRIBUTION_VERDICTS = {
     "KEEP": "keep", "WEAK": "weak", "DROP": "drop", "INVERTED": "backwards",
     "UNCLEAR": "unclear", "not judged": "not judged",
+    # Internal name only: no reader sees it, in either wording (domain P2-A).
+    "UNCONFIRMED": "not told apart from chance",
+    # Internal name too: the check could not run, which is not the same as
+    # read as chance (domain P3-2).
+    "UNTESTED": "not tested",
 }
+
+#: Survivorship (domain P2-3): the replay runs on today's list. The Terminal
+#: and the Lab show it under every result, in both wordings (owner, after the
+#: fix-loop-2 review; domain pass 5 P3-4).
+SURVIVORSHIP_LINE = ("The instruments are today's list; ones that fell away "
+                     "are missing, which favours long trades over long "
+                     "ranges.")
 
 #: The time-stop shadow of the score grade (docs/specs/shadow-time-stop.md,
 #: Design D6), as (plain, expert). "Promised" and "advertised" stay with the
@@ -2832,8 +2844,10 @@ class MainWindow(QMainWindow):
         self.bt_btn = QPushButton("run backtest")
         self.bt_btn.setFont(theme.figure(9))
         self.bt_btn.setToolTip(
-            "Replay the same plan over two years of real bars — five on the\n"
-            "year profile, whose horizon two years are too short to test.\n"
+            "Replay the same plan over real bars: two years for the day and\n"
+            "week profiles, five for the month — enough separate stretches\n"
+            "of time to judge. The quarter and year profiles show the\n"
+            "numbers without a verdict.\n"
             "Live positions take months to grade; this answers today —\n"
             "for the price half of the score, which is all history can test.")
         self.bt_btn.clicked.connect(self._run_backtest)
@@ -3686,10 +3700,16 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _short_window_reason(r: dict) -> str:
         """Why a run compared nothing, and what would leave room — the same
-        sentence on the Lab and the Terminal."""
+        sentence on the Lab and the Terminal. A longer range is offered up to
+        five years, and not from a run already that long: ten years is never
+        judged (backtest.offers_longer_range; QA P3-6)."""
+        from sonar import backtest
+        fix = ("A shorter horizon, or a longer range of five years at most, "
+               "leaves room for that." if backtest.offers_longer_range(
+                   r.get("range")) else
+               "A shorter horizon leaves room for that.")
         text = ("A setup is compared only when at least two horizons of bars "
-                "follow it. A longer range or a shorter horizon leaves room for "
-                "that.")
+                f"follow it. {fix}")
         if r.get("longest_comparable_horizon"):
             text += (" On this range the longest series can compare a horizon "
                      f"of up to {r['longest_comparable_horizon']} days.")
@@ -3722,10 +3742,19 @@ class MainWindow(QMainWindow):
         withheld = r.get("withheld")
         # The colour follows the verdict summarise reached on unrounded
         # figures, not a re-derivation from the rounded ones (code review r5
-        # P3-5); a hand-built summary without the flag falls back to them.
-        within = (not r["significant"] if "significant" in r
-                  else abs(delta) <= 2 * se) and not withheld
-        colour = "#7c8798" if within or withheld else "#e5c07b"
+        # P3-5); a summary without `verdict_state` falls back to
+        # `significant`, and a hand-built one without either to the figures.
+        # Outside the bar but not told apart from chance is grey, and is
+        # never "within" (docs/adr/0003).
+        state = r.get("verdict_state")
+        if state is not None:
+            within = state == "within"
+            found = state in ("beats", "below")
+        else:
+            within = (not r["significant"] if "significant" in r
+                      else abs(delta) <= 2 * se) and not withheld
+            found = not within and not withheld
+        colour = "#e5c07b" if found else "#7c8798"
         # Setups that touched neither barrier in time are out of the hit rate,
         # so the prediction is the one for setups that resolved in time — and
         # how many ran out is shown, not hidden (docs/adr/0001). Hand-built
@@ -3769,6 +3798,13 @@ class MainWindow(QMainWindow):
              f"{r['implied_edge_sigma']:+.4f} σ"),
             ("Average hold", f"{r['avg_bars_held']:.1f} bars"),
         ]
+        # The direction randomisation's p, in the direction of Δ — expert
+        # wording only: plain mode gets no new number [A3].
+        rand = r.get("randomisation") or {}
+        if not words.plain() and rand.get("p_tail") is not None:
+            rows.append(("p vs random directions, in the direction of Δ",
+                         f"{rand['p_tail']:.4f}  ({rand.get('q', 0)} "
+                         "stretches)"))
         body = "".join(
             f"<tr><td style='padding:2px 18px 2px 0;color:#7c8798'>{k}</td>"
             f"<td style='padding:2px 0'><b>{v}</b></td></tr>" for k, v in rows)
@@ -3778,8 +3814,18 @@ class MainWindow(QMainWindow):
 
         if within:
             out.append("<p style='color:#7c8798'>The difference sits inside its own "
-                       "error bar, which is what a model with no edge is supposed to "
-                       "look like. That is the result, not a failure to find one.</p>")
+                       "error bar: not shown to differ from the prediction, which "
+                       "is not the same as no difference.</p>")
+        if not words.plain() and rand.get("p_tail") is not None:
+            # Twice the one-sided share, as randomisation.direction_p
+            # computes it (domain P3-1).
+            out.append("<p style='color:#5c6370'>p vs random directions: "
+                       "twice the share of random-direction reshuffles of "
+                       "whole stretches that read at least this far in the "
+                       "direction of Δ, at most 1.</p>")
+        # The Terminal's line, on every result in both wordings.
+        out.append(f"<p style='color:#7c8798'>"
+                   f"{html.escape(SURVIVORSHIP_LINE, quote=False)}</p>")
 
         for title, key in (("Momentum buckets", "buckets"),
                            ("Attention buckets", "attention_buckets")):
@@ -3816,7 +3862,8 @@ class MainWindow(QMainWindow):
     _VERDICT_COLOUR = {"KEEP": "#98c379", "INVERTED": "#e06c75",
                        "DROP": "#e06c75", "WEAK": "#e5c07b",
                        "UNCLEAR": "#7c8798", "not measured": "#5c6370",
-                       "not judged": "#7c8798"}
+                       "not judged": "#7c8798", "UNCONFIRMED": "#7c8798",
+                       "UNTESTED": "#7c8798"}
 
     @staticmethod
     def _verdict_word(verdict: str | None) -> str:
@@ -3824,6 +3871,8 @@ class MainWindow(QMainWindow):
         lookup keeps the raw key; only the displayed word changes."""
         if verdict is None:
             return "—"
+        if verdict in ("UNCONFIRMED", "UNTESTED"):   # internal names only
+            return ATTRIBUTION_VERDICTS[verdict]
         return ATTRIBUTION_VERDICTS.get(verdict, verdict) if words.plain() \
             else verdict
 
@@ -3845,16 +3894,32 @@ class MainWindow(QMainWindow):
         head = "".join(
             f"<th style='text-align:left;padding-right:14px'>{words.pick(h)}</th>"
             for h in ATTRIBUTION_HEADS.values())
+        # The components the randomisation's Benjamini-Hochberg ran over:
+        # those measured, usually two (domain P2-2).
+        n_bh = (a.get("randomisation") or {}).get("measured")
+        if n_bh is None:
+            n_bh = sum(1 for c in rows if c.get("ic") is not None)
         body = []
         for c in rows:
             sp = c.get("spread") or {}
             spread = sp.get("spread")
             se = sp.get("se")
             colour = MainWindow._VERDICT_COLOUR.get(c.get("verdict"), "#7c8798")
+            ic = f"{c['ic']:+.3f}" if c.get("ic") is not None else "—"
+            # Expert wording puts the IC's two p-values by it: today's test,
+            # and the randomisation's over whole stretches.
+            if (not words.plain() and c.get("ic") is not None
+                    and c.get("p") is not None):
+                ic += f" (p {c['p']:.4f}"
+                if c.get("p_rand") is not None:
+                    ic += (f"; vs random stretches {c['p_rand']:.4f}, before "
+                           f"the correction for the {n_bh} component"
+                           f"{'' if n_bh == 1 else 's'} measured")
+                ic += ")"
             cells = (
                 c.get("component", "?"),
                 f"{c.get('weight', 0):.2f}" if c.get("weight") is not None else "—",
-                f"{c['ic']:+.3f}" if c.get("ic") is not None else "—",
+                ic,
                 (f"{spread * 100:+.1f} ±{2 * se * 100:.1f}"
                  if spread is not None and se else "—"),
                 (f"{c['blend_ic_without']:+.3f}"
@@ -3881,8 +3946,19 @@ class MainWindow(QMainWindow):
                 "chance would give; <b>weak</b> that both are small; <b>drop</b> "
                 "that removing it does not lower the score's ranking skill; "
                 "<b>backwards</b> that it is clearly negative; <b>unclear</b> "
-                "that the readings disagree. Keep grades a piece of the score "
-                "against past setups. It does not mean the piece makes money.</p>")
+                "that the readings disagree; <b>not told apart from chance</b> "
+                "that it would read keep or backwards, but a meaningless "
+                "reading held for stretches of time ranked setups this well "
+                "often enough to explain it; <b>not tested</b> that the check "
+                "against random stretches could not run on it. Keep grades a piece of the score "
+                "against past setups, before costs, from one replay of past "
+                "prices. It does not mean the piece makes money.</p>")
+        # In both wordings (domain P2-2): the volatility grade's own "why"
+        # shows in both, so the residual it carries does too.
+        if a.get("randomisation"):
+            out.append("<p style='color:#7c8798'>The check against random "
+                       "stretches does not cover traits fixed per instrument, "
+                       "such as volatility.</p>")
 
         blend = a.get("blend_ic")
         if blend is not None:
@@ -3915,14 +3991,26 @@ class MainWindow(QMainWindow):
         if a.get("catalyst"):
             out.append(f"<p style='color:#5c6370'>catalyst — "
                        f"{html.escape(str(a['catalyst']), quote=False)}</p>")
-        judged = ("the four components are judged together, with a stricter bar "
-                  "for each than if it stood alone"
+        # A run without a verdict judges nothing, so no line says what is
+        # judged together (code review P3-5): the note above says why.
+        if a.get("withheld"):
+            return "".join(out)
+        # The count today's Benjamini-Hochberg runs over: every component
+        # listed, one not measured at p = 1 (backtest.attribute), so the
+        # stricter bar is that of all of them, not of the measured alone.
+        n_all = len(rows)
+        n_meas = sum(1 for c in rows if c.get("ic") is not None)
+        many = f"{n_all} component{'' if n_all == 1 else 's'}"
+        rest = (f" (the {n_meas} measured, and those not measured counting "
+                "as finding nothing)" if n_meas < n_all else "")
+        judged = (f"the {many} are judged together{rest}, with a stricter "
+                  "bar for each than if it stood alone"
                   if words.plain() else
-                  "p-values go through Benjamini-Hochberg together at "
-                  f"q={a.get('fdr_q', 0.1)}")
+                  f"p-values of the {many} go through Benjamini-Hochberg "
+                  f"together at q={a.get('fdr_q', 0.1)}{rest}")
         out.append(f"<p style='color:#5c6370'>{judged[0].upper() + judged[1:]}: "
-                   "testing four components and reporting the best one is how "
-                   "noise gets published.</p>")
+                   f"testing {many} and reporting the best one is how noise "
+                   "gets published.</p>")
         return "".join(out)
 
     # -- playmaker ------------------------------------------------------------ #
@@ -4492,8 +4580,10 @@ class MainWindow(QMainWindow):
         self.bt_btn.setEnabled(False)
         from sonar import backtest
         from sonar.assets import WATCHLIST
-        # Two years, unless the profile's horizon needs more history than that
-        # to compare anything (the 250-day profile does).
+        # The shortest range whose setups fall in enough separate stretches
+        # for a verdict — two years to 10 days, five to 30 (A15, amended) —
+        # or, past that, the range that compares anything at all, shown
+        # without a verdict.
         days = self.live.horizon.momentum_days
         rng = backtest.range_for_horizon(days)
         span = {"2y": "two years", "5y": "five years"}.get(rng, rng)
@@ -4541,9 +4631,24 @@ class MainWindow(QMainWindow):
         for b in r.get("buckets", []):
             lines.append(f'    |momentum| {b["lo"]*100:>3.0f}–{b["hi"]*100:<4.0f}%  '
                          f'n={b["n"]:<6} hit {b["hit_rate"]*100:5.1f}%')
-        lines.append(f'  {r["verdict"]}')
+        # The Terminal's reader picks a profile, not a range, so too few
+        # stretches names that fix (domain P3-5).
+        verdict = r["verdict"]
+        if r.get("withheld") == "few_clusters":
+            from sonar import backtest
+            verdict = backtest.few_clusters_verdict(
+                (r.get("randomisation") or {}).get("q", 0),
+                r.get("horizon_days"), terminal=True)
+        lines.append(f'  {verdict}')
+        # The randomisation's p in expert wording, as the Lab shows it [A3].
+        rand = r.get("randomisation") or {}
+        if not words.plain() and rand.get("p_tail") is not None:
+            lines.append(f'  p vs random directions, in the direction of Δ: '
+                         f'{rand["p_tail"]:.4f} ({rand.get("q", 0)} stretches)')
         lines.append("  Price-based half only — historical news is not replayed, "
                      "and costs are excluded (both would push this down).")
+        # Survivorship (domain P2-3): the replay runs on today's list.
+        lines.append(f"  {SURVIVORSHIP_LINE}")
         self.bt_result.setText("\n".join(lines))
 
     def _trade(self, symbol: str, direction: str) -> None:

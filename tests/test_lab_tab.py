@@ -60,15 +60,20 @@ def test_an_empty_result_renders_the_reason_not_a_crash(window):
     assert "no resolved trials" in html
 
 
+_INSIDE = ("The difference sits inside its own error bar: not shown to differ "
+           "from the prediction, which is not the same as no difference.")
+
+
 def test_a_result_inside_its_error_bar_is_reported_as_the_finding(window):
-    """No edge is a result. The tab must not present it as a failure."""
+    """A gap inside its bar is a result, not a failure — and not 'no edge'
+    either: not shown, which is not the same as shown absent (measure 9)."""
     html = window._lab_html({
         "n": 500, "symbols": 10, "hit_rate": 0.393, "predicted": 0.400,
         "delta": -0.007, "std_error": 0.022, "significant": False,
         "expectancy_r": -0.017, "implied_edge_sigma": -0.004,
-        "avg_bars_held": 6.1, "verdict": "no edge detected"})
-    assert "no edge detected" in html
-    assert "supposed to look like" in html
+        "avg_bars_held": 6.1, "verdict": "within"})
+    assert _INSIDE in html
+    assert "no edge" not in html and "supposed to look like" not in html
 
 
 def test_the_predicted_rate_is_shown_next_to_the_realised_one(window):
@@ -298,6 +303,34 @@ def test_the_lab_tells_the_replay_which_universe_it_covers(window, monkeypatch):
     window.bt_btn.setEnabled(True)
 
 
+def test_the_lab_hands_its_range_to_the_replay(window, monkeypatch):
+    """QA P3-3: the range the Lab's reader picks is the range the replay
+    reads — through the Lab's run and the thread's hand-off to
+    backtest.run — so ten years reaches summarise and is withheld there.
+    Mutation it catches: the range dropped or fixed at either step (QA
+    mutants D12, D13)."""
+    import ui.app as app_mod
+    from sonar import backtest
+    from ui.worker import BacktestThread
+    made = []
+    monkeypatch.setattr(app_mod, "BacktestThread", _thread_stub(made))
+    monkeypatch.setattr(window, "_lab_thread", None)
+    before = window.lab_range.currentIndex()
+    for data in ("1y", "2y", "5y", "10y"):
+        window.lab_range.setCurrentIndex(window.lab_range.findData(data))
+        window._lab_run()
+        assert made[-1]["rng"] == data
+        window._lab_thread = None
+    window.lab_range.setCurrentIndex(before)
+    window.lab_btn.setEnabled(True)
+    seen = {}
+    monkeypatch.setattr(backtest, "run",
+                        lambda symbols, **kw: seen.update(kw) or {"n": 0})
+    for data in ("1y", "5y", "10y"):
+        BacktestThread(["BTC-USD"], 5, rng=data).run()
+        assert seen["rng"] == data
+
+
 def test_the_backtest_thread_hands_the_universe_to_the_replay(monkeypatch):
     from sonar import backtest
     from ui.worker import BacktestThread
@@ -337,6 +370,11 @@ def test_a_run_without_a_verdict_shows_no_attention_or_attribution_finding(
                      "attention": 3.0 if spike else -1.0, "c_momentum": m,
                      "c_volatility": 0.3, "c_news": 1.0 if spike else 0.0,
                      "c_catalyst": None})
+    # three days apart, so the judged run falls in ten 32-day stretches; each
+    # row carries its opposite outcome, the mirror of its own (docs/adr/0003)
+    flip = {"TARGET": "STOP", "STOP": "TARGET"}
+    rows = [dict(r, t=r["t"] * 3, opp_outcome=flip[r["outcome"]],
+                 opp_bars_held=3, opp_predicted=0.4) for r in rows]
     monkeypatch.setattr(backtest, "fetch_bars", lambda sym, rng_: _walk(0.0, n=60))
     monkeypatch.setattr(backtest, "run_symbol", lambda *a, **k: list(rows))
     judged = backtest.run(["AAPL"], horizon_days=5)
@@ -392,10 +430,10 @@ def test_the_score_ranks_backwards_only_on_a_judged_significant_blend(
     from sonar import backtest
     from ui import words
     sentence = "ranking the wrong way round"
-    strong = backtest.attribute(_blend_rows(1, backwards=True))
+    strong = backtest.attribute(_blend_rows(1, backwards=True), gate=False)
     withheld = backtest.attribute(_blend_rows(1, backwards=True),
-                                  withheld="single_class")
-    noise = backtest.attribute(_blend_rows(43, backwards=False))
+                                  withheld="single_class", gate=False)
+    noise = backtest.attribute(_blend_rows(43, backwards=False), gate=False)
     assert strong["blend_ic"] < 0 and withheld["blend_ic"] < 0
     assert noise["blend_ic"] < 0 and not noise["blend_ranks_backwards"]
     for plain in (True, False):
@@ -573,10 +611,99 @@ def test_a_run_without_a_verdict_shows_the_numbers_and_why(window):
     assert "Realised hit rate" in html and "+2.37 pts" in html
     assert "#e5c07b" not in html                  # not coloured as a finding
     inside = _judged(withheld="too_few", verdict="Too few to judge: 60 ...")
-    assert "supposed to look like" not in window._lab_html(inside)
-    assert "supposed to look like" in window._lab_html(_judged())
+    assert _INSIDE not in window._lab_html(inside)
+    assert _INSIDE in window._lab_html(_judged())
     window._backtest_done(r)
     assert f"  {why}." in window.bt_result.text().splitlines()
+
+
+def test_a_ten_year_run_in_the_lab_shows_numbers_and_the_reason(
+        window, monkeypatch):
+    """Owner, Lab 10y: the Lab still offers ten years, and such a run shows
+    its numbers in grey with the reason — survivors on today's list — and
+    no 'inside its own error bar' paragraph, in both wordings, even when
+    the gap sits outside the bar.
+    Mutation it catches: the drift reason dropped, or the finding colour on
+    a ten-year run."""
+    from sonar import backtest
+    from ui import words
+    assert window.lab_range.findData("10y") >= 0
+    why = backtest._withheld_verdict("drift", 20, 9000, 481)
+    r = _judged(range="10y", horizon_days=20, withheld="drift",
+                verdict_state="withheld", outside_bar=False,
+                delta=0.0237, std_error=0.006, verdict=why)
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = window._lab_html(r)
+        assert "today&#x27;s survivors" in html or "today's survivors" in html
+        assert "before costs, from one replay of past prices" in html
+        assert "+2.37 pts" in html and "#e5c07b" not in html
+        assert _INSIDE not in html
+
+
+def test_the_lab_shows_the_survivorship_line_on_every_result(
+        window, monkeypatch):
+    """Owner, after the fix-loop-2 review (domain pass 5 P3-4): the Lab
+    shows the Terminal's survivorship line under every result — judged or
+    withheld, any range — in both wordings, once; a run that compared
+    nothing has no result to qualify.
+    Mutation it catches: the line dropped, shown in one wording only, or
+    only on some readings."""
+    from sonar import backtest
+    from ui import app as app_mod
+    from ui import words
+    line = ("The instruments are today's list; ones that fell away are "
+            "missing, which favours long trades over long ranges.")
+    assert app_mod.SURVIVORSHIP_LINE == line
+    results = [
+        _judged(verdict_state="within"),
+        _judged(range="1y", delta=0.031, std_error=0.009,
+                verdict_state="beats", significant=True, outside_bar=True,
+                randomisation=_rand(0.004),
+                verdict=backtest._verdict(0.031, 0.009, "beats")),
+        _judged(delta=0.031, std_error=0.009, verdict_state="unconfirmed",
+                outside_bar=True, randomisation=_rand(0.31),
+                verdict=backtest._verdict(0.031, 0.009, "unconfirmed")),
+        _judged(range="5y", horizon_days=250, withheld="horizon",
+                verdict_state="withheld"),
+        _judged(range="10y", horizon_days=20, withheld="drift",
+                verdict_state="withheld",
+                verdict=backtest._withheld_verdict("drift", 20, 9000, 481)),
+        {"n": 500, "symbols": 10, "range": "2y", "horizon_days": 5,
+         "hit_rate": 0.393, "predicted": 0.400, "delta": -0.007,
+         "std_error": 0.02, "significant": False, "expectancy_r": -0.02,
+         "implied_edge_sigma": -0.01, "avg_bars_held": 3.0,
+         "verdict": "older summary"},
+    ]
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        for r in results:
+            html = window._lab_html(r)
+            assert html.count(line) == 1, (plain, r.get("verdict_state"))
+            window._backtest_done(r)
+            assert f"  {line}" in window.bt_result.text().splitlines()
+    assert line not in window._lab_html({"n": 0, "verdict": "nothing"})
+
+
+def test_the_short_window_reason_offers_a_range_up_to_five_years(window):
+    """QA P3-6: what would leave room for a run that compared nothing names
+    a longer range up to five years only, and none from a run already at
+    five years or over ten, which are never judged.
+    Mutation it catches: the reason pointing at ten years, or at a longer
+    range from a five-year run."""
+    base = {"n": 0, "verdict": "nothing to compare", "n_timeout": 0,
+            "n_short_window": 40, "longest_comparable_horizon": 166}
+    longer = ("A shorter horizon, or a longer range of five years at most, "
+              "leaves room for that.")
+    for rng in ("1y", "2y", None):
+        r = dict(base) if rng is None else dict(base, range=rng)
+        assert longer in window._lab_html(r), rng
+    for rng in ("5y", "10y"):
+        html = window._lab_html(dict(base, range=rng))
+        assert "A shorter horizon leaves room for that." in html, rng
+        assert "longer range" not in html and "10y" not in html, rng
+        window._backtest_done(dict(base, range=rng))
+        assert "longer range" not in window.bt_result.text(), rng
 
 
 def test_the_lab_names_the_error_bar_not_standard_errors(window):
@@ -599,9 +726,9 @@ def test_the_lab_colour_follows_the_verdict_not_the_rounded_figures(window):
     edge = dict(delta=0.01, std_error=0.005)
     finding = window._lab_html(_judged(significant=True, **edge))
     assert "<p style='color:#e5c07b'><b>" in finding
-    assert "supposed to look like" not in finding
+    assert _INSIDE not in finding
     inside = window._lab_html(_judged(significant=False, **edge))
-    assert "#e5c07b" not in inside and "supposed to look like" in inside
+    assert "#e5c07b" not in inside and _INSIDE in inside
     older = {k: v for k, v in _judged(delta=0.02, std_error=0.005).items()
              if k != "significant"}
     assert "<p style='color:#e5c07b'><b>" in window._lab_html(older)
@@ -702,3 +829,271 @@ def test_the_terminal_backtest_reads_far_enough_back_for_its_horizon(window, mon
         window._bt_thread = None
     assert "five" in window.bt_btn.toolTip()
     window.bt_btn.setEnabled(True)
+
+
+# --------------------------------------------------------------------------- #
+# The direction randomisation on screen (docs/adr/0003)
+# --------------------------------------------------------------------------- #
+def _rand(p_tail: float, q: int = 22, p: float | None = None) -> dict:
+    return {"p": p_tail if p is None else p, "p_tail": p_tail, "q": q,
+            "draws": 11_999, "method": "monte_carlo", "block_days": 32,
+            "seed": 1}
+
+
+def test_not_told_apart_from_chance_is_grey_and_never_within(window, monkeypatch):
+    """Measure 11 on screen. A run outside its bar that the randomisation
+    does not confirm is grey, never the finding colour, and never gets the
+    'inside its own error bar' paragraph, which shows for 'within' only; in
+    neither wording does the page say 'unconfirmed'. The mirror, outside
+    the bar and confirmed, is a finding.
+    Mutation it catches: the state read as 'within', or coloured from
+    `outside_bar`."""
+    from sonar import backtest
+    from ui import words
+    grey = _judged(delta=0.031, std_error=0.014, significant=False,
+                   outside_bar=True, verdict_state="unconfirmed",
+                   randomisation=_rand(0.31),
+                   verdict=backtest._verdict(0.031, 0.014, "unconfirmed"))
+    beats = dict(grey, significant=True, verdict_state="beats",
+                 randomisation=_rand(0.004),
+                 verdict=backtest._verdict(0.031, 0.014, "beats"))
+    within = _judged(verdict_state="within", outside_bar=False,
+                     randomisation=_rand(0.6),
+                     verdict=backtest._verdict(-0.0008, 0.005, "within"))
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = window._lab_html(grey)
+        assert "<p style='color:#7c8798'><b>" in html and "#e5c07b" not in html
+        assert "not told apart from chance" in html
+        assert _INSIDE not in html and "unconfirmed" not in html.lower()
+        assert "<p style='color:#e5c07b'><b>" in window._lab_html(beats)
+        inside = window._lab_html(within)
+        assert _INSIDE in inside and "#e5c07b" not in inside
+
+
+def test_every_headline_reading_names_the_fixed_direction_residual(
+        window, monkeypatch):
+    """Owner, after validator r7 P1-2: beats, below and not told apart from
+    chance each name the residual the randomisation cannot see — a direction
+    fixed per instrument, such as always long on today's list — in both
+    wordings, on the Lab and the Terminal line. 'within' makes no reading
+    of a direction, so it does not.
+    Mutation it catches: the residual dropped from any one sentence or
+    surface."""
+    from sonar import backtest
+    from ui import words
+    residual = ("A direction fixed per instrument, such as always long, can "
+                "also land outside the bar, because each instrument keeps its "
+                "own trend over the years and the list holds only today's "
+                "survivors; this check cannot see that.")
+    for state, delta in (("beats", 0.031), ("below", -0.031),
+                         ("unconfirmed", 0.031)):
+        r = _judged(delta=delta, std_error=0.014, verdict_state=state,
+                    significant=state != "unconfirmed", outside_bar=True,
+                    randomisation=_rand(0.004 if state != "unconfirmed"
+                                        else 0.31),
+                    verdict=backtest._verdict(delta, 0.014, state))
+        for plain in (True, False):
+            monkeypatch.setattr(words, "plain", lambda p=plain: p)
+            assert residual in window._lab_html(r), (state, plain)
+            window._backtest_done(r)
+            assert residual in window.bt_result.text(), (state, plain)
+    assert "fixed per instrument" not in backtest._verdict(0.001, 0.014,
+                                                           "within")
+
+
+def test_the_terminal_says_what_its_backtest_cannot_judge(window, monkeypatch):
+    """Domain P2-3 and P3-5, A15 as amended after validator r7: the
+    Terminal footer says the instruments are today's list, survivors only,
+    which favours long trades over long ranges; too few stretches names the
+    fix the Terminal's reader has (a shorter profile, not a range); and the
+    button's tooltip does not imply the quarter or year profiles are judged.
+    Mutation it catches: the survivorship line dropped, the Lab's range
+    advice shown in the Terminal, or the tooltip claiming ten years."""
+    from sonar import backtest
+    from ui import words
+    monkeypatch.setattr(words, "plain", lambda: False)
+    few = _judged(horizon_days=60, withheld="few_clusters",
+                  verdict_state="withheld",
+                  randomisation={"p": None, "p_tail": None, "q": 2,
+                                 "draws": 0, "method": None,
+                                 "block_days": 348, "seed": None},
+                  verdict=backtest.few_clusters_verdict(2, 60))
+    window._backtest_done(few)
+    text = window.bt_result.text()
+    assert backtest.few_clusters_verdict(2, 60, terminal=True) in text, text
+    assert "A shorter profile gives more." in text
+    assert "A longer range" not in text
+    assert ("  The instruments are today's list; ones that fell away are "
+            "missing, which favours long trades over long ranges."
+            in text.splitlines()), text
+    # the Lab keeps the range advice, up to five years: its reader picks
+    # the range, and ten years is not judged (owner, Lab 10y)
+    assert "A shorter horizon gives more, or a longer range up to five years." in (
+        window._lab_html(few))
+    tip = window.bt_btn.toolTip()
+    assert "five for the month" in tip
+    assert "The quarter and year profiles show the\nnumbers without a verdict" in tip
+    assert "ten for" not in tip and "ten years" not in tip
+    assert "and the year" not in tip and "quarter —" not in tip
+
+
+def test_the_expert_view_shows_the_randomisation_p_in_the_direction_of_delta(
+        window, monkeypatch):
+    """[A3] (domain pass 2 P2-C): expert wording shows p_tail, labelled 'in
+    the direction of Δ', with the stretch count — never the equal-tailed p,
+    which is a field only — on the Lab and the Terminal line. Plain wording
+    shows no new number.
+    Mutation it catches: the line reading `p`, or shown in plain wording."""
+    from ui import words
+    r = _judged(randomisation=_rand(0.0123, q=9, p=0.9))
+    monkeypatch.setattr(words, "plain", lambda: False)
+    html = window._lab_html(r)
+    assert ("p vs random directions, in the direction of Δ</td><td "
+            "style='padding:2px 0'><b>0.0123  (9 stretches)</b>") in html, html
+    assert "0.9000" not in html
+    # twice the one-sided share, as direction_p computes it (domain P3-1)
+    assert ("twice the share of random-direction reshuffles of whole "
+            "stretches that read at least this far in the direction of Δ, "
+            "at most 1") in html
+    window._backtest_done(r)
+    assert ("  p vs random directions, in the direction of Δ: 0.0123 "
+            "(9 stretches)") in window.bt_result.text().splitlines()
+    monkeypatch.setattr(words, "plain", lambda: True)
+    assert "random directions" not in window._lab_html(r)
+    assert "0.0123" not in window._lab_html(r)
+    window._backtest_done(r)
+    assert "random directions" not in window.bt_result.text()
+
+
+def test_a_component_not_told_apart_from_chance_reads_so_in_grey(monkeypatch):
+    """Measure 11 for attribution, on screen: 'UNCONFIRMED' is an internal
+    name. Both wordings show 'not told apart from chance', in grey, with the
+    sentence; never 'survives FDR' or the internal name. Expert wording puts
+    the IC's p and the randomisation's p by the IC.
+    Mutation it catches: the raw name shown in expert wording, or the
+    keep colour on it."""
+    from ui import words
+    why = ("IC +0.137: it looks like it ranks setups on this replay, but a "
+           "meaningless reading held for stretches of time ranked them this "
+           "well often enough that this is not told apart from chance. Before "
+           "costs, from one replay of past prices.")
+    a = {"n": 3200, "fdr_q": 0.1, "withheld": None, "blend_ic": None,
+         "randomisation": {"q": 8, "draws": 256, "block_days": 32,
+                           "measured": 2},
+         "components": [{"component": "momentum", "n": 3200, "ic": 0.137,
+                         "p": 0.0022, "p_rand": 0.2109, "weight": 0.3,
+                         "spread": {"spread": 0.2031, "se": 0.0643},
+                         "blend_ic_without": None, "survives_fdr": True,
+                         "confirmed": False, "verdict": "UNCONFIRMED",
+                         "why": why}]}
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = MainWindow._attribution_html(a)
+        assert ("<b style='color:#7c8798'>not told apart from chance</b>"
+                in html), html
+        assert "unconfirmed" not in html.lower() and "survives FDR" not in html
+        assert "#98c379" not in html and why in html
+        assert ("vs random stretches 0.2109" in html) is (not plain)
+        # the randomisation's p is shown raw, beside BH-based grades
+        # (domain P3-2), over the components BH ran over (domain P2-2)
+        assert ("vs random stretches 0.2109, before the correction for "
+                "the 2 components measured" in html) is (not plain)
+        assert "correction for testing four components" not in html
+        # in both wordings: what the check cannot see (domain P2-2)
+        assert ("The check against random stretches does not cover traits "
+                "fixed per instrument, such as volatility.") in html
+        assert html.count("fixed per instrument") == 1
+    # one component measured reads in the singular; a summary without the
+    # count falls back to the components with an IC
+    monkeypatch.setattr(words, "plain", lambda: False)
+    one = dict(a, randomisation={"q": 8, "draws": 256, "block_days": 32,
+                                 "measured": 1})
+    assert "the 1 component measured" in MainWindow._attribution_html(one)
+    bare = dict(a, randomisation={"q": 8, "draws": 256, "block_days": 32})
+    assert "the 1 component measured" in MainWindow._attribution_html(bare)
+    # a run not held to the randomisation does not claim the check ran
+    assert "fixed per instrument" not in MainWindow._attribution_html(
+        dict(a, randomisation=None))
+
+
+def test_a_component_the_check_could_not_test_reads_not_tested(monkeypatch):
+    """Domain P3-2: a component the randomisation could not run on is not
+    'not told apart from chance' — its why says the check did not run — so
+    both wordings label it 'not tested', in grey, never the internal name.
+    Mutation it catches: the untested label folded back into the
+    reshuffle's, or the raw name shown in expert wording."""
+    from sonar import backtest
+    from ui import words
+    row = {"component": "momentum", "n": 3200, "ic": 0.137, "p": 0.0022,
+           "p_rand": None, "weight": 0.3, "survives_fdr": True,
+           "confirmed": False, "blend_ic_without": None,
+           "spread": {"spread": 0.2031, "se": 0.0643}}
+    row.update(backtest._verdict_for(row))
+    assert row["verdict"] == "UNTESTED"
+    a = {"n": 3200, "fdr_q": 0.1, "withheld": None, "blend_ic": None,
+         "randomisation": {"q": 8, "draws": 256, "block_days": 32,
+                           "measured": 1},
+         "components": [row]}
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = MainWindow._attribution_html(a)
+        assert "<b style='color:#7c8798'>not tested</b>" in html, html
+        assert "<b style='color:#7c8798'>not told apart" not in html
+        assert "UNTESTED" not in html and "could not run" in html
+        # the plain legend says what the label means
+        assert ("<b>not tested</b> that the check against random stretches "
+                "could not run on it" in html) is plain
+
+
+def test_the_attribution_footer_names_the_components_tested_together(
+        monkeypatch):
+    """Domain P2-2, the footer: it names how many components today's
+    Benjamini-Hochberg runs over — every one listed, one not measured
+    counting as p = 1 — and how many of them were measured, in both
+    wordings, never a fixed 'four'.
+    Mutation it catches: the count hard-coded, or the measured share
+    dropped."""
+    from ui import words
+
+    def comp(name, ic):
+        return {"component": name, "n": 3200 if ic is not None else 0,
+                "ic": ic, "p": 0.5 if ic is not None else None,
+                "weight": 0.25, "spread": {}, "verdict": (
+                    "UNCLEAR" if ic is not None else "not measured")}
+    a = {"n": 3200, "fdr_q": 0.1, "withheld": None, "blend_ic": None,
+         "randomisation": None,
+         "components": [comp("momentum", 0.01), comp("volatility", -0.02),
+                        comp("news", None), comp("catalyst", None)]}
+    monkeypatch.setattr(words, "plain", lambda: True)
+    html = MainWindow._attribution_html(a)
+    assert ("The 4 components are judged together (the 2 measured, and those "
+            "not measured counting as finding nothing), with a stricter bar "
+            "for each than if it stood alone: testing 4 components and "
+            "reporting the best one is how noise gets published.") in html, html
+    monkeypatch.setattr(words, "plain", lambda: False)
+    html = MainWindow._attribution_html(a)
+    assert ("P-values of the 4 components go through Benjamini-Hochberg "
+            "together at q=0.1 (the 2 measured, and those not measured "
+            "counting as finding nothing): testing 4 components") in html, html
+    # a run without a verdict judges nothing, so the footer says nothing of
+    # judging together, in either wording (code review P3-5)
+    from sonar import backtest
+    withheld = dict(a, withheld="drift", note=backtest.NOT_JUDGED,
+                    components=[dict(c, verdict="not judged")
+                                if c["ic"] is not None else c
+                                for c in a["components"]])
+    for plain in (True, False):
+        monkeypatch.setattr(words, "plain", lambda p=plain: p)
+        html = MainWindow._attribution_html(withheld)
+        assert backtest.NOT_JUDGED in html
+        for said in ("judged together", "Benjamini", "how noise gets "
+                     "published"):
+            assert said not in html, (plain, said)
+    monkeypatch.setattr(words, "plain", lambda: False)
+    three = dict(a, components=a["components"][:3])
+    html = MainWindow._attribution_html(dict(three, components=[
+        comp("momentum", 0.01), comp("volatility", -0.02),
+        comp("news", 0.03)]))
+    assert "P-values of the 3 components go through" in html
+    assert "q=0.1:" in html and "four" not in html

@@ -17,7 +17,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **2,646 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **2,638 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -209,9 +209,9 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 |---|---|---|---|
 | 7.1 | | **Run simulation**, whole watchlist, 2y | Completes; reports trials, hit rate, and an error bar. *Resolved setups* names how many **ran out of time**; *Instruments compared* and *Entry dates* are shown; the *Difference* row reads "error bar ±x; setups entered on the same day counted together" and nowhere says "two standard errors" or "2 s.e." |
 | 7.2 | | Narrow the universe to one class, re-run | Fewer trials, still completes, and **no verdict**: "No verdict on <class> alone…". Every component reads **not judged**. |
-| 7.3 | | Read component attribution on the whole-watchlist run | Each measured component gets **KEEP / WEAK / DROP / UNCLEAR / INVERTED**. A KEEP says "from one replay of past prices"; an INVERTED says "worth testing with its sign flipped, or dropped" and "a reason to look closer, not a finding", never an instruction. |
+| 7.3 | | Read component attribution on the whole-watchlist run | Each measured component gets **KEEP / WEAK / DROP / UNCLEAR / INVERTED**, or **not told apart from chance** / **not tested** where the check against random stretches did not pass or could not run; under the table: "The check against random stretches does not cover traits fixed per instrument, such as volatility." A KEEP says "from one replay of past prices"; an INVERTED says "worth testing with its sign flipped, or dropped" and "a reason to look closer, not a finding", never an instruction. |
 | 7.4 | | Find the catalyst component | Says it is **not measured** — the replay has no historical earnings calendar — rather than implying it passed |
-| 7.5 | | Read the run's **predicted** hit rate against the realised one | Predicted reads just under 40% with "(40% with unlimited time)" beside it — 39.44% on the default run (whole watchlist, 2y, h 5, step 3; 2026-10-12) — because setups that ran out of time are left out and the prediction is for setups that resolved in time (`docs/adr/0001-…`). Realised sits within its error bar of it unless the verdict says otherwise; a "beats" verdict says the bar is not a guarantee ("about 1 run in 10"). *There is no R:R control in the Lab. The automated driftless test checks the prediction at 1:1, 1.5:1, 2:1 and 3:1. Two acceptance tests, the clustered coin and the attribution placebo, are regression guards fitted to their seeds, not proof that the error bar is a 5% test (`CONFIDENCE.md`).* |
+| 7.5 | | Read the run's **predicted** hit rate against the realised one | Predicted reads just under 40% with "(40% with unlimited time)" beside it — 39.44% on the default run (whole watchlist, 2y, h 5, step 3; 2026-10-12) — because setups that ran out of time are left out and the prediction is for setups that resolved in time (`docs/adr/0001-…`). Realised sits within its error bar of it unless the verdict says otherwise; a "beats" or "below" verdict says it is not a guarantee: random directions held for up to eight holding periods "still got a verdict either way about 1 run in 10, and about 1 in 5 at some settings" (any verdict, not beats alone), per run. Under every result: "The instruments are today's list; ones that fell away are missing, which favours long trades over long ranges." *There is no R:R control in the Lab. The automated driftless test checks the prediction at 1:1, 1.5:1, 2:1 and 3:1. The acceptance tests are rate tests with bounds set in advance from the binomial distribution, not fitted to seeds; the headline ones are a gate against the code before the randomisation check, not proof of 5%, and the attribution test is a regression guard. The size figures are the validator's real-bar measurements (`CONFIDENCE.md`).* |
 | 7.6 | | Press **Start replay** | A setup appears |
 | 7.7 | ⚠ | Read the setup line | It does **not** reveal the model's call before you commit |
 | 7.8 | | Press Buy, then Short, then **Skip** on successive setups | All three advance |
@@ -219,6 +219,7 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 | 7.10 | | Whole watchlist, 5y, horizon **150**, run | Numbers shown, **no verdict**: "No verdict at a 150-day horizon…"; components **not judged**. |
 | 7.11 | | Whole watchlist, 1y, horizon **60**, run | Numbers shown, no verdict, and the reason given (entries too close together, or too few); the result count notes setups "too near the end of the data". |
 | 7.12 | | Tick **include attention**, whole watchlist, 2y, run | The attention table's last column is headed **vs setups with attention**; with no level standing apart the text ends "…no effect of a news spike was detected, which is not the same as none." |
+| 7.13 | | Whole watchlist, **10y**, horizon 5, run | Numbers shown, **no verdict**: "No verdict on ten years…" naming both causes (each instrument's own trend, today's survivors); components **not judged**. |
 
 ---
 
@@ -247,7 +248,7 @@ existing. Some of it cannot be checked in one sitting — those cases say so.
 | 9.1 | | Press **Learn** | The **Learn tab** opens inside the window. No web browser launches. |
 | 9.2 | | Read the first contents entry | §1 "Start here — plain English" |
 | 9.3 | | Click every entry in the contents | All 14 scroll to their section. *Qt does not follow the `id` a browser follows, so this breaks silently if the injected anchors go.* |
-| 9.4 | | Read the glossary | 24 terms across markets, probability, betting, macro — rendered, not raw HTML |
+| 9.4 | | Read the glossary | 32 terms across markets, probability, betting, macro — rendered, not raw HTML |
 | 9.5 | | Type `devigging` in **Find** and press return | Jumps to it and highlights. Press return twice more: it keeps finding rather than stopping dead at the end of the document. |
 | 9.6 | | Type a word that is not there | Says so, rather than doing nothing |
 | 9.7 | | Check §14 | Documents Playmaker, including Kaunitz's account-limiting caveat next to the profit figure |

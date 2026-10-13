@@ -597,7 +597,8 @@ default run — whole watchlist, 2 years, 5-day horizon, step 3, bars to 2026-10
 commodity), entered on 572 days from 2024-11-11 to 2026-09-29. Hit rate **39.55%** against a
 predicted **39.44%** (40% with unlimited time): **Δ +0.11 points, error bar ±1.8.** The bar is twice
 a standard error of 0.88 points, set by the date-clustered estimate at an 11-day lag; the same
-trials read as independent would give ±0.7. Verdict: within its error bar, no edge detected. A
+trials read as independent would give ±0.7. Verdict: within its error bar, not shown to differ
+from the prediction, which is not the same as no difference (q 22 stretches; validator r7). A
 further 2,574 setups (12%) ran out of time and 373 were too near the end of the data to compare;
 both are counted and shown, never compared. Momentum buckets on that run, against the prediction:
 0–2% +0.5 points (n 9,313), 2–5% +0.1 (5,392), 5–10% −0.5 (2,772), 10–100% −1.2 (1,493); no bucket
@@ -614,22 +615,82 @@ barriers scoring as a loss, plus the gap between daily bars and a smooth walk: o
 at a 5-day horizon the comparison stays within about ±0.6 points. So "matches the barrier maths" is
 consistent with no edge, not proof of it.
 
-**How often the error bar is wrong, measured (2026-10-12).** A verdict needs the difference outside
-twice the widest of three standard errors (independent, Newey-West overlap, date-clustered). That is
-not a calibrated 5% test. On real prices, 1 to 10 years, horizons up to 120 days, whole watchlist
-(`…-model-validator-r5.md` (a), re-checked in r6):
-- a direction picked at random for a whole asset class over ~one-horizon blocks (the *clustered
-  coin*) got a verdict on **11.4%** of 2,040 judged runs (cluster-bootstrap interval 9.9–13.0%):
-  "beats" 3.0%, "below" 8.3%, and up to about 1 in 5 at some range-and-horizon settings. The
-  target is 5% or less; it is open and needs a sign-randomisation test. The in-app copy says
-  "about 1 run in 10";
-- a direction picked at random per setup (the *independent coin*) got one on **1.6%**;
-- real momentum got none, in 102 judged runs.
+**How often a verdict comes by chance, measured (2026-10-12).** A verdict needs two things. First,
+the difference outside twice the widest of three standard errors (independent, Newey-West overlap,
+date-clustered). On its own that is not a calibrated 5% test: a direction picked at random for a
+whole asset class over ~one-horizon blocks (the *clustered coin*) got a verdict on **11.4%** of
+2,040 judged real-bar runs (`…-model-validator-r5.md` (a), re-checked in r6). Second, since
+2026-10-12, the run's directions must beat directions picked at random over whole stretches of time
+(the *randomisation check*, `docs/adr/0003-sign-randomisation-gate.md`):
+- a **stretch** is four holding periods of calendar days (32 at a 5-day horizon), the same for every
+  instrument and asset class, on a fixed calendar;
+- the run is scored again with its direction swapped for the opposite one over whole stretches,
+  under every pattern of swaps up to 12 stretches and 11,999 random patterns above that;
+- the p-value in the direction of Δ (twice the share of patterns that read at least as far on that
+  side) must be under 0.05, so "beats" alone is a one-sided 2.5% test;
+- under **8** stretches the run gets no verdict ("too few separate stretches"); a sample without
+  every setup's opposite direction, entry time, horizon or timeouts gets none either. The check can
+  only take a verdict away.
 
-The component grades are not calibrated either: a meaningless component that moved with a whole
-class, or stayed fixed per instrument, was graded KEEP or INVERTED on 4.6–7.1% of judged runs,
-against 0.4% when it was independent per setup (`…-model-validator-r6.md` (a)). DROP has no error
-bar. On the hourly model, the buyability verdict needs three standard errors, and a positive one the
+A run outside the bar that does not pass reads **not told apart from chance**, in grey, never
+"within". A run inside the bar reads "not shown to differ from the prediction, which is not the same
+as no difference".
+
+Measured with the check by the model validator (r7, `…-model-validator-r7.md`): step 3, 1 to 10
+years, horizons up to 120 days, whole watchlist, judged runs only. Each figure is on the bars the
+check was designed on (the r5 set) and on a **held-out set frozen before any run**: the watchlist's
+daily bars from 2006-01-01 to 2016-09-30, 110 of 129 instruments (2 crypto), manifest sha256
+`404f5a77…f25110`. Both sets are today's survivors.
+- One random direction per class per one-horizon block: **3.04%** [2.4–3.9] of 2,040 runs (r5) and
+  **3.96%** [3.2–4.9] of 1,920 held out ("beats" 1.51%). The 5% target is met.
+- One random direction per class **held for eight holding periods**: 9.48% [8.0–11.3] (r5) and
+  **9.11% [7.6–10.9] of 1,152 held-out runs** ("beats" 5.12%), up to 20.8% [13.1–31.6] in one band
+  (5y, h30–59). The target was 7.5% or less: **not met**. A market-wide direction over four-horizon
+  stretches set off the check's calendar read 8.66% on r5 (5.73% held out), also above it. The
+  owner chose to accept and disclose the miss rather than redesign the stretches (2026-10-12).
+- A direction picked at random per setup: 1.47% (r5), 2.86% of 384 held out (target 2%:
+  inconclusive). Real momentum: no verdict on either set.
+- **52.9%** of held-out runs (50.0% on r5) got no verdict, essentially all for too few stretches.
+  Runs stay judged up to about 1y h7, 2y h15, 5y h40–45 and 10y h90.
+
+The in-app copy quotes the worst held-out figure: random directions "held for up to eight holding
+periods still got a verdict either way about 1 run in 10, and about 1 in 5 at some settings". It
+says the rate is per run, so trying many settings makes a chance verdict likely, and that nearby
+settings can disagree. Patterns that last longer than eight holding periods are not covered and can
+land outside the bar more often.
+
+**What the check cannot see: anything fixed per instrument.** Swapping whole stretches of time
+leaves a direction fixed per instrument where it was. A random direction fixed per symbol got a
+verdict on 15.7% [12.5–19.5] of r5 runs and 9.64% held out; at 10y h20 22.5% (r5) and 12.5% (held
+out), at 10y h60 31% and 10%. Always long read "beats" at 10y h20 on both sets. There are two
+causes: each instrument keeps its own trend over the years, and the list holds only today's
+survivors. So every reading outside the bar says "A direction fixed per instrument, such as always
+long, can also land outside the bar, because each instrument keeps its own trend over the years and
+the list holds only today's survivors; this check cannot see that." Ten-year runs get no verdict:
+the Lab shows their numbers with that reason, and the Terminal's backtest never reads ten years (two
+years for the day and week profiles, five for the month; the quarter and year profiles show numbers
+without a verdict). The Lab and the Terminal show the survivorship line under every result.
+
+**Power, the clustered figure only.** At the Lab's default (2y, 5-day), a planted lean of about +3.0
+points that moves together across a class over stretches got a verdict on 25 of 40 tries (r7). +3
+points at 1.5:1 is about +0.075 R per setup before costs, so a real lean that size, already too small
+to matter after costs, would often be missed.
+
+The component grades are not calibrated either. Before the check, a meaningless component that
+moved with a whole class, or stayed fixed per instrument, was graded KEEP or INVERTED on 4.6–7.1%
+of judged runs, against 0.4% when it was independent per setup (`…-model-validator-r6.md` (a)).
+A KEEP or INVERTED now also needs the component's randomisation p (a sign change of its per-stretch
+ranking scores) to survive Benjamini-Hochberg at 0.10 across the components measured; otherwise it
+reads "not told apart from chance", and "not tested" where the check could not run. That rate has
+not been measured at full size (an indicative 2.6% on 76 runs). **The check does not cover a
+component that is a fixed trait of each instrument, such as volatility:** on that placebo the check
+alone rejected 8.8% in the architect's prototype. Volatility's INVERTED grade passes it on r5 at 1y
+h3, 1y h5 (p 0.0469, kept only because two components were measured) and 5y h5, and is never graded
+on the held-out set. The Lab says the check "does not cover traits fixed per instrument, such as
+volatility" in both wordings. DROP has no error bar and is not calibrated; giving it one is
+deferred (owner, 2026-10-12; `TODO.md`).
+
+On the hourly model, the buyability verdict needs three standard errors, and a positive one the
 same again without its two best hours. With nothing to find and the verdict re-read every hour, a
 false "measured" came up at most 0.13% of the time, but a false **"LOST"** 2.9–3.5% over hours
 100–300 and 4.0% over 100–1,500 — more than "three standard errors" implies, because per-stake
