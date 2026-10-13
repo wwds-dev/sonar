@@ -2265,6 +2265,34 @@ def test_cr3_p3_2_after_a_reset_the_new_records_first_copy_restores_it(live, mon
     assert json.loads(_ledger_file().read_text())["ledger_id"] == lid
 
 
+def test_cr3_p3_2_the_first_copy_waits_for_the_first_write_that_succeeds(live, monkeypatch):
+    """When the record's first write fails, its first copy is made with the
+    first write that succeeds, and only once. Kills: the copy made only at
+    open."""
+    _cohort(live, n=3)
+    _fetch(monkeypatch, lambda s: wavy())
+    real = paths.write_atomically
+    fail = [True]
+
+    def failing(path, text):
+        if os.path.basename(path) == core.SHADOW_LEDGER_FILE and fail[0]:
+            raise PermissionError("read-only volume")
+        return real(path, text)
+
+    monkeypatch.setattr(paths, "write_atomically", failing)
+    live._shadow_pass(NOW)
+    assert live.shadow["ledger"]["error"] == "write" and not _backups()
+    fail[0] = False
+    live._shadow_pass(NOW + 60)
+    lid = json.loads(_ledger_file().read_text())["ledger_id"]
+    created = [p for p in _backups() if ".created." in p.name]
+    assert [p.name.rsplit(".", 1)[1] for p in created] == [lid[:8]]
+    assert len(json.loads(created[0].read_text())["entries"]) == 3
+    live.book.open.append(replace(live.book.open[0], id="late", opened_at=NOW - 40 * DAY))
+    live._shadow_pass(NOW + 120)
+    assert len([p for p in _backups() if ".created." in p.name]) == 1
+
+
 def test_cr3_p3_2_the_look_copy_is_the_last_by_name_on_a_day_with_both():
     """"created" sorts before "look": on a day a record starts and records a
     look, the last copy by name is the look's."""
