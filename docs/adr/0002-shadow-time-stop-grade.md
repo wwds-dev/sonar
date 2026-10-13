@@ -264,3 +264,9 @@ mismatch.
 
 **Unchanged:** T, the cohorts, the gate statistic, the boundary, the rule order, the population and
 the live book.
+
+**Recovery and reset, as built** (fix loops 1-3, 2026-10-13; spec Build notes 16-18). The record is
+anchored by the book's marker, a sidecar `shadow_ledger.id` and its own backups; a missing,
+unreadable, behind or other-book record is never restarted. A new record after a deliberate book reset
+(G3) needs the old file renamed `shadow_ledger.retired.<id>.json`; that is refused while the book's own
+marker still names the record, and every retired record in the folder is shown on screen.
