@@ -94,7 +94,7 @@ New `sonar/research/overfit.py`, stdlib only. Inverse normal CDF: `statistics.No
   computed and could be read, reported or not, including those failing the 30-date minimum.
   A discovery run and its holdout run of one variant are **one trial**; DSR is applied to the
   discovery selection, never the holdout. Controls logged; Architect revision: primary N **includes** controls
-  (conservative, cannot be gamed by labelling), N without them is printed beside it. N is a **count of logged trials, not an effective number of independent trials**:
+  (chosen in advance and cannot be gamed by labelling; not conservative, because V changes too and the net direction of the bias is unknown), N without them is printed beside it. N is a **count of logged trials, not an effective number of independent trials**:
   correlated features overstate it, unlogged or reconstructed ones understate it.
 - **What the chain proves:** the lines present are in the recorded order and an edit to an earlier
   line is detected only if the head hash was anchored elsewhere (record it in the commit message
@@ -175,12 +175,14 @@ separators `(",",":")`, `allow_nan=False`), `\n` terminated. Chain fields: `sche
   barrier-odds sixth study, is logged with null IC fields: counts in N, not in V).
 - `trial_id` and `role` (`discovery`|`holdout`) added; a holdout row shares the `trial_id` of its
   discovery row and does not count in N.
-- `feature_hash`: sha256 of the feature function's source plus its `REGISTRY` entry
-  (`inspect.getsource`); `source`, `fetched_at` for the data.
+- `feature_hash`: sha256 of the full source of every `sonar/` module the feature's computation
+  imports, transitively (at minimum the defining module, so shared helpers such as `_rets` and `_sd`
+  are covered), plus its `REGISTRY` entry; `source`, `fetched_at` for the data.
 - `trial_key` = sha256 of canonical JSON of (study slug, variant, family, `feature_hash`, horizon,
   sorted universe, explicit start, explicit end, **every argument of the computation**: costs,
-  winsorising, lags, min-dates, IC method). `data_key` = sha256 of **all** adjusted closes per
-  (symbol, date), with the adjustment convention and source recorded.
+  winsorising, lags, min-dates, IC method). `data_key` = sha256 of **every input series the feature
+  consumes**: all adjusted closes per (symbol, date) and any auxiliary series (attention / pageviews,
+  news counts, earnings dates), each with its source, adjustment convention and fetch time recorded.
 - Same `trial_key` and `data_key` = one trial; **the first row is the counted row, and DSR uses that
   row**. A later row with the same keys but a different result is flagged `rerun_differs` and printed
   in the report line (so a null re-run into a pass cannot hide). Same `trial_key`, different
@@ -223,10 +225,15 @@ a stored `is_control`.
 
 ### Definitions: N, V, orientation, minimum windows
 - **N** for a reported row R = number of distinct `trial_key`s among counted rows (non-holdout, first
-  row per key) with `seq <= R.seq`, **controls included** (primary; the conservative direction and
-  cannot be gamed by labelling). Secondary figure: N without controls, printed beside it with its own
-  DSR. Headline = the larger N, fixed before looking. Later appends never change a printed number.
-- **Orientation:** `t_or = expected * t_stat`. For `expected == 0` (selected by |t|) DSR is **refused**
+  row per key) with `seq <= R.seq`, **controls included** (primary, fixed in advance and cannot be gamed by labelling). It is **not** the conservative
+  direction: `V_t` is recomputed over the same population, and low-dispersion controls can lower it,
+  so the net effect on DSR has no known sign. Secondary figure: N without controls, printed beside it
+  with its own DSR. Headline = the controls-included figure, fixed before any result is seen, whichever
+  DSR turns out higher. Later appends never change a printed number.
+- **Orientation:** `t_or = expected * t_stat` and `skew_or = expected * skew`: negating the IC
+  series flips its odd moments, while `kurt_raw` is unchanged. PSR and DSR always take `skew_or`, never
+  the stored `skew`. Known-answer test: for `expected == -1` with nonzero skew, DSR equals the value
+  computed from the negated series. For `expected == 0` (selected by |t|) DSR is **refused**
   ("DSR not computed: direction not pre-registered"): the right null is the max of |t| (about 2N) and
   a signed SR0 would flatter. Recommended; the alternative (use 2N) is not built in slice 1. **Owner.**
 - **V** = sample variance (ddof 1) of `t_or` over the same counted rows with `metric == ic` and
