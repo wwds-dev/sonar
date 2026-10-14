@@ -59,6 +59,7 @@ SYNTH_SIGMA = 0.004
 SYNTH_SCORED = 8760
 POWER_MULTIPLIERS = (1.05, 1.1, 1.2, 1.3)
 POWER_SEEDS = 50
+FETCH_DAYS = 730                   # the pull length; also the span check_fresh enforces
 
 #: SHA-256 of the spec file as approved. Left empty until the owner approves
 #: (the approving commit hash goes into the spec, then the hash of the file as
@@ -472,7 +473,8 @@ def run_c2() -> dict:
 def run_c3() -> dict:
     """Planted Tuesday-only 13-20h UTC at 2x: V2 must KEEP, including vs B0L."""
     comps = study_weekend(*synth(planted_tuesday, seed=3))["comparisons"]
-    return {"ok": comps["V2_vs_B0"]["verdict"] == "KEEP",
+    return {"ok": comps["V2_vs_B0"]["verdict"] == "KEEP"
+                  and comps["V2_vs_B0L"]["verdict"] == "KEEP",
             "verdicts": {k: c["verdict"] for k, c in comps.items()}}
 
 
@@ -573,6 +575,39 @@ def module_sha256() -> str:
     return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
+_HERE = Path(__file__).resolve().parent
+CODE_FILES = (_HERE / "hourlyvol_weekend.py", _HERE / "hourlyvol.py", _HERE / "stats.py")
+
+
+def code_sha256(paths: tuple | None = None) -> str:
+    """SHA-256 over every source file a result depends on: this module,
+    `hourlyvol.py` (models, fetch) and `stats.py` (HAC, bootstrap). File names
+    are hashed with the bytes, in a fixed order, so a rename or a swap shows."""
+    paths = paths or CODE_FILES
+    h = hashlib.sha256()
+    for p in paths:
+        p = Path(p)
+        h.update(p.name.encode() + b"\0" + p.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
+def check_fresh(times: list[int], now: float, days: int = FETCH_DAYS) -> None:
+    """Refuse a stale or short pull. `fetch_hourly` asks for bars from
+    now - days*86400 and drops the in-progress hour, so a complete pull ends at
+    the open time of the last closed hour (floor(now to the hour) - 3600) and
+    starts within one hour after the requested start. Anything else (a cached
+    or truncated answer) is not scored."""
+    if not times:
+        raise ValueError("no bars returned")
+    last_closed = int(now) // 3600 * 3600 - 3600
+    if times[-1] != last_closed:
+        raise ValueError(f"stale history: last bar {iso_utc(times[-1])}, expected "
+                         f"the last closed hour {iso_utc(last_closed)}")
+    if times[0] > int(now) - days * 86400 + 3600:
+        raise ValueError(f"short history: first bar {iso_utc(times[0])} is later "
+                         f"than the requested {days}-day span allows")
+
+
 def iso_utc(t: float) -> str:
     return datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -583,11 +618,12 @@ def _arg(argv: list[str], flag: str) -> str:
     return ""
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, now: float | None = None) -> int:
     """Run the study. Cost: the controls including the 200-seed size check take
     about 2-3 minutes of CPU, the power table (skip with `--skip-power`,
     non-gating) about 1.5 more, then one network pull of ~18 requests. Any
-    re-run is a new run and should be logged by the owner."""
+    re-run is a new run and should be logged by the owner. `now` (epoch
+    seconds) is injectable for tests; it defaults to the clock after the pull."""
     argv = sys.argv[1:] if argv is None else argv
     if "--print-spec-hash" in argv:
         print(spec_sha256())
@@ -595,6 +631,7 @@ def main(argv: list[str] | None = None) -> int:
     spec_hash = check_spec()
     print(f"spec sha256 {spec_hash} (matches the approved file)")
     run_id = {"run_at": iso_utc(time.time()), "module_sha256": module_sha256(),
+              "code_sha256": code_sha256(),
               "approving_commit": (_arg(argv, "--approving-commit")
                                    or APPROVED_SPEC_COMMIT or "not supplied"),
               "note": "any re-run is a new run and must be logged"}
@@ -606,8 +643,15 @@ def main(argv: list[str] | None = None) -> int:
                "verdict": "NOT RUN", "verdict_meaning": VERDICT_MEANING}
         print(json.dumps(out, indent=2, default=str))
         return 1
-    times, closes = hv.fetch_hourly("BTCUSDT", 730)
-    check_series(closes, times)
+    times, closes = hv.fetch_hourly("BTCUSDT", FETCH_DAYS)
+    try:
+        check_fresh(times, time.time() if now is None else now, FETCH_DAYS)
+        check_series(closes, times)
+    except ValueError as exc:
+        print(json.dumps({"spec_sha256": spec_hash, "run": run_id,
+                          "verdict": "NOT RUN", "reason": str(exc),
+                          "verdict_meaning": VERDICT_MEANING}, indent=2))
+        return 1
     provenance = {"endpoint": hv._KLINES.split("?")[0], "symbol": "BTCUSDT",
                   "interval": "1h, UTC bar boundaries",
                   "first_bar": times[0], "last_bar": times[-1],
@@ -616,9 +660,14 @@ def main(argv: list[str] | None = None) -> int:
     result = study_weekend(closes, times, controls_ok=True, context=True)
     out = {"spec_sha256": spec_hash, "run": run_id, "provenance": provenance,
            "controls": controls, "result": result}
+    print(json.dumps(out, indent=2, default=str), flush=True)
     if "--skip-power" not in argv:
-        out["power_v1"] = power_simulation()
-    print(json.dumps(out, indent=2, default=str))
+        extra = {"non_gating": "power simulation; not part of the verdict"}
+        try:
+            extra["power_v1"] = power_simulation()
+        except Exception as exc:          # the core result is already out
+            extra["power_v1_error"] = f"{type(exc).__name__}: {exc}"
+        print(json.dumps(extra, indent=2, default=str), flush=True)
     return 0
 
 
