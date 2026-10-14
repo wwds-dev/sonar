@@ -63,3 +63,13 @@
 {"ts": "2026-10-13T14:05:01", "phase": "define", "state": "start", "spec": "trial-ledger-dsr-pbo"}
 {"ts": "2026-10-13T14:09:36", "phase": "define", "state": "blocked", "spec": "hourly-weekend-vol-study"}
 {"ts": "2026-10-13T14:09:36", "phase": "define", "state": "blocked", "spec": "trial-ledger-dsr-pbo"}
+{"ts": "2026-10-13T14:17:25", "phase": "define", "state": "done", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T14:17:25", "phase": "build", "state": "start", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T14:17:25", "phase": "define", "state": "done", "spec": "trial-ledger-dsr-pbo"}
+{"ts": "2026-10-13T14:17:25", "phase": "architect", "state": "start", "spec": "trial-ledger-dsr-pbo"}
+{"ts": "2026-10-13T14:23:50", "phase": "architect", "state": "blocked", "spec": "trial-ledger-dsr-pbo"}
+{"ts": "2026-10-13T14:27:45", "phase": "build", "state": "done", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T14:27:45", "phase": "review", "state": "start", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T14:27:45", "phase": "verify", "state": "start", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T17:03:04", "phase": "review", "state": "done", "spec": "hourly-weekend-vol-study"}
+{"ts": "2026-10-13T17:03:04", "phase": "verify", "state": "done", "spec": "hourly-weekend-vol-study"}
