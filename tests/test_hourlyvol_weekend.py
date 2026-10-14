@@ -7,6 +7,7 @@ manufactured pattern), and planted effects must be found. Nothing here fetches
 data and nothing touches the shipped forecast.
 """
 
+import json
 import math
 import random
 
@@ -313,6 +314,14 @@ def test_c3_planted_tuesday_window_is_found_by_v2_even_against_b0l():
     assert c["verdicts"]["V2_vs_B0"] == "KEEP" and c["verdicts"]["V2_vs_B0L"] == "KEEP"
 
 
+def test_c3_gate_fails_when_v2_keeps_only_against_b0(monkeypatch):
+    def fake(*a, **k):
+        return {"comparisons": {"V2_vs_B0": {"verdict": "KEEP"},
+                                "V2_vs_B0L": {"verdict": "DROP"}}}
+    monkeypatch.setattr(w, "study_weekend", fake)
+    assert w.run_c3()["ok"] is False
+
+
 def test_c4_equivalence_causality_and_b0_reproduced():
     assert w.run_c4()["ok"]
 
@@ -486,16 +495,22 @@ def _fake_run(monkeypatch, tmp_path, controls_ok=True):
     monkeypatch.setattr(w, "run_controls", lambda: {"ok": controls_ok})
     closes, times = w.synth(w.flat, scored=2500)
     monkeypatch.setattr(hv, "fetch_hourly", lambda *a, **k: (times, closes))
+    monkeypatch.setattr(w, "FETCH_DAYS", 100)        # the synthetic pull is ~104 days
     return times
 
 
+def _now(times):
+    """A clock 5 minutes into the hour after the last bar closed."""
+    return times[-1] + HOUR + 300
+
+
 def test_main_happy_path_records_run_identity(monkeypatch, tmp_path, capsys):
-    import json
     times = _fake_run(monkeypatch, tmp_path)
-    assert w.main(["--skip-power", "--approving-commit", "abc123"]) == 0
+    assert w.main(["--skip-power", "--approving-commit", "abc123"], now=_now(times)) == 0
     out = capsys.readouterr().out
     doc = json.loads(out[out.index("{"):])
     assert doc["run"]["module_sha256"] == w.module_sha256()
+    assert doc["run"]["code_sha256"] == w.code_sha256()
     assert doc["run"]["approving_commit"] == "abc123"
     assert "re-run" in doc["run"]["note"] and doc["run"]["run_at"].endswith("UTC")
     p = doc["provenance"]
@@ -504,14 +519,104 @@ def test_main_happy_path_records_run_identity(monkeypatch, tmp_path, capsys):
 
 
 def test_main_without_a_commit_says_so_and_runs_power(monkeypatch, tmp_path, capsys):
-    import json
-    _fake_run(monkeypatch, tmp_path)
+    times = _fake_run(monkeypatch, tmp_path)
     monkeypatch.setattr(w, "power_simulation", lambda: {"scope": "simulated"})
-    assert w.main([]) == 0
-    out = capsys.readouterr().out
-    doc = json.loads(out[out.index("{"):])
+    assert w.main([], now=_now(times)) == 0
+    doc, power = _two_docs(capsys.readouterr().out)
     assert doc["run"]["approving_commit"] == "not supplied"
-    assert doc["power_v1"]["scope"] == "simulated"
+    assert "power_v1" not in doc and power["power_v1"]["scope"] == "simulated"
+    assert "non_gating" in power
+
+
+def _two_docs(out):
+    dec = json.JSONDecoder()
+    first, j = dec.raw_decode(out, out.index("{"))
+    rest = out[j:].strip()
+    return first, (dec.raw_decode(rest)[0] if rest else None)
+
+
+def test_a_failing_power_simulation_still_emits_the_result(monkeypatch, tmp_path, capsys):
+    times = _fake_run(monkeypatch, tmp_path)
+
+    def boom():
+        raise RuntimeError("power blew up")
+    monkeypatch.setattr(w, "power_simulation", boom)
+    assert w.main([], now=_now(times)) == 0
+    doc, power = _two_docs(capsys.readouterr().out)
+    assert "verdict_meaning" in doc["result"]
+    assert "power blew up" in power["power_v1_error"] and "power_v1" not in power
+
+
+def test_core_result_is_printed_before_power_starts(monkeypatch, tmp_path, capsys):
+    times = _fake_run(monkeypatch, tmp_path)
+    seen = {}
+
+    def spy():
+        seen["out"] = capsys.readouterr().out
+        return {}
+    monkeypatch.setattr(w, "power_simulation", spy)
+    w.main([], now=_now(times))
+    assert '"result"' in seen["out"]
+
+
+def test_code_hash_covers_dependencies(tmp_path):
+    a, b, c = (tmp_path / n for n in ("a.py", "b.py", "c.py"))
+    for f in (a, b, c):
+        f.write_text("x")
+    h0 = w.code_sha256((a, b, c))
+    b.write_text("y")
+    assert w.code_sha256((a, b, c)) != h0, "a dependency's content is in the hash"
+    b.write_text("x")
+    assert w.code_sha256((a, b, c)) == h0
+    d = tmp_path / "d.py"
+    d.write_text("x")
+    assert w.code_sha256((a, b, d)) != h0, "file names are in the hash"
+
+
+def test_code_files_are_this_module_and_its_two_dependencies():
+    assert [p.name for p in w.CODE_FILES] == ["hourlyvol_weekend.py", "hourlyvol.py", "stats.py"]
+    assert all(p.is_file() for p in w.CODE_FILES)
+
+
+def _series(last, n=24 * 730):
+    return [last - (n - 1 - i) * HOUR for i in range(n)]
+
+
+NOW = 1_800_000_000 // HOUR * HOUR + 1234          # 1234 s into an hour
+LAST_CLOSED = NOW // HOUR * HOUR - HOUR
+
+
+def test_fresh_series_is_accepted():
+    w.check_fresh(_series(LAST_CLOSED), NOW, 730)
+
+
+def test_series_ending_hours_early_is_refused():
+    with pytest.raises(ValueError, match="stale"):
+        w.check_fresh(_series(LAST_CLOSED - 2 * HOUR), NOW, 730)
+    with pytest.raises(ValueError, match="stale"):          # the in-progress hour
+        w.check_fresh(_series(LAST_CLOSED + HOUR), NOW, 730)
+
+
+def test_short_span_is_refused():
+    with pytest.raises(ValueError, match="short"):
+        w.check_fresh(_series(LAST_CLOSED, n=24 * 700), NOW, 730)
+    with pytest.raises(ValueError, match="no bars"):
+        w.check_fresh([], NOW, 730)
+
+
+def test_main_refuses_stale_history_as_not_run(monkeypatch, tmp_path, capsys):
+    times = _fake_run(monkeypatch, tmp_path)
+    assert w.main(["--skip-power"], now=_now(times) + 4 * HOUR) == 1
+    out = capsys.readouterr().out
+    assert "NOT RUN" in out and "stale" in out and '"result"' not in out
+
+
+def test_main_refuses_a_short_pull_as_not_run(monkeypatch, tmp_path, capsys):
+    times = _fake_run(monkeypatch, tmp_path)
+    monkeypatch.setattr(w, "FETCH_DAYS", 730)
+    assert w.main(["--skip-power"], now=_now(times)) == 1
+    out = capsys.readouterr().out
+    assert "NOT RUN" in out and "short" in out
 
 
 def test_main_stops_as_not_run_when_controls_fail(monkeypatch, tmp_path, capsys):
@@ -533,9 +638,8 @@ def test_warmup_one_below_is_refused_too():
 
 
 def test_approving_commit_constant_is_used_when_no_flag(monkeypatch, tmp_path, capsys):
-    import json
-    _fake_run(monkeypatch, tmp_path)
+    times = _fake_run(monkeypatch, tmp_path)
     monkeypatch.setattr(w, "APPROVED_SPEC_COMMIT", "deadbeef")
-    assert w.main(["--skip-power"]) == 0
+    assert w.main(["--skip-power"], now=_now(times)) == 0
     out = capsys.readouterr().out
     assert json.loads(out[out.index("{"):])["run"]["approving_commit"] == "deadbeef"
