@@ -222,6 +222,10 @@ answers open question 1's "not run".
 - **Mutation-check.** Flip the `mode == "on"` guard, and drop the `.lower()`.
 
 ### A3. Keyless providers for diag plists (domain P1-2): no code change
+> **Superseded in part (2026-10-19, v2.366).** `sonar/providers.py` was deleted
+> (`docs/specs/providers-wiring.md`), so no code reads the three market-data keys below and the line numbers cite a
+> file that no longer exists. `diag_priority.py` still blanks them; the rest of A3 stands.
+
 - **Where keys come from.** Keyed providers read only the process environment: `FINNHUB_API_KEY`,
   `TWELVEDATA_API_KEY` and `ALPHAVANTAGE_API_KEY` (`sonar/providers.py:200,218,235`). They are `configured` only
   when that var is non-empty (`providers.py:71`).

@@ -19,11 +19,15 @@ keep one price source. Nothing restarts; `docs.html` reaches users with the next
 - **The fallback claim is gone.** The README, the Learn page and `.env.example` said a failing vendor was skipped, that
   crypto and FX survived Yahoo breaking through CoinGecko and Frankfurter, and that a free Finnhub key was the fix.
   No code ever called the module behind that, so none of it was true. Both pages now say: "Yahoo is the only source for
-  the Screener's equities, FX, commodities and crypto rows, with no fallback; the BTC hourly model uses Binance, with
-  Coinbase if Binance is unreachable."
-- **What a Yahoo outage does**, checked against the code: the board scores from cache and Updated turns red (which can
-  also mean Yahoo is not answering), shadow grading waits at least a day and drops an entry only after 28 days and 3
-  failed fetch days, and the account-value seed waits. Plus a delay disclosure: Updated is when SONAR fetched the price,
+  the Screener's equities, FX, commodities and crypto rows, with no fallback; the BTC hourly model uses Binance; if
+  Binance is unreachable, Coinbase supplies the live candle, but volatility and gap settlement still need Binance (the
+  model then falls back to a default volatility)." The README's real-vs-simulated table no longer gives ETH a Coinbase
+  fallback.
+- **What a Yahoo outage does**, checked against the code: the board scores from its in-memory cache while the app
+  runs (a relaunch or horizon change mid-outage leaves rows missing) and Updated turns red (which can also mean Yahoo
+  is not answering; the column's tooltip now says so), shadow grading waits at least a day and drops an entry only
+  after 28 days and 3 failed fetch days, and the account-value seed waits, stopping after six partial answers until
+  the next launch. Plus a delay disclosure: Updated is when SONAR fetched the price,
   not the exchange's time.
 - **`sonar/providers.py` and its tests are deleted**, with the stale comments in `paths.py`, `institutions.py` and
   `scripts/diag_priority.py` (which still blanks the key env vars) and the README module map. A `providers.json`
@@ -35,7 +39,7 @@ keep one price source. Nothing restarts; `docs.html` reaches users with the next
   is recorded.
 - **`tests/test_providers_docs_truth.py`** keeps it true: nothing imports a `providers` module, the false phrases stay
   out of the six documents, CoinGecko and Frankfurter appear only as "not used", and the source, outage and delay
-  sentences stay in both pages. Suite: 3,216 tests.
+  sentences stay in both pages. Suite: 3,243 tests.
 
 ## v2.365 — 2026-10-19
 

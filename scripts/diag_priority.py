@@ -61,10 +61,11 @@ VARIANTS = {
     "std": {"port": 8789, "ProcessType": "Standard"},
 }
 
-#: Market-data keys (read by no code since the unwired provider module was
-#: deleted, the provider-wiring spec in docs/specs) and the LLM's (sonar/llm.py,
-#: which reads only the process environment). A per-job empty value overrides any ``launchctl
-#: setenv`` global, so a diag job runs keyless whatever is set (A3, P3-b).
+#: Market-data keys, which no code reads since the unwired provider module was
+#: deleted (the provider-wiring spec in docs/specs), and the LLM's (sonar/llm.py,
+#: which reads only the process environment). A per-job empty value overrides
+#: any ``launchctl setenv`` global, so a diag job runs keyless whatever is set
+#: (A3, P3-b).
 BLANK_KEYS = ("FINNHUB_API_KEY", "TWELVEDATA_API_KEY", "ALPHAVANTAGE_API_KEY",
               "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
               # Nothing calls the paper broker today; an empty value also wins

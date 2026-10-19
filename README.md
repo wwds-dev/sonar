@@ -63,7 +63,7 @@ zero stake for a narrative one. `sonar/playmaker/MODELS.md` surveys the models; 
 
 | Real (read-only public data) | Simulated |
 |---|---|
-| BTC/ETH price + hourly candle — Binance (the actual Polymarket resolution source), Coinbase fallback | The bankroll ($10,000 paper) |
+| BTC/ETH price + hourly candle — Binance (the actual Polymarket resolution source); Coinbase fallback for BTC's live candle only | The bankroll ($10,000 paper) |
 | Polymarket odds, best bid/ask, order books, market metadata | Every position — **no exchange, no wallet, no order placed anywhere** |
 | Equities/indices/FX/commodities — Yahoo Finance | The P&L |
 | News — 24 feeds across nine press blocs: Reuters, AP, Bloomberg, FT, BBC, MarketWatch, Yahoo, NPR, CNBC, Ars Technica, TechCrunch, The Verge, plus Al Jazeera, Anadolu, Global Times, SCMP, TASS, Times of India, The Hindu, Japan Times, AllAfrica and Folha | |
@@ -171,21 +171,24 @@ refused before any request. Going live is not a flag in this file: it is a decis
 ## Data providers
 
 Yahoo is the only source for the Screener's equities, FX, commodities and crypto rows, with no fallback; the BTC
-hourly model uses Binance, with Coinbase if Binance is unreachable. Yahoo is free, broad and **undocumented**. It can
+hourly model uses Binance; if Binance is unreachable, Coinbase supplies the live candle, but volatility and gap
+settlement still need Binance (the model then falls back to a default volatility). Yahoo is free, broad and **undocumented**. It can
 change shape or start refusing requests without notice, and it already has: the `quoteSummary` endpoint used for
 earnings dates now answers 401. One undocumented endpoint carrying the scan, the account-value history and shadow
 grading is the app's largest fragility.
 
 What a Yahoo outage does:
 
-- **The board** keeps scoring from cached prices, and the Updated column turns gold past 20 minutes and red past an
-  hour (below).
+- **The board** keeps scoring from cached prices while the app runs, and the Updated column turns gold past 20
+  minutes and red past an hour (below). The cache is in memory, so after a relaunch or a horizon change during an
+  outage, rows are missing.
 - **Shadow grading.** A failed fetch keeps the closes already held. The symbol is marked as tried for that UTC day
   and is not refetched until the next one. An entry past its time-stop with no closing bar stays "waiting for a
   price" and holds its look. It becomes "no price" and is left out only after 28 days and 3 failed fetch days. So an
   outage delays grading by at least a day, and only a long outage removes entries.
 - **The account-value seed** retries later (`SEED_RETRY_EVERY`). A partial answer uses up one of `SEED_MAX_TRIES`;
-  an empty answer uses none. So the equity curve waits.
+  an empty answer uses none. So the equity curve waits, and after six partial answers seeding stops until the next
+  launch.
 
 Quotes may be delayed by the exchange; Updated shows when SONAR fetched the price, not the exchange's time.
 
@@ -290,7 +293,7 @@ each look). After a deliberate reset, you may instead retire it: copy that newes
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 3,216 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 3,243 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 

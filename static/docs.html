@@ -406,14 +406,17 @@
   <h3>One source, and what happens when it fails</h3>
   <div class="warn"><b>The largest fragility.</b> Yahoo is the only source for
     the Screener's equities, FX, commodities and crypto rows, with no fallback;
-    the BTC hourly model uses Binance, with Coinbase if Binance is unreachable.
-    Yahoo's endpoint is undocumented and can change or start refusing requests
+    the BTC hourly model uses Binance; if Binance is unreachable, Coinbase
+    supplies the live candle, but volatility and gap settlement still need
+    Binance (the model then falls back to a default volatility). Yahoo's endpoint is undocumented and can change or start refusing requests
     without notice.</div>
   <p>What a Yahoo outage does:</p>
   <ul>
-    <li><b>The board</b> keeps scoring from cached prices, and the Updated
-      column turns gold past 20 minutes and red past an hour. Red can mean the
-      rotation is losing ground, and it can also mean Yahoo is not answering.</li>
+    <li><b>The board</b> keeps scoring from cached prices while the app runs,
+      and the Updated column turns gold past 20 minutes and red past an hour.
+      Red can mean the rotation is losing ground, and it can also mean Yahoo is
+      not answering. The cache is in memory, so after a relaunch or a horizon
+      change during an outage, rows are missing.</li>
     <li><b>Shadow grading.</b> A failed fetch keeps the closes already held. The
       symbol is marked as tried for that UTC day and is not refetched until the
       next one. An entry past its time-stop with no closing bar stays "waiting
@@ -421,8 +424,8 @@
       only after 28 days and 3 failed fetch days. So an outage delays grading by
       at least a day, and only a long outage removes entries.</li>
     <li><b>The account-value history</b> retries later. A partial answer uses up
-      one of a few tries; an empty answer uses none. So the equity curve
-      waits.</li>
+      one of a few tries; an empty answer uses none. So the equity curve waits,
+      and after six partial answers it stops trying until the next launch.</li>
   </ul>
   <p>Quotes may be delayed by the exchange; Updated shows when SONAR fetched the
     price, not the exchange's time.</p>
