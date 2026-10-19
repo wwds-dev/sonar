@@ -40,7 +40,9 @@ app's Application Support directory.
 ## Security surface
 `sonar/server.py` (localhost HTTP); keys and tokens (`.env`, Application Support);
 `sonar/llm.py` and `sonar/news.py` (untrusted text into prompts, prompt injection);
-`sonar/alpaca.py` and `execution.py` (paper-only guard); file writes under `SONAR_DATA`;
+`sonar/alarm.py` (outbound HTTPS POST to `ntfy.sh`; the topic is a secret in the login Keychain, service
+`com.netrunner3000.sonar.ntfy`, account `topic`, read with `/usr/bin/security`; push text is allowlisted;
+`osascript` banner); `sonar/alpaca.py` and `execution.py` (paper-only guard); file writes under `SONAR_DATA`;
 `requirements.txt`; `SONAR.spec` / `build_app.sh` (signing, bundled secrets); launchd plist.
 
 ## Test bar

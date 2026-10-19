@@ -9,7 +9,10 @@ own data directory, and put an in-process `Live` beside it.
 
 The child never reaches the internet: before `server.main` runs it replaces
 the poll body and warm-up with no-ops and makes `urlopen` refuse, exactly as
-the suite's own guards do. It still takes the lock, writes its address into
+the suite's own guards do. Nor does it read the owner's Keychain, post a banner
+or push to the phone: `server.main` builds the agent's real notifier, so the
+child has no topic, and any `security` or `osascript` it tried to run would be
+refused and written to `real-channel-calls` in the data directory. It still takes the lock, writes its address into
 it, serves the API and hands the lock over — which is all these tests ask of
 it.
 """
@@ -35,9 +38,22 @@ from sonar.core import Live
 ROOT = Path(__file__).resolve().parent.parent
 
 CHILD = textwrap.dedent("""
-    import sys, urllib.request
+    import os, subprocess, sys, urllib.request
     sys.path.insert(0, sys.argv[3])
-    from sonar import core, server
+    from sonar import alarm, core, server
+
+    _real_run = subprocess.run
+
+    def guarded_run(args, *a, **k):
+        name = str(list(args)[0]).rsplit("/", 1)[-1] if args else ""
+        if name in ("security", "osascript"):
+            with open(os.path.join(sys.argv[2], "real-channel-calls"), "a") as f:
+                f.write(name + "\\n")
+            raise OSError("the test's agent has no alarm channels")
+        return _real_run(args, *a, **k)
+
+    subprocess.run = guarded_run
+    alarm.read_topic = lambda run=None: (None, "absent")
 
     def refuse(*a, **k):
         raise OSError("the test's agent does not go to the network")
@@ -133,6 +149,17 @@ def _stop(live: Live, thread: threading.Thread) -> None:
     live.stop()
     thread.join(timeout=5)
     assert not thread.is_alive(), "stop() did not end the engine's loop"
+
+
+def test_the_agent_process_never_reads_the_keychain_or_alarms(start_agent, tmp_path):
+    """Security P2-1: the child is a real agent, and a real agent reads the
+    Keychain and can push a heartbeat. The test's child must do neither."""
+    agent, _ = start_agent()
+    assert _wait(lambda: _lock(tmp_path).get("pid") == agent.pid), "agent never took the lock"
+    agent.kill()
+    out, _ = agent.communicate(timeout=10)
+    assert "push alarms: ntfy not configured (absent)" in out
+    assert not (tmp_path / "real-channel-calls").exists()
 
 
 def test_a_window_follows_an_agent_in_another_process(

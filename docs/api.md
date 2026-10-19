@@ -9,7 +9,7 @@ Moved from `README.md` on 2026-10-10. Served by `sonar/server.py` (headless mode
 | `GET /api/config` | current risk/horizon/protocol, available options, LLM availability |
 | `POST /api/config` | `{"risk": "...", "horizon": "...", "protocol": true}` — switches and rescans |
 | `POST /api/read` | `{"kind": "btc\|asset", "id": "..."}` — one LLM read |
-| `GET /api/health` | is the engine doing its job — 200, or 503 with the problems listed |
+| `GET /api/health` | is the engine doing its job — 200, or 503 with the problems listed; from the agent, also a `notify` block with each alarm channel's state (`docs/RUNBOOK.md` §2) |
 | `GET /api/book`, `/api/wire`, `/api/macro` | the paper book, the alerts and central-bank calendar, the macro regime |
 | `POST /api/undo` | `{"id": "...", "kind": "trade\|close"}` — take back a trade or a manual close made in the last 30 s (the window's Undo); it never reaches the graded record |
 | `POST /api/trade`, `/api/close` | `{"symbol": "...", "direction": "LONG\|SHORT"}`, `{"id": "..."}` — paper trades; how a second window hands its actions to the engine that holds the book |

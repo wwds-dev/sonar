@@ -3,6 +3,7 @@
     python main.py                run the app
     python main.py --selftest     check a build's wiring and exit
     python main.py --headless     run the HTTP daemon instead (no Qt)
+    python main.py --test-alarm   send one test alarm (ntfy push and banner)
 
 The self-test exists because a packaged .app fails in ways the source tree
 cannot. Two things bite every time in this lab: a frozen bundle is read-only and
@@ -255,6 +256,11 @@ def run_app() -> int:
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         sys.exit(selftest())
+    if "--test-alarm" in sys.argv:
+        # One test push to the phone, and a banner here. Reads the Keychain
+        # topic only: no book, no health, no SONAR_DATA (sonar/alarm.py).
+        from sonar import alarm
+        sys.exit(alarm.test_alarm(sys.argv[1:]))
     if "--headless" in sys.argv:
         sys.exit(headless(sys.argv[1:]))
     sys.exit(run_app())

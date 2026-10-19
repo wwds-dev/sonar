@@ -40,6 +40,22 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       auto-update). Say in the app and README that results come from free public sources and can be stale or
       wrong. (The licence is settled: MIT, see Done.)
 
+- [ ] `P0` `infra` `@ai` **Alarm delivery: the agent's only alarm (osascript banner) failed 45 of 47 times.** Add ntfy
+      push, a daily heartbeat and `notify_failures` in `/api/health`; diagnose the timeouts; timestamp watchdog lines;
+      fix RUNBOOK §2. Spec `docs/specs/alarm-delivery.md` (Define and Architect gates approved; **built 2026-10-14,
+      uncommitted**: `sonar/alarm.py`, watchdog wiring in `sonar/server.py`, `--test-alarm`, 76 tests; diagnosis
+      `docs/audit/alarm-delivery-osascript-diagnosis.md` = starvation, not TCC). Next: Review, Verify, Secure
+      (ntfy.sh data terms), Document; at Release the owner stores the Keychain topic, runs `--test-alarm`, says yes to
+      the agent restart, and saves the phone evidence (measures 6, 7). Review fix round 1 done 2026-10-19 (owner
+      decisions (a)-(c) in the spec). Source: ops audit wave 2 P0-1.
+- [ ] `P1` `infra` `@ai` **External probe outside the agent.** A separate 5-minute launchd job that runs
+      `curl /api/health` and pushes to ntfy when the agent is dead, hung or silent. It closes the blind spot in
+      RUNBOOK §2, where a missing 09:00 heartbeat is today's only sign. Needs its own spec (alarm-delivery Owner
+      decision 1).
+- [ ] `P2` `security` `@ai` **ntfy reserved topic plus access token.** Today the topic is the only access control:
+      anyone who knows it can read the pushes and post a fake "alive" (ADR 0005, security P3-2, accepted
+      2026-10-19). A reserved topic with an `Authorization: Bearer` token, read from a second Keychain item, closes
+      that. Needs an ntfy.sh account.
 - [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. No code needed — `providers.py` already registers Finnhub at preference 5, ahead of Yahoo, and picks the key up from `FINNHUB_API_KEY` in a git-ignored `.env`. Also removes the ~15-minute quote delay during market hours.
 - [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
       it is the one that decides whether anything here is true. Three parts:

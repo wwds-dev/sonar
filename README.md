@@ -254,6 +254,7 @@ uv venv .venv && uv pip install -r requirements.txt
 python main.py              # the app
 python main.py --selftest   # check a build's wiring and exit
 python main.py --headless   # the old HTTP daemon instead
+python main.py --test-alarm # send one test alarm to your phone (ntfy) and a banner
 ./build_app.sh              # build a signed .app; add --install to copy into /Applications
 ```
 
@@ -284,7 +285,7 @@ each look). After a deliberate reset, you may instead retire it: copy that newes
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 2,711 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 2,826 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -318,6 +319,11 @@ were priced for. The full notes are in [docs/history/uptime-notes.md](docs/histo
   (`--status`, `--uninstall`). It runs the installed `SONAR.app` headless, so checkout edits never reach it;
   `./build_app.sh --install` restarts it on the new build (`--checkout` runs the working tree instead, for
   development). It writes `SONAR_DATA` into the plist so the agent and the app share one directory.
+- **The agent raises alarms off the Mac.** A stall or a dead engine loop goes to your phone as an
+  [ntfy](https://ntfy.sh) push (a phone notification service; the topic, which works like a password, is kept in
+  the login Keychain), plus a banner on this Mac, and a daily 09:00 "alive" push says it is still running.
+  `/api/health` shows each channel's state, and a failing push channel turns it red. Setup, what a push may say
+  and the blind spot are in [docs/RUNBOOK.md](docs/RUNBOOK.md) §2.
 - **One engine per state file** (`sonar/enginelock.py`). Whoever starts first drives; the other **follows**,
   mirroring the agent's snapshot over localhost and handing every write to it, and takes over the moment the lock
   is free. The status line says *following the engine at 127.0.0.1:8787* while this is so.
@@ -353,7 +359,7 @@ stamp. Scheme in `VERSIONING.md`; what each installed build contained is in `CHA
 ## Layout
 
 ```
-main.py        entry point — app, --selftest, --headless
+main.py        entry point — app, --selftest, --headless, --test-alarm
 sonar/         the engine and models (each module's docstring says what it is for)
   core.py engine.py enginelock.py   the driver, the paper engine, the single-writer lock
   model.py feeds.py risk.py horizon.py   the hourly model, its feeds, risk profiles, horizons
@@ -361,6 +367,7 @@ sonar/         the engine and models (each module's docstring says what it is fo
   backtest.py replay.py research/    the replay, step-through, and the study apparatus
   news.py events.py institutions.py alerts.py   headlines, calendars, central banks, what changed
   providers.py paths.py server.py llm.py   data sources, path/backup logic, the HTTP server, the optional LLM
+  alarm.py       the agent's alarms: ntfy push, macOS banner, daily heartbeat
   alpaca.py execution.py costs.py   paper-broker adapter and dormant execution guard, its cost ledger
   universe.py venues.py   the listed US-equity universe, where a row could be traded
   macro/         FRED regime for long horizons — its own git repo, gitignored here

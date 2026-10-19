@@ -10,6 +10,50 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## Unreleased — alarm-delivery
+
+**Alarms that reach your phone** (`docs/specs/alarm-delivery.md`, `docs/adr/0005-ntfy-push-alarm-keychain-topic.md`;
+RUNBOOK §2). Built and reviewed, not installed: the live agent keeps its old build until the owner says yes to the
+restart. The agent's only alarm was a macOS banner, and 45 of its 47 attempts from 2026-10-12 timed out, so poll
+outages of 12 to 24 minutes went unreported.
+
+- **ntfy push.** Every alarm, "working again" and "SONAR stopped" notice now also goes to `https://ntfy.sh/<topic>`,
+  which the ntfy app on your phone subscribes to. The topic is a secret kept in the login Keychain (service
+  `com.netrunner3000.sonar.ntfy`, account `topic`), read once at agent start. A push says only what is wrong, for
+  how long, the build and each channel's state, under the title "SONAR (paper) ...". It never says balances,
+  positions, P&L, symbols, prices, error text or paths. A failed push is retried once after 20 s, then counted.
+  With no topic, nothing goes to the network and the banner works as before.
+- **Daily heartbeat at 09:00 local time:** "SONAR (paper) alive, build vX; open problems: ...". It goes out even when
+  problems are open. If it does not arrive, the agent cannot tell you anything: check RUNBOOK §3.
+- **`/api/health` shows the channels.** A new `notify` block gives each channel's state (`ok`, `failing`,
+  `not configured`, `unavailable`), its failure count, last success and last failure. A failing push channel, or an
+  alarm that did not reach the phone, is a `notify` problem and makes health answer 503. A failing banner is
+  counted but does not turn health red.
+- **`SONAR --test-alarm`** (from a checkout: `python main.py --test-alarm`) sends one test push and one banner now,
+  prints each channel's result and exits 0 only if the push arrived. It reads the Keychain topic and nothing else:
+  no book, no data directory.
+- **Timestamped log lines.** Every watchdog and alarm line in `agent.err.log` starts with a local time, such as
+  `SONAR 2026-10-14T09:00:03+01:00: needs attention: ...`. The agent's start line says `push alarms: ntfy
+  configured` or `push alarms: ntfy not configured (<reason>)`.
+- **Why the banner timed out** (`docs/audit/alarm-delivery-osascript-diagnosis.md`): the agent runs at background
+  priority (`ProcessType Background`, `Nice 5`), and on this busy Mac the `osascript` call gets too little CPU
+  time to finish in 10 s. It is not a macOS privacy (TCC) prompt. A background test job timed out 6 times in 10;
+  a normal-priority one, 0 in 10. The plist is not changed here; that belongs to the separate "starved engine" spec.
+- **What it still cannot do.**
+  - The agent is its own alarm. If it is dead or hung, or the Mac is asleep or logged out, nothing is sent; the
+    only sign is a missing 09:00 heartbeat, up to about 24 hours later. A separate probe outside the agent is a
+    follow-up (`TODO.md`).
+  - In a crash loop with the network down, every restart waits up to 12 s for the "stopped" push that cannot go
+    out, before exiting. launchd restarts it at most once a minute anyway.
+  - The ntfy.sh topic is not password-protected: anyone who knows it can read the pushes and post fake ones,
+    including a fake "alive". ntfy.sh keeps messages for about 12 hours. A reserved topic with a token is on the
+    backlog.
+- **Owner setup, once, before the restart:** generate a topic
+  (`python3 -c "import secrets; print(secrets.token_urlsafe(30))"`); store it with
+  `security add-generic-password -s com.netrunner3000.sonar.ntfy -a topic -w`, typing the topic at the prompt, not
+  on the command line; subscribe to it in the ntfy app; run `--test-alarm`. The full checklist is at the end of the
+  spec.
+
 ## v2.340 — 2026-10-13
 
 **Backtest verdicts: a check against random directions** (branch `sign-randomisation-verdicts`;
