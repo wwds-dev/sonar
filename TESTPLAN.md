@@ -17,7 +17,7 @@ tested a different program. §10.4–10.5 and the handovers in §12 say when to 
 | | |
 |---|---|
 | Build under test | `./build_app.sh --install`, then `/Applications/SONAR.app/Contents/MacOS/SONAR --selftest` |
-| Automated suite | `./run-tests.sh tests/ -q` — expect **3,149 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
+| Automated suite | `./run-tests.sh tests/ -q` — expect **3,216 tests** and no failures (a few skip off macOS). The suite checks this figure against its own collection, so it cannot go stale silently |
 | Time to run this plan | ~30 minutes |
 | Prerequisite | A working internet connection. Two cases deliberately need it off. |
 
@@ -357,7 +357,7 @@ v2 signs off when:
   a backstop, and a wedge today is a regression to report.
 - **The calibration table will be empty** until ~20 paper positions have closed.
   That is the honest state, not a defect.
-- **No Finnhub key** means equities ride on one undocumented Yahoo endpoint, with
-  a ~15-minute delay during market hours.
+- **One price source.** The Screener's rows ride on one undocumented Yahoo
+  endpoint with no fallback (README "Data providers").
 - **Golf and cycling have no rating model**, and cycling has no results feed.
   Both are stated in the UI.

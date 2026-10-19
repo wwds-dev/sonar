@@ -9,8 +9,9 @@ moment at which an instrument gets repriced, whichever way it goes.
 What is here and what is not
 ----------------------------
 Every source below was probed before it was added, and the ones that failed are
-recorded rather than quietly dropped — the same rule as `providers.py`, where a
-plausible-looking adapter that silently returns nothing is worse than no adapter:
+recorded rather than quietly dropped — the same rule as Stooq's absence from the
+price data (README's data section), where a plausible-looking adapter that
+silently returns nothing is worse than no adapter:
 
 * **Working** — Federal Reserve press releases, FOMC-only releases, Fed speeches,
   Bank of England news.

@@ -95,7 +95,16 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       anyone who knows it can read the pushes and post a fake "alive" (ADR 0005, security P3-2, accepted
       2026-10-19). A reserved topic with an `Authorization: Bearer` token, read from a second Keychain item, closes
       that. Needs an ntfy.sh account.
-- [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. No code needed — `providers.py` already registers Finnhub at preference 5, ahead of Yahoo, and picks the key up from `FINNHUB_API_KEY` in a git-ignored `.env`. Also removes the ~15-minute quote delay during market hours.
+- [ ] `P2` `infra` `@ai` **Rewire providers after 2026-11-09 (A-later spec).** Today Yahoo is the only price source
+      for the Screener, with no fallback. The old `providers.py` was never wired (audit N-1) and was deleted in v2.366
+      (`docs/specs/providers-wiring.md`, owner decision 2026-10-19); its switch-and-registry design is in git history.
+      Why the old Finnhub-key P0 would have changed nothing: README "Data providers". A real fallback needs its own
+      spec after the 30-day run: bars fetchers with timestamps and OHLC per vendor, key delivery to the launchd agent,
+      per-bar provenance, no mixed sources in shadow grading, and a radar check.
+- [ ] `P1` `docs` `@ai` **Build `providers-wiring` (option B).** Built v2.366, not yet reviewed: the README,
+      `docs.html`, `.env.example`, `SUGGESTIONS.md` and `TESTPLAN.md` match the code; `providers.py` and its tests are
+      deleted; the source line is in the result records; `tests/test_providers_docs_truth.py` keeps the false phrases
+      out. Measures 1-6 in `docs/specs/providers-wiring.md`. Review, verify and document are still to run.
 - [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
       it is the one that decides whether anything here is true. Three parts:
       a guided mode whose controls are questions rather than `STEP (BARS)`;

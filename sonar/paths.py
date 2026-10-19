@@ -176,8 +176,7 @@ def read_preferences(path: Path) -> dict:
     These are files a person may open in an editor. A missing file, a
     truncated one, and one holding valid JSON that is not an object (``[]``,
     ``null``, ``7``) all mean "use the defaults" — the last of those used to
-    reach ``.get`` on a list and stop the app starting (protocol.json) or
-    every provider lookup (providers.json).
+    reach ``.get`` on a list and stop the app starting (protocol.json).
     """
     try:
         data = json.loads(Path(path).read_text())

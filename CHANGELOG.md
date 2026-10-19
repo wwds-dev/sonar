@@ -10,6 +10,33 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.366 — 2026-10-19
+
+**The docs now describe the price path that runs: Yahoo, with no fallback** (`docs/specs/providers-wiring.md`, option
+B; architecture audit N-1, docs audit P3-11). No change to the data path, so the 30-day run and shadow-ledger look 1
+keep one price source. Nothing restarts; `docs.html` reaches users with the next planned build.
+
+- **The fallback claim is gone.** The README, the Learn page and `.env.example` said a failing vendor was skipped, that
+  crypto and FX survived Yahoo breaking through CoinGecko and Frankfurter, and that a free Finnhub key was the fix.
+  No code ever called the module behind that, so none of it was true. Both pages now say: "Yahoo is the only source for
+  the Screener's equities, FX, commodities and crypto rows, with no fallback; the BTC hourly model uses Binance, with
+  Coinbase if Binance is unreachable."
+- **What a Yahoo outage does**, checked against the code: the board scores from cache and Updated turns red (which can
+  also mean Yahoo is not answering), shadow grading waits at least a day and drops an entry only after 28 days and 3
+  failed fetch days, and the account-value seed waits. Plus a delay disclosure: Updated is when SONAR fetched the price,
+  not the exchange's time.
+- **`sonar/providers.py` and its tests are deleted**, with the stale comments in `paths.py`, `institutions.py` and
+  `scripts/diag_priority.py` (which still blanks the key env vars) and the README module map. A `providers.json`
+  already in a data dir is left in place; nothing reads it. The Stooq note moved to the README.
+- **One home for Finnhub's status**, the README's "Data providers". The owner's Finnhub P0 became a P2, "Rewire
+  providers after 2026-11-09 (A-later spec)"; `SUGGESTIONS.md` #1 is DEFERRED to it. The keys are out of `.env.example`.
+- **Result records name their source.** `docs/specs/v1-product.md` and `CONFIDENCE.md` carry "prices: Yahoo chart
+  endpoint only, no fallback, run window X–Y" beside the v1.0 and look-1 results, with the dates filled in when each
+  is recorded.
+- **`tests/test_providers_docs_truth.py`** keeps it true: nothing imports a `providers` module, the false phrases stay
+  out of the six documents, CoinGecko and Frankfurter appear only as "not used", and the source, outage and delay
+  sentences stay in both pages. Suite: 3,216 tests.
+
 ## v2.365 — 2026-10-19
 
 **Every bundle that passes the install gate names its code: the outer commit and both nested repos**

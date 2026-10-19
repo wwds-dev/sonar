@@ -47,5 +47,12 @@ Tier 2 stays optional and is ordered by what serves the core path first: first-r
    (agent restarted 2026-10-10 17:30, app v2.168): **day 1 = 2026-10-10**, due **2026-11-09**.
 3. A restore drill into a scratch folder from the off-disk copy, once, before day 30.
 
+## Results
+Not recorded yet. Each result below carries its price source when it is written (`docs/specs/providers-wiring.md`,
+measure 6); X and Y are the run's real dates, filled in then.
+- **v1.0 (30 days clean):** not yet recorded. prices: Yahoo chart endpoint only, no fallback, run window X–Y.
+- **Shadow-ledger look 1** (~2026-11-06, ADR 0002): not yet recorded. prices: Yahoo chart endpoint only, no
+  fallback, run window X–Y.
+
 ## Open
 - Whether "others later" ever happens is not decided here; the roadmap's Phase 5/6 stay unscheduled.

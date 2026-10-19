@@ -302,7 +302,7 @@ blends trailing realised vol, a GARCH-style persistence term (vol clustering is
 one of the most robust facts in finance), and the news/attention surprise from
 §5. Then test it against realised forward vol using the existing apparatus.
 
-**This is the highest-value item in this document**, because it is the only one
+**This is the most valuable item in this document**, because it is the only one
 where the target is something the evidence says is predictable *and* the app is
 already built to use the answer.
 
@@ -348,6 +348,15 @@ Two additions specific to this work:
   question "when it says 70, what happens 70% of the time?" should have an answer.
   `sonar/calibration.py` already grades closed positions; the reliability curve is
   the natural presentation of that and it is the standard tool in forecasting.
+
+**Result records.** Each result carries its price source when it is written
+(`docs/specs/providers-wiring.md`, measure 6); X and Y are the run's real dates,
+filled in then.
+
+- **v1.0 (30 days clean, `docs/specs/v1-product.md`):** not yet recorded.
+  prices: Yahoo chart endpoint only, no fallback, run window X–Y.
+- **Shadow-ledger look 1** (~2026-11-06, ADR 0002): not yet recorded.
+  prices: Yahoo chart endpoint only, no fallback, run window X–Y.
 
 ---
 

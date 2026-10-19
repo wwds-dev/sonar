@@ -168,29 +168,34 @@ for that adapter and are not used by the book yet.
 The host is a module constant with no parameter to override and a key that is not clearly a paper key is
 refused before any request. Going live is not a flag in this file: it is a decision for a human with an account.
 
-## Data providers, and the switch behind each one
+## Data providers
 
-Everything runs on Yahoo Finance, which is free, broad and **undocumented**. It can change shape or start
-refusing requests without notice, and it already has: the `quoteSummary` endpoint used for earnings dates now
-answers 401. One undocumented endpoint carrying the whole app is its largest fragility.
+Yahoo is the only source for the Screener's equities, FX, commodities and crypto rows, with no fallback; the BTC
+hourly model uses Binance, with Coinbase if Binance is unreachable. Yahoo is free, broad and **undocumented**. It can
+change shape or start refusing requests without notice, and it already has: the `quoteSummary` endpoint used for
+earnings dates now answers 401. One undocumented endpoint carrying the scan, the account-value history and shadow
+grading is the app's largest fragility.
 
-`sonar/providers.py` puts sources behind one interface — a **capability** (quotes, bars, FX, crypto), a **tier**
-(keyless or keyed), and a persisted **on/off switch**. A request walks the enabled providers in preference order
-and takes the first that answers, so a vendor going down is a skipped provider rather than a broken app.
+What a Yahoo outage does:
 
-| provider | tier | serves | note |
-|---|---|---|---|
-| Yahoo | keyless | quotes, bars, FX, crypto | Broad, free, unstable — the reason this exists |
-| CoinGecko | keyless | crypto | Survives a coin being delisted from any one venue |
-| Frankfurter | keyless | FX | ECB reference rates; stable, but daily not live |
-| Finnhub | free key | quotes, bars | Documented and supported — the sturdiest upgrade |
-| Twelve Data | free key | quotes, bars, FX, crypto | Wide coverage, tight request limit |
-| Alpha Vantage | free key | quotes, bars | ~25 requests/day; research only |
+- **The board** keeps scoring from cached prices, and the Updated column turns gold past 20 minutes and red past an
+  hour (below).
+- **Shadow grading.** A failed fetch keeps the closes already held. The symbol is marked as tried for that UTC day
+  and is not refetched until the next one. An entry past its time-stop with no closing bar stays "waiting for a
+  price" and holds its look. It becomes "no price" and is left out only after 28 days and 3 failed fetch days. So an
+  outage delays grading by at least a day, and only a long outage removes entries.
+- **The account-value seed** retries later (`SEED_RETRY_EVERY`). A partial answer uses up one of `SEED_MAX_TRIES`;
+  an empty answer uses none. So the equity curve waits.
 
-Keys go in the same git-ignored `.env` as the Alpaca ones (names in `.env.example`). Switch Yahoo off and crypto
-still resolves via CoinGecko, FX via Frankfurter — but **equities return nothing at all**: they have no keyless
-second source. A free Finnhub key is the fix. **Stooq is deliberately absent**: both its CSV endpoints now return
-an HTML bot-block page, which an adapter would have parsed into silence.
+Quotes may be delayed by the exchange; Updated shows when SONAR fetched the price, not the exchange's time.
+
+**No second source, and the Finnhub key.** No other market-data vendor is wired in. An earlier module registered
+other vendors behind on/off switches, but no code ever called it, so it was deleted
+(`docs/specs/providers-wiring.md`, 2026-10-19). CoinGecko and Frankfurter (crypto and FX) are not used. Neither are
+Finnhub, Twelve Data or Alpha Vantage: a key for any of them changes nothing today, because no code reads one. A real
+fallback is the `TODO.md` item "Rewire providers after 2026-11-09": it waits until the 30-day paper run has closed, so
+that run keeps one price source end to end. **Stooq is deliberately absent**: both its CSV endpoints return an HTML
+bot-block page rather than data, which an adapter would parse into silence and present as a working fallback.
 
 ### How old is a price on the Screener board?
 
@@ -199,7 +204,7 @@ treats as unacceptable. The board does not refetch all 129 instruments at once (
 and a throttled scan returns fewer rows rather than an error): `assets.ROLL_BATCH` refetches the **26 stalest**
 rows per scan and scores the rest from cache, so one instrument comes round roughly every fifteen minutes. The
 column goes gold past 20 minutes and red past an hour, which means the rotation is losing ground rather than
-that the price is wrong.
+that the price is wrong; red can also mean Yahoo is not answering.
 
 ## Plain wording, or expert
 
@@ -285,7 +290,7 @@ each look). After a deliberate reset, you may instead retire it: copy that newes
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 3,149 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 3,216 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -367,7 +372,7 @@ sonar/         the engine and models (each module's docstring says what it is fo
   assets.py scoring.py portfolio.py calibration.py   the screener, the plan maths, the book, the grade
   backtest.py replay.py research/    the replay, step-through, and the study apparatus
   news.py events.py institutions.py alerts.py   headlines, calendars, central banks, what changed
-  providers.py paths.py server.py llm.py   data sources, path/backup logic, the HTTP server, the optional LLM
+  paths.py server.py llm.py   path/backup logic, the HTTP server, the optional LLM
   alarm.py       the agent's alarms: ntfy push, macOS banner, daily heartbeat
   alpaca.py execution.py costs.py   paper-broker adapter and dormant execution guard, its cost ledger
   universe.py venues.py   the listed US-equity universe, where a row could be traded
@@ -394,8 +399,6 @@ must be JSON from no foreign `Origin`.
 The build backlog is finished; what remains is not more code (`TODO.md` has the open items, and
 `docs/specs/v1-product.md` defines v1.0 as 30 clean days).
 
-- **A free Finnhub key.** Equities have no keyless second source, so most of the watchlist rides on one
-  undocumented Yahoo endpoint. This is the single highest-value change.
 - **Let the paper book run.** A real track record is the one thing no backtest substitutes for, and the
   calibration table stays empty until ~20 positions have closed. **Protocol mode** (My trades) fills it.
 - **Better data, if the research is ever resumed.** Five studies detected no directional effect in daily bars,
