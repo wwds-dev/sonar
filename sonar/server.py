@@ -428,7 +428,10 @@ def main(host: str = "127.0.0.1", port: int = 8787,
         raise SystemExit(f"SONAR serves loopback only; refusing --host {host}")
     live = Live(risk_name=risk_name, horizon_name=horizon_name)
     # Before any thread starts: the Keychain read blocks for at most 5 s, once.
-    notifier = alarm.from_keychain(build=(getattr(live, "build", None) or {}).get("version"))
+    # SONAR_ALARM (pinned "on" in the live plist) lets a diagnostic engine run with
+    # no Keychain read and no push (docs/specs/starved-engine.md A2).
+    notifier = alarm.from_keychain(build=(getattr(live, "build", None) or {}).get("version"),
+                                   mode=alarm.alarm_mode(os.environ))
     # The address goes into the engine lock, so a window that loses the race
     # for it can follow this engine here rather than open with nothing.
     engine = threading.Thread(target=live.run, args=(role,),

@@ -264,7 +264,7 @@ def test_a_retry_that_succeeds_is_not_a_failure(notifiers):
     n.send(alarm.Event("poll"))
     assert n.drain(5) and len(opener.requests) == 2
     assert n.states()["ntfy"] | {"last_ok_at": None} == {
-        "state": "ok", "reason": "ok", "failures": 0, "consecutive": 0,
+        "state": "ok", "reason": "ok", "attempts": 1, "failures": 0, "consecutive": 0,
         "last_ok_at": None, "last_fail_at": None, "in_flight_s": None, "dropped": 0}
 
 
@@ -701,3 +701,181 @@ def test_a_raising_log_does_not_break_a_send_that_drops(notifiers):
     finally:
         release.set()
     assert n.drain(5)
+
+
+# --------------------------------------------------------------------------- #
+# SONAR_ALARM: the off-switch for diagnostic engines (starved-engine A2)
+# --------------------------------------------------------------------------- #
+class Read:
+    """A Keychain read that records being called, or refuses to be."""
+
+    def __init__(self, allowed=True):
+        self.allowed, self.calls = allowed, 0
+
+    def __call__(self):
+        self.calls += 1
+        if not self.allowed:
+            raise AssertionError("the Keychain was read under SONAR_ALARM")
+        return TOPIC, "ok"
+
+
+@pytest.mark.parametrize("env,want", [
+    ({}, "on"), ({"SONAR_ALARM": ""}, "on"), ({"SONAR_ALARM": "  "}, "on"),
+    ({"SONAR_ALARM": "on"}, "on"), ({"SONAR_ALARM": "OFF "}, "off"),
+    ({"SONAR_ALARM": " Banner-Only"}, "banner-only"), ({"SONAR_ALARM": "bogus"}, "bogus"),
+])
+def test_alarm_mode_is_stripped_and_lower_cased(env, want):
+    assert alarm.alarm_mode(env) == want
+
+
+@pytest.mark.parametrize("value", [None, "", "on", " ON "])
+def test_the_default_modes_read_the_keychain_as_today(value):
+    read = Read()
+    env = {} if value is None else {"SONAR_ALARM": value}
+    n = alarm.from_keychain(build=BUILD, read=read, log=lambda m: None,
+                            mode=alarm.alarm_mode(env), opener=Opener(200),
+                            banner=alarm.BannerChannel(run=Run(), platform="darwin"))
+    try:
+        assert read.calls == 1
+        assert n.states()["ntfy"]["state"] == "ok"
+    finally:
+        n.close()
+
+
+@pytest.mark.parametrize("value", ["banner-only", "off", "OFF ", "bogus"])
+def test_any_other_mode_never_reads_the_keychain_or_pushes(value):
+    opener = Opener(200)
+    n = alarm.from_keychain(build=BUILD, read=Read(allowed=False), log=lambda m: None,
+                            mode=alarm.alarm_mode({"SONAR_ALARM": value}), opener=opener,
+                            banner=alarm.BannerChannel(run=Run(), platform="darwin"))
+    try:
+        n.send(alarm.Event("poll", (("poll", 700.0),)))
+        assert n.drain(5)
+        assert opener.requests == []
+        ntfy = n.states()["ntfy"]
+        assert ntfy["state"] == "not configured" and ntfy["reason"] == "off (SONAR_ALARM)"
+        assert ntfy["failures"] == 0 and not n.undelivered
+    finally:
+        n.close()
+
+
+def test_off_starts_no_osascript_and_reports_both_channels_off():
+    banner = Run()
+    lines = []
+    n = alarm.from_keychain(build=BUILD, read=Read(allowed=False), log=lines.append,
+                            mode="off", opener=Opener(200),
+                            banner=alarm.BannerChannel(run=banner, platform="darwin"))
+    try:
+        d = n.send(alarm.Event("poll", (("poll", 700.0),)), ("SONAR needs attention", "x"))
+        assert n.drain(5)
+        assert banner.calls == [], "a banner was posted under SONAR_ALARM=off"
+        assert d.required is None
+        s = n.states()
+        assert s["banner"]["state"] == "unavailable"
+        assert s["banner"]["reason"] == "off (SONAR_ALARM)"
+        assert s["ntfy"]["state"] == "not configured"
+        assert s["ntfy"]["reason"] == "off (SONAR_ALARM)"
+    finally:
+        n.close()
+    assert len(lines) == 1 and lines[0].endswith("push alarms: off (SONAR_ALARM=off)")
+
+
+def test_banner_only_keeps_the_banner():
+    banner = Run()
+    lines = []
+    n = alarm.from_keychain(build=BUILD, read=Read(allowed=False), log=lines.append,
+                            mode="banner-only",
+                            banner=alarm.BannerChannel(run=banner, platform="darwin"))
+    try:
+        n.send(alarm.Event("poll", (("poll", 700.0),)), ("SONAR needs attention", "x"))
+        assert n.drain(5)
+        assert banner.calls and banner.calls[0][-2:] == ["x", "SONAR needs attention"]
+        assert "reason" not in n.states()["banner"]
+    finally:
+        n.close()
+    assert len(lines) == 1 and lines[0].endswith("push alarms: off (SONAR_ALARM=banner-only)")
+
+
+def test_an_unknown_mode_is_named_once_and_keeps_the_banner():
+    banner = Run()
+    lines = []
+    n = alarm.from_keychain(build=BUILD, read=Read(allowed=False), log=lines.append,
+                            mode=alarm.alarm_mode({"SONAR_ALARM": "Bogus"}),
+                            banner=alarm.BannerChannel(run=banner, platform="darwin"))
+    try:
+        n.send(alarm.Event("poll", (("poll", 700.0),)), ("SONAR needs attention", "x"))
+        assert n.drain(5)
+        assert banner.calls, "an unknown value lost the banner"
+        assert n.states()["ntfy"]["reason"] == "off (SONAR_ALARM)"
+    finally:
+        n.close()
+    assert len(lines) == 1
+    assert "'bogus'" in lines[0] and "treated as banner-only" in lines[0]
+
+
+@pytest.mark.parametrize("value,want", [(None, "on"), ("off", "off"), ("x", "x")])
+def test_server_main_passes_the_env_mode(monkeypatch, tmp_path, value, want):
+    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
+    if value is None:
+        monkeypatch.delenv("SONAR_ALARM", raising=False)
+    else:
+        monkeypatch.setenv("SONAR_ALARM", value)
+    seen = []
+
+    def fake_from_keychain(build=None, mode="on", **kw):
+        seen.append(mode)
+        return alarm.Notifier([], log=lambda m: None)
+
+    class FakeServer:
+        def __init__(self, *a):
+            pass
+
+        def serve_forever(self):
+            pass
+
+    class StubLive:
+        def __init__(self, **kw):
+            self.risk = type("R", (), {"name": "moderate"})()
+            self.horizon = type("H", (), {"name": "week"})()
+            self.read_only = False
+
+        def run(self, role, url=None):
+            pass
+
+    monkeypatch.setattr(alarm, "from_keychain", fake_from_keychain)
+    monkeypatch.setattr(server, "Live", StubLive)
+    monkeypatch.setattr(server, "PaperServer", FakeServer)
+    monkeypatch.setattr(server.time, "sleep", lambda s: None)
+    monkeypatch.setattr(server.Handler, "live", None)
+    monkeypatch.setattr(server.Handler, "notifier", None, raising=False)
+    monkeypatch.setattr(server.Watchdog, "run", lambda self, stop=None: None)
+    server.main(port=0)
+    assert seen == [want]
+
+
+def test_attempts_count_every_outcome_so_failures_per_attempt_can_be_read(notifiers):
+    """starved-engine measure 4 reports banner failures per banner attempt."""
+    banner = Run(rc=1)
+    n = notifiers(opener=Opener(200, 200), banner_run=banner)
+    n.send(alarm.Event("poll"))
+    n.send(alarm.Event("recovery"))
+    assert n.drain(5)
+    b = n.states()["banner"]
+    assert b["attempts"] == 2 and b["failures"] == 2
+    assert n.states()["ntfy"]["attempts"] == 2 and n.states()["ntfy"]["failures"] == 0
+
+
+def test_health_shows_the_alarm_is_off_under_sonar_alarm():
+    """The harness's fail-closed check reads exactly this (QA test-quality gap)."""
+    class Live:
+        def health(self, now=None):
+            return {"ok": True, "problems": [], "last_poll_age_s": 1.0}
+
+    n = alarm.from_keychain(build=BUILD, read=Read(allowed=False), log=lambda m: None,
+                            mode="off")
+    try:
+        h = server.agent_health(Live(), n)
+    finally:
+        n.close()
+    assert h["notify"]["ntfy"]["reason"] == "off (SONAR_ALARM)"
+    assert h["ok"] is True, "the switch alone must not turn health red"

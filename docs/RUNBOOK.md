@@ -10,6 +10,7 @@ For the owner, at a terminal, when something looks wrong. Real money is out of s
 |---|---|
 | Agent (launchd) | `com.netrunner3000.sonar`, runs `/Applications/SONAR.app/Contents/MacOS/SONAR --headless` (installed with `install_agent.sh`; `--checkout` runs `<checkout>/.venv/bin/python main.py --headless` instead) |
 | API | `127.0.0.1:8787` (loopback only) |
+| Priority | launchd `ProcessType Standard`, no `Nice` (from the build after v2.362; before that `Background` + `Nice 5`). See §7 |
 | Data directory | `~/Library/Application Support/SONAR` (`SONAR_DATA`): `state.json`, `portfolio.json`, daily `*.bak.<date>` (7 kept) |
 | Off-disk copy | the directory in `$SONAR_BACKUP_DIR` or in `<data>/backup-to` (30 kept) |
 | Logs | `~/Library/Logs/SONAR/agent.out.log`, `agent.err.log` (not rotated); `<checkout>/data/logs/` in `--checkout` mode. `install_agent.sh --status` prints the path |
@@ -179,9 +180,75 @@ new build (the install restarted the agent), record the build and commit. Do not
 install from a red commit. There is no `.prev` rollback yet: keep the previous `.app` aside by hand
 before installing.
 
+After the install, also check (docs/specs/starved-engine.md, release smoke test additions):
+
+```bash
+launchctl print gui/$(id -u)/com.netrunner3000.sonar | grep -Ei 'spawn type|nice'   # daemon (3), no nice
+launchctl getenv SONAR_ALARM                                                         # must print nothing
+curl -s -m 30 127.0.0.1:8787/api/health                                             # notify.ntfy.reason is not "off (SONAR_ALARM)"
+```
+
+`SONAR_ALARM` is the off-switch for throwaway diagnostic engines (`banner-only` or `off`; any other value acts as
+`banner-only`). The live plist pins it to `on`, which beats a global `launchctl setenv`; a global value is still a
+fault to remove (`launchctl unsetenv SONAR_ALARM`).
+
 ## 6. Open owner decisions
 
 Developer ID signing and notarization; where the off-disk copy really leaves this disk (the
 Google Drive job `com.andreas.gdrive-backup` failed to start on 2026-10-11); an always-on host; the probe outside
 the agent that closes the alarm blind spot in §2 (the ntfy push itself is decided and built, not yet installed). (Decided 2026-10-11: the agent runs from the installed `SONAR.app`, option A in
 `docs/specs/t2-1-agent-provenance.md`; built, and live once the owner reinstalls the agent.)
+
+## 7. Agent priority and measured numbers
+
+From the first install after v2.362, the agent runs at launchd `ProcessType Standard` with no `Nice` (ADR 0006).
+**Until that install, the live agent still runs `Background` + `Nice 5`.** Under that setting it missed its 4 s
+poll and took 3-24 s to answer `/api/health` on this loaded Mac (`docs/audit/alarm-delivery-osascript-diagnosis.md`
+§4). `Standard` is expected to change *when* the agent runs, not how much CPU it uses (not yet measured).
+Heavy local load still degrades the paper run: at a load of 180 everything is slow. A monitor of the agent needs a
+timeout of **30 s or more** (`curl -m 30`), or it reports a slow agent as a dead one.
+
+### Measuring it (side by side, without touching the live agent)
+
+```bash
+python3 -I scripts/diag_priority.py run --follower     # about 60 min plus up to 20 min of staggered starts
+python3 -I scripts/diag_priority.py cleanup            # only if the run was killed (kill -9): boots out every
+                                                       # sonar-diag.* job, removes every $TMPDIR/sonar-diag-* dir
+python3 -I scripts/diag_priority.py watch --port 8787 --every 300 --days 7   # after the install: 7 days of the live agent's health
+```
+
+- `run` loads two throwaway jobs, `com.netrunner3000.sonar-diag.bg` (port 8788) and `.std` (8789), from this
+  checkout, each with its own scratch `SONAR_DATA` and `SONAR_BACKUP_DIR` under `$TMPDIR/sonar-diag-*`, the push
+  alarm off (`SONAR_ALARM=off`) and every provider, LLM and Alpaca key blank. It refuses US market hours (unless
+  `--force`; checked again just before the hour), busy ports, any label or path that is the live agent's, and an
+  `ant auth login` profile at `~/.config/anthropic` (move it aside for the run). It never sends a request to 8787 and never boots out or
+  restarts `com.netrunner3000.sonar`; it reads its pid before and after and fails if it changed.
+- With `--follower` it opens a window on the `std` engine. Confirm the window follows `127.0.0.1:8789` and type `y`.
+  Take **no** trade, close, undo or config action during the hour. Look at the window at minutes 0, 15, 30, 45 and 60.
+- It writes `docs/audit/starved-engine-measurement.md` (latency, poll age, load and CPU only), prints the UTC window
+  for the 30-day run record, then deletes the scratch dir. Rows go to `<out>.partial` as they arrive, so a run that
+  stops early keeps its samples. A sample with no answer counts as infinitely slow in p50/p95.
+- Crypto feeds trade around the clock, so "outside US market hours" does not shield them. The logged window is the
+  mitigation (domain P3-d).
+- The run counts only if the 1-min load was 50 or more for at least 60 % of the samples; otherwise it is "not
+  determined" and is repeated.
+
+### Measured numbers
+
+**Not measured yet.** Fill these in from `docs/audit/starved-engine-measurement.md` and the `watch` file. Each number
+needs its date range, N, load range and job class.
+
+| Measure | Job class | Date range (UTC) | N | Load (1 min) | p50 | p95 | max |
+|---|---|---|---|---|---|---|---|
+| `/api/health` latency | std (Standard) | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `/api/health` latency | bg (Background + Nice 5) | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `/api/state` latency (follower proxy) | std | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `last_poll_age_s` | std | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| `osascript` probes over 10 s | std / bg | _TBD_ | 10 / 10 | _TBD_ | _TBD_ of 10 / _TBD_ of 10 | | |
+| CPU, % of one core | std / bg | _TBD_ | 1 / 1 | _TBD_ | _TBD_ / _TBD_ | | |
+| Installed agent `/api/health` (7 days) | live, Standard | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| Poll/scan alarms (7 days) vs 7 outages in 3 days before | live, Standard | _TBD_ | _TBD_ | _TBD_ | _TBD_ | | |
+| `notify.banner.failures` per banner attempt | live, Standard | _TBD_ | _TBD_ | _TBD_ | _TBD_ | | |
+
+The comparison with the outages before the change is **indicative, not causal**: providers fail on their own, and
+the load differs from week to week.

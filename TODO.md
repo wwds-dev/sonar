@@ -52,6 +52,18 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       `curl /api/health` and pushes to ntfy when the agent is dead, hung or silent. It closes the blind spot in
       RUNBOOK §2, where a missing 09:00 heartbeat is today's only sign. Needs its own spec (alarm-delivery Owner
       decision 1).
+- [ ] `P1` `performance` `@ai` **Starved engine: the agent runs at `ProcessType Background` + `Nice 5`.** On the loaded
+      dev Mac, health takes 3-24.5 s, polls lag to 22 s, and followers would show "not answering". Set `Standard`, drop
+      `Nice`, measure side by side in throwaway jobs, and decide on `FOLLOW_TIMEOUT` from the numbers. Spec
+      `docs/specs/starved-engine.md` (Define and Architect gates approved 2026-10-19; **built 2026-10-19**: plist A1,
+      `SONAR_ALARM` A2, harness `scripts/diag_priority.py` A4, unit tests only). Next: Review, then the measured hour
+      (`diag_priority.py run --follower`, outside US market hours) to fill RUNBOOK §7 and decide A5, then Verify, Secure.
+      Ships with alarm-delivery, so there is one live restart, with the owner's yes. Source: ops audit wave 2 P1-2.
+- [ ] `P2` `bug` `@ai` **A forwarded trade that times out is reported "not taken" but may have been booked.**
+      `core.py:1827-1830` says "did not take it" on any exception, and `/api/trade` has no idempotency key
+      (`server.py:137-143`). If the user clicks again, a duplicate paper position opens. Fix: change the copy to "no
+      answer in time; it may have gone through, check the book", and/or add a client id that `/api/trade`
+      deduplicates. Source: starved-engine domain review P2-1 (outside that spec's scope).
 - [ ] `P2` `security` `@ai` **ntfy reserved topic plus access token.** Today the topic is the only access control:
       anyone who knows it can read the pushes and post a fake "alive" (ADR 0005, security P3-2, accepted
       2026-10-19). A reserved topic with an `Authorization: Bearer` token, read from a second Keychain item, closes

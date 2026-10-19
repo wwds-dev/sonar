@@ -217,6 +217,9 @@ with open(src, "rb") as f:
 p["ProgramArguments"] = [exe] + ([main_py] if main_py else []) + p["ProgramArguments"][2:]
 p["WorkingDirectory"] = work
 p["EnvironmentVariables"]["SONAR_DATA"] = data
+# Pinned, whatever the template says: a global `launchctl setenv SONAR_ALARM`
+# would otherwise turn the live agent's phone alarm off (starved-engine A2).
+p["EnvironmentVariables"]["SONAR_ALARM"] = "on"
 p["StandardOutPath"] = f"{logs}/agent.out.log"
 p["StandardErrorPath"] = f"{logs}/agent.err.log"
 assert "__" not in repr(p), "a template placeholder was left in"

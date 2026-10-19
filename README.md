@@ -285,7 +285,7 @@ each look). After a deliberate reset, you may instead retire it: copy that newes
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 2,826 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 2,955 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -318,7 +318,8 @@ were priced for. The full notes are in [docs/history/uptime-notes.md](docs/histo
 - **A launchd agent** keeps it running when you are not logged into the app: `./scripts/install_agent.sh`
   (`--status`, `--uninstall`). It runs the installed `SONAR.app` headless, so checkout edits never reach it;
   `./build_app.sh --install` restarts it on the new build (`--checkout` runs the working tree instead, for
-  development). It writes `SONAR_DATA` into the plist so the agent and the app share one directory.
+  development). It writes `SONAR_DATA` into the plist so the agent and the app share one directory, and pins `SONAR_ALARM` to `on`
+  (that variable switches the phone alarm off only for throwaway test engines; `docs/RUNBOOK.md` §5).
 - **The agent raises alarms off the Mac.** A stall or a dead engine loop goes to your phone as an
   [ntfy](https://ntfy.sh) push (a phone notification service; the topic, which works like a password, is kept in
   the login Keychain), plus a banner on this Mac, and a daily 09:00 "alive" push says it is still running.

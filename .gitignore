@@ -1,5 +1,7 @@
 venv/
 .venv/
+# A worktree's .venv is a symlink, which ".venv/" does not match.
+.venv
 __pycache__/
 .env
 *.log

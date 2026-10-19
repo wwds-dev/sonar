@@ -338,6 +338,72 @@ def test_the_plist_template_is_strict_xml():
     xml.dom.minidom.parse(str(ROOT / "packaging" / f"{LABEL}.plist"))
 
 
+# --------------------------------------------------------------------------- #
+# Priority: ProcessType Standard, no Nice (docs/specs/starved-engine.md A1)
+# --------------------------------------------------------------------------- #
+def _assert_standard_priority(p: dict) -> None:
+    assert p["ProcessType"] == "Standard"
+    assert "Nice" not in p
+    # The off-switch for diagnostic engines is pinned on: a per-job value
+    # beats a global `launchctl setenv SONAR_ALARM` (security P2-1).
+    assert p["EnvironmentVariables"]["SONAR_ALARM"] == "on"
+
+
+def test_the_template_runs_the_agent_at_standard_priority():
+    with open(ROOT / "packaging" / f"{LABEL}.plist", "rb") as f:
+        _assert_standard_priority(plistlib.load(f))
+
+
+def _checkout(env):
+    subprocess.run(["git", "init", "-q"], cwd=env["proj"], check=True)
+    _write(env["proj"] / ".venv" / "bin" / "python", "#!/bin/sh\nexit 0\n", 0o755)
+
+
+@pytest.mark.parametrize("mode", ["bundle", "checkout"])
+def test_the_installed_plist_runs_at_standard_priority(env, mode):
+    if mode == "bundle":
+        _bundle(env["apps"])
+        r = _run(env, "install_agent.sh")
+    else:
+        _checkout(env)
+        r = _run(env, "install_agent.sh", "--checkout")
+    assert r.returncode == 0, r.stdout + r.stderr
+    _assert_standard_priority(_plist(env))
+
+
+@pytest.mark.parametrize("mode", ["bundle", "checkout"])
+def test_an_old_installed_plist_loses_its_nice(env, mode):
+    # The installer renders from the template, not from the installed file,
+    # so a key removed from the template cannot survive an install.
+    old = {"Label": LABEL, "ProcessType": "Background", "Nice": 5,
+           "EnvironmentVariables": {"SONAR_DATA": "/x", "SONAR_ALARM": "off"}}
+    dst = env["home"] / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+    dst.parent.mkdir(parents=True)
+    with open(dst, "wb") as f:
+        plistlib.dump(old, f)
+    if mode == "bundle":
+        _bundle(env["apps"])
+        r = _run(env, "install_agent.sh")
+    else:
+        _checkout(env)
+        r = _run(env, "install_agent.sh", "--checkout")
+    assert r.returncode == 0, r.stdout + r.stderr
+    _assert_standard_priority(_plist(env))
+
+
+def test_the_installer_pins_the_alarm_on_even_if_the_template_drops_it(env):
+    tpl = env["proj"] / "packaging" / f"{LABEL}.plist"
+    with open(tpl, "rb") as f:
+        p = plistlib.load(f)
+    p["EnvironmentVariables"].pop("SONAR_ALARM")
+    with open(tpl, "wb") as f:
+        plistlib.dump(p, f)
+    _bundle(env["apps"])
+    r = _run(env, "install_agent.sh")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _plist(env)["EnvironmentVariables"]["SONAR_ALARM"] == "on"
+
+
 def test_build_app_installs_through_install_app():
     text = (ROOT / "build_app.sh").read_text()
     install = text.split('if [[ "${1:-}" == "--install" ]]; then', 1)[1]

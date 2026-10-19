@@ -206,9 +206,12 @@ class BannerChannel:
     tracks_delivery = False
     wants_local_text = True
 
-    def __init__(self, run=None, platform: str | None = None):
+    def __init__(self, run=None, platform: str | None = None,
+                 off_reason: str | None = None):
         self._run = run
-        self.configured = (platform or sys.platform) == "darwin"
+        self.configured = (platform or sys.platform) == "darwin" and not off_reason
+        if off_reason:                    # _state reports a reason only when there is one
+            self.reason = off_reason
         self.why = ""
 
     def send(self, title: str, body: str, priority: int = PRIORITY_INFO,
@@ -365,6 +368,9 @@ class _Lane:
         self.q: queue.Queue = queue.Queue()
         self.outstanding = 0              # queued or in flight
         self.failures = self.consecutive = self.dropped = 0
+        #: Every counted outcome, delivered, failed or dropped: the denominator
+        #: of "failures per attempt" (starved-engine measure 4).
+        self.attempts = 0
         self.last_ok_at: float | None = None
         self.last_fail_at: float | None = None
         self.last_failed = False
@@ -507,6 +513,7 @@ class Notifier:
     def _count(self, lane: _Lane, ok: bool, now: float,
                kinds: frozenset = frozenset()) -> None:
         """Count one event's outcome on ``lane``. Under the lock."""
+        lane.attempts += 1
         if ok:
             lane.consecutive, lane.last_ok_at, lane.last_failed = 0, now, False
         else:
@@ -619,22 +626,53 @@ class Notifier:
         out = {"state": state}
         if hasattr(ch, "reason"):
             out["reason"] = ch.reason
-        out.update({"failures": lane.failures, "consecutive": lane.consecutive,
+        out.update({"attempts": lane.attempts, "failures": lane.failures,
+                    "consecutive": lane.consecutive,
                     "last_ok_at": _iso(lane.last_ok_at),
                     "last_fail_at": _iso(lane.last_fail_at),
                     "in_flight_s": in_flight, "dropped": lane.dropped})
         return out
 
 
-def from_keychain(build=None, log=None, read=None, banner=None, opener=None) -> Notifier:
+#: ``SONAR_ALARM``: the off-switch for throwaway diagnostic engines, which
+#: must never push an alarm that looks like the live agent's
+#: (``docs/specs/starved-engine.md`` A2). The live agent's plist pins it to ``on``.
+ALARM_ENV = "SONAR_ALARM"
+ALARM_MODES = ("on", "banner-only", "off")
+OFF_REASON = "off (SONAR_ALARM)"
+
+
+def alarm_mode(environ) -> str:
+    """``SONAR_ALARM`` stripped and lower-cased: unset or empty is ``"on"``.
+    Any other value is returned as it is, and :func:`from_keychain` treats a
+    value it does not know as ``banner-only``: a typo must never push."""
+    return (environ.get(ALARM_ENV) or "").strip().lower() or "on"
+
+
+def from_keychain(build=None, log=None, read=None, banner=None, opener=None,
+                  mode: str = "on") -> Notifier:
     """The agent's notifier: the banner plus ntfy with the Keychain topic.
     Blocks for at most :data:`KEYCHAIN_TIMEOUT_S`, once, at start, and logs
-    one line saying whether pushes are on."""
-    topic, why = (read or read_topic)()
-    notifier = Notifier([banner or BannerChannel(), NtfyChannel(topic, opener, why)],
+    one line saying whether pushes are on.
+
+    ``mode`` is :func:`alarm_mode`'s value. Anything but ``"on"`` never reads
+    the Keychain, so the engine never holds the topic; ``"off"`` also drops
+    the banner."""
+    if mode == "on":
+        topic, why = (read or read_topic)()
+        notifier = Notifier([banner or BannerChannel(), NtfyChannel(topic, opener, why)],
+                            log=log, build=build)
+        notifier.say("push alarms: ntfy configured" if topic
+                     else f"push alarms: ntfy not configured ({why})")
+        return notifier
+    known = mode in ALARM_MODES
+    if mode == "off":
+        banner = BannerChannel(off_reason=OFF_REASON)
+    notifier = Notifier([banner or BannerChannel(), NtfyChannel(None, opener, OFF_REASON)],
                         log=log, build=build)
-    notifier.say("push alarms: ntfy configured" if topic
-                 else f"push alarms: ntfy not configured ({why})")
+    notifier.say(f"push alarms: off ({ALARM_ENV}={mode})" if known else
+                 f"push alarms: off ({ALARM_ENV}={plain(mode, 40)!r} is not one of "
+                 f"{', '.join(ALARM_MODES)}; treated as banner-only)")
     return notifier
 
 

@@ -10,6 +10,28 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.363 — 2026-10-19
+
+**The agent no longer runs at background priority** (`docs/specs/starved-engine.md`,
+`docs/adr/0006-agent-processtype-standard.md`; RUNBOOK §7). Built, not installed: it ships with alarm-delivery
+(below) in one `./build_app.sh --install`, so the live agent restarts once, with the owner's yes.
+
+- **`ProcessType Standard`, no `Nice`.** The plist ran the agent at `Background` + `Nice 5`. On a loaded Mac it then
+  answered `/api/health` in 3-24 s, and its price data, polled every 4 s, got up to 22 s old. The agent uses little CPU,
+  so this is expected to change when it runs, not how much (not yet measured). `install_agent.sh` renders the plist from the template, so the old `Nice`
+  cannot survive an install. Tests pin both.
+- **`SONAR_ALARM` off-switch, for diagnostic engines only.** `banner-only` or `off` (or any value it does not know,
+  which acts as `banner-only`) means no Keychain read and no phone push; `/api/health` then shows the ntfy reason
+  `off (SONAR_ALARM)`. Unset, empty or `on` is today's behaviour. The live agent's plist pins it to `on`, so a
+  stray global `launchctl setenv SONAR_ALARM off` cannot silence its phone alarm.
+- **`/api/health` counts attempts.** Each alarm channel in the `notify` block now also reports `attempts`, so
+  failures can be read per attempt.
+- **`scripts/diag_priority.py`.** A measurement harness: two throwaway launchd jobs (old and new priority) on ports
+  8788 and 8789, from the checkout, with scratch data, no push and no provider keys. It never touches the live agent
+  or its data, refuses US market hours, and cleans up after Ctrl-C, a closed terminal or `kill -9` (`cleanup`). It
+  writes latency, poll age, load and CPU only. Not run yet: the numbers in RUNBOOK §7 are
+  placeholders until the measured hour.
+
 ## Unreleased — alarm-delivery
 
 **Alarms that reach your phone** (`docs/specs/alarm-delivery.md`, `docs/adr/0005-ntfy-push-alarm-keychain-topic.md`;
