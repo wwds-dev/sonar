@@ -455,3 +455,176 @@ def test_a_failed_status_check_is_not_read_as_clean(monkeypatch, tmp_path):
         returncode, stdout = 0, ""
     monkeypatch.setattr(v.subprocess, "run", lambda *a, **k: Clean())
     assert v._dirty(tmp_path) is False
+
+
+# --------------------------------------------------------------------------- #
+# The stamp names the nested code (docs/specs/build-traceability.md, measure 1)
+# --------------------------------------------------------------------------- #
+class TestTheStampNamesTheNestedCode:
+    """v2.340 was stamped ``"nested": {}`` and clean while its bundle held both
+    modules: `_nested()` skipped any directory without `.git`. These build a
+    real tree in tmp and run the stamp on it."""
+
+    GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def _git(self, cwd, *args):
+        import os
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
+                       env={**os.environ, **self.GIT_ENV})
+
+    def _repo(self, at):
+        at.mkdir(parents=True, exist_ok=True)
+        (at / "__init__.py").write_text("x = 1\n")
+        self._git(at, "init", "-q")
+        self._git(at, "add", ".")
+        self._git(at, "commit", "-qm", "c")
+
+    def _tree(self, tmp_path, monkeypatch, macro, playmaker):
+        root = tmp_path / "proj"
+        self._repo(root)
+        wf = root / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        wf.joinpath("tests.yml").write_text(
+            (ROOT / ".github" / "workflows" / "tests.yml").read_text())
+        for name, kind in (("macro", macro), ("playmaker", playmaker)):
+            at = root / "sonar" / name
+            if kind == "repo":
+                self._repo(at)
+            elif kind == "copy":
+                at.mkdir(parents=True)
+                (at / "__init__.py").write_text("x = 1\n")
+        monkeypatch.setattr(app_version, "PROJECT_ROOT", root)
+        app_version._nested.cache_clear()
+        return root
+
+    def _stamp(self, root, monkeypatch):
+        import importlib.util
+        import json
+        spec = importlib.util.spec_from_file_location(
+            "stamp_version", ROOT / "scripts" / "stamp_version.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        monkeypatch.setattr(mod, "PROJECT_ROOT", root)
+        assert mod.main() == 0
+        return json.loads((root / "_build_info.json").read_text())
+
+    @pytest.fixture(autouse=True)
+    def _nested_cache(self):
+        app_version._nested.cache_clear()
+        yield
+        app_version._nested.cache_clear()
+
+    def test_a_copy_is_recorded_unknown_and_stamps_the_build_dirty(self, tmp_path, monkeypatch):
+        root = self._tree(tmp_path, monkeypatch, "copy", "repo")
+        nested = app_version._nested()
+        assert nested["macro"] == {"commit": "", "sha": "", "dirty": None}
+        stamp = self._stamp(root, monkeypatch)
+        assert stamp["nested"]["macro"] == {"commit": "", "sha": "", "dirty": None}
+        assert stamp["dirty"] is True and stamp["traceable"] is False
+        assert stamp["outer_dirty"] is False, "a copy is not a dirty outer tree (domain P3-2)"
+        assert "macro: a copy with no git history; its code cannot be named" \
+            in stamp["untraceable"]
+        assert not any(r.startswith("outer:") for r in stamp["untraceable"])
+
+    def test_the_number_and_commit_come_from_one_resolved_head(self, tmp_path, monkeypatch):
+        # Code review P3-1: count and commit read at a different moment than
+        # the sha (another session committing in between) cannot disagree.
+        root = self._tree(tmp_path, monkeypatch, "repo", "repo")
+        import importlib.util
+        import json
+        spec = importlib.util.spec_from_file_location(
+            "stamp_version", ROOT / "scripts" / "stamp_version.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        monkeypatch.setattr(mod, "PROJECT_ROOT", root)
+        monkeypatch.setattr(mod, "_git_build", lambda r: {
+            "build": 999, "commit": "deadbee", "date": "stale", "dirty": False})
+        assert mod.main() == 0
+        stamp = json.loads((root / "_build_info.json").read_text())
+        assert stamp["build"] == 1 and stamp["sha"].startswith(stamp["commit"])
+        assert stamp["date"] != "stale" and stamp["outer_dirty"] is False
+
+    def test_two_clean_repos_are_named_in_full(self, tmp_path, monkeypatch):
+        root = self._tree(tmp_path, monkeypatch, "repo", "repo")
+        stamp = self._stamp(root, monkeypatch)
+        assert set(stamp["nested"]) == {"macro", "playmaker"}
+        for repo in stamp["nested"].values():
+            assert re.fullmatch(r"[0-9a-f]{7,}", repo["commit"])
+            assert re.fullmatch(r"[0-9a-f]{40}", repo["sha"])
+            assert repo["sha"].startswith(repo["commit"]) and repo["dirty"] is False
+        assert re.fullmatch(r"[0-9a-f]{40}", stamp["sha"]) and stamp["dirty"] is False
+        assert set(stamp["pins"]) == {"macro", "playmaker"}
+        # Clean, but these tmp repos are not the CI pins: the drift is named.
+        assert stamp["traceable"] is False and all(
+            "CI pins" in r for r in stamp["untraceable"]) and len(stamp["untraceable"]) == 2
+
+    def test_an_absent_repo_has_no_key_and_is_not_traceable(self, tmp_path, monkeypatch):
+        root = self._tree(tmp_path, monkeypatch, "absent", "repo")
+        stamp = self._stamp(root, monkeypatch)
+        assert "macro" not in stamp["nested"] and stamp["traceable"] is False
+        assert stamp["dirty"] is False, "nothing uncommitted: absent is not dirty"
+        assert stamp["untraceable"][0].startswith("macro: not in the stamp")
+
+    def test_unreadable_pins_are_a_reason(self, tmp_path, monkeypatch):
+        root = self._tree(tmp_path, monkeypatch, "repo", "repo")
+        (root / ".github" / "workflows" / "tests.yml").write_text("steps: []\n")
+        stamp = self._stamp(root, monkeypatch)
+        assert stamp["pins"] == {} and stamp["traceable"] is False
+        assert any(r.startswith("pins: cannot read the CI pins") for r in stamp["untraceable"])
+
+
+class TestTheLedgerBuildStringFallbacks:
+    """QA P3-2: the pins a checkout reads for the `!` marker, and the last-resort cut."""
+
+    def _scratch(self, tmp_path, buildid=True, workflow=None):
+        import shutil
+        if buildid:
+            (tmp_path / "scripts").mkdir()
+            shutil.copy(ROOT / "scripts" / "buildid.py", tmp_path / "scripts" / "buildid.py")
+        if workflow is not None:
+            (tmp_path / ".github" / "workflows").mkdir(parents=True)
+            (tmp_path / ".github" / "workflows" / "tests.yml").write_text(workflow)
+        app_version._checkout_pins.cache_clear()
+        return tmp_path
+
+    def test_a_checkout_reads_its_own_pins(self, tmp_path):
+        root = self._scratch(tmp_path, workflow=(ROOT / ".github/workflows/tests.yml").read_text())
+        pins = app_version._checkout_pins(root)
+        assert set(pins) == {"macro", "playmaker"} and all(len(v) == 40 for v in pins.values())
+
+    @pytest.mark.parametrize("buildid,workflow", [
+        (False, "x"),                      # no scripts/buildid.py
+        (True, None),                      # no tests.yml
+        (True, "steps: []\n"),             # unparseable pins
+    ])
+    def test_unreadable_pins_are_unknown_not_an_error(self, tmp_path, buildid, workflow):
+        root = self._scratch(tmp_path, buildid=buildid, workflow=workflow)
+        assert app_version._checkout_pins(root) is None
+        app_version._checkout_pins.cache_clear()
+
+    def test_a_syntax_error_in_the_guard_is_unknown(self, tmp_path):
+        root = self._scratch(tmp_path, workflow="x")
+        (root / "scripts" / "buildid.py").write_text("def (:\n")
+        assert app_version._checkout_pins(root) is None
+        app_version._checkout_pins.cache_clear()
+
+    def test_recorded_pins_by_source(self, monkeypatch):
+        pins = {"macro": "a" * 40, "playmaker": "b" * 40}
+
+        def source(name):
+            fake = lambda: {"source": name}          # noqa: E731
+            fake.cache_clear = lambda: None          # the autouse fixture clears it
+            return fake
+        monkeypatch.setattr(app_version, "info", source("baked"))
+        monkeypatch.setattr(app_version, "_baked", lambda: {"build": 1, "pins": pins})
+        assert app_version.recorded_pins() == pins
+        monkeypatch.setattr(app_version, "_baked", lambda: {"build": 1, "pins": {}})
+        assert app_version.recorded_pins() is None
+        monkeypatch.setattr(app_version, "info", source("unknown"))
+        assert app_version.recorded_pins() is None
+
+    def test_a_version_past_the_cap_is_cut_to_64_keeping_its_start(self):
+        version = "v" + "7" * 69
+        got = app_version.build_id({"version": version, "commit": "abc", "dirty": False}, None)
+        assert got == version[:64] and len(got) == 64

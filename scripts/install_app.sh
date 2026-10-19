@@ -10,9 +10,10 @@
 # SONAR_UNSAFE_PATHS=1 (tests).
 #
 # Order, and why:
-#  1. Check the source (scripts/check_app.sh) before anything is touched, when
-#     the agent runs the app: a build stamped dirty, unsealed or failing its
-#     self-test is refused with the installed app and the agent as they were.
+#  1. Check the source (scripts/check_app.sh) before anything is touched,
+#     always (owner, 2026-10-19; the agent may be put on the app later): a
+#     build that cannot be traced, unsealed or failing its self-test is refused
+#     with the installed app and the agent as they were.
 #  2. Copy it beside the installed one (.SONAR.app.new) and check the copy.
 #  3. Disable, then stop, the agent. Disabled matters: a stopped agent whose
 #     plist is still enabled starts again at the next login, on whatever is in
@@ -70,11 +71,14 @@ fi
 check_args=()
 [[ "$ALLOW_DIRTY" == 1 ]] && check_args+=(--allow-dirty)
 
-# 1. the source, before anything is touched
+# 1. the source, before anything is touched — whether or not the agent runs
+# the app: the installed app is what install_agent.sh will put under it.
 if [[ "$agent_on_app" == 1 ]]; then
   echo "The agent runs $DEST: checking the new build first…"
-  ./scripts/check_app.sh "$SRC" "$DATA_DIR" "${check_args[@]+"${check_args[@]}"}"
+else
+  echo "Checking the new build first…"
 fi
+./scripts/check_app.sh "$SRC" "$DATA_DIR" "${check_args[@]+"${check_args[@]}"}"
 
 # 2. a copy beside the installed one (removed again if anything below fails)
 rm -rf "$STAGE" "$OLD"

@@ -10,6 +10,42 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.365 — 2026-10-19
+
+**Every bundle that passes the install gate names its code: the outer commit and both nested repos**
+(`docs/specs/build-traceability.md`; ADR 0002 Amendment 2; RUNBOOK §1, §5; VERSIONING.md). Built, not installed: it
+ships in the shared items 1+2+3 `./build_app.sh --install`, with the owner's yes. That release needs, in order:
+`scripts/bootstrap_nested.sh` (a worktree holds only copies, which the gate now refuses), the change merged to
+first-parent `master` and pushed, the build from there, and the owner running the printed tag commands.
+
+- **The gate no longer passes copies.** The installed v2.340 was stamped `"nested": {}` and clean while its bundle held
+  `sonar.macro` and 8 `sonar.playmaker` modules. Now a nested dir without `.git` is stamped
+  `{"commit": "", "sha": "", "dirty": null}`, and `check_app.sh` asks `scripts/buildid.py check-stamp` (under
+  `python3 -I`) instead of grepping for any `"dirty": false`. It refuses, naming each reason: the outer tree dirty or
+  unknown (the top-level key, so clean nested repos cannot stand in for it), no commit, a nested repo missing, a copy,
+  dirty, off the CI pins (`macro: stamp <sha>, CI pins <sha>`), no pins, or a commit on no origin ref as of the last
+  fetch (local git only). `--allow-dirty` still overrides, listing the reasons; a stamp that cannot be read, or a crash,
+  never can. A refusal leaves the installed app, the agent and launchd as they were, with nothing staged.
+  Known gap, deferred (security P3-7): "clean" ignores untracked files, so a new, uncommitted module in a nested repo
+  still passes.
+- **The gate always runs** in `install_app.sh`, also when the agent is not on the app. `install_agent.sh --checkout`
+  refuses a nested copy too.
+- **Re-running `install_agent.sh` on the installed v2.340 is now refused** (no full `sha`, `nested: {}`, no pins) unless
+  `--allow-dirty`. The running agent is not touched: launchd restarts do not run the gate.
+- **`scripts/bootstrap_nested.sh`** puts `sonar/macro` and `sonar/playmaker` at the `tests.yml` pins in a worktree:
+  clone from `wwds-dev` (or, with a warning, from the main checkout), move a copy aside (never deleted) after reporting
+  how it differs from the pin, refuse uncommitted work or an off-pin repo (`--move` to check the pin out). Each run's
+  summary is saved to `.nested-bootstrap/report-<UTC>.txt`. Git never prompts or hangs, a local clone is re-hashed,
+  and an origin URL with credentials, or a symlinked nested dir, is refused.
+- **Release identity.** The build ends by printing `git tag -a v2.NNN <sha> -m "…; macro <sha9>, playmaker <sha9>"` and
+  `git push origin v2.NNN` for the owner, and creates no tag. Nothing is proposed off first-parent `master` or for an
+  untraceable build; an existing tag on another commit is refused. Only tagged builds on first-parent `master` are
+  releases: the number alone names more than one commit.
+- **New shadow-ledger records name the commits:** `build` is `v2.365+<outer>/m:<macro>/p:<playmaker>`, with `~` (dirty
+  or unknown) and `!` (nested code not at the CI pins) right after the number. Records already written are byte for
+  byte unchanged; nothing grades, groups or excludes by `build`. Records from the v2.340 period name only the number:
+  their nested code is unknown.
+
 ## v2.363 — 2026-10-19
 
 **The agent no longer runs at background priority** (`docs/specs/starved-engine.md`,

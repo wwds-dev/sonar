@@ -22,12 +22,41 @@ forgotten**, which is the entire point. A hand-maintained build number is wrong
 the first time someone ships without remembering to bump it, and silently wrong
 from then on. Deriving it means the version *is* the development state.
 
-It is monotonic on a linear history, which this repo has. A merge commit still
-increments it, so the number never goes backwards. It is an ordering, not a
-count of features — `v2.100` says a hundred commits precede it, nothing more.
+It counts **every ancestor**, so it is not unique. Two branches cut from the
+same base, each k commits on, are both base + k: worktrees on different branches
+each sat at "362" with different code, and the operations audit found 175 such
+numbers across all refs (v2.301 is both `257d194` and `a634ce2`). It is an
+ordering, not a count of features, and **a number alone does not identify a
+build**.
 
-There is no third component and no separate release step. Every commit is a
-version; the ones that get installed are the ones anybody sees.
+Along first-parent `master` it strictly increases: each step adds the merged-in
+commits plus the merge, at least one. So there, and only there, a number names
+one commit.
+
+### Releases are tags
+
+A build is the pair (number, commit), plus the commits of the nested repos
+`sonar/macro` and `sonar/playmaker`; the stamp and `/api/health` carry all of
+them. **Only a build tagged `v<MAJOR>.<BUILD>` (annotated) on first-parent
+`master` is a release.** Releases are cut only from first-parent `master`
+(owner, 2026-10-19).
+
+`./build_app.sh` ends by printing the commands, for the owner to run:
+
+```
+git tag -a v2.364 <sha40> -m "v2.364; macro <sha9>, playmaker <sha9>"
+git push origin v2.364
+```
+
+It never runs them. It prints nothing for a build off first-parent `master` or
+one it cannot trace, and it refuses when the tag already names another commit
+(`scripts/buildid.py tag-command`). Annotated, because `git describe` ignores
+lightweight tags. This adds no second number: the tag is the same string the
+Monitor derives, pinned to a commit.
+
+The installed v2.340 is tagged retroactively (owner Q3):
+`git tag -a v2.340 8e7d02460475aa8c4463f9932fed646d6a4be805 -m "v2.340 (retroactive); nested code unknown"`.
+Its stamp had `"nested": {}`, so its macro and playmaker code is unknown.
 
 ### Why not semver
 
@@ -77,6 +106,13 @@ describes a build, not the source.
 Running from a checkout, live git wins over the stamp — an edit shows up on the
 next launch without re-stamping. Running frozen, the stamp wins: a bundle's own
 build is what it is running, even with a checkout sitting beside it.
+
+The stamp also names the nested repos (`nested`: `commit`, full `sha`,
+`dirty`; a copy is `{"commit": "", "sha": "", "dirty": null}`, never skipped),
+the outer `sha`, the CI `pins` the outer commit was tested with, and
+`traceable` / `untraceable` for people. The install gate (`check_app.sh`)
+recomputes the verdict from the raw fields with `python3 -I
+scripts/buildid.py check-stamp`; see `docs/specs/build-traceability.md`.
 
 When neither is available the app shows `v2.???` and says "no version stamp".
 That is a real state — a source copy with no `.git` — and showing it beats

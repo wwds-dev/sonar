@@ -8,6 +8,8 @@ on PATH and HOME in a temp directory: nothing here touches the real agent.
 """
 from __future__ import annotations
 
+import json
+import os
 import plistlib
 import shutil
 import subprocess
@@ -17,6 +19,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 LABEL = "com.netrunner3000.sonar"
+NESTED = ("macro", "playmaker")
+GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_NOSYSTEM": "1"}
+#: The scratch project's commits (outer and nested), set by the `env` fixture.
+SHAS: dict = {}
+DROP = object()
 
 FAKE_LAUNCHCTL = """#!/bin/sh
 # Like launchd: a disabled service cannot be bootstrapped until enabled again.
@@ -38,10 +46,30 @@ def _write(path: Path, text: str, mode: int = 0o644) -> Path:
     return path
 
 
+def stamp_for(**over) -> dict:
+    """A full clean stamp (docs/specs/build-traceability.md A2): the outer and
+    nested commits are the scratch project's, each on its origin ref, and the
+    nested ones are also the recorded CI pins. ``over`` replaces top-level keys
+    (``DROP`` removes one)."""
+    s = {"major": "2", "build": 191, "commit": SHAS["outer"][:7], "sha": SHAS["outer"],
+         "date": "", "dirty": False, "outer_dirty": False,
+         "nested": {n: {"commit": SHAS[n][:7], "sha": SHAS[n], "dirty": False} for n in NESTED},
+         "pins": {n: SHAS[n] for n in NESTED},
+         "traceable": True, "untraceable": [], "source": "baked"}
+    for key, value in over.items():
+        if value is DROP:
+            s.pop(key, None)
+        else:
+            s[key] = value
+    return s
+
+
 def _bundle(at: Path, *, dirty="false", stamp=True, selftest=0, marker="new",
             installed_selftest=None) -> Path:
     """``installed_selftest`` is the self-test's exit code once the bundle sits
-    in an Applications folder, to fail it after the swap only."""
+    in an Applications folder, to fail it after the swap only. ``stamp`` is
+    False (none), True (the full clean stamp, with ``dirty``: "false", "true"
+    or None for no key), a dict of overrides, or a string written as is."""
     app = at / "SONAR.app"
     _write(app / "Contents" / "MacOS" / "SONAR",
            "#!/bin/sh\n"
@@ -51,22 +79,56 @@ def _bundle(at: Path, *, dirty="false", stamp=True, selftest=0, marker="new",
               if installed_selftest is not None else "") +
            f"exit {selftest}\n", 0o755)
     _write(app / "Contents" / "marker", marker)
-    if stamp:
-        body = '{\n  "build": 191,\n  "commit": "abc1234",\n'
-        if dirty is not None:
-            body += f'  "dirty": {dirty},\n'
-        _write(app / "Contents" / "Resources" / "_build_info.json",
-               body + '  "source": "baked"\n}\n')
+    if stamp is not False:
+        if isinstance(stamp, str):
+            body = stamp
+        else:
+            over = dict(stamp) if isinstance(stamp, dict) else {}
+            value = {"false": False, "true": True, None: DROP}[dirty]
+            over.setdefault("dirty", value)
+            over.setdefault("outer_dirty", value)
+            body = json.dumps(stamp_for(**over), indent=2) + "\n"
+        _write(app / "Contents" / "Resources" / "_build_info.json", body)
     return app
 
 
+def _git(cwd, *args):
+    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True,
+                          env={**os.environ, **GIT_ENV, "HOME": str(cwd)}).stdout.strip()
+
+
+def _commit_repo(at: Path) -> str:
+    at.mkdir(parents=True, exist_ok=True)
+    (at / "README").write_text(f"{at.name}\n")
+    _git(at, "init", "-q")
+    _git(at, "add", "README")
+    _git(at, "commit", "-qm", "c")
+    _git(at, "update-ref", "refs/remotes/origin/master", "HEAD")    # "pushed"
+    return _git(at, "rev-parse", "HEAD")
+
+
+@pytest.fixture(scope="module")
+def template(tmp_path_factory):
+    """A scratch project that is a git repo whose HEAD is on origin, with both
+    nested repos the same way. Made once; each test gets a copy."""
+    proj = tmp_path_factory.mktemp("template") / "proj"
+    shas = {"outer": _commit_repo(proj)}
+    for name in NESTED:
+        shas[name] = _commit_repo(proj / "sonar" / name)
+    return proj, shas
+
+
 @pytest.fixture
-def env(tmp_path):
-    """A scratch project with the two scripts and the plist template, a fake
-    toolbox first on PATH, and HOME inside tmp."""
+def env(tmp_path, template):
+    """A scratch project (a git repo with both nested repos, all on origin)
+    with the installer scripts and the plist template, a fake toolbox first on
+    PATH, and HOME inside tmp."""
     proj = tmp_path / "proj"
+    shutil.copytree(template[0], proj, symlinks=True)
+    SHAS.clear()
+    SHAS.update(template[1])
     for rel in ("scripts/install_agent.sh", "scripts/install_app.sh",
-                "scripts/check_app.sh", f"packaging/{LABEL}.plist"):
+                "scripts/check_app.sh", "scripts/buildid.py", f"packaging/{LABEL}.plist"):
         (proj / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / rel, proj / rel)
     fake = tmp_path / "fakebin"
@@ -121,7 +183,7 @@ def test_the_agent_runs_the_installed_app_by_default(env):
     assert p["StandardErrorPath"] == f"{logs}/agent.err.log"
     assert not any("__" in str(v) for v in p.values()), "a placeholder was left in"
     assert [c.split()[0] for c in _calls(env)][:3] == ["bootout", "enable", "bootstrap"]
-    assert '"build":191' in r.stdout and '"commit":"abc1234"' in r.stdout
+    assert '"build":191' in r.stdout and f'"commit":"{SHAS["outer"][:7]}"' in r.stdout
 
 
 def test_a_dirty_checkout_does_not_matter_to_the_bundle(env):
@@ -153,12 +215,15 @@ def test_an_unstamped_app_is_refused(env):
     assert r.returncode == 1 and "no build stamp" in r.stdout
 
 
-@pytest.mark.parametrize("dirty", ["true", None])     # None: no "dirty" key at all
-def test_an_app_built_from_a_dirty_tree_is_refused(env, dirty):
+@pytest.mark.parametrize("dirty,why", [
+    ("true", "outer: built from a tree with uncommitted changes"),
+    (None, "outer: whether the tree was clean is unknown"),     # None: no "dirty" key at all
+])
+def test_an_app_built_from_a_dirty_tree_is_refused(env, dirty, why):
     _bundle(env["apps"], dirty=dirty)
     r = _run(env, "install_agent.sh")
     assert r.returncode == 1 and "Refusing" in r.stdout
-    assert "built from a tree that has uncommitted changes" in r.stdout
+    assert f"  - {why}" in r.stdout
     assert _calls(env) == []
     r = _run(env, "install_agent.sh", "--allow-dirty")
     assert r.returncode == 0 and "going on" in r.stdout
@@ -309,10 +374,23 @@ def test_allow_dirty_installs_under_the_agent(env):
 
 
 def test_without_the_agent_on_the_app_it_only_copies(env):
-    built = _bundle(env["tmp"] / "dist", dirty="true", marker="new")
+    built = _bundle(env["tmp"] / "dist", marker="new")
     r = _run(env, "install_app.sh", str(built))
     assert r.returncode == 0 and _calls(env) == []
     assert (env["apps"] / "SONAR.app" / "Contents" / "marker").read_text() == "new"
+
+
+def test_without_the_agent_on_the_app_the_gate_still_runs(env):
+    # Owner, 2026-10-19 (domain P3-1): always gate. The installed app is what
+    # install_agent.sh will later put under the agent; it used to be copied
+    # unchecked when the agent ran elsewhere.
+    _bundle(env["apps"], marker="old")
+    built = _bundle(env["tmp"] / "dist", dirty="true", marker="new")
+    r = _run(env, "install_app.sh", str(built))
+    assert r.returncode == 1 and "Refusing" in r.stdout and _marker(env) == "old"
+    assert sorted(p.name for p in env["apps"].iterdir()) == ["SONAR.app"]
+    r = _run(env, "install_app.sh", str(built), "--allow-dirty")
+    assert r.returncode == 0 and _calls(env) == [] and _marker(env) == "new"
 
 
 def test_a_failed_copy_changes_nothing_and_leaves_nothing(env):
@@ -466,9 +544,9 @@ def _stamp_module():
 
 @pytest.mark.parametrize("nested,want", [
     ({}, False),
-    ({"macro": {"commit": "m", "dirty": False}}, False),
-    ({"playmaker": {"commit": "p", "dirty": True}}, True),
-    ({"macro": {"commit": "", "dirty": None}}, None),
+    ({"macro": {"commit": "m", "sha": "m" * 40, "dirty": False}}, False),
+    ({"playmaker": {"commit": "p", "sha": "p" * 40, "dirty": True}}, True),
+    ({"macro": {"commit": "", "sha": "", "dirty": None}}, None),
 ])
 def test_the_stamp_folds_the_nested_repos(monkeypatch, nested, want):
     mod = _stamp_module()
@@ -481,17 +559,17 @@ def test_a_dirty_nested_repo_stamps_the_build_dirty(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(mod, "_git_build", lambda root: {
         "build": 9, "commit": "abc", "date": "", "dirty": False})
-    nested = {"playmaker": {"commit": "p", "dirty": True}}
+    nested = {"playmaker": {"commit": "p", "sha": "p" * 40, "dirty": True}}
     monkeypatch.setattr(mod.version, "_nested", lambda: nested)
     assert mod.main() == 0
-    import json
     stamp = json.loads((tmp_path / "_build_info.json").read_text())
     assert stamp["dirty"] is True and stamp["nested"] == nested
+    assert stamp["traceable"] is False and "playmaker: uncommitted changes" in stamp["untraceable"]
 
 
 def test_a_bundle_reports_the_nested_repos_from_its_stamp(monkeypatch):
     from sonar import version
-    nested = {"macro": {"commit": "m", "dirty": False}}
+    nested = {"macro": {"commit": "m", "sha": "m" * 40, "dirty": False}}
     monkeypatch.setattr(version, "info", lambda: {
         "major": "2", "build": 9, "version": "v2.009", "commit": "abc", "date": "",
         "source": "baked", "dirty": False})
@@ -499,3 +577,156 @@ def test_a_bundle_reports_the_nested_repos_from_its_stamp(monkeypatch):
     monkeypatch.setattr("sonar.paths.is_frozen", lambda: True)
     b = version.provenance()
     assert b["nested"] == nested and b["dirty"] is False
+
+
+# --------------------------------------------------------------------------- #
+# The gate names the code (docs/specs/build-traceability.md measure 2, A4)
+# --------------------------------------------------------------------------- #
+def _nested_with(**changes) -> dict:
+    nested = {n: {"commit": SHAS[n][:7], "sha": SHAS[n], "dirty": False} for n in NESTED}
+    for name, entry in changes.items():
+        if entry is DROP:
+            nested.pop(name)
+        else:
+            nested[name] = {**nested[name], **entry}
+    return nested
+
+
+OTHER = "c" * 40
+# (case id, stamp overrides (a callable, since the shas exist only per test),
+#  the reason text the refusal must name)
+UNTRACEABLE = [
+    ("nested-empty", lambda: {"nested": {}},
+     "macro: not in the stamp (sonar/macro missing at build time, or skipped by an older stamper)"),
+    ("one-name-missing", lambda: {"nested": _nested_with(playmaker=DROP)},
+     "playmaker: not in the stamp (sonar/playmaker missing at build time, or skipped by an older stamper)"),
+    ("empty-commit", lambda: {"nested": _nested_with(macro={"commit": "", "sha": "",
+                                                            "dirty": None})},
+     "macro: a copy with no git history; its code cannot be named"),
+    ("nested-dirty", lambda: {"nested": _nested_with(playmaker={"dirty": True})},
+     "playmaker: uncommitted changes"),
+    ("nested-dirty-unknown", lambda: {"nested": _nested_with(macro={"dirty": None})},
+     "macro: whether it is clean is unknown"),
+    ("outer-dirty-nested-clean", lambda: {"dirty": True, "outer_dirty": True},
+     "outer: built from a tree with uncommitted changes"),
+    ("drift", lambda: {"pins": {"macro": OTHER, "playmaker": SHAS["playmaker"]}},
+     None),                                           # filled in below: needs SHAS
+    ("no-pins", lambda: {"pins": {}}, "pins: the stamp records no CI pins"),
+    ("traceable-flag-lies", lambda: {"nested": {}, "traceable": True, "untraceable": []},
+     "macro: not in the stamp"),
+    ("old-v2.340-shape", lambda: {"sha": DROP, "outer_dirty": DROP, "nested": {}, "pins": DROP,
+                                  "traceable": DROP, "untraceable": DROP},
+     "outer: no commit"),
+]
+
+
+def _why(case, why):
+    if case == "drift":
+        return f"macro: stamp {SHAS['macro'][:9]}, CI pins {OTHER[:9]}"
+    return why
+
+
+@pytest.mark.parametrize("case,over,why", UNTRACEABLE, ids=[c[0] for c in UNTRACEABLE])
+def test_install_agent_refuses_an_untraceable_bundle(env, case, over, why):
+    _bundle(env["apps"], stamp=over())
+    r = _run(env, "install_agent.sh")
+    assert r.returncode == 1 and "Refusing" in r.stdout, r.stdout
+    assert f"  - {_why(case, why)}" in r.stdout
+    assert _calls(env) == [] and not (env["home"] / "Library/LaunchAgents").exists()
+    r = _run(env, "install_agent.sh", "--allow-dirty")
+    assert r.returncode == 0 and "--allow-dirty given: going on" in r.stdout
+    assert f"  - {_why(case, why)}" in r.stdout, "the override names what it accepts"
+
+
+@pytest.mark.parametrize("case,over,why", UNTRACEABLE, ids=[c[0] for c in UNTRACEABLE])
+def test_install_app_refuses_an_untraceable_bundle_and_touches_nothing(env, case, over, why):
+    # Domain P2-2, the scripted half: no staged copy, the installed app as it
+    # was, and the agent never disabled or stopped.
+    _agent_on_app(env)
+    built = _bundle(env["tmp"] / "dist", stamp=over(), marker="new")
+    r = _run(env, "install_app.sh", str(built), PRINT_RC="0")
+    assert r.returncode == 1 and "Refusing" in r.stdout
+    assert f"  - {_why(case, why)}" in r.stdout
+    assert not (env["apps"] / ".SONAR.app.new").exists()
+    assert sorted(p.name for p in env["apps"].iterdir()) == ["SONAR.app"]
+    assert _marker(env) == "old"
+    assert not any(c.split()[0] in ("disable", "bootout") for c in _calls(env))
+    r = _run(env, "install_app.sh", str(built), "--allow-dirty", PRINT_RC="0")
+    assert r.returncode == 0 and _marker(env) == "new"
+
+
+def test_a_full_clean_stamp_at_the_pins_is_accepted_without_a_warning(env):
+    _bundle(env["apps"])
+    r = _run(env, "install_agent.sh")
+    assert r.returncode == 0 and "WARNING" not in r.stdout and "cannot be traced" not in r.stdout
+
+
+@pytest.mark.parametrize("where", ["outer", "macro"])
+def test_a_commit_on_no_origin_ref_is_refused_and_can_be_overridden(env, where):
+    # Domain P2-1: a branch installed, never pushed, then deleted leaves the
+    # ledger naming a commit nobody can show. Local refs only, no network.
+    repo = env["proj"] if where == "outer" else env["proj"] / "sonar" / where
+    _git(repo, "update-ref", "-d", "refs/remotes/origin/master")
+    _bundle(env["apps"])
+    r = _run(env, "install_agent.sh")
+    sha = SHAS[where]
+    assert r.returncode == 1
+    assert f"  - {where} {sha[:9]} is not on any origin ref as of the last fetch" in r.stdout
+    r = _run(env, "install_agent.sh", "--allow-dirty")
+    # Domain P3-1: these reasons are stored nowhere, and the override says so.
+    assert r.returncode == 0 and "origin reasons are stored nowhere" in r.stdout
+    assert "record them in the verify note" in r.stdout
+
+
+def test_a_nested_copy_in_the_checkout_cannot_be_checked_against_origin(env):
+    shutil.rmtree(env["proj"] / "sonar" / "playmaker" / ".git")
+    _bundle(env["apps"])
+    r = _run(env, "install_agent.sh")
+    assert r.returncode == 1
+    assert "playmaker" in r.stdout and "cannot be checked here" in r.stdout
+
+
+@pytest.mark.parametrize("body", ["{not json", "[1, 2]", ""])
+@pytest.mark.parametrize("script", ["install_agent.sh", "install_app.sh"])
+def test_a_stamp_that_cannot_be_read_is_never_overridable(env, body, script):
+    if script == "install_agent.sh":
+        _bundle(env["apps"], stamp=body)
+        r = _run(env, script, "--allow-dirty")
+    else:
+        _agent_on_app(env)
+        built = _bundle(env["tmp"] / "dist", stamp=body, marker="new")
+        r = _run(env, script, str(built), "--allow-dirty", PRINT_RC="0")
+        assert _marker(env) == "old" and not (env["apps"] / ".SONAR.app.new").exists()
+        assert not any(c.split()[0] in ("disable", "bootout") for c in _calls(env))
+    assert r.returncode == 1 and "cannot be read" in r.stdout and "exit 2" in r.stdout
+    assert "going on" not in r.stdout
+
+
+def test_a_crashing_guard_is_not_overridable(env):
+    # Exit 3 is the only overridable code: a crash (exit 1) refuses.
+    (env["proj"] / "scripts" / "buildid.py").write_text("raise SystemExit(1)\n")
+    _bundle(env["apps"])
+    r = _run(env, "install_agent.sh", "--allow-dirty")
+    assert r.returncode == 1 and "exit 1" in r.stdout and "going on" not in r.stdout
+
+
+def test_the_gate_runs_under_the_system_python(env):
+    # The fixture PATH puts /usr/bin first: the gate's python3 is the floor
+    # (3.9 here). A python3 shim records what the gate ran, and passes on.
+    shim = env["tmp"] / "fakebin" / "python3"
+    _write(shim, '#!/bin/sh\necho "$@" >> "$CALLS.py"\n'
+                 '/usr/bin/python3 -c "import sys; print(*sys.version_info[:2])" >> "$CALLS.pyver"\n'
+                 'exec /usr/bin/python3 "$@"\n', 0o755)
+    _bundle(env["apps"])
+    r = _run(env, "install_agent.sh")
+    assert r.returncode == 0, r.stdout + r.stderr
+    ran = (env["tmp"] / "calls.py").read_text().splitlines()
+    gate = [a for a in ran if "buildid.py check-stamp" in a]
+    assert gate and all(a.startswith("-I ") for a in gate), ran
+    major, minor = (env["tmp"] / "calls.pyver").read_text().split()[:2]
+    assert (int(major), int(minor)) >= (3, 9)
+    # And the guard parses at the 3.9 grammar, whatever runs the suite.
+    import ast
+    ast.parse((ROOT / "scripts" / "buildid.py").read_text(), feature_version=(3, 9))
+    text = (ROOT / "scripts" / "check_app.sh").read_text()
+    assert '"dirty": *false' not in text, "no bare grep for the dirty key"

@@ -208,6 +208,9 @@ class Live:
         # the checkout's working tree, so a restart can load edits nobody
         # committed; /api/health carries this so that is visible.
         self.build = version.provenance()
+        # The CI pins it was tested against, for the ledger's build string
+        # (ADR 0002 Amendment 2): read once, with the build.
+        self._pins = version.recorded_pins()
         # Set by stop() to end run()'s loop. Qt aborts the whole process if a
         # QThread is still running when it is destroyed, so the loop this drives
         # must be able to finish on request — see ui/app.py's shutdown().
@@ -697,7 +700,10 @@ class Live:
         return paths.user_data_base() / SHADOW_SIDECAR_FILE
 
     def _ledger_build(self) -> str:
-        return str((self.build or {}).get("version") or "unknown")[:64]
+        """A new record's ``build``: the version, the outer and nested commits
+        and the ``~``/``!`` markers (ADR 0002 Amendment 2). Records already in
+        the ledger keep what they were written with."""
+        return version.build_id(self.build, self._pins)[:64]
 
     def _may_write_shadow(self) -> bool:
         """Whether this pass may still write the ledger, its anchors or the

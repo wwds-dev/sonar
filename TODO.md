@@ -59,6 +59,33 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       `SONAR_ALARM` A2, harness `scripts/diag_priority.py` A4, unit tests only). Next: Review, then the measured hour
       (`diag_priority.py run --follower`, outside US market hours) to fill RUNBOOK §7 and decide A5, then Verify, Secure.
       Ships with alarm-delivery, so there is one live restart, with the owner's yes. Source: ops audit wave 2 P1-2.
+- [ ] `P1` `infra` `@ai` **Build traceability: the release gate passes a bundle whose nested-module code cannot be named.**
+      v2.340's stamp has `"nested": {}` and `"dirty": false`, but the bundle holds macro and playmaker. Release worktrees
+      have plain copies, build numbers are not unique, and the ledger `build` field stores only the number. Planned fixes:
+      - stamp copies as untraceable, and anchor `check_app.sh` to the top-level key and the CI pins;
+      - add `scripts/bootstrap_nested.sh`;
+      - print an annotated-tag command per release (first-parent `master` only; retroactive `v2.340`);
+      - record commits in new ledger entries.
+      Spec `docs/specs/build-traceability.md` (Define and Architect approved 2026-10-19; **built 2026-10-19** as v2.365,
+      A1-A11 plus the MV and domain folds, Build notes in the spec). Next: Review (`code-reviewer` + `domain-finance`),
+      then Verify: measure 3 in a fresh bootstrapped worktree, measure 4 on the real bundle (with the negative run), and
+      the bootstrap report + install time into `docs/audit/build-traceability-verify.md`; Secure (file writes,
+      packaging). The owner runs the printed tag commands, including the retroactive `v2.340`. Ships in the shared items
+      1+2+3 install. Source: ops audit wave 2 P1-1, P2-1, prior P3-1.
+- [ ] `P3` `security` `@ai` **Untracked importable files in a nested repo count as clean.** `_dirty`
+      (`sonar/version.py`) uses `--untracked-files=no`, so an untracked package in `sonar/macro` or `sonar/playmaker`
+      can shadow a tracked module, get bundled, and still be stamped clean. Fix: count untracked, non-ignored paths in
+      the nested repos (and decide for the outer tree). Older than build-traceability; deferred there. Source:
+      build-traceability security review P3-7.
+- [ ] `P3` `test` `@ai` **No test of `build_app.sh`'s tag-command wiring.** The print-only `buildid.py tag-command`
+      call at the end of `build_app.sh` (after a successful install, masked with `||`) is untested. Fix: a text or
+      dry-run test like `test_build_app_installs_through_install_app`. Source: build-traceability QA P3-3.
+- [ ] `P2` `docs` `@ai` **Look-1 note: annotate bare-version member entries "nested code unknown".** Ledger records written
+      before v2.365 (the v2.340 period included) carry `build` as a bare number (no `+`), so the macro and playmaker code
+      behind them is unknown. The look-1 note (about 2026-11-06) must say so for each such member, and the
+      model-validator decides from the bootstrap report in `docs/audit/build-traceability-verify.md` whether the
+      install boundary needs a note or an exploratory split (never a pre-registered one; ADR 0002 Amendment 2). Source:
+      build-traceability domain review P3-3, P2-2.
 - [ ] `P2` `bug` `@ai` **A forwarded trade that times out is reported "not taken" but may have been booked.**
       `core.py:1827-1830` says "did not take it" on any exception, and `/api/trade` has no idempotency key
       (`server.py:137-143`). If the user clicks again, a duplicate paper position opens. Fix: change the copy to "no

@@ -17,16 +17,43 @@ For the owner, at a terminal, when something looks wrong. Real money is out of s
 | Versions | the checkout (`git log -1`), the installed app (`/Applications/SONAR.app`, About box; the agent's code unless it was installed with `--checkout`), the running agent (`/api/health` `build`) |
 
 The agent runs the **installed app**, so an edit in the checkout cannot reach it on a restart; a
-new build reaches it only through `./build_app.sh --install`. That checks the new build first
-(seal, clean stamp including `sonar/macro` and `sonar/playmaker`, `--selftest`), then disables and
-stops the agent, swaps the app in with two renames, and starts the agent again, but only if it was
-running. If anything fails after the stop, the agent stays stopped **and disabled** (it will not
+new build reaches it only through `./build_app.sh --install`. That checks the new build first, always
+(seal; a stamp that names the code: the outer tree clean, its commit, `sonar/macro` and `sonar/playmaker`
+as real checkouts, clean and at the CI pins in `.github/workflows/tests.yml`, each commit on an origin ref as
+of the last fetch, nested ones looked for here and in the main checkout; `--selftest`), then disables and stops the agent, swaps the app in with two renames, and
+starts the agent again, but only if it was running. A refused build leaves the installed app, the agent and
+launchd as they were, with nothing staged. `--allow-dirty` overrides a stamp that cannot be traced, listing
+each reason; it never overrides a stamp that cannot be read. The origin reasons are not stored anywhere: after an
+override, write them into the verify note. "Clean" ignores untracked files: a new, uncommitted file in a nested
+repo still passes (a known gap, deferred).
+
+**Before building a release** (docs/specs/build-traceability.md): a worktree never holds the nested repos
+(they are git-ignored), only copies or nothing, and the gate refuses a bundle built from copies. So first:
+
+```bash
+scripts/bootstrap_nested.sh           # clones at the pins; a copy is moved to .nested-bootstrap/, never deleted
+./run-tests.sh tests/test_ci_pins.py -q   # must pass for both, with no skip
+```
+
+It refuses a nested repo with uncommitted work, and one that is clean but off its pin (`--move` checks the pin
+out and prints how to go back). Its per-repo summary ("identical to the pin" or "differed from the pin in N
+files") is saved to `.nested-bootstrap/report-<UTC>.txt`; for the shared items 1+2+3 install, Verify pastes it and
+the install time into `docs/audit/build-traceability-verify.md`.
+
+**A number alone is not a build.** `v2.NNN` is a commit count, and two branches can share it; only a build
+tagged `v2.NNN` on first-parent `master` is a release. `./build_app.sh` prints the `git tag -a` and
+`git push origin` commands for the owner to run; it creates no tag, and proposes none off first-parent `master`
+or for a build it cannot trace. The installed v2.340 (`8e7d024`) has `"nested": {}` in its stamp: its macro and
+playmaker code is **unknown**, and so is the nested code behind every ledger record and paper result from that
+period. Re-running `install_agent.sh` on it is now refused unless `--allow-dirty`. If anything fails after the stop, the agent stays stopped **and disabled** (it will not
 start at login on a bad bundle) and the script says so; `./scripts/install_agent.sh` starts it.
 `install_agent.sh` applies the same checks before it writes the plist.
 `/api/health` reports the loaded code as `build: {version, commit, dirty, source, nested}`, read at
-the agent's start (`dirty: null` means it could not be told).
+the agent's start (`dirty: null` means it could not be told; a nested copy shows `commit: ""`, `dirty: null`).
+New shadow-ledger records carry `v2.NNN+<outer>/m:<macro>/p:<playmaker>`, with `~` (dirty or unknown) and `!`
+(nested code not at the CI pins) after the number (ADR 0002 Amendment 2).
 In `--checkout` mode the agent runs the working tree: uncommitted edits load on any restart, and
-the installer refuses a dirty tree (or nested repo) unless `--allow-dirty`.
+the installer refuses a dirty tree (or nested repo, or a nested copy with no git history) unless `--allow-dirty`.
 
 ## 2. Is it healthy?
 
@@ -173,10 +200,12 @@ To rehearse without touching the live book, point a source run at a scratch dire
 
 ## 5. Release
 
-Clean tree, CI green on that exact commit, `./run-tests.sh -q` and
+From first-parent `master`, pushed. Clean tree, `scripts/bootstrap_nested.sh` (section 1), CI green on that exact
+commit, `./run-tests.sh -q` and
 `QT_QPA_PLATFORM=offscreen ./run-tests.sh -q` both pass, `./build_app.sh --install`, open the app, check
-the version and that the stamp reads clean, check `./scripts/install_agent.sh --status` shows the
-new build (the install restarted the agent), record the build and commit. Do not
+the version and that the stamp reads `"traceable": true`, check `./scripts/install_agent.sh --status` shows the
+new build (the install restarted the agent), run the tag commands the build printed, and record the build and
+commit. Do not
 install from a red commit. There is no `.prev` rollback yet: keep the previous `.app` aside by hand
 before installing.
 

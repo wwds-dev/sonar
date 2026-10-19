@@ -372,7 +372,10 @@ look, constant or erratum; only `price_tries` changes. A property test pins this
     at load. It is written when something was added or a try was counted, and, for a ledger this
     tenure has just started, at once with its anchors (fix loop 1; the first version said "when
     this tenure has not yet written it", which held only for a new ledger, code review P3-7).
-    `created_by` and `build` are `version.provenance()["version"]`.
+    `created_by` and `build` are `version.provenance()["version"]`. From the build-traceability release (ADR 0002 Amendment 2) a new record's `build` (and a new
+    ledger's `created_by`) is `version.build_id()`: `<version>[~][!]+<outer>/m:<macro>/p:<playmaker>` (ADR 0002
+    Amendment 2). Records written before, the v2.340 period included, name only the number: **their nested
+    (macro, playmaker) code is unknown**, and any calibration or look note that reports them says so.
 15. **Tests.** `scratch_data` (conftest) sets `SONAR_DATA` to the test's `tmp_path` after
     `refuse_live_data`. It also clears `SONAR_BACKUP_DIR`, so a scratch backup is never copied
     off-site. `isolated_state` now refuses a `tmp_path` under the live directory too. The check

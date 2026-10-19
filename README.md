@@ -285,7 +285,7 @@ each look). After a deliberate reset, you may instead retire it: copy that newes
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 2,955 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 3,149 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 

@@ -30,6 +30,9 @@ assets/icon.iconset/
 # (gitignored here until each has a GitHub remote and becomes a proper submodule)
 /sonar/macro/
 /sonar/playmaker/
+# scripts/bootstrap_nested.sh: its lock, clones in progress, the copies it
+# moved aside (never deleted) and its reports.
+/.nested-bootstrap/
 
 # Written by scripts/stamp_version.py at package time: identifies a build,
 # not the source. See VERSIONING.md.
