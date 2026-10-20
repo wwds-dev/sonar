@@ -15,14 +15,14 @@ from __future__ import annotations
 import json
 import os
 import socket
-import subprocess
+import subprocess  # noqa: F401  (tests patch server.subprocess.run for the banner)
 import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import horizon, llm, paths, risk
+from . import alarm, horizon, llm, paths, risk
 from .core import Live
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,6 +45,7 @@ class Handler(BaseHTTPRequestHandler):
     """
 
     live: Live = None  # set on the class before serving
+    notifier = None     # the agent's alarm channels, for /api/health; None in tests
     timeout = 10        # a client that opens a socket and stalls does not hold a thread
 
     def log_message(self, *a):        # quiet
@@ -155,7 +156,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/api/health"):
             # Judged now, not when the last snapshot was built: 503 when the
             # engine is not doing its job, so a check needs no JSON to tell.
-            h = self.live.health()
+            h = agent_health(self.live, self.notifier)
             self._json(h, 200 if h["ok"] else 503)
             return
         if self.path.startswith("/api/config"):
@@ -222,51 +223,97 @@ ALARM_AFTER_S = {"loop": 0.0, "poll": 600.0, "scan": 600.0, "settle": 75 * 60.0}
 WATCH_EVERY = 15.0
 
 
-NOTIFY_SCRIPT = ("on run argv", "display notification (item 1 of argv) "
-                 "with title (item 2 of argv)", "end run")
-
-
-def _plain(text: str, limit: int = 200) -> str:
-    """One line of printable text: the body can carry exception text from the
-    network, and a control character made AppleScript reject the whole call."""
-    flat = "".join(c if c.isprintable() else " " for c in text)
-    return " ".join(flat.split())[:limit]
+NOTIFY_SCRIPT = alarm.NOTIFY_SCRIPT
+_plain = alarm.plain
 
 
 def notify_macos(title: str, body: str) -> None:
     """A macOS notification from the agent itself, which has no window to show
-    anything in. The text goes in as arguments, never into the script's source.
-    Best effort: a failure is logged, never raised."""
-    if sys.platform != "darwin":
+    anything in. Now :class:`alarm.BannerChannel`, kept for its callers. Best
+    effort: a failure is logged, never raised."""
+    banner = alarm.BannerChannel()
+    if not banner.configured or banner.send(title, body):
         return
-    args = ["osascript"]
-    for line in NOTIFY_SCRIPT:
-        args += ["-e", line]
-    args += ["--", _plain(body), _plain(title, 60)]
-    try:
-        r = subprocess.run(args, capture_output=True, text=True, timeout=10)
-        if getattr(r, "returncode", 0):
-            print(f"SONAR: notification refused ({r.returncode}): "
-                  f"{_plain(r.stderr or '')}", file=sys.stderr, flush=True)
-    except (OSError, subprocess.SubprocessError) as exc:
-        print(f"SONAR: could not post a notification ({exc})", file=sys.stderr, flush=True)
+    if banner.why.startswith("refused"):
+        print(f"SONAR {alarm.ts()}: notification {banner.why}", file=sys.stderr, flush=True)
+    else:
+        print(f"SONAR {alarm.ts()}: could not post a notification ({banner.why})",
+              file=sys.stderr, flush=True)
 
 
 STOPPED_NOTICE_EVERY = 3600.0      # a crash loop restarts every minute; say it once an hour
+#: How long the exit-3 path waits for the "stopped" notice: one 10 s attempt
+#: plus slack, and only when the notice is due (at most once an hour).
+STOP_FLUSH_S = 12.0
+
+
+def _alarm_file() -> Path:
+    return paths.user_data_base() / "alarm.json"
 
 
 def _stopped_notice_due(now: float) -> bool:
-    """Has an hour passed since the last "SONAR stopped" notice, across
-    restarts? Kept beside the book, since each restart is a new process."""
-    path = paths.user_data_base() / "alarm.json"
-    last = paths.read_preferences(path).get("stopped_at")
-    if isinstance(last, (int, float)) and 0 <= now - last < STOPPED_NOTICE_EVERY:
-        return False
-    try:
-        paths.write_atomically(path, json.dumps({"stopped_at": now}))
-    except OSError:
-        pass
-    return True
+    """Has an hour passed since the last *delivered* "SONAR stopped" notice,
+    across restarts? Kept beside the book, since each restart is a new process."""
+    last = paths.read_preferences(_alarm_file()).get("stopped_at")
+    return not (isinstance(last, (int, float)) and 0 <= now - last < STOPPED_NOTICE_EVERY)
+
+
+def _stopped_notice_sent(now: float) -> None:
+    """Record a "stopped" notice that got through. With ntfy configured that
+    means it reached the phone (a banner alone does not count); with no topic,
+    that the banner posted it. If it did not get through, the next restart
+    tries again, and a crash loop still gets at most one notice through an hour.
+    Merged into the file, not written over it: the heartbeat's day is there too."""
+    alarm.merge_json(_alarm_file(), {"stopped_at": now})
+
+
+class _Callback:
+    """The old ``notify=(title, body)`` hook, for callers written before the
+    notifier: called inline with the local text, no counts, no heartbeat."""
+
+    undelivered = False
+
+    def __init__(self, notify):
+        self.notify = notify
+
+    def send(self, event, local_text=None) -> alarm.Delivery:
+        if local_text:
+            self.notify(*local_text)
+        return alarm.Delivery(delivered=True)
+
+    def states(self) -> dict:
+        return {}
+
+    def drain(self, deadline_s: float) -> bool:
+        return True
+
+    def redact(self, s: str) -> str:
+        return s
+
+
+def agent_health(live, notifier=None, now: float | None = None) -> dict:
+    """``live.health()`` plus the alarm channels, for ``/api/health`` and the
+    watchdog. ``core.Live.health`` stays unaware of alarms; the GUI never sends any.
+
+    A failing ntfy channel, or an alarm that failed to reach the phone over a
+    configured ntfy channel (whatever the banner did), is a ``notify`` problem
+    (503). A failing banner is counted but is not a problem: it is the
+    local channel and known to be flaky, and it would turn health red on
+    nearly every alarm."""
+    h = dict(live.health() if now is None else live.health(now))
+    states = notifier.states() if notifier is not None else {}
+    if not states:
+        return h
+    h["notify"] = states
+    problems = list(h.get("problems") or [])
+    ntfy = states.get("ntfy") or {}
+    if ntfy.get("state") == "failing":
+        problems.append({"kind": "notify", "text": "the ntfy alarm channel is failing "
+                         f"({ntfy.get('failures', 0)} failures)"})
+    if getattr(notifier, "undelivered", False):
+        problems.append({"kind": "notify", "text": "an alarm did not reach the phone"})
+    h["problems"], h["ok"] = problems, not problems
+    return h
 
 
 class Watchdog:
@@ -276,43 +323,80 @@ class Watchdog:
       kept the process alive, launchd saw nothing wrong, and nothing traded or
       scored again. Now the process exits non-zero, which launchd's KeepAlive
       restarts (packaging/com.netrunner3000.sonar.plist).
-    * A problem from ``Live.health()`` that lasts past its ALARM_AFTER_S posts
-      one notification; recovery posts one more. Nothing repeats in between.
+    * A problem from ``Live.health()`` that lasts past its ALARM_AFTER_S sends
+      one alarm; recovery sends one more. Nothing repeats in between.
+    * Alarms go through the notifier (``sonar/alarm.py``): queued on each
+      channel's own thread, so no network or subprocess call happens here
+      except the bounded wait before exit. The push carries only fixed
+      phrases; the full problem text stays in this log.
+    * The banner's title carries "(paper)" like the push (domain P3-E).
+    * ``notify`` problems (a failing alarm channel) are health-only: alarming
+      about the alarm channel through the alarm channels would loop.
+    * Once a day the heartbeat, if one is given, says "alive".
     """
 
-    def __init__(self, live, engine_thread, notify=notify_macos, exit_fn=os._exit,
-                 log=None):
+    def __init__(self, live, engine_thread, *, notifier=None, exit_fn=os._exit,
+                 log=None, notify=None, heartbeat=None):
         self.live, self.engine_thread = live, engine_thread
-        self.notify, self.exit_fn = notify, exit_fn
+        self.notifier = notifier or _Callback(notify or notify_macos)
+        self.exit_fn, self.heartbeat = exit_fn, heartbeat
         self.log = log or (lambda msg: print(msg, file=sys.stderr, flush=True))
         self.bad_since: dict[str, float] = {}
         self.alarmed: set[str] = set()     # kinds already told, until they clear
         self._was_alarmed = False
 
+    def say(self, msg: str) -> None:
+        """One timestamped, redacted line: exception text can hold a newline."""
+        self.log(self.notifier.redact(f"SONAR {alarm.ts()}: {alarm.plain(msg, 2000)}"))
+
     def step(self, now: float | None = None) -> None:
         now = time.time() if now is None else now
         if not self.engine_thread.is_alive() and not self.live._stop.is_set():
-            self.log("SONAR: the engine thread ended; exiting so launchd restarts the agent")
-            if _stopped_notice_due(now):
-                self.notify("SONAR stopped", "The engine loop ended. The agent is restarting.")
-            self.exit_fn(3)
+            try:
+                self.say("the engine thread ended; exiting so launchd restarts the agent")
+                if _stopped_notice_due(now):
+                    delivery = self.notifier.send(
+                        alarm.Event("stopped", urgent=True),
+                        (f"{alarm.TITLE} stopped",
+                         "The engine loop ended. The agent is restarting."))
+                    self.notifier.drain(STOP_FLUSH_S)
+                    if getattr(delivery, "delivered", False):
+                        _stopped_notice_sent(now)
+            finally:
+                self.exit_fn(3)               # whatever failed above, launchd restarts us
             return
-        h = self.live.health(now)
-        kinds = {p["kind"]: p["text"] for p in h["problems"]}
+        h = agent_health(self.live, self.notifier, now)
+        texts: dict[str, str] = {}
+        for p in h["problems"]:
+            texts.setdefault(p["kind"], p["text"])
+        kinds = {k: t for k, t in texts.items() if k != "notify"}
         self.bad_since = {k: self.bad_since.get(k, now) for k in kinds}
         self.alarmed &= set(kinds)            # a cleared kind may alarm again later
+        # An undelivered alarm stops being a problem once its own kinds have
+        # cleared (owner decision (a), Review).
+        getattr(self.notifier, "set_open_kinds", lambda kinds: None)(kinds)
         due = {k: text for k, text in kinds.items()
                if k not in self.alarmed
                and now - self.bad_since[k] >= ALARM_AFTER_S.get(k, 600.0)}
         if due:
             self._was_alarmed = True
             self.alarmed |= set(due)
-            self.log("SONAR: needs attention: " + "; ".join(due.values()))
-            self.notify("SONAR needs attention", "; ".join(due.values()))
+            self.say("needs attention: " + "; ".join(due.values()))
+            event = alarm.Event(next(iter(due)), open_kinds=tuple(
+                (k, now - self.bad_since[k]) for k in due))
+            self.notifier.send(event, (f"{alarm.TITLE} needs attention",
+                                       "; ".join(due.values())))
         elif not kinds and self._was_alarmed:
             self._was_alarmed = False
-            self.log("SONAR: working again")
-            self.notify("SONAR is working again", "Prices are polling and hours are settling.")
+            self.say("working again")
+            self.notifier.send(alarm.Event("recovery"),
+                               (f"{alarm.TITLE} is working again",
+                                "Prices are polling and hours are settling."))
+        if self.heartbeat is not None and self.heartbeat.due(now):
+            self.heartbeat.mark(now)          # on queueing: one per day, even in a crash loop
+            self.notifier.send(alarm.Event("heartbeat", open_kinds=tuple(
+                (k, None) for k in texts)))
+            self.say("heartbeat queued; open problems: " + (", ".join(texts) or "none"))
 
     def run(self, stop: threading.Event | None = None) -> None:
         stop = stop or threading.Event()
@@ -320,7 +404,7 @@ class Watchdog:
             try:
                 self.step()
             except Exception as exc:          # the watchdog must outlive its own bugs
-                self.log(f"SONAR: watchdog step failed ({type(exc).__name__}: {exc})")
+                self.say(f"watchdog step failed ({type(exc).__name__}: {exc})")
 
 
 class PaperServer6(PaperServer):
@@ -343,13 +427,20 @@ def main(host: str = "127.0.0.1", port: int = 8787,
         # authentication: off the machine it would be an open door anyway.
         raise SystemExit(f"SONAR serves loopback only; refusing --host {host}")
     live = Live(risk_name=risk_name, horizon_name=horizon_name)
+    # Before any thread starts: the Keychain read blocks for at most 5 s, once.
+    # SONAR_ALARM (pinned "on" in the live plist) lets a diagnostic engine run with
+    # no Keychain read and no push (docs/specs/starved-engine.md A2).
+    notifier = alarm.from_keychain(build=(getattr(live, "build", None) or {}).get("version"),
+                                   mode=alarm.alarm_mode(os.environ))
     # The address goes into the engine lock, so a window that loses the race
     # for it can follow this engine here rather than open with nothing.
     engine = threading.Thread(target=live.run, args=(role,),
                               kwargs={"url": lock_url(host, port)}, daemon=True)
     engine.start()
-    threading.Thread(target=Watchdog(live, engine).run, daemon=True).start()
-    Handler.live = live
+    dog = Watchdog(live, engine, notifier=notifier,
+                   heartbeat=alarm.Heartbeat(_alarm_file()))
+    threading.Thread(target=dog.run, daemon=True).start()
+    Handler.live, Handler.notifier = live, notifier
     srv = (PaperServer6 if ":" in host else PaperServer)((host, port), Handler)
     ok, why = llm.available()
     print(f"SONAR paper terminal  ->  http://{host}:{port}", flush=True)

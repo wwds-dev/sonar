@@ -1,6 +1,6 @@
 # SONAR — Suggestions
 
-Status: `IDEA` · `CONSIDERING` · `PLANNED` · `BLOCKED` — a row that lands moves to *Done* below and one that is turned down to *Rejected*; neither stays in an Open table
+Status: `IDEA` · `CONSIDERING` · `PLANNED` · `BLOCKED` · `DEFERRED` — a row that lands moves to *Done* below and one that is turned down to *Rejected*; neither stays in an Open table
 
 ---
 
@@ -8,7 +8,7 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `BLOCKED` — a row that lands m
 
 | # | Suggestion | Category | Effort | Status |
 |---|---|---|---|---|
-| 1 | Finnhub as the second equities source — removes the single point of failure on the undocumented Yahoo endpoint | infra | S | PLANNED |
+| 1 | A second price source behind Yahoo, so the scan does not rest on one undocumented endpoint (status: README "Data providers") | infra | M | DEFERRED — `TODO.md` "Rewire providers after 2026-11-09 (A-later spec)" |
 | 2 | Show provider provenance per quote in the UI, so a silent fallback is visible rather than invisible | design | S | CONSIDERING |
 | 4 | Week-over-week scan deltas from the cached scans already on disk | feature | M | IDEA |
 | 5 | Intraday bars or order flow as a research input — the only honest way to reopen the study | research | XL | IDEA |

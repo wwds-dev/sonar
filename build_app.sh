@@ -110,3 +110,12 @@ else
   echo "Run '$0 --install' to copy it into /Applications."
   echo "$DIST/ is skipped by Spotlight; --install removes it entirely."
 fi
+
+# Release identity (docs/specs/build-traceability.md A6). A number alone names
+# more than one commit, so a release is a tag on first-parent master. This only
+# PRINTS the git tag command for the owner; it never writes to git. It refuses
+# when the tag already names another commit, and proposes nothing for a build
+# that cannot be traced or is off first-parent master.
+echo
+python3 -I scripts/buildid.py tag-command _build_info.json --repo . \
+  || echo "(no release tag proposed: see above)"

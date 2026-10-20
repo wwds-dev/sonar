@@ -36,11 +36,16 @@
     <key>WorkingDirectory</key>
     <string>__WORK_DIR__</string>
 
-    <!-- One book with the installed app: see sonar/paths.py (SONAR_DATA). -->
+    <!-- One book with the installed app: see sonar/paths.py (SONAR_DATA).
+         SONAR_ALARM is pinned on: a per-job value beats a global
+         launchctl setenv, which would otherwise silence the phone alarm
+         (sonar/alarm.py alarm_mode; docs/specs/starved-engine.md A2). -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>SONAR_DATA</key>
         <string>__DATA_DIR__</string>
+        <key>SONAR_ALARM</key>
+        <string>on</string>
     </dict>
 
     <key>RunAtLoad</key>
@@ -62,11 +67,11 @@
     <key>StandardErrorPath</key>
     <string>__LOG_DIR__/agent.err.log</string>
 
+    <!-- Standard: under Background + Nice 5 the agent missed its 4 s poll and
+         took 3-24 s to answer on a loaded Mac
+         (docs/audit/alarm-delivery-osascript-diagnosis.md section 4); it uses
+         near-zero CPU. No Nice key (docs/adr/0006-agent-processtype-standard.md). -->
     <key>ProcessType</key>
-    <string>Background</string>
-
-    <!-- Low priority: this is a background poller, not interactive work. -->
-    <key>Nice</key>
-    <integer>5</integer>
+    <string>Standard</string>
 </dict>
 </plist>

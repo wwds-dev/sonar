@@ -394,9 +394,7 @@
       <td>The exact source Polymarket resolves against.</td></tr>
     <tr><td>Hourly market odds</td><td>Polymarket Gamma + CLOB</td><td>Read-only.</td></tr>
     <tr><td>Equities, FX, commodities</td><td>Yahoo Finance</td>
-      <td>Broad and free but <em>undocumented</em>. See the provider layer below.</td></tr>
-    <tr><td>Crypto spot / FX fallback</td><td>CoinGecko, Frankfurter</td>
-      <td>Keyless second sources, so crypto and FX survive Yahoo breaking.</td></tr>
+      <td>Broad and free but <em>undocumented</em>, with no fallback. See below.</td></tr>
     <tr><td>Earnings &amp; IPOs</td><td>Nasdaq calendars</td>
       <td>Used because Yahoo's earnings endpoint now returns 401.</td></tr>
     <tr><td>News</td><td>Reuters, AP, Bloomberg, FT, BBC, MarketWatch, Yahoo,
@@ -405,16 +403,32 @@
         usable public feed at all.</td></tr>
     <tr><td>Macro</td><td>FRED</td><td>Curve, VIX, CPI, unemployment, policy rate.</td></tr>
   </table>
-  <h3>The provider layer</h3>
-  <p>Sources sit behind one interface with a capability (quotes / bars / FX /
-    crypto), a tier (keyless or keyed) and an on-off switch. Requests walk the
-    enabled providers in order and take the first that answers, so a vendor
-    going down is a skipped provider rather than a broken app.</p>
-  <div class="warn"><b>One real fragility, found by building this.</b> Switch
-    Yahoo off and crypto still resolves through CoinGecko and FX through
-    Frankfurter — but <b>equities return nothing</b>. They have no keyless
-    second source, so most of the watchlist depends on a single undocumented
-    endpoint. A free Finnhub key closes that gap.</div>
+  <h3>One source, and what happens when it fails</h3>
+  <div class="warn"><b>The largest fragility.</b> Yahoo is the only source for
+    the Screener's equities, FX, commodities and crypto rows, with no fallback;
+    the BTC hourly model uses Binance; if Binance is unreachable, Coinbase
+    supplies the live candle, but volatility and gap settlement still need
+    Binance (the model then falls back to a default volatility). Yahoo's endpoint is undocumented and can change or start refusing requests
+    without notice.</div>
+  <p>What a Yahoo outage does:</p>
+  <ul>
+    <li><b>The board</b> keeps scoring from cached prices while the app runs,
+      and the Updated column turns gold past 20 minutes and red past an hour.
+      Red can mean the rotation is losing ground, and it can also mean Yahoo is
+      not answering. The cache is in memory, so after a relaunch or a horizon
+      change during an outage, rows are missing.</li>
+    <li><b>Shadow grading.</b> A failed fetch keeps the closes already held. The
+      symbol is marked as tried for that UTC day and is not refetched until the
+      next one. An entry past its time-stop with no closing bar stays "waiting
+      for a price" and holds its look. It becomes "no price" and is left out
+      only after 28 days and 3 failed fetch days. So an outage delays grading by
+      at least a day, and only a long outage removes entries.</li>
+    <li><b>The account-value history</b> retries later. A partial answer uses up
+      one of a few tries; an empty answer uses none. So the equity curve waits,
+      and after six partial answers it stops trying until the next launch.</li>
+  </ul>
+  <p>Quotes may be delayed by the exchange; Updated shows when SONAR fetched the
+    price, not the exchange's time.</p>
 
   <h2 id="model"><span class="n">4</span>The hourly model</h2>
   <p>Each hour Polymarket asks whether the BTC/USDT candle will close at or above
@@ -1505,8 +1519,8 @@ python main.py --headless   # the HTTP daemon instead</code></pre>
 
   <footer>
     SONAR · paper-trading terminal, market scanner and research apparatus ·
-    data from Binance, Coinbase, Polymarket, Yahoo, CoinGecko, Frankfurter,
-    Nasdaq, FRED and public news RSS · built as an honest counterpart to
+    data from Binance, Coinbase, Polymarket, Yahoo, Nasdaq, FRED and public
+    news RSS · built as an honest counterpart to
     social-media "AI trading bot" hype.
   </footer>
 </div>

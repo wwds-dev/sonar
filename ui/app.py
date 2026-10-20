@@ -163,7 +163,8 @@ ASSET_COLS = [
      "The board recomputes about every 3 minutes, but only the 26 stalest of\n"
      "129 markets are refetched each time — so a few minutes old is normal,\n"
      "and a full rotation takes roughly 15. Gold past that means the rotation\n"
-     "is falling behind, usually because the source is throttling us.\n"
+     "is falling behind, usually because the source is throttling us,\n"
+     "or Yahoo is not answering.\n"
      "Shown because a price that is quietly out of date is the one failure\n"
      "this app treats as unacceptable."),
     ("actions", ("", ""), 138, "", ""),

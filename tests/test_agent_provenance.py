@@ -90,14 +90,35 @@ def test_a_nested_repo_folds_into_dirty(tmp_path, monkeypatch, nested, want):
 
 
 def test_the_nested_repos_are_read_with_git(tmp_path, monkeypatch):
+    # A copy (no .git) is recorded as unknown, never skipped: skipping it is how
+    # v2.340 was stamped `"nested": {}` and clean (docs/specs/build-traceability.md
+    # A2). Only the repo is asked with git.
     (tmp_path / "sonar" / "macro" / ".git").mkdir(parents=True)
     (tmp_path / "sonar" / "playmaker").mkdir(parents=True)     # not a repo
     monkeypatch.setattr(app_version, "PROJECT_ROOT", tmp_path)
     seen = []
     monkeypatch.setattr(app_version, "_git_build",
                         lambda root: seen.append(root) or {"commit": "m", "dirty": True})
-    assert app_version._nested() == {"macro": {"commit": "m", "dirty": True}}
+    monkeypatch.setattr(app_version, "_git",
+                        lambda *a, cwd=None: "f" * 40 if cwd == tmp_path / "sonar" / "macro"
+                        else None)
+    assert app_version._nested() == {
+        "macro": {"commit": "m", "sha": "f" * 40, "dirty": True},
+        "playmaker": {"commit": "", "sha": "", "dirty": None}}
     assert seen == [tmp_path / "sonar" / "macro"]
+
+
+def test_an_absent_nested_repo_has_no_key(tmp_path, monkeypatch):
+    (tmp_path / "sonar").mkdir()
+    monkeypatch.setattr(app_version, "PROJECT_ROOT", tmp_path)
+    assert app_version._nested() == {}
+
+
+def test_a_copy_reports_dirty_unknown_in_health(tmp_path, monkeypatch):
+    # Intended side effect (A2): a checkout agent on a copy no longer looks clean.
+    monkeypatch.setattr(app_version, "info", lambda: _fake(dirty=False))
+    copy_ = {"macro": {"commit": "", "sha": "", "dirty": None}}
+    assert _live(tmp_path, monkeypatch, copy_).health()["build"]["dirty"] is None
 
 
 def test_the_build_is_read_at_start_not_per_request(tmp_path, monkeypatch):
@@ -206,6 +227,31 @@ def test_a_dirty_nested_repo_is_refused(repo):
     (nested / "__init__.py").write_text("x = 2\n")
     r = _install(repo)
     assert r.returncode == 1 and "sonar/macro:" in r.stdout and "__init__.py" in r.stdout
+
+
+def test_a_nested_copy_is_refused_not_skipped(repo):
+    # Owner Q-A2 (docs/specs/build-traceability.md A8): `--checkout` skipped a
+    # nested dir without .git, the same hole the stamp had. A copy is code no
+    # commit names; --allow-dirty can still take it, and says so.
+    copy_ = repo[0] / "sonar" / "playmaker"
+    copy_.mkdir(parents=True)
+    (copy_ / "__init__.py").write_text("x = 1\n")
+    r = _install(repo)
+    assert r.returncode == 1 and "Refusing" in r.stdout
+    assert "sonar/playmaker: a copy with no git history; its code cannot be named" in r.stdout
+    assert "not found" not in r.stdout          # stopped before the venv check
+    r = _install(repo, "--allow-dirty")
+    assert "installing anyway" in r.stdout and ".venv/bin/python" in r.stdout
+
+
+def test_an_absent_nested_dir_is_not_a_copy(repo):
+    # Absent is not code at all: no reason here (the bundle gate refuses the
+    # missing stamp key instead). It gets past the tree check to the venv one.
+    (repo[0] / "sonar").mkdir()
+    r = _install(repo)
+    assert "WARNING" not in r.stdout and "a copy" not in r.stdout
+    assert "Refusing" not in r.stdout and ".venv/bin/python not found" in r.stdout
+    assert r.returncode == 1                     # stopped at the missing venv, as intended
 
 
 def test_a_long_list_still_says_why(repo):

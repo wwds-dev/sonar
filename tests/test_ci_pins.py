@@ -8,7 +8,7 @@ its pin: commit the module, push it, then update the pin with it.
 
 from __future__ import annotations
 
-import re
+import importlib.util
 import subprocess
 from pathlib import Path
 
@@ -19,9 +19,12 @@ WORKFLOW = (ROOT / ".github/workflows/tests.yml").read_text()
 
 
 def _pins() -> dict[str, tuple[str, str]]:
-    found = re.findall(r"repository:\s*(\S+)\s*\n\s*ref:\s*([0-9a-f]{40})\s*\n\s*path:\s*(\S+)",
-                       WORKFLOW)
-    return {path: (repo, ref) for repo, ref, path in found}
+    """The one parser CI, the stamp, the gate and the bootstrap share
+    (scripts/buildid.py, docs/specs/build-traceability.md A3)."""
+    spec = importlib.util.spec_from_file_location("buildid", ROOT / "scripts" / "buildid.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.pins(WORKFLOW)
 
 
 def test_every_module_is_pinned_to_a_commit_on_the_current_owner():
@@ -34,6 +37,8 @@ def test_every_module_is_pinned_to_a_commit_on_the_current_owner():
 def test_the_pin_is_the_commit_this_checkout_runs(path):
     repo = ROOT / path
     if not (repo / ".git").exists():
+        # A worktree holds copies until scripts/bootstrap_nested.sh has run;
+        # after it, this must pass with no skip (build-traceability measure 3).
         pytest.skip(f"{path} is not a git checkout here")
     head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
                           capture_output=True, text=True).stdout.strip()

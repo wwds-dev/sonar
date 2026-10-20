@@ -63,7 +63,7 @@ zero stake for a narrative one. `sonar/playmaker/MODELS.md` surveys the models; 
 
 | Real (read-only public data) | Simulated |
 |---|---|
-| BTC/ETH price + hourly candle — Binance (the actual Polymarket resolution source), Coinbase fallback | The bankroll ($10,000 paper) |
+| BTC/ETH price + hourly candle — Binance (the actual Polymarket resolution source); Coinbase fallback for BTC's live candle only | The bankroll ($10,000 paper) |
 | Polymarket odds, best bid/ask, order books, market metadata | Every position — **no exchange, no wallet, no order placed anywhere** |
 | Equities/indices/FX/commodities — Yahoo Finance | The P&L |
 | News — 24 feeds across nine press blocs: Reuters, AP, Bloomberg, FT, BBC, MarketWatch, Yahoo, NPR, CNBC, Ars Technica, TechCrunch, The Verge, plus Al Jazeera, Anadolu, Global Times, SCMP, TASS, Times of India, The Hindu, Japan Times, AllAfrica and Folha | |
@@ -168,29 +168,37 @@ for that adapter and are not used by the book yet.
 The host is a module constant with no parameter to override and a key that is not clearly a paper key is
 refused before any request. Going live is not a flag in this file: it is a decision for a human with an account.
 
-## Data providers, and the switch behind each one
+## Data providers
 
-Everything runs on Yahoo Finance, which is free, broad and **undocumented**. It can change shape or start
-refusing requests without notice, and it already has: the `quoteSummary` endpoint used for earnings dates now
-answers 401. One undocumented endpoint carrying the whole app is its largest fragility.
+Yahoo is the only source for the Screener's equities, FX, commodities and crypto rows, with no fallback; the BTC
+hourly model uses Binance; if Binance is unreachable, Coinbase supplies the live candle, but volatility and gap
+settlement still need Binance (the model then falls back to a default volatility). Yahoo is free, broad and **undocumented**. It can
+change shape or start refusing requests without notice, and it already has: the `quoteSummary` endpoint used for
+earnings dates now answers 401. One undocumented endpoint carrying the scan, the account-value history and shadow
+grading is the app's largest fragility.
 
-`sonar/providers.py` puts sources behind one interface — a **capability** (quotes, bars, FX, crypto), a **tier**
-(keyless or keyed), and a persisted **on/off switch**. A request walks the enabled providers in preference order
-and takes the first that answers, so a vendor going down is a skipped provider rather than a broken app.
+What a Yahoo outage does:
 
-| provider | tier | serves | note |
-|---|---|---|---|
-| Yahoo | keyless | quotes, bars, FX, crypto | Broad, free, unstable — the reason this exists |
-| CoinGecko | keyless | crypto | Survives a coin being delisted from any one venue |
-| Frankfurter | keyless | FX | ECB reference rates; stable, but daily not live |
-| Finnhub | free key | quotes, bars | Documented and supported — the sturdiest upgrade |
-| Twelve Data | free key | quotes, bars, FX, crypto | Wide coverage, tight request limit |
-| Alpha Vantage | free key | quotes, bars | ~25 requests/day; research only |
+- **The board** keeps scoring from cached prices while the app runs, and the Updated column turns gold past 20
+  minutes and red past an hour (below). The cache is in memory, so after a relaunch or a horizon change during an
+  outage, rows are missing.
+- **Shadow grading.** A failed fetch keeps the closes already held. The symbol is marked as tried for that UTC day
+  and is not refetched until the next one. An entry past its time-stop with no closing bar stays "waiting for a
+  price" and holds its look. It becomes "no price" and is left out only after 28 days and 3 failed fetch days. So an
+  outage delays grading by at least a day, and only a long outage removes entries.
+- **The account-value seed** retries later (`SEED_RETRY_EVERY`). A partial answer uses up one of `SEED_MAX_TRIES`;
+  an empty answer uses none. So the equity curve waits, and after six partial answers seeding stops until the next
+  launch.
 
-Keys go in the same git-ignored `.env` as the Alpaca ones (names in `.env.example`). Switch Yahoo off and crypto
-still resolves via CoinGecko, FX via Frankfurter — but **equities return nothing at all**: they have no keyless
-second source. A free Finnhub key is the fix. **Stooq is deliberately absent**: both its CSV endpoints now return
-an HTML bot-block page, which an adapter would have parsed into silence.
+Quotes may be delayed by the exchange; Updated shows when SONAR fetched the price, not the exchange's time.
+
+**No second source, and the Finnhub key.** No other market-data vendor is wired in. An earlier module registered
+other vendors behind on/off switches, but no code ever called it, so it was deleted
+(`docs/specs/providers-wiring.md`, 2026-10-19). CoinGecko and Frankfurter (crypto and FX) are not used. Neither are
+Finnhub, Twelve Data or Alpha Vantage: a key for any of them changes nothing today, because no code reads one. A real
+fallback is the `TODO.md` item "Rewire providers after 2026-11-09": it waits until the 30-day paper run has closed, so
+that run keeps one price source end to end. **Stooq is deliberately absent**: both its CSV endpoints return an HTML
+bot-block page rather than data, which an adapter would parse into silence and present as a working fallback.
 
 ### How old is a price on the Screener board?
 
@@ -199,7 +207,7 @@ treats as unacceptable. The board does not refetch all 129 instruments at once (
 and a throttled scan returns fewer rows rather than an error): `assets.ROLL_BATCH` refetches the **26 stalest**
 rows per scan and scores the rest from cache, so one instrument comes round roughly every fifteen minutes. The
 column goes gold past 20 minutes and red past an hour, which means the rotation is losing ground rather than
-that the price is wrong.
+that the price is wrong; red can also mean Yahoo is not answering.
 
 ## Plain wording, or expert
 
@@ -254,6 +262,7 @@ uv venv .venv && uv pip install -r requirements.txt
 python main.py              # the app
 python main.py --selftest   # check a build's wiring and exit
 python main.py --headless   # the old HTTP daemon instead
+python main.py --test-alarm # send one test alarm to your phone (ntfy) and a banner
 ./build_app.sh              # build a signed .app; add --install to copy into /Applications
 ```
 
@@ -284,7 +293,7 @@ each look). After a deliberate reset, you may instead retire it: copy that newes
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 2,711 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 3,243 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -317,7 +326,13 @@ were priced for. The full notes are in [docs/history/uptime-notes.md](docs/histo
 - **A launchd agent** keeps it running when you are not logged into the app: `./scripts/install_agent.sh`
   (`--status`, `--uninstall`). It runs the installed `SONAR.app` headless, so checkout edits never reach it;
   `./build_app.sh --install` restarts it on the new build (`--checkout` runs the working tree instead, for
-  development). It writes `SONAR_DATA` into the plist so the agent and the app share one directory.
+  development). It writes `SONAR_DATA` into the plist so the agent and the app share one directory, and pins `SONAR_ALARM` to `on`
+  (that variable switches the phone alarm off only for throwaway test engines; `docs/RUNBOOK.md` §5).
+- **The agent raises alarms off the Mac.** A stall or a dead engine loop goes to your phone as an
+  [ntfy](https://ntfy.sh) push (a phone notification service; the topic, which works like a password, is kept in
+  the login Keychain), plus a banner on this Mac, and a daily 09:00 "alive" push says it is still running.
+  `/api/health` shows each channel's state, and a failing push channel turns it red. Setup, what a push may say
+  and the blind spot are in [docs/RUNBOOK.md](docs/RUNBOOK.md) §2.
 - **One engine per state file** (`sonar/enginelock.py`). Whoever starts first drives; the other **follows**,
   mirroring the agent's snapshot over localhost and handing every write to it, and takes over the moment the lock
   is free. The status line says *following the engine at 127.0.0.1:8787* while this is so.
@@ -353,14 +368,15 @@ stamp. Scheme in `VERSIONING.md`; what each installed build contained is in `CHA
 ## Layout
 
 ```
-main.py        entry point — app, --selftest, --headless
+main.py        entry point — app, --selftest, --headless, --test-alarm
 sonar/         the engine and models (each module's docstring says what it is for)
   core.py engine.py enginelock.py   the driver, the paper engine, the single-writer lock
   model.py feeds.py risk.py horizon.py   the hourly model, its feeds, risk profiles, horizons
   assets.py scoring.py portfolio.py calibration.py   the screener, the plan maths, the book, the grade
   backtest.py replay.py research/    the replay, step-through, and the study apparatus
   news.py events.py institutions.py alerts.py   headlines, calendars, central banks, what changed
-  providers.py paths.py server.py llm.py   data sources, path/backup logic, the HTTP server, the optional LLM
+  paths.py server.py llm.py   path/backup logic, the HTTP server, the optional LLM
+  alarm.py       the agent's alarms: ntfy push, macOS banner, daily heartbeat
   alpaca.py execution.py costs.py   paper-broker adapter and dormant execution guard, its cost ledger
   universe.py venues.py   the listed US-equity universe, where a row could be traded
   macro/         FRED regime for long horizons — its own git repo, gitignored here
@@ -386,8 +402,6 @@ must be JSON from no foreign `Origin`.
 The build backlog is finished; what remains is not more code (`TODO.md` has the open items, and
 `docs/specs/v1-product.md` defines v1.0 as 30 clean days).
 
-- **A free Finnhub key.** Equities have no keyless second source, so most of the watchlist rides on one
-  undocumented Yahoo endpoint. This is the single highest-value change.
 - **Let the paper book run.** A real track record is the one thing no backtest substitutes for, and the
   calibration table stays empty until ~20 positions have closed. **Protocol mode** (My trades) fills it.
 - **Better data, if the research is ever resumed.** Five studies detected no directional effect in daily bars,

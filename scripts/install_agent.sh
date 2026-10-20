@@ -145,14 +145,22 @@ if ! DIRTY="$(git status --porcelain --untracked-files=no 2>/dev/null)"; then
   DIRTY="(git status failed: cannot tell whether the tree is clean)"
 fi
 # The nested repos are code the agent imports, and the outer status cannot
-# see into them (sonar/version.py NESTED_REPOS).
+# see into them (sonar/version.py NESTED_REPOS). A copy (no .git, as a
+# worktree holds them) is code no commit names: refused like a dirty tree,
+# never skipped (docs/specs/build-traceability.md A8, owner Q-A2).
+NL=$'\n'
 for nested in sonar/macro sonar/playmaker; do
-  [[ -e "$nested/.git" ]] || continue
+  if [[ ! -e "$nested/.git" ]]; then
+    if [[ -e "$nested" ]]; then
+      DIRTY+="${DIRTY:+$NL}$nested: a copy with no git history; its code cannot be named"
+      DIRTY+=" (scripts/bootstrap_nested.sh)"
+    fi
+    continue
+  fi
   if ! more="$(git -C "$nested" status --porcelain --untracked-files=no 2>/dev/null)"; then
     more="(git status failed: cannot tell whether it is clean)"
   fi
   if [[ -n "$more" ]]; then
-    NL=$'\n'
     DIRTY+="${DIRTY:+$NL}$(sed "s|^|$nested: |" <<<"$more")"
   fi
 done
@@ -217,6 +225,9 @@ with open(src, "rb") as f:
 p["ProgramArguments"] = [exe] + ([main_py] if main_py else []) + p["ProgramArguments"][2:]
 p["WorkingDirectory"] = work
 p["EnvironmentVariables"]["SONAR_DATA"] = data
+# Pinned, whatever the template says: a global `launchctl setenv SONAR_ALARM`
+# would otherwise turn the live agent's phone alarm off (starved-engine A2).
+p["EnvironmentVariables"]["SONAR_ALARM"] = "on"
 p["StandardOutPath"] = f"{logs}/agent.out.log"
 p["StandardErrorPath"] = f"{logs}/agent.err.log"
 assert "__" not in repr(p), "a template placeholder was left in"

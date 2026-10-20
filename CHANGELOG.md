@@ -10,6 +10,139 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## v2.366 — 2026-10-19
+
+**The docs now describe the price path that runs: Yahoo, with no fallback** (`docs/specs/providers-wiring.md`, option
+B; architecture audit N-1, docs audit P3-11). No change to the data path, so the 30-day run and shadow-ledger look 1
+keep one price source. Nothing restarts; `docs.html` reaches users with the next planned build.
+
+- **The fallback claim is gone.** The README, the Learn page and `.env.example` said a failing vendor was skipped, that
+  crypto and FX survived Yahoo breaking through CoinGecko and Frankfurter, and that a free Finnhub key was the fix.
+  No code ever called the module behind that, so none of it was true. Both pages now say: "Yahoo is the only source for
+  the Screener's equities, FX, commodities and crypto rows, with no fallback; the BTC hourly model uses Binance; if
+  Binance is unreachable, Coinbase supplies the live candle, but volatility and gap settlement still need Binance (the
+  model then falls back to a default volatility)." The README's real-vs-simulated table no longer gives ETH a Coinbase
+  fallback.
+- **What a Yahoo outage does**, checked against the code: the board scores from its in-memory cache while the app
+  runs (a relaunch or horizon change mid-outage leaves rows missing) and Updated turns red (which can also mean Yahoo
+  is not answering; the column's tooltip now says so), shadow grading waits at least a day and drops an entry only
+  after 28 days and 3 failed fetch days, and the account-value seed waits, stopping after six partial answers until
+  the next launch. Plus a delay disclosure: Updated is when SONAR fetched the price,
+  not the exchange's time.
+- **`sonar/providers.py` and its tests are deleted**, with the stale comments in `paths.py`, `institutions.py` and
+  `scripts/diag_priority.py` (which still blanks the key env vars) and the README module map. A `providers.json`
+  already in a data dir is left in place; nothing reads it. The Stooq note moved to the README.
+- **One home for Finnhub's status**, the README's "Data providers". The owner's Finnhub P0 became a P2, "Rewire
+  providers after 2026-11-09 (A-later spec)"; `SUGGESTIONS.md` #1 is DEFERRED to it. The keys are out of `.env.example`.
+- **Result records name their source.** `docs/specs/v1-product.md` and `CONFIDENCE.md` carry "prices: Yahoo chart
+  endpoint only, no fallback, run window X–Y" beside the v1.0 and look-1 results, with the dates filled in when each
+  is recorded.
+- **`tests/test_providers_docs_truth.py`** keeps it true: nothing imports a `providers` module, the false phrases stay
+  out of the six documents, CoinGecko and Frankfurter appear only as "not used", and the source, outage and delay
+  sentences stay in both pages. Suite: 3,243 tests.
+
+## v2.365 — 2026-10-19
+
+**Every bundle that passes the install gate names its code: the outer commit and both nested repos**
+(`docs/specs/build-traceability.md`; ADR 0002 Amendment 2; RUNBOOK §1, §5; VERSIONING.md). Built, not installed: it
+ships in the shared items 1+2+3 `./build_app.sh --install`, with the owner's yes. That release needs, in order:
+`scripts/bootstrap_nested.sh` (a worktree holds only copies, which the gate now refuses), the change merged to
+first-parent `master` and pushed, the build from there, and the owner running the printed tag commands.
+
+- **The gate no longer passes copies.** The installed v2.340 was stamped `"nested": {}` and clean while its bundle held
+  `sonar.macro` and 8 `sonar.playmaker` modules. Now a nested dir without `.git` is stamped
+  `{"commit": "", "sha": "", "dirty": null}`, and `check_app.sh` asks `scripts/buildid.py check-stamp` (under
+  `python3 -I`) instead of grepping for any `"dirty": false`. It refuses, naming each reason: the outer tree dirty or
+  unknown (the top-level key, so clean nested repos cannot stand in for it), no commit, a nested repo missing, a copy,
+  dirty, off the CI pins (`macro: stamp <sha>, CI pins <sha>`), no pins, or a commit on no origin ref as of the last
+  fetch (local git only). `--allow-dirty` still overrides, listing the reasons; a stamp that cannot be read, or a crash,
+  never can. A refusal leaves the installed app, the agent and launchd as they were, with nothing staged.
+  Known gap, deferred (security P3-7): "clean" ignores untracked files, so a new, uncommitted module in a nested repo
+  still passes.
+- **The gate always runs** in `install_app.sh`, also when the agent is not on the app. `install_agent.sh --checkout`
+  refuses a nested copy too.
+- **Re-running `install_agent.sh` on the installed v2.340 is now refused** (no full `sha`, `nested: {}`, no pins) unless
+  `--allow-dirty`. The running agent is not touched: launchd restarts do not run the gate.
+- **`scripts/bootstrap_nested.sh`** puts `sonar/macro` and `sonar/playmaker` at the `tests.yml` pins in a worktree:
+  clone from `wwds-dev` (or, with a warning, from the main checkout), move a copy aside (never deleted) after reporting
+  how it differs from the pin, refuse uncommitted work or an off-pin repo (`--move` to check the pin out). Each run's
+  summary is saved to `.nested-bootstrap/report-<UTC>.txt`. Git never prompts or hangs, a local clone is re-hashed,
+  and an origin URL with credentials, or a symlinked nested dir, is refused.
+- **Release identity.** The build ends by printing `git tag -a v2.NNN <sha> -m "…; macro <sha9>, playmaker <sha9>"` and
+  `git push origin v2.NNN` for the owner, and creates no tag. Nothing is proposed off first-parent `master` or for an
+  untraceable build; an existing tag on another commit is refused. Only tagged builds on first-parent `master` are
+  releases: the number alone names more than one commit.
+- **New shadow-ledger records name the commits:** `build` is `v2.365+<outer>/m:<macro>/p:<playmaker>`, with `~` (dirty
+  or unknown) and `!` (nested code not at the CI pins) right after the number. Records already written are byte for
+  byte unchanged; nothing grades, groups or excludes by `build`. Records from the v2.340 period name only the number:
+  their nested code is unknown.
+
+## v2.363 — 2026-10-19
+
+**The agent no longer runs at background priority** (`docs/specs/starved-engine.md`,
+`docs/adr/0006-agent-processtype-standard.md`; RUNBOOK §7). Built, not installed: it ships with alarm-delivery
+(below) in one `./build_app.sh --install`, so the live agent restarts once, with the owner's yes.
+
+- **`ProcessType Standard`, no `Nice`.** The plist ran the agent at `Background` + `Nice 5`. On a loaded Mac it then
+  answered `/api/health` in 3-24 s, and its price data, polled every 4 s, got up to 22 s old. The agent uses little CPU,
+  so this is expected to change when it runs, not how much (not yet measured). `install_agent.sh` renders the plist from the template, so the old `Nice`
+  cannot survive an install. Tests pin both.
+- **`SONAR_ALARM` off-switch, for diagnostic engines only.** `banner-only` or `off` (or any value it does not know,
+  which acts as `banner-only`) means no Keychain read and no phone push; `/api/health` then shows the ntfy reason
+  `off (SONAR_ALARM)`. Unset, empty or `on` is today's behaviour. The live agent's plist pins it to `on`, so a
+  stray global `launchctl setenv SONAR_ALARM off` cannot silence its phone alarm.
+- **`/api/health` counts attempts.** Each alarm channel in the `notify` block now also reports `attempts`, so
+  failures can be read per attempt.
+- **`scripts/diag_priority.py`.** A measurement harness: two throwaway launchd jobs (old and new priority) on ports
+  8788 and 8789, from the checkout, with scratch data, no push and no provider keys. It never touches the live agent
+  or its data, refuses US market hours, and cleans up after Ctrl-C, a closed terminal or `kill -9` (`cleanup`). It
+  writes latency, poll age, load and CPU only. Not run yet: the numbers in RUNBOOK §7 are
+  placeholders until the measured hour.
+
+## Unreleased — alarm-delivery
+
+**Alarms that reach your phone** (`docs/specs/alarm-delivery.md`, `docs/adr/0005-ntfy-push-alarm-keychain-topic.md`;
+RUNBOOK §2). Built and reviewed, not installed: the live agent keeps its old build until the owner says yes to the
+restart. The agent's only alarm was a macOS banner, and 45 of its 47 attempts from 2026-10-12 timed out, so poll
+outages of 12 to 24 minutes went unreported.
+
+- **ntfy push.** Every alarm, "working again" and "SONAR stopped" notice now also goes to `https://ntfy.sh/<topic>`,
+  which the ntfy app on your phone subscribes to. The topic is a secret kept in the login Keychain (service
+  `com.netrunner3000.sonar.ntfy`, account `topic`), read once at agent start. A push says only what is wrong, for
+  how long, the build and each channel's state, under the title "SONAR (paper) ...". It never says balances,
+  positions, P&L, symbols, prices, error text or paths. A failed push is retried once after 20 s, then counted.
+  With no topic, nothing goes to the network and the banner works as before.
+- **Daily heartbeat at 09:00 local time:** "SONAR (paper) alive, build vX; open problems: ...". It goes out even when
+  problems are open. If it does not arrive, the agent cannot tell you anything: check RUNBOOK §3.
+- **`/api/health` shows the channels.** A new `notify` block gives each channel's state (`ok`, `failing`,
+  `not configured`, `unavailable`), its failure count, last success and last failure. A failing push channel, or an
+  alarm that did not reach the phone, is a `notify` problem and makes health answer 503. A failing banner is
+  counted but does not turn health red.
+- **`SONAR --test-alarm`** (from a checkout: `python main.py --test-alarm`) sends one test push and one banner now,
+  prints each channel's result and exits 0 only if the push arrived. It reads the Keychain topic and nothing else:
+  no book, no data directory.
+- **Timestamped log lines.** Every watchdog and alarm line in `agent.err.log` starts with a local time, such as
+  `SONAR 2026-10-14T09:00:03+01:00: needs attention: ...`. The agent's start line says `push alarms: ntfy
+  configured` or `push alarms: ntfy not configured (<reason>)`.
+- **Why the banner timed out** (`docs/audit/alarm-delivery-osascript-diagnosis.md`): the agent runs at background
+  priority (`ProcessType Background`, `Nice 5`), and on this busy Mac the `osascript` call gets too little CPU
+  time to finish in 10 s. It is not a macOS privacy (TCC) prompt. A background test job timed out 6 times in 10;
+  a normal-priority one, 0 in 10. The plist is not changed here; that belongs to the separate "starved engine" spec.
+- **What it still cannot do.**
+  - The agent is its own alarm. If it is dead or hung, or the Mac is asleep or logged out, nothing is sent; the
+    only sign is a missing 09:00 heartbeat, up to about 24 hours later. A separate probe outside the agent is a
+    follow-up (`TODO.md`).
+  - In a crash loop with the network down, every restart waits up to 12 s for the "stopped" push that cannot go
+    out, before exiting. launchd restarts it at most once a minute anyway.
+  - The ntfy.sh topic is not password-protected: anyone who knows it can read the pushes and post fake ones,
+    including a fake "alive". ntfy.sh keeps messages for about 12 hours. A reserved topic with a token is on the
+    backlog.
+- **Owner setup, once, before the restart:** generate a topic
+  (`python3 -c "import secrets; print(secrets.token_urlsafe(30))"`); store it with
+  `security add-generic-password -s com.netrunner3000.sonar.ntfy -a topic -w`, typing the topic at the prompt, not
+  on the command line; subscribe to it in the ntfy app; run `--test-alarm`. The full checklist is at the end of the
+  spec.
+
 ## v2.340 — 2026-10-13
 
 **Backtest verdicts: a check against random directions** (branch `sign-randomisation-verdicts`;

@@ -119,17 +119,6 @@ def test_a_junk_protocol_file_opens_with_protocol_off(tmp_path, monkeypatch, jun
     assert Live().protocol_on is False
 
 
-@pytest.mark.parametrize("junk", ["[]", "null", "7", "{truncated"],
-                         ids=["list", "null", "number", "truncated"])
-def test_a_junk_providers_file_leaves_every_provider_on(tmp_path, monkeypatch, junk):
-    from sonar import providers
-    monkeypatch.setattr("sonar.paths.user_data_base", lambda: tmp_path)
-    _write(tmp_path / "providers.json", junk)
-    assert all(providers.is_enabled(p) for p in ("binance", "yahoo", "anything"))
-    providers.set_enabled("yahoo", False)
-    assert providers.is_enabled("yahoo") is False
-
-
 def test_the_protocol_switch_is_written_in_one_step(tmp_path, monkeypatch):
     """It keeps the calibration sample filling; a write cut short used to read
     back as "off" with nothing on screen to say so."""

@@ -14,9 +14,16 @@ forgotten, which is the point — a hand-maintained build number is wrong the
 first time someone ships without remembering it, and then silently wrong
 forever. Deriving it means the version *is* the development state.
 
-It is monotonic on a linear history, which this repo has. A merge commit still
-increments it, so the number never goes backwards; it is an ordering, not a
-count of features.
+It counts every ancestor, so it is **not unique**: two branches cut from one
+base, each k commits on, are both base + k (the operations audit found 175 such
+numbers across all refs). Along first-parent `master` it strictly increases,
+because each step adds at least one commit, so there the number names one
+commit. A number alone therefore does not identify a build. The build is the
+pair (number, commit), plus the commits of the nested repos, which the stamp
+and `/api/health` carry; and only a build tagged `v<MAJOR>.<BUILD>` on
+first-parent `master` is a release. The build prints the `git tag -a` command
+for the owner (`scripts/buildid.py`, docs/specs/build-traceability.md); nothing
+here creates tags.
 
 This is the lab-wide scheme, shared with `imprint` and `sentinel`, and the
 Lab Project Monitor computes the same string from the same two inputs — the
@@ -319,17 +326,99 @@ NESTED_REPOS = ("macro", "playmaker")
 
 @lru_cache(maxsize=1)
 def _nested() -> dict:
-    """``{name: {commit, dirty}}`` for each nested repo that is a checkout.
-    Cached: ``Live`` is built many times in the suite, and git is not free."""
+    """``{name: {commit, sha, dirty}}`` for each nested repo that is present.
+    Cached: ``Live`` is built many times in the suite, and git is not free.
+
+    A copy (the directory without ``.git``, as a worktree holds them) is code
+    no commit names: it is recorded as ``{"commit": "", "sha": "", "dirty":
+    None}``, never skipped. Skipping it is how v2.340 was stamped clean with
+    ``"nested": {}`` while its bundle held both modules. An *absent* directory
+    has no key: the code is not in the tree, and the gate refuses the missing
+    name (docs/specs/build-traceability.md A2)."""
     out = {}
     for name in NESTED_REPOS:
         root = PROJECT_ROOT / "sonar" / name
-        if not (root / ".git").exists():
+        if not root.exists():
             continue
-        found = _git_build(root)
-        out[name] = ({"commit": found["commit"], "dirty": found["dirty"]}
-                     if found else {"commit": "", "dirty": None})
+        found = _git_build(root) if (root / ".git").exists() else None
+        out[name] = ({"commit": found["commit"],
+                      "sha": _git("rev-parse", "HEAD", cwd=root) or "",
+                      "dirty": found["dirty"]}
+                     if found else {"commit": "", "sha": "", "dirty": None})
     return out
+
+
+def recorded_pins() -> dict | None:
+    """The CI pins this build was tested against, ``{name: sha40}``, or None
+    when unknown. A bundle carries them in its stamp; a checkout reads its own
+    `.github/workflows/tests.yml` with `scripts/buildid.py`, the one parser.
+    Only for :func:`build_id`'s ``!`` marker."""
+    running = info()
+    if running["source"] == "baked":
+        found = (_baked() or {}).get("pins")
+        return dict(found) if isinstance(found, dict) and found else None
+    if running["source"] == "git":
+        return _checkout_pins(PROJECT_ROOT)
+    return None
+
+
+@lru_cache(maxsize=4)
+def _checkout_pins(root: Path) -> dict | None:
+    import importlib.util
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_sonar_buildid", root / "scripts" / "buildid.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        text = (root / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+        return {path.split("/", 1)[1]: sha for path, (_repo, sha) in mod.pins(text).items()}
+    except (OSError, ValueError, AttributeError, ImportError, SyntaxError):
+        return None
+
+
+#: The shadow ledger's text cap (`sonar/core.py` `_ledger_build`).
+BUILD_ID_MAX = 64
+
+
+def build_id(prov: dict, recorded_pins: dict | None = None) -> str:
+    """The shadow ledger's ``build`` for a new record (ADR 0002 Amendment 2):
+    ``<version>[~][!]+<outer>/m:<macro>/p:<playmaker>``, at most 64 ASCII.
+
+    ``~``: the code was dirty or of unknown state. ``!``: the nested code is not
+    shown to be the CI pins (drifted after ``--allow-dirty``, a copy, absent, or
+    no pins known). Both sit right after the version, so no cut can drop them.
+    ``?`` is an unknown commit (a copy, which has no content digest), ``-`` an
+    absent repo. Commits are at most 12 hex, and are shortened (to 7) rather
+    than the end cut when a long version would pass the cap.
+    The text before the first ``~``, ``!`` or ``+`` is the old bare version.
+
+    This is the frozen copy: `scripts/buildid.py` has the other, and
+    `tests/test_buildid.py` holds both to one fixture table. A bundle has no
+    `scripts/`, so this one cannot load that one."""
+    prov = prov or {}
+    version = str(prov.get("version") or "unknown")
+    nested = prov.get("nested")
+    nested = nested if isinstance(nested, dict) else {}
+    off = (not isinstance(recorded_pins, dict) or not recorded_pins
+           or any(not isinstance(nested.get(n), dict)
+                  or nested[n].get("sha") != recorded_pins.get(n) for n in NESTED_REPOS))
+    marks = ("~" if prov.get("dirty") is not False else "") + ("!" if off else "")
+
+    def field(commit, width):
+        commit = str(commit or "")
+        return commit[:width] if commit else "?"
+
+    def sub(name, width):
+        entry = nested.get(name)
+        return field(entry.get("commit"), width) if isinstance(entry, dict) else "-"
+
+    text = ""
+    for width in range(12, 6, -1):
+        text = (f"{version}{marks}+{field(prov.get('commit'), width)}"
+                f"/m:{sub('macro', width)}/p:{sub('playmaker', width)}")
+        if len(text) <= BUILD_ID_MAX:
+            return text
+    return text[:BUILD_ID_MAX]
 
 
 def tooltip() -> str:

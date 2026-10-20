@@ -253,7 +253,14 @@ def test_l3_entries_not_persisted_a_decided_entry_survives_a_restart_with_no_bar
     again._shadow_pass(NOW + DAY)
     assert again.shadow["entries"] == [entry] and stub.calls == []   # decided: not asked
     rec = json.loads(_ledger_file().read_text())["entries"][entry["id"]]
-    assert rec["decided_at"] == NOW and rec["build"] == live.build["version"]
+    # ADR 0002 Amendment 2: a new record names the outer and nested commits,
+    # not just the number (which is not unique); its leading token is still
+    # the version.
+    from sonar import version
+    assert rec["decided_at"] == NOW
+    assert rec["build"] == version.build_id(live.build, version.recorded_pins())
+    assert rec["build"].split("+", 1)[0].rstrip("~!") == live.build["version"]
+    assert f"+{live.build['commit'][:12] or '?'}/m:" in rec["build"]
     assert {k: rec[k] for k in ("state", "r", "exit", "t_bar", "t_cut")} == \
         {k: entry[k] for k in ("state", "r", "exit", "t_bar", "t_cut")}
 
@@ -2345,3 +2352,89 @@ def test_cr3_errata_on_looks_first_then_newest_and_how_many_are_hidden(monkeypat
     assert "erratum 1 Oct, looks 1, 2 and 3: note 2026-10-01; R → none; recorded kept" in \
         _texts(one)[0]["warn"]
     assert "+11 errata (3 on looks)" in _texts(d)[0]["warn"]
+
+
+# --------------------------------------------------------------------------- #
+# The build string (ADR 0002 Amendment 2, docs/specs/build-traceability.md A7)
+# --------------------------------------------------------------------------- #
+NEW_BUILD = "v2.364~!+9aa9bd1/m:?/p:-"
+
+
+def _rebuilt(led: dict, build: str) -> dict:
+    """``led`` with every recorded ``build`` replaced."""
+    out = copy.deepcopy(led)
+    for section in ("entries", "looks"):
+        for rec in out[section].values():
+            rec["build"] = build
+    return out
+
+
+def test_build_traceability_the_build_string_changes_no_look_and_no_check():
+    """Model-validator P2-1: build is provenance only, never a grouping, filter
+    or exclusion criterion. The looks, the check and the errata are the same
+    whatever the records' build says, `~` and `?` included."""
+    es = rising()
+    led = _recorded(es)
+    assert led["looks"], "look 1 is recorded"
+    for build in ("v2.261", NEW_BUILD, "v2.364+9aa9bd1/m:b3fa3e2/p:1162ba5", "unknown~!+?/m:-/p:-"):
+        other = _rebuilt(led, build)
+        tagged = [{**e, "build": build} for e in es]
+        assert calibration.shadow_looks(tagged, other["looks"]) == \
+            calibration.shadow_looks(es, led["looks"])
+        assert calibration.ledger_check(other, tagged) == calibration.ledger_check(led, es)
+        assert calibration.shadow_with_ledger({"entries": tagged}, other)["looks"] == \
+            calibration.shadow_with_ledger({"entries": es}, led)["looks"]
+    # With a membership mismatch the check finds the same thing either way.
+    shifted = [member(-1, r=0.2, conf=10.0)] + es
+    assert calibration.ledger_check(_rebuilt(led, NEW_BUILD), shifted) == \
+        calibration.ledger_check(led, shifted) != []
+
+
+def _nested_text(key: str, value, depth: int) -> str:
+    """How ``"key": value`` appears inside an ``indent=1`` dump at ``depth``."""
+    lines = json.dumps(value, indent=1).splitlines()
+    pad = " " * depth
+    return f'{pad}"{key}": ' + "\n".join([lines[0]] + [pad + ln for ln in lines[1:]])
+
+
+def test_build_traceability_old_records_stay_byte_identical_beside_new_ones():
+    """A ledger written with bare versions, merged under the new build string:
+    each old entry and look is the same text in the indent=1 file, new records
+    carry the new string, and the mixed file parses."""
+    es = rising(n=45)
+    old = _recorded(es[:45])
+    for section in ("entries", "looks"):
+        for rec in old[section].values():
+            rec["build"] = "v2.261"
+    old["created_by"] = "v2.261"
+    more = es + [member(i, r=0.1) for i in range(45, 60)]
+    new, added = calibration.ledger_merge(
+        old, calibration.shadow_with_ledger({"entries": more}, old), NOW + DAY, NEW_BUILD)
+    assert added == 15
+    text = json.dumps(new, indent=1)
+    for section in ("entries", "looks"):
+        for key, rec in old[section].items():
+            assert _nested_text(key, rec, 2) in text, (section, key)
+            assert rec["build"] == "v2.261"
+    fresh = [v for k, v in new["entries"].items() if k not in old["entries"]]
+    assert len(fresh) == 15 and all(v["build"] == NEW_BUILD for v in fresh)
+    assert new["created_by"] == "v2.261", "the header is never rewritten"
+    back, why = calibration.ledger_parse(text)
+    assert why is None and back == new
+
+
+def test_build_traceability_a_new_ledger_header_names_the_commits():
+    led = calibration.ledger_new(NOW, NEW_BUILD)
+    assert led["created_by"] == NEW_BUILD
+    assert calibration.ledger_parse(json.dumps(led))[1] is None
+
+
+def test_build_traceability_the_engine_reads_the_build_once_at_start(live, monkeypatch):
+    """`self.build` and the pins are read when Live is built; a later change on
+    disk does not reach the ledger's build string mid-run."""
+    from sonar import version
+    first = live._ledger_build()
+    monkeypatch.setattr(version, "provenance", lambda: {"version": "v9.999"})
+    monkeypatch.setattr(version, "recorded_pins", lambda: None)
+    assert live._ledger_build() == first
+    assert len(first) <= 64

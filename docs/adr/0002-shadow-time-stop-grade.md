@@ -279,3 +279,40 @@ anchored by the book's marker, a sidecar `shadow_ledger.id` and its own backups;
 unreadable, behind or other-book record is never restarted. A new record after a deliberate book reset
 (G3) needs the old file renamed `shadow_ledger.retired.<id>.json`; that is refused while the book's own
 marker still names the record, and every retired record in the folder is shown on screen.
+
+## Amendment 2 (2026-10-19, accepted)
+- Status: **accepted** (owner, Architect gate 2026-10-19). `model-validator` check done before Build
+  (`docs/audit/build-traceability-model-validator.md`; its P2-1 and P3s are folded in below). Spec:
+  [`docs/specs/build-traceability.md`](../specs/build-traceability.md), Architecture A7 (domain-finance P1-2,
+  option b).
+
+**Context.** Each ledger entry and look records `build`, and the header records `created_by`. Both hold
+`provenance()["version"]` (`docs/specs/shadow-ledger.md:375`), for example `v2.340`. That number is not unique across
+branches, and it says nothing about the nested `sonar/macro` and `sonar/playmaker` code, which feeds scoring. A
+recorded result therefore cannot be tied to the code that produced it.
+
+**Decision.** From the build that ships this, a **new** record's `build` (and a **new** ledger's `created_by`) is
+`<version>[~][!]+<outer>/m:<macro>/p:<playmaker>`, for example `v2.364+9aa9bd1/m:b3fa3e2/p:1162ba5`. The commits are
+short hashes (at most 12 hex). `?` means the commit is unknown (a copy; a copy has no content digest either, so its
+code cannot be named afterwards), and `-` means the repo is absent. `~` means the code was dirty or of unknown state.
+`!` means the nested code is not shown to be the CI pins the build recorded: it drifted (an install with
+`--allow-dirty`), it is a copy or absent, or no pins are known (domain-finance P3-2). Both markers sit right after the
+version, so the 64-character cap can never cut them off (model-validator P3-1). The string is at most 55 characters
+with a version of up to 10; a longer version shortens the commit fields (down to 7 hex) before anything is cut. With no
+version the string starts `unknown+…` and keeps the commits (model-validator P3-2). The text before the first `~`, `!`
+or `+` is the old value. The field set, `LEDGER_SCHEMA` (1) and the validators are unchanged.
+
+**`build` is provenance only** (model-validator P2-1). It is never a grouping, filter or exclusion criterion for any
+look. A split by build is exploratory, is reported as such, and is outside the pre-registered family. A `~`, `!` or
+`?` entry is not excluded on that ground; a real code fault goes through errata (Amendment 1, "Corrections").
+`tests/test_shadow_ledger.py` holds that `shadow_looks`, `ledger_check` and the readout give identical output when
+every record's `build` is changed.
+
+**Unchanged.** Records already written keep their bare-version `build` byte for byte. Nothing rewrites or backfills
+them. Nothing reads `build` to grade, check membership or compare constants. The readout drops it
+(`calibration.py:768`), and the screen never shows it.
+
+**Consequences.** A ledger can hold both formats, and both are valid. Records from before this build, which includes the
+v2.340 period, name only a number: their nested code is unknown (spec scope d). A bare-version record (no `+`) is
+annotated "nested code unknown" wherever it is reported, the look-1 note included (domain-finance P3-3; TODO). Reverting means writing the bare
+version again. Records written in the new format stay as they are, as §7 requires.

@@ -17,7 +17,9 @@ it is exercising, which is what the provider tests already do.
 """
 
 import os
+import re
 import socket
+import subprocess
 import unicodedata
 import urllib.request
 from pathlib import Path
@@ -30,6 +32,66 @@ import pytest
 _REAL_CONNECT = socket.socket.connect
 _REAL_CONNECT_EX = socket.socket.connect_ex
 _REAL_URLOPEN = urllib.request.urlopen
+_REAL_RUN = subprocess.run
+
+
+class RealChannelInTest(OSError):
+    """Raised instead of running ``osascript`` or ``security``: a test must
+    never post a real banner or read the real Keychain (alarm-delivery).
+    An OSError, so the channel code treats it as the failure it handles."""
+
+
+_REAL_POPEN = subprocess.Popen
+_REAL_CHANNELS = ("osascript", "security")
+
+
+_SHELLS = ("sh", "bash", "zsh", "dash", "ksh")
+#: Shell syntax that can start a new command: separators, pipes, redirects,
+#: substitutions and quotes. Splitting on all of it finds every command word
+#: in `a; b`, `a && b`, `a | b`, `$(b)`, `` `b` ``, `b>file` and `sh -c "b"`.
+_SHELL_SPLIT = re.compile(r"[\s;&|()<>`$\"'{}]+")
+
+
+def _shell_words(text: str) -> list[str]:
+    """Every word a shell command line could run. Deliberately crude: no
+    quoting rules, so an unbalanced quote (`echo don't`) cannot make it fail."""
+    return [w for w in _SHELL_SPLIT.split(text) if w]
+
+
+def _refuse_real_channel(args) -> None:
+    """Raise if ``args`` runs one of the alarm channels' programs: as the
+    program of a list, anywhere in a command string (``shell=True`` or not), or
+    anywhere in the ``-c`` script of a shell in a list."""
+    if isinstance(args, (str, bytes)):
+        text = args.decode(errors="replace") if isinstance(args, bytes) else args
+        words = _shell_words(text)
+    else:
+        items = [w.decode(errors="replace") if isinstance(w, bytes) else str(os.fspath(w))
+                 for w in list(args or [])]
+        words = items[:1]
+        if items and items[0].rsplit("/", 1)[-1] in _SHELLS:
+            words += [w for item in items[1:] for w in _shell_words(item)]
+    for word in words:
+        if word.rsplit("/", 1)[-1] in _REAL_CHANNELS:
+            raise RealChannelInTest(f"a test tried to run the real {word}")
+
+
+def _guarded_run(args, *a, **kw):
+    """``subprocess.run`` minus the two commands the alarm channels use.
+    `server.main()` builds the agent's real notifier, so a test that calls it
+    would otherwise read the owner's Keychain."""
+    _refuse_real_channel(args)
+    return _REAL_RUN(args, *a, **kw)
+
+
+class _GuardedPopen(_REAL_POPEN):
+    """``Popen`` with the same refusal, so ``check_output``, ``call`` and a
+    direct ``Popen`` are covered too. (``os.system`` is not.)"""
+
+    def __init__(self, args, *a, **kw):
+        _refuse_real_channel(args)
+        super().__init__(args, *a, **kw)
+
 
 # The real poll body, kept before the fixtures below stub it out for every
 # test. A test that drives one poll against stubbed feeds asks for `real_poll`.
@@ -156,6 +218,8 @@ def session_guards(tmp_path_factory):
     mp.setattr(urllib.request, "urlopen", blocked)
     mp.setattr(socket.socket, "connect", blocked)
     mp.setattr(socket.socket, "connect_ex", blocked)
+    mp.setattr(subprocess, "run", _guarded_run)
+    mp.setattr(subprocess, "Popen", _GuardedPopen)
     yield
     mp.undo()
 
@@ -189,6 +253,8 @@ def no_network(monkeypatch, request):
     monkeypatch.setattr(urllib.request, "urlopen", blocked)
     monkeypatch.setattr(socket.socket, "connect", blocked)
     monkeypatch.setattr(socket.socket, "connect_ex", blocked)
+    monkeypatch.setattr(subprocess, "run", _guarded_run)
+    monkeypatch.setattr(subprocess, "Popen", _GuardedPopen)
 
 
 @pytest.fixture(autouse=True)

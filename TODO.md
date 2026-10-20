@@ -40,7 +40,71 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       auto-update). Say in the app and README that results come from free public sources and can be stale or
       wrong. (The licence is settled: MIT, see Done.)
 
-- [ ] `P0` `infra` `@me` **Get a free Finnhub API key.** Equities have no keyless second source, so most of the watchlist rides on one undocumented Yahoo endpoint. No code needed — `providers.py` already registers Finnhub at preference 5, ahead of Yahoo, and picks the key up from `FINNHUB_API_KEY` in a git-ignored `.env`. Also removes the ~15-minute quote delay during market hours.
+- [ ] `P0` `infra` `@ai` **Alarm delivery: the agent's only alarm (osascript banner) failed 45 of 47 times.** Add ntfy
+      push, a daily heartbeat and `notify_failures` in `/api/health`; diagnose the timeouts; timestamp watchdog lines;
+      fix RUNBOOK §2. Spec `docs/specs/alarm-delivery.md` (Define and Architect gates approved; **built 2026-10-14,
+      uncommitted**: `sonar/alarm.py`, watchdog wiring in `sonar/server.py`, `--test-alarm`, 76 tests; diagnosis
+      `docs/audit/alarm-delivery-osascript-diagnosis.md` = starvation, not TCC). Next: Review, Verify, Secure
+      (ntfy.sh data terms), Document; at Release the owner stores the Keychain topic, runs `--test-alarm`, says yes to
+      the agent restart, and saves the phone evidence (measures 6, 7). Review fix round 1 done 2026-10-19 (owner
+      decisions (a)-(c) in the spec). Source: ops audit wave 2 P0-1.
+- [ ] `P1` `infra` `@ai` **External probe outside the agent.** A separate 5-minute launchd job that runs
+      `curl /api/health` and pushes to ntfy when the agent is dead, hung or silent. It closes the blind spot in
+      RUNBOOK §2, where a missing 09:00 heartbeat is today's only sign. Needs its own spec (alarm-delivery Owner
+      decision 1).
+- [ ] `P1` `performance` `@ai` **Starved engine: the agent runs at `ProcessType Background` + `Nice 5`.** On the loaded
+      dev Mac, health takes 3-24.5 s, polls lag to 22 s, and followers would show "not answering". Set `Standard`, drop
+      `Nice`, measure side by side in throwaway jobs, and decide on `FOLLOW_TIMEOUT` from the numbers. Spec
+      `docs/specs/starved-engine.md` (Define and Architect gates approved 2026-10-19; **built 2026-10-19**: plist A1,
+      `SONAR_ALARM` A2, harness `scripts/diag_priority.py` A4, unit tests only). Next: Review, then the measured hour
+      (`diag_priority.py run --follower`, outside US market hours) to fill RUNBOOK §7 and decide A5, then Verify, Secure.
+      Ships with alarm-delivery, so there is one live restart, with the owner's yes. Source: ops audit wave 2 P1-2.
+- [ ] `P1` `infra` `@ai` **Build traceability: the release gate passes a bundle whose nested-module code cannot be named.**
+      v2.340's stamp has `"nested": {}` and `"dirty": false`, but the bundle holds macro and playmaker. Release worktrees
+      have plain copies, build numbers are not unique, and the ledger `build` field stores only the number. Planned fixes:
+      - stamp copies as untraceable, and anchor `check_app.sh` to the top-level key and the CI pins;
+      - add `scripts/bootstrap_nested.sh`;
+      - print an annotated-tag command per release (first-parent `master` only; retroactive `v2.340`);
+      - record commits in new ledger entries.
+      Spec `docs/specs/build-traceability.md` (Define and Architect approved 2026-10-19; **built 2026-10-19** as v2.365,
+      A1-A11 plus the MV and domain folds, Build notes in the spec). Next: Review (`code-reviewer` + `domain-finance`),
+      then Verify: measure 3 in a fresh bootstrapped worktree, measure 4 on the real bundle (with the negative run), and
+      the bootstrap report + install time into `docs/audit/build-traceability-verify.md`; Secure (file writes,
+      packaging). The owner runs the printed tag commands, including the retroactive `v2.340`. Ships in the shared items
+      1+2+3 install. Source: ops audit wave 2 P1-1, P2-1, prior P3-1.
+- [ ] `P3` `security` `@ai` **Untracked importable files in a nested repo count as clean.** `_dirty`
+      (`sonar/version.py`) uses `--untracked-files=no`, so an untracked package in `sonar/macro` or `sonar/playmaker`
+      can shadow a tracked module, get bundled, and still be stamped clean. Fix: count untracked, non-ignored paths in
+      the nested repos (and decide for the outer tree). Older than build-traceability; deferred there. Source:
+      build-traceability security review P3-7.
+- [ ] `P3` `test` `@ai` **No test of `build_app.sh`'s tag-command wiring.** The print-only `buildid.py tag-command`
+      call at the end of `build_app.sh` (after a successful install, masked with `||`) is untested. Fix: a text or
+      dry-run test like `test_build_app_installs_through_install_app`. Source: build-traceability QA P3-3.
+- [ ] `P2` `docs` `@ai` **Look-1 note: annotate bare-version member entries "nested code unknown".** Ledger records written
+      before v2.365 (the v2.340 period included) carry `build` as a bare number (no `+`), so the macro and playmaker code
+      behind them is unknown. The look-1 note (about 2026-11-06) must say so for each such member, and the
+      model-validator decides from the bootstrap report in `docs/audit/build-traceability-verify.md` whether the
+      install boundary needs a note or an exploratory split (never a pre-registered one; ADR 0002 Amendment 2). Source:
+      build-traceability domain review P3-3, P2-2.
+- [ ] `P2` `bug` `@ai` **A forwarded trade that times out is reported "not taken" but may have been booked.**
+      `core.py:1827-1830` says "did not take it" on any exception, and `/api/trade` has no idempotency key
+      (`server.py:137-143`). If the user clicks again, a duplicate paper position opens. Fix: change the copy to "no
+      answer in time; it may have gone through, check the book", and/or add a client id that `/api/trade`
+      deduplicates. Source: starved-engine domain review P2-1 (outside that spec's scope).
+- [ ] `P2` `security` `@ai` **ntfy reserved topic plus access token.** Today the topic is the only access control:
+      anyone who knows it can read the pushes and post a fake "alive" (ADR 0005, security P3-2, accepted
+      2026-10-19). A reserved topic with an `Authorization: Bearer` token, read from a second Keychain item, closes
+      that. Needs an ntfy.sh account.
+- [ ] `P2` `infra` `@ai` **Rewire providers after 2026-11-09 (A-later spec).** Today Yahoo is the only price source
+      for the Screener, with no fallback. The old `providers.py` was never wired (audit N-1) and was deleted in v2.366
+      (`docs/specs/providers-wiring.md`, owner decision 2026-10-19); its switch-and-registry design is in git history.
+      Why the old Finnhub-key P0 would have changed nothing: README "Data providers". A real fallback needs its own
+      spec after the 30-day run: bars fetchers with timestamps and OHLC per vendor, key delivery to the launchd agent,
+      per-bar provenance, no mixed sources in shadow grading, and a radar check.
+- [ ] `P1` `docs` `@ai` **Build `providers-wiring` (option B).** Built v2.366, not yet reviewed: the README,
+      `docs.html`, `.env.example`, `SUGGESTIONS.md` and `TESTPLAN.md` match the code; `providers.py` and its tests are
+      deleted; the source line is in the result records; `tests/test_providers_docs_truth.py` keeps the false phrases
+      out. Measures 1-6 in `docs/specs/providers-wiring.md`. Review, verify and document are still to run.
 - [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
       it is the one that decides whether anything here is true. Three parts:
       a guided mode whose controls are questions rather than `STEP (BARS)`;
