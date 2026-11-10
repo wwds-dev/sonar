@@ -43,3 +43,6 @@ _build_info.json
 .coverage.*
 # A note left in a data/ that stopped being driven (see README §"Run it").
 data/ARCHIVED-*.txt
+
+# The legal pack lives in the Foundry HQ (private repo); this path is a link to it.
+/docs/legal

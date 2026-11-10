@@ -40,6 +40,11 @@ no sign-off; an unset tier fails; `public` needs `register.md`, `licences.md`, `
 `name.md` present before it can be signed, `commercial` and `client` also `terms.md`. An open `- [ ] LAWYER:` line in `docs/legal/register.md` needs
 `--role lawyer`, or the owner's `--accept-risk`.
 
+For an app whose own repo is public, `install.sh --legal-in-hq <app>` keeps the pack in the Foundry
+HQ (`audits/<app>/legal/`) and makes `docs/legal` a git-ignored link to it. The gate reads through
+the link and the hash is unchanged by the move. A fresh clone or a git worktree has no link: run
+the gate from the main checkout, and `install.sh --update` puts a missing link back.
+
 ## What stays with the owner
 Every legal and tax sign-off. 
 GitHub branch protection (require CI + review before merge), enabling the GitHub connector,
