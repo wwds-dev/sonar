@@ -28,6 +28,12 @@ NEEDS_SIGNOFF = ("public", "commercial", "client")
 ROLES = ("owner", "lawyer")
 SIGNOFF = "signoff.jsonl"
 REGISTER = "register.md"
+# What a pack must hold before it can be signed, per tier (docs/legal/<name>). `terms.md` and
+# `ai-act.md` are also expected for `public` when the product needs disclaimers or uses a model;
+# that is the agent's and the signer's judgement, so it is not enforced here.
+REQUIRED = {"public": ("register.md", "licences.md", "privacy.md", "name.md"),
+            "commercial": ("register.md", "licences.md", "privacy.md", "name.md", "terms.md"),
+            "client": ("register.md", "licences.md", "privacy.md", "name.md", "terms.md")}
 TRIGGER = re.compile(r"^\s*[-*] \[ \]\s*\**LAWYER\b\**:?\s*(.*)$", re.M)
 
 
@@ -73,6 +79,13 @@ def open_triggers(app: Path) -> list[str]:
     return [m.group(1).strip() for m in TRIGGER.finditer(text)]
 
 
+def missing_files(app: Path, t: str | None) -> list[str]:
+    """Pack files the tier requires that are absent or empty."""
+    legal = app / "docs" / "legal"
+    return [n for n in REQUIRED.get(t or "", ())
+            if not (legal / n).is_file() or not (legal / n).read_text(encoding="utf-8", errors="replace").strip()]
+
+
 def signoffs(app: Path) -> list[dict]:
     out = []
     try:
@@ -98,8 +111,11 @@ def evaluate(app: Path) -> dict:
     if t is None:
         reasons.append("no distribution tier in docs/company/app-context.md (## Distribution, tier:)")
     elif t in NEEDS_SIGNOFF:
+        gaps = missing_files(app, t)
         if not (app / "docs" / "legal" / REGISTER).is_file():
             reasons.append("no legal pack: docs/legal/register.md is missing")
+        elif gaps:
+            reasons.append(f"legal pack incomplete for tier {t}: missing {', '.join(gaps)}")
         elif not signs:
             reasons.append("no legal sign-off recorded")
         elif not current:
@@ -137,6 +153,9 @@ def sign(app: Path, by: str, role: str, scope: str = "", accept_risk: str = "",
         raise ValueError("set the distribution tier in app-context first")
     if state["hash"] is None or not (app / "docs" / "legal" / REGISTER).is_file():
         raise ValueError("nothing to sign: docs/legal/register.md is missing")
+    gaps = missing_files(app, state["tier"])
+    if gaps:
+        raise ValueError(f"pack incomplete for tier {state['tier']}: missing {', '.join(gaps)}")
     trig = state["open_triggers"]
     if trig and role != "lawyer" and not accept_risk.strip():
         raise ValueError(f"{len(trig)} open lawyer trigger(s): sign as --role lawyer, or accept the risk "

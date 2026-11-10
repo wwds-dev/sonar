@@ -22,11 +22,12 @@ Dates, thresholds and exemptions in particular must be read from the source each
 **What each tier's pack holds**
 - `internal`: `register.md` (regimes ruled out and why) and `licences.md`. No sign-off.
 - `public`: plus a `LICENSE` file that states the licence the owner chose, third-party notices,
-  `privacy.md` (even when the answer is "collects nothing": say so and show the grep), the
-  disclaimers the product needs, and `name.md`.
-- `commercial`: plus `terms.md` (terms of sale or licence, consumer information, withdrawal and
-  refund wording, subscription renewal), the full privacy pack, and `ai-act.md` when a model is
-  involved.
+  `privacy.md` (even when the answer is "collects nothing": say so and show the grep) and
+  `name.md`. The gate requires those four files. `terms.md` when the product needs disclaimers
+  (advice-like, health, money, betting, safety), and `ai-act.md` whenever a model is involved,
+  at any tier.
+- `commercial`: plus `terms.md` always (terms of sale or licence, consumer information,
+  withdrawal and refund wording, subscription renewal) and the full privacy pack.
 - `client`: plus the contract pack in `docs/legal/client/` (services agreement, statement of
   work, data-processing agreement, acceptance and warranty terms, open-source and AI-use
   disclosure to the client).
@@ -35,6 +36,12 @@ Dates, thresholds and exemptions in particular must be read from the source each
 - One row per regime: applies / does not apply / unclear, the reason, the evidence (file:line or
   a command's output), the source and its date, and status `DRAFT` or `CHECKED (agent)`.
   "Unclear" on anything in the lawyer-trigger list becomes a `- [ ] LAWYER:` line.
+- A lawyer trigger needs evidence from the app (file:line) that a feature plausibly falls in a
+  listed category. Not having read the rule is not a reason to drop it and not, alone, a
+  reason to raise it: record "rule not verified" beside the trigger or in the row.
+- Each row also answers "does this turn on commercial activity?". Several regimes exclude free,
+  non-monetised open source; the row says what would end that (a paid build, paid support,
+  donations tied to the app), so a later change of tier or monetisation reopens it.
 - Regimes to rule in or out for every app: GDPR and the Irish Data Protection Act 2018;
   ePrivacy rules (S.I. 336/2011: cookies and local storage, electronic direct marketing);
   Consumer Rights Act 2022 (digital content and services, pre-contract information, withdrawal,
@@ -56,7 +63,11 @@ Dates, thresholds and exemptions in particular must be read from the source each
   the terms on commercial use, attribution, redistribution, training on inputs, and who owns
   the output. An unofficial or scraped endpoint is recorded as such, with the provider's terms.
 - A public repository with no `LICENSE` grants nobody any rights and tells nobody that: the
-  owner chooses a licence (or "all rights reserved", stated) deliberately.
+  owner chooses a licence (or "all rights reserved", stated) deliberately. This holds for every
+  nested or companion repo the app needs to run; the parent's licence does not reach them.
+- No licence tool installed: use the lockfile for what is declared and a listing of the built
+  bundle for what ships. The bundle listing is what finds missing notices and components pulled
+  in by plugins (a Qt module under a different licence than the rest of Qt, for example).
 
 **Privacy**
 - Data map first, notice second: what, whose, purpose, lawful basis, storage, retention,
@@ -80,6 +91,8 @@ Dates, thresholds and exemptions in particular must be read from the source each
 - Before a name is used in public: identical and similar marks in the EUIPO and Irish registers
   (software and software-services classes, plus the app's own field), the companies and business
   names register, domains, app stores and package registries. Record queries, dates and hits.
+  Registers an agent cannot query are listed for the owner with the exact query and URL; the
+  name is not cleared until those rows are filled in.
   A hit is a fact for the owner; whether it is a conflict is a lawyer's call.
 - A working name is recorded as one, and blocks tier `public` and above until cleared.
 
@@ -112,3 +125,4 @@ terms of every model and API provider in `apps.md` stacks.
 
 ## Change log
 - 2026-11-10: seeded (baseline) with Foundry v6.
+- 2026-11-10: per-tier file list, trigger evidence rule, commercial-activity column, nested-repo and bundle-listing licence checks and owner-run name searches added from the first pilot audit (`audits/sonar/legal.md`); still baseline.

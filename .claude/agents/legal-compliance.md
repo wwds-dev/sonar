@@ -21,13 +21,17 @@ needs):
   per open lawyer trigger (AGENTS.md lists them).
 - `licences.md`: every third-party component, model, dataset, font, icon and API the app ships
   or calls, its licence or terms, the obligation it creates, and whether the build meets it. Use
-  the ecosystem's licence tool when one is installed; say "not verified" otherwise. Also the
-  app's own licence and whether a `LICENSE` file states it.
+  the ecosystem's licence tool when one is installed; otherwise work from the lockfile and from a
+  listing of the built bundle (what is actually shipped, and whether licence texts and notices
+  are in it), and say which you used. Install nothing. Cover nested and separately-hosted repos
+  the app imports: each needs its own licence. Also the app's own licence and whether a
+  `LICENSE` file states it.
 - `privacy.md`: data map (what, whose, why, lawful basis, where stored, how long, who receives
   it including model and API providers), DPIA screening, and the draft privacy notice.
 - `terms.md`: draft terms, disclaimers and consumer information the tier needs.
 - `name.md`: name clearance searches run (registers, date, classes, hits). Hits are facts, not
-  a verdict.
+  a verdict. Registers you cannot query (EUIPO, the Irish register, the companies register) go in
+  a table "for the owner to run" with the exact query, the URL and empty result columns.
 - `ai-act.md`: role (provider or deployer), risk class with reasoning, transparency duties.
 
 Consults (Define, Architect, Review) are read-only: return findings ranked P0-P3 with file:line

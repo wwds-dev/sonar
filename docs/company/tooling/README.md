@@ -36,7 +36,8 @@ Existing apps have debt. The baseline is measured once, recorded in
 folder name, so an agent's shell cannot record a sign-off; `install.sh` also adds a deny rule for
 it to the app's `.claude/settings.json`. The hash covers every file under `docs/legal/` except
 `signoff.jsonl`: editing any of them after signing makes the sign-off stale. Tier `internal` needs
-no sign-off; an unset tier fails. An open `- [ ] LAWYER:` line in `docs/legal/register.md` needs
+no sign-off; an unset tier fails; `public` needs `register.md`, `licences.md`, `privacy.md` and
+`name.md` present before it can be signed, `commercial` and `client` also `terms.md`. An open `- [ ] LAWYER:` line in `docs/legal/register.md` needs
 `--role lawyer`, or the owner's `--accept-risk`.
 
 ## What stays with the owner
