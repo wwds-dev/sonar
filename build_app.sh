@@ -71,8 +71,24 @@ pyinstaller --noconfirm --clean --windowed \
   --exclude-module PySide6.QtDataVisualization \
   --exclude-module PySide6.QtMultimedia \
   --exclude-module PySide6.QtQuick3D \
+  --exclude-module PySide6.QtVirtualKeyboard \
   --exclude-module tkinter \
   main.py
+
+# Qt Virtual Keyboard is GPL-3.0 (or commercial), not LGPL like the rest of Qt, and
+# SONAR never uses it (legal audit 2026-11-10, finding 8). PyInstaller still pulls its
+# frameworks in through the platforminputcontexts plugin, so strip them from the bundle
+# here, BEFORE the re-seal below. main.py --selftest fails if any survive.
+APP="$DIST/$APP_NAME.app"
+find "$APP" \( -iname 'QtVirtualKeyboard*' -o -iname '*qtvirtualkeyboardplugin*' \
+  -o -iname '*virtualkeyboard*' \) -prune -exec rm -rf {} + 2>/dev/null || true
+
+# Licence texts and notices travel with the binary (finding 7): Qt/PySide6 are LGPL-3.0,
+# which requires the licence, a notice and a source pointer. Content: packaging/licenses/.
+LIC="$APP/Contents/Resources/licenses"
+mkdir -p "$LIC"
+cp packaging/licenses/* "$LIC/"
+cp LICENSE "$LIC/SONAR-MIT-LICENSE.txt"
 
 PLIST="$DIST/$APP_NAME.app/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"

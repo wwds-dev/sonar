@@ -1974,7 +1974,8 @@ class ReadPanel(QFrame):
         lay.setContentsMargins(12, 10, 12, 10)
         lay.setSpacing(5)
         head = QHBoxLayout()
-        head.addWidget(label("LLM READ", "faint", theme.figure(8)))
+        self.title = label(words.pick(words.LLM_READ_TITLE), "faint", theme.figure(8))
+        head.addWidget(self.title)
         head.addStretch(1)
         self.badge = label("", font=theme.figure(9))
         head.addWidget(self.badge)
@@ -1996,6 +1997,7 @@ class ReadPanel(QFrame):
         self.hide()
 
     def show_pending(self, subject: str) -> None:
+        self.title.setText(words.pick(words.LLM_READ_TITLE))
         self.subject.setText(subject)
         self.badge.setText("reading…")
         self.badge.setStyleSheet(f"color: {theme.MUTED.name()};")
@@ -2004,6 +2006,7 @@ class ReadPanel(QFrame):
         self.show()
 
     def show_read(self, r: dict, long_horizon: bool) -> None:
+        self.title.setText(words.pick(words.LLM_READ_TITLE))
         if r.get("error"):
             self.badge.setText("unavailable")
             self.badge.setStyleSheet(f"color: {theme.DOWN.name()};")
@@ -2027,7 +2030,8 @@ class ReadPanel(QFrame):
             parts.append("\nRisks\n" + "\n".join(f"  • {c}" for c in r["risks"]))
         self.body.setText("\n".join(p for p in parts if p))
 
-        note = ("Conviction is the model's subjective read, not a calibrated "
+        note = (words.AI_TAG + ". " + words.DIRECTION_NOTE + " "
+                "Conviction is the model's subjective read, not a calibrated "
                 "probability. It is logged and scored against the real outcome.")
         if long_horizon:
             note += (" At this horizon that scoring takes months — the "
@@ -4028,6 +4032,10 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 8, 0, 0)
         lay.setSpacing(10)
 
+        # Always visible, not only in the manual (legal audit #3).
+        lay.addWidget(label(words.PLAYMAKER_NOTICE, "muted", theme.figure(9),
+                            wrap=True))
+
         form = panel()
         fl = QGridLayout(form)
         # Tight vertical rhythm: this form stacks four rows of controls and is
@@ -4145,12 +4153,7 @@ class MainWindow(QMainWindow):
              "that gap is real.\n"
              "+0.05 means five pence expected profit per pound. Negative means "
              "the price is not worth taking."),
-            ("stake",
-             "What fraction of a bankroll the Kelly formula suggests — the size "
-             "that grows money fastest over many bets without risking ruin.\n"
-             "Sized at the pessimistic end of the estimate and capped, so it "
-             "reads 0 whenever the edge might not be real. 0 is the normal "
-             "answer."),
+            ("stake", words.STAKE_TIP),
         ]
         for i, (k, tip) in enumerate(cells):
             st = Stat(k, tip)
@@ -4370,7 +4373,7 @@ class MainWindow(QMainWindow):
         result = playmaker.parse_analysis(text)
         est = pm_staking.from_narrative(result.win_probability, result.confidence)
 
-        head = ["<b>MODEL READ — commentary only</b>"]
+        head = [f"<b>{html.escape(words.pick(words.MODEL_READ_TITLE))}</b> · {html.escape(words.AI_TAG)}"]
         if est is not None:
             head.append(
                 f"States {est.probability*100:.1f}% ({html.escape(result.lean or 'no lean')}, "

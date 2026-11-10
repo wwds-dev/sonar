@@ -293,7 +293,7 @@ each look). After a deliberate reset, you may instead retire it: copy that newes
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 3,243 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 3,255 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 
@@ -413,7 +413,8 @@ money. **Investigated and closed: Revolut** — no public retail-investment API;
 
 ## Licence
 
-[MIT](LICENSE). The software is provided as is, without warranty; see **Not advice** below.
+[MIT](LICENSE). The software is provided as is, without warranty; see **Not advice** below. Third-party licences (Qt/PySide6 under the LGPL-3.0) are in `packaging/licenses/` and are copied into a built
+`.app`. Support: [SUPPORT.md](SUPPORT.md). Security reports: [SECURITY.md](SECURITY.md).
 
 ## Not advice
 

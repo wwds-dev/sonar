@@ -16,6 +16,7 @@ before the app is trusted with a portfolio.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 
 def selftest() -> int:
@@ -67,6 +68,23 @@ def selftest() -> int:
         problems.append("state.json would be written inside the .app bundle")
     if frozen and "Application Support" not in str(state):
         problems.append("state.json is not under Application Support")
+
+    # Legal audit 2026-11-10 (findings 7, 8): a bundle ships Qt under the LGPL, so it
+    # must carry the licence texts, and it must not carry the GPL-only Qt Virtual
+    # Keyboard. build_app.sh arranges both; only the built binary can prove it.
+    if frozen:
+        contents = Path(sys.executable).resolve().parents[1]
+        lic = contents / "Resources" / "licenses"
+        missing = [n for n in ("LGPL-3.0.txt", "GPL-3.0.txt", "THIRD_PARTY_NOTICES.md",
+                               "SONAR-MIT-LICENSE.txt") if not (lic / n).is_file()]
+        print(f"  licence texts:   {'present' if not missing else 'MISSING ' + ', '.join(missing)}")
+        if missing:
+            problems.append("licence texts missing from the bundle: " + ", ".join(missing))
+        vk = [str(q.relative_to(contents)) for q in contents.rglob("*")
+              if "virtualkeyboard" in q.name.lower()]
+        print(f"  Qt Virtual Keyboard: {'absent' if not vk else 'PRESENT ' + vk[0]}")
+        if vk:
+            problems.append("GPL-only Qt Virtual Keyboard is in the bundle: " + vk[0])
 
     try:
         paths.ensure_dirs()
