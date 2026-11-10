@@ -34,12 +34,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: wwds-dev/sonar_macro
-          ref: b3fa3e21af616e03ebbcb9b2813111fb5856a022
+          ref: 811bf7bf85a78c5a12f66a3b655419bb72a0a2c1
           path: sonar/macro
       - uses: actions/checkout@v7
         with:
           repository: wwds-dev/sonar_playmaker
-          ref: 1162ba5e46c737cebf1edc21c7f74beacb825d5c
+          ref: c322aef4bbe52dd69d8689d691204cb0511f38c7
           path: sonar/playmaker
       - uses: actions/setup-python@v7
         with:
