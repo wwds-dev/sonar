@@ -77,6 +77,12 @@ then `CHECKED (agent)`, and only a person makes it `SIGNED OFF`:
   insurance, health or gambling activity; a DPIA with high residual risk; the first commercial
   terms and the client contract templates; a trademark conflict or filing. The owner may
   override one only with `--accept-risk "<why>"`, which is recorded.
+- **Public repo.** When this app's own repository is public, the pack is kept in the Foundry HQ
+  (`audits/<app>/legal/`, private) and `docs/legal` here is a git-ignored link to it, so the
+  register of open risks and the sign-offs are never published. Work through `docs/legal/` as
+  usual, from the main checkout (a git worktree has no link). What users must see (privacy note,
+  terms, notices, `LICENSE`) is published by copying the signed text into the README, the app
+  or the listing through the pipeline. Never `git add -f` anything under `docs/legal`.
 - Tax follows the same rule without the tool: `business-finance` prepares, the owner or an
   accountant signs the `## Sign-off` section of `docs/business/case.md`.
 
