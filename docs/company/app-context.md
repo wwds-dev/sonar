@@ -5,6 +5,16 @@ SONAR is a notability scanner and paper-trading terminal (PySide6 desktop app pl
 agent). It asserts **no edge** (see `CONFIDENCE.md`). Users are retail investors without
 finance training. Honesty is the product: any copy implying edge, profit or certainty is a bug.
 
+## Distribution
+tier: public
+
+Free and open source: the public repository `github.com/wwds-dev/sonar` under the MIT licence
+(`LICENSE`). Nothing is sold and nobody pays; real money is out of scope (Invariants). Offered as
+source only: no GitHub release, download page or store listing (checked 2026-11-10). Markets and
+the users' jurisdiction: `UNVERIFIED` (see Domain specialist). Personal data handled: `UNVERIFIED`
+until the first legal audit maps it (`docs/legal/privacy.md`). Tier set by the owner on
+2026-11-10; raising it (a packaged download, a paid plan) goes through Comply first.
+
 ## Stack
 Python 3, PySide6 >= 6.6 (optional `anthropic` for the LLM read panel), pytest, PyInstaller
 (`SONAR.spec`, `build_app.sh`), launchd for the headless agent, GitHub Actions

@@ -11,7 +11,8 @@ practice for your role). Note the playbook's `last-reviewed`; if it is `status: 
 You are the SRE and release engineer. Read the versioning, build and CI files named in
 app-context.
 
-Release: confirm CI green, build, install, smoke-test using the checklist in app-context,
+Release: first run `python3 docs/company/tooling/legal_gate.py check .` and stop, reporting its
+reasons, if it fails (never run `sign`; that is the owner's). Then confirm CI green, build, install, smoke-test using the checklist in app-context,
 confirm any background service is healthy. Report what you ran. For an audit: write
 `docs/audit/operations.md`: failure modes, what tells the owner something is wrong,
 backup/restore of state, signing status, dependency pinning; propose monitoring and a

@@ -23,6 +23,23 @@ Existing apps have debt. The baseline is measured once, recorded in
 - `common/githooks/pre-commit`: secrets and lint on staged files. **Not activated automatically**: the owner runs `git config core.hooksPath .githooks` (it would also gate autosync commits).
 - `ratchet.py`: fail if a count rose above `baseline.json`; `--update` lowers it. Always count with `ruff check --no-cache --quiet --output-format=concise --exit-zero .` (without `--quiet` ruff adds summary lines that inflate the count). `baseline.json` lives beside it and **must be committed**, or the CI ratchet fails.
 
+## Legal sign-off gate
+`legal_gate.py` (stdlib) decides whether Release may start, from files only:
+
+| Command | Who runs it | What it does |
+|---|---|---|
+| `legal_gate.py status <app>` | anyone | tier, pack files, pack hash, last sign-off, open lawyer triggers |
+| `legal_gate.py check <app>` | agents, CI, the dashboard | exit 0 when the tier's sign-off rule is met, else 1 with the reasons |
+| `legal_gate.py sign <app> --by NAME --role owner\|lawyer [--accept-risk WHY]` | **a person, in a terminal** | appends one line to `docs/legal/signoff.jsonl`, bound to the hash of `docs/legal/` |
+
+`sign` refuses to run without an interactive terminal and asks the signer to type the app's
+folder name, so an agent's shell cannot record a sign-off; `install.sh` also adds a deny rule for
+it to the app's `.claude/settings.json`. The hash covers every file under `docs/legal/` except
+`signoff.jsonl`: editing any of them after signing makes the sign-off stale. Tier `internal` needs
+no sign-off; an unset tier fails. An open `- [ ] LAWYER:` line in `docs/legal/register.md` needs
+`--role lawyer`, or the owner's `--accept-risk`.
+
 ## What stays with the owner
+Every legal and tax sign-off. 
 GitHub branch protection (require CI + review before merge), enabling the GitHub connector,
 adding repo secrets, activating the git hook, and approving any gitleaks allowlist entry.
