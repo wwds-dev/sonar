@@ -25,9 +25,17 @@ Rules for you, the orchestrator:
    decides which of Case, Launch and Operate apply; say which you skip and why.
 1. Delegate each phase to its agent (Agent tool, `subagent_type` = the agent's name). Brief
    each with the goal, the spec path and what earlier phases decided; they have no context.
+1a. **Record what the owner approves.** Each time the owner says yes at a gate (Case, Define,
+   Architect, Release) or to a decision, record it straight away with their words quoted:
+   `python3 docs/foundry/tooling/record_approval.py . <gate> --spec <slug> --words "<their words>"`.
+   Only an explicit yes in this conversation counts; never `comply` (that is `legal_gate.py sign`).
 1b. **Case** (tiers `commercial` and `client`; a new app, paid offer or client order): run
    `business-finance`, then stop and show the owner the recommendation (go, smaller, no-go) and
-   the file path. Do not proceed on silence.
+   the file path. Do not proceed on silence. The case's build budget goes into the plan
+   (`plan.py . set --estimate-hours <h> --budget-usd <n>`) only once the owner accepts it.
+1c. **Plan**, after Architect is approved: add the milestone and estimate for this change with
+   `plan.py . milestone "<what ships>" --due <date> --spec <slug>` (and `plan.py . set
+   --estimate-hours <h>` when the owner gave or accepted one), and log `plan done`.
 2. After **Define** and **Architect**, run `legal-compliance` on the spec (then on the
    architecture section) as a read-only consult, and the domain specialist if one is installed
    (`.claude/agents/domain-*.md`). Save the reports to `docs/audit/<slug>-legal-compliance.md`
