@@ -1,8 +1,8 @@
 ---
 role: domain-finance
 domain: Finance (retail investing, trading and money figures)
-last-reviewed: 2026-10-12
-status: baseline   # baseline = seeded, not yet verified by a radar run; becomes current after first approved review
+last-reviewed: 2026-11-11
+status: current
 ---
 
 # Playbook: domain-finance
@@ -26,6 +26,12 @@ _Baseline: seeded from the agent prompt and general practice; not yet verified b
 - Money in decimal or integer minor units with an explicit rounding mode and a currency on
   every amount; time zones, trading calendars and corporate actions explicit.
 - Every displayed figure is traceable to its source and timestamp; stale data is marked stale.
+- Public posts, READMEs and screenshots about an app never show a direction, target or rating
+  for a named instrument as the app's or the owner's view. Where a screen that asserts a
+  direction is shown publicly, the instrument is anonymised or the post carries the model's
+  measured skill, sample and 'not a recommendation; paper trading only'. In the EU a specific
+  public view on an instrument can be an investment recommendation under the Market Abuse
+  Regulation, with disclosure duties even for unlicensed persons.
 
 ## Watch list
 SEC Marketing Rule and FINRA communications rules (performance advertising); ESMA and BaFin
@@ -34,3 +40,4 @@ appropriateness; CFA Institute GIPS.
 
 ## Change log
 - 2026-10-12: seeded (baseline).
+- 2026-11-11: first radar review (current), from `radar/reports/2026-11-11-rest.md`, owner-accepted row D1. P3 rows (D2, D3, D4) not applied.
