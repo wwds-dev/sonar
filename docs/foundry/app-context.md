@@ -70,6 +70,22 @@ app's Application Support directory.
   Brier logs; model files `sonar/model.py`, `scoring.py`, `backtest.py`, `calibration.py`,
   `volatility.py`, `replay.py` and the research studies.
 
+## Models used
+Inventory from the code on 2026-11-11 (Foundry v9). One third-party provider, Anthropic, and only
+when the user opts in: `llm.available()` (`sonar/llm.py:164`) is false unless the optional
+`anthropic` SDK is installed and a credential resolves (`ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN` or an `ant auth login` profile), and each read runs only on a button press.
+
+| Provider | Model | What data it receives | Local? | Where in the code |
+|---|---|---|---|---|
+| Anthropic | `claude-opus-5` (`MODEL`, `sonar/llm.py:50`), effort medium; not user-selectable | "LLM read on this hour": the subject (ticker or asset), asset class, risk profile, horizon, the app's own measurements (price, volatility, momentum, model and market probability, volume, macro figures) and up to six recent headlines (title, source, age). No positions, no account data, no personal data by design | no | client `sonar/llm.py:234`, call `sonar/llm.py:268`; route `sonar/server.py:127`, `Live.read` in `sonar/core.py` |
+| Anthropic | `claude-opus-5` (default of `complete()`, `sonar/llm.py:334`) | Playmaker's model read: sport, subject, prop, line, price, context and the user's pasted "supporting data" (`build_prompt`, `sonar/playmaker/__init__.py:362`). Free text, so the user could paste personal data; the app adds none | no | client and call `sonar/llm.py:349-350`; UI `ui/app.py` (Playmaker analyse button), worker `ui/worker.py` |
+
+Not third-party models: the in-house statistical models (Elo, Dixon-Coles, devig, the hourly BTC
+up/down model, the screener, calibration), which make no model call (README). Data sources that
+are not models: Yahoo, ESPN, Polymarket, Nasdaq, news RSS, Alpaca (paper broker). No local model
+runtime (Ollama, LM Studio) is used.
+
 ## Domain specialist
 Key: `finance` (`domain-finance`). Domain: retail investing and paper trading for users without
 finance training. Rules and standards: the app gives no investment advice and is paper-only
