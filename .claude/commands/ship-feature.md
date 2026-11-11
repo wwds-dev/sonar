@@ -23,6 +23,19 @@ Rules for you, the orchestrator:
 0c. Read the tier from `## Distribution` in app-context. If it is missing or `unclassified`,
    propose one with your reasons and stop until the owner sets it. The tier table in AGENTS.md
    decides which of Case, Launch and Operate apply; say which you skip and why.
+0d. **Tier `client`** (AGENTS.md, "Client delivery"): the order is `order:` under `## Distribution`
+   and lives in the Foundry HQ (`orders/<id>.toml`). Run from the HQ; if you are in the app and
+   cannot read `../foundry/tools/order.py` (or the HQ the lab names), stop and ask the owner. Run
+   `python3 tools/order.py show <id>` first. No agent contacts the client: every document for
+   the client is a draft, and you tell the owner it is ready to send.
+   - A change to a spec the client already accepted (or a new spec) is a change request first:
+     `order.py change <id> new <cr> --spec <slug> --what "..."`, `business-finance` adds its
+     price and date impact to `docs/engagement/changes.md`, `product-manager` updates the spec,
+     then stop: the client decides, then the owner (`order.py change <id> owner <cr> accept
+     --words "<their words>"`).
+   - Record a client's acceptance only when the owner tells you the client accepted, quoting
+     them: `order.py accept <id> spec --spec <slug> --who "<name>" --on <date> --how email
+     --ref "<subject, date>" --owner-words "<owner's words>"`. Never from silence.
 1. Delegate each phase to its agent (Agent tool, `subagent_type` = the agent's name). Brief
    each with the goal, the spec path and what earlier phases decided; they have no context.
 1a. **Record what the owner approves.** Each time the owner says yes at a gate (Case, Define,
@@ -41,7 +54,9 @@ Rules for you, the orchestrator:
    (`.claude/agents/domain-*.md`). Save the reports to `docs/audit/<slug>-legal-compliance.md`
    and `docs/audit/<slug>-domain-<key>.md` (append the Architect pass). Then stop and show the
    owner a 10-line summary, including their P0/P1, plus the file path. Wait for approval before
-   Build. Do not proceed on silence.
+   Build. Do not proceed on silence. For tier `client`, after the owner's Define approval the
+   spec goes to the client (the owner sends it); before Build run
+   `python3 tools/order.py gate <id> build --spec <slug>` in the HQ and stop if it is BLOCKED.
 3. Build with `engineer`. Then run `code-reviewer` and `qa-engineer` independently (in
    parallel), plus `legal-compliance` (licences of new dependencies, claims in copy) and the
    domain specialist if installed; add `security-engineer` when AGENTS.md says it is required.
@@ -61,8 +76,20 @@ Rules for you, the orchestrator:
    checks the claims list. If that changed anything under `docs/legal/`, `check` fails again
    and step 6 repeats. Nothing is published, posted or sent by an agent.
 8. Then `sre-release` (a gate: ask before building or installing). It runs `legal_gate.py check`
-   first and stops if it fails.
+   first and stops if it fails. For tier `client`, `customer-support` writes
+   `docs/engagement/handover.md` from `docs/foundry/tooling/handover_template.md` (with
+   `sre-release` for deployment, runbook and credentials, `legal-compliance` for the licence
+   inventory and disclosures); the owner hands it over and tells you when the client accepted
+   the delivery. Record it (`order.py accept <id> delivery ...`, then `order.py handover <id>
+   --on <date> --warranty-days <n>`) and run `order.py gate <id> done`: Release is done only
+   when it passes.
 9. **Operate** is not part of this run. Add a backlog item dated 30 days after the release for
-   the post-launch review (`business-finance`, `product-manager`), and say so.
+   the post-launch review (`business-finance`, `product-manager`), and say so. For a client,
+   also one for the warranty end date.
+9b. **Models.** Work you hand to a local model (`docs/foundry/tooling/local_model.py`, kinds in
+   AGENTS.md "Local models" and `docs/playbooks/model-routing.md`) is a draft: the same agent
+   checks and the same gates apply. Never route a gate, review, QA, security or legal finding,
+   or an architecture decision to a local model. If the change adds or changes a model the app
+   calls, `## Models used` in app-context is updated in the same change.
 10. Finish with a table: phase, agent, artifact path, result, anything skipped and why. Do not
    commit or push unless the owner asked.

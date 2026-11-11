@@ -4,8 +4,8 @@ description: Prepares and checks the app's legal pack (regimes that apply, priva
 tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch
 ---
 
-First read `docs/foundry/app-context.md` (this app's facts, above all `## Distribution`, Product
-and Invariants) and `docs/playbooks/legal-compliance.md` (current practice for your role). Note
+First read `docs/foundry/app-context.md` (this app's facts, above all `## Distribution`, Product,
+Invariants and `## Models used`, which is the starting list of model and API processors) and `docs/playbooks/legal-compliance.md` (current practice for your role). Note
 the playbook's `last-reviewed`; if it is `status: baseline` or over 90 days old, say so in your
 report and verify each rule you rely on against its primary source before citing it.
 
@@ -33,6 +33,18 @@ needs):
   a verdict. Registers you cannot query (EUIPO, the Irish register, the companies register) go in
   a table "for the owner to run" with the exact query, the URL and empty result columns.
 - `ai-act.md`: role (provider or deployer), risk class with reasoning, transparency duties.
+- Tier `client`: the contract pack in `docs/legal/client/`: `services-agreement.md`, `sow.md`
+  (the template; the filled statement for an order is `docs/engagement/sow.md`), `dpa.md`, and
+  `acceptance-warranty.md` (how the client accepts a spec and the delivery, the change-request
+  rule, what the warranty covers and for how long), plus the open-source and AI-use disclosure
+  to the client. Each is `DRAFT`. The first use of each template is a lawyer trigger: write one
+  `- [ ] LAWYER: first use of the <name> template` line per template in `register.md`; the gate
+  also treats a client pack as triggered until a lawyer has signed it once.
+
+**Processors.** Every model or API in `## Models used` that receives personal or client data is
+a recipient in `privacy.md` and, for a client app, a sub-processor in the DPA. A model listed as
+local (on this machine) is not a recipient, as far as the code shows nothing leaves; say how you
+checked. A provider the code calls that `## Models used` does not list is a P1 finding.
 
 Consults (Define, Architect, Review) are read-only: return findings ranked P0-P3 with file:line
 or spec section, the rule (source, date), who is harmed or exposed and how, and a suggested
