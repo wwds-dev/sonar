@@ -1,6 +1,6 @@
 # Spec: legal audit code and copy fixes
 
-- Status: built, uncommitted (branch `legal-audit-fixes`, from master `7984890`)
+- Status: merged to `master` (`f6acacc`, `d3ad14b`); the hourly-model note added on `master` 2026-11-11
 - Source: Foundry's first legal audit of SONAR, `foundry/audits/sonar/legal.md` (findings 1, 3, 4, 5, 7, 8, 9);
   drafts D3, D4, D5, D2 in the legal pack (`docs/legal/terms.md`, untouched here).
 - Owner approval: task given by the owner's orchestrating session 2026-11-10; commit and push are the owner's.
@@ -16,6 +16,7 @@
 | 3 | `words.PLAYMAKER_NOTICE` at the top of the Playmaker tab; "Not betting advice" in Learn §14 and `sonar/playmaker/README.md` |
 | 4 | `words.STAKE_TIP` replaces the "without risking ruin" tooltip |
 | 5 | `words.LLM_READ_TITLE`, `MODEL_READ_TITLE`, `AI_TAG`, `DIRECTION_NOTE`; plain and expert modes both carry "AI-GENERATED" |
+| 5 (second half, 2026-11-11) | `words.HOURLY_MODEL_NOTE` under the Lab's hourly BTC figures (`_terminal_tab`): not a recommendation, disagreement with the market not shown to be an edge |
 | 7, 8 | `build_app.sh` strips Qt Virtual Keyboard and ships `packaging/licenses/`; `main.py --selftest` checks both |
 | 9 | `SUPPORT.md`, `SECURITY.md` |
 

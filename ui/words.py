@@ -86,6 +86,13 @@ MODEL_READ_TITLE = ("AI-GENERATED COMMENTARY", "MODEL READ — AI-GENERATED")
 DIRECTION_NOTE = ("This direction is a model's output, shown so it can be "
                   "scored against what happens. It is not a recommendation "
                   "and has not been shown to be right more often than chance.")
+# The hourly model is the one place SONAR states a direction of its own (not an
+# AI's), so it carries its own line; the claim about the edge is the manual's
+# (Learn §4) and a test keeps the two in step.
+HOURLY_MODEL_NOTE = ("P(up) is a model's output, shown so it can be graded "
+                     "against the market and against what happens. It is not a "
+                     "recommendation to buy, sell or bet, and its disagreement "
+                     "with the market has not been shown to be an edge.")
 PLAYMAKER_NOTICE = (
     "Playmaker does arithmetic on bookmakers' published prices: their margin, "
     "where they disagree, and what a formula would stake if a gap were real. "

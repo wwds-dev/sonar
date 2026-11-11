@@ -49,6 +49,17 @@ def test_direction_note_denies_a_recommendation():
     assert "more often than chance" in words.DIRECTION_NOTE
 
 
+def test_hourly_model_says_it_is_not_a_recommendation():
+    """The one direction SONAR states itself carries the note on its own panel."""
+    assert "not a recommendation" in words.HOURLY_MODEL_NOTE
+    assert "not been shown to be an edge" in words.HOURLY_MODEL_NOTE
+    panel = APP.split("def _terminal_tab", 1)[1].split("\n    def ", 1)[0]
+    assert "words.HOURLY_MODEL_NOTE" in panel
+    assert "wrap=True" in panel.split("words.HOURLY_MODEL_NOTE", 1)[1][:90], "a long label must wrap"
+    # The note repeats the manual's claim; if Learn §4 ever says otherwise, this fails.
+    assert re.search(r"has <b>not</b> been shown to be an edge", DOCS)
+
+
 def test_playmaker_notice_is_shown_in_the_tab_manual_and_readme():
     assert "words.PLAYMAKER_NOTICE" in APP
     assert "not betting advice" in words.PLAYMAKER_NOTICE.lower()
@@ -60,7 +71,8 @@ def test_playmaker_notice_is_shown_in_the_tab_manual_and_readme():
 
 
 def test_no_copy_promises_safety_or_profit_in_the_new_notices():
-    for text in (words.PLAYMAKER_NOTICE, words.AI_TAG, words.DIRECTION_NOTE, words.STAKE_TIP):
+    for text in (words.PLAYMAKER_NOTICE, words.AI_TAG, words.DIRECTION_NOTE, words.STAKE_TIP,
+                 words.HOURLY_MODEL_NOTE):
         assert not re.search(r"\b(guarantee|risk[- ]free|safe|will profit)\b", text, re.I)
 
 

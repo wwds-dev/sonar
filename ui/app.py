@@ -2512,6 +2512,9 @@ class MainWindow(QMainWindow):
         tau_col.addStretch(1)
         g.addLayout(tau_col)
         lay.addWidget(strip)
+        # Always visible beside the figures it qualifies (legal audit #5).
+        lay.addWidget(label(words.HOURLY_MODEL_NOTE, "muted", theme.figure(9),
+                            wrap=True))
 
         mid = QHBoxLayout()
         mid.setSpacing(10)
