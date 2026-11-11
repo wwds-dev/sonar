@@ -388,7 +388,7 @@ tests/           the suite (see TESTING.md)      scripts/   build_testplan.py, i
 packaging/       the launchd plist              docs/      specs, ADRs, audit reports, playbooks, ROADMAP, history
 research_results/, docs_attention_study.json     outputs of the studies, kept as their record
 AGENTS.md      agent instructions: the engineering pipeline (roles, gates, definition of done)
-CLAUDE.md      Claude Code instructions: imports AGENTS.md, points to docs/company/app-context.md
+CLAUDE.md      Claude Code instructions: imports AGENTS.md, points to docs/foundry/app-context.md
 ```
 
 ### API

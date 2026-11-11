@@ -3,12 +3,12 @@ description: Wire the tooling baseline (CI, lint, coverage, secret and dependenc
 argument-hint: <app-name>
 ---
 
-**App root:** if this repo has `docs/company/app-context.md` it is the app; otherwise you are in the
-company HQ and the argument is a name from `apps.md` (resolve its path). Brief any agent with the
+**App root:** if this repo has `docs/foundry/app-context.md` it is the app; otherwise you are in the
+Foundry HQ and the argument is a name from `apps.md` (resolve its path). Brief any agent with the
 absolute app root. Work only there.
 
-Read `docs/company/tooling/README.md` (policy) and `docs/company/app-context.md` (stack, commands).
-If `docs/company/tooling/` is missing, run `./install.sh --update <app>` from the HQ first.
+Read `docs/foundry/tooling/README.md` (policy) and `docs/foundry/app-context.md` (stack, commands).
+If `docs/foundry/tooling/` is missing, run `./install.sh --update <app>` from the HQ first.
 
 Rules: **add files only.** Do not edit application source, tests, or existing CI. Do not commit,
 push, change git config, or activate hooks. Download nothing except running `uvx ruff`,
@@ -26,9 +26,9 @@ push, change git config, or activate hooks. Download nothing except running `uvx
 5. **Measure the baseline, report-only.** If `ruff` is not on PATH use `uvx ruff`. Lint count:
    `ruff check --no-cache --quiet --output-format=concise --exit-zero .` (one line per finding), `gitleaks detect --no-git --redact -c .gitleaks.toml` (never print secret values),
    `uvx pip-audit -r requirements.txt` or `npm audit --json`, and coverage only if the suite is
-   fast (otherwise `UNVERIFIED`). Record counts with `python docs/company/tooling/ratchet.py
+   fast (otherwise `UNVERIFIED`). Record counts with `python docs/foundry/tooling/ratchet.py
    --update ruff ruff check --no-cache --quiet --output-format=concise --exit-zero .` (or `uvx ruff` instead of `ruff`) (creates `baseline.json`).
-6. **Write `docs/company/tooling-baseline.md`:** date, exact commands and their output counts, what
+6. **Write `docs/foundry/tooling-baseline.md`:** date, exact commands and their output counts, what
    was added, what is `UNVERIFIED`, and the coverage floor (measured minus 1, or `UNVERIFIED`).
 7. **Verify** every YAML parses (`ruby -ryaml -e 'YAML.load_file(ARGV[0])' <file>`; PyYAML is often missing) and no
    `__PLACEHOLDER__` remains (`grep -rn "__[A-Z_]*__" .github .gitleaks.toml`).
@@ -56,5 +56,5 @@ push, change git config, or activate hooks. Download nothing except running `uvx
 - **No `timeout` on macOS:** cap a run with `perl -e 'alarm shift; exec @ARGV' 300 <cmd>`.
 - **Stale context:** if measurements contradict `app-context.md` (test counts, missing tools),
   report each contradiction; do not edit app-context.
-- **Baselines:** `baseline.json` lives in `docs/company/tooling/`; `install.sh --update` never
+- **Baselines:** `baseline.json` lives in `docs/foundry/tooling/`; `install.sh --update` never
   overwrites it, and it must be committed.

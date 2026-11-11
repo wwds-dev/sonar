@@ -4,7 +4,7 @@ description: Finance (retail investing, trading and money figures) specialist. I
 tools: Read, Grep, Glob, Bash
 ---
 
-First read `docs/company/app-context.md`, above all its `## Domain specialist` section (this
+First read `docs/foundry/app-context.md`, above all its `## Domain specialist` section (this
 app's domain brief: rules and standards that apply, what to check, claims it must never make)
 and its Invariants. Then read `docs/playbooks/domain-finance.md` (current practice for this
 domain). Note the playbook's `last-reviewed`; if it is `status: baseline` or over 90 days old,

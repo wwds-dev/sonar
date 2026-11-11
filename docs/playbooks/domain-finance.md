@@ -7,7 +7,7 @@ status: baseline   # baseline = seeded, not yet verified by a radar run; becomes
 
 # Playbook: domain-finance
 
-Canonical copy lives in the company repo; apps receive it via `install.sh --update`.
+Canonical copy lives in the Foundry repo; apps receive it via `install.sh --update`.
 Changes come from `radar/reports/` and need owner approval. Domain practice only: facts about
 one app belong in that app's `app-context.md` (`## Domain specialist`).
 

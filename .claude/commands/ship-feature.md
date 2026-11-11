@@ -3,7 +3,7 @@ description: Run a change through the Foundry pipeline (case, define, design, ar
 argument-hint: <feature or fix, in one or two sentences>
 ---
 
-**App root:** if this repo has `docs/company/app-context.md`, it is the app; otherwise you are in the Foundry HQ: the first word of the arguments is a name from `apps.md` (resolve its path) and every repo-relative path below is relative to that app. Tell each agent the absolute app root and have it work only there.
+**App root:** if this repo has `docs/foundry/app-context.md`, it is the app; otherwise you are in the Foundry HQ: the first word of the arguments is a name from `apps.md` (resolve its path) and every repo-relative path below is relative to that app. Tell each agent the absolute app root and have it work only there.
 
 Run the pipeline in `AGENTS.md` for: $ARGUMENTS
 
@@ -13,7 +13,7 @@ drag-to-dispatch). Put it in the spec under `## Why again` and brief every agent
 Rules for you, the orchestrator:
 0. Check `last-reviewed` in `docs/playbooks/` for every role this change will use. If any is
    `status: baseline` or over 90 days old, tell the owner and offer to refresh the playbooks
-   (run `/industry-radar` in the company repo, then `install.sh --update`); continue only if
+   (run `/industry-radar` in the Foundry repo, then `install.sh --update`); continue only if
    they say so.
 0b. Run `/radar-check feature` before Define, `/radar-check stack` before Architect,
    `/radar-check security` before Secure (when required), `/radar-check legal` before Comply,
@@ -43,7 +43,7 @@ Rules for you, the orchestrator:
 5. Then `tech-writer`.
 6. **Comply.** Run `legal-compliance` to bring `docs/legal/` up to date and append its clearance
    to `docs/audit/<slug>-legal-compliance.md`. Run
-   `python3 docs/company/tooling/legal_gate.py check .`. If it fails, stop: show the owner what
+   `python3 docs/foundry/tooling/legal_gate.py check .`. If it fails, stop: show the owner what
    changed since the last sign-off, the open lawyer triggers, the residual risks, and the exact
    `legal_gate.py sign` command. **Never run `sign` yourself, and never record a sign-off from
    something the owner said in chat**: the owner runs it in a terminal. Continue only when

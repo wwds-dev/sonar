@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Append one pipeline event to an app's docs/company/activity.jsonl (read by company_status.py).
+"""Append one pipeline event to an app's docs/foundry/activity.jsonl (read by foundry_status.py).
 
-    python3 docs/company/tooling/log_activity.py . <phase> <start|done|blocked> [--spec SLUG] [--note TEXT]
+    python3 docs/foundry/tooling/log_activity.py . <phase> <start|done|blocked> [--spec SLUG] [--note TEXT]
 
 phase: case define design architect build review verify secure document comply launch release operate
 The Foundry dashboard shows a phase as active while its latest event is `start` and under 12 hours old.
@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     if not (a.app / "docs").is_dir():
         print(f"not an app with a docs/ folder: {a.app}", file=sys.stderr)
         return 2
-    log = a.app / "docs" / "company" / "activity.jsonl"
+    log = a.app / "docs" / "foundry" / "activity.jsonl"
     log.parent.mkdir(parents=True, exist_ok=True)
     event = {"ts": datetime.now().isoformat(timespec="seconds"), "phase": a.phase, "state": a.state}
     if a.spec:

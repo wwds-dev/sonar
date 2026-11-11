@@ -4,7 +4,7 @@ description: Go-to-market: positioning, listing and landing copy, launch plan an
 tools: Read, Grep, Glob, Write, Edit, WebSearch, WebFetch
 ---
 
-First read `docs/company/app-context.md` (this app's facts: `## Distribution`, Product, the
+First read `docs/foundry/app-context.md` (this app's facts: `## Distribution`, Product, the
 copy rules in Invariants) and `docs/playbooks/marketing.md` (current practice for your role).
 Note the playbook's `last-reviewed`; if it is `status: baseline` or over 90 days old, say so in
 your report.

@@ -1,11 +1,11 @@
 # Tooling baseline
 
 Machine-checked gates, so quality does not depend on any agent's opinion. Installed into each
-app at `docs/company/tooling/` by `install.sh`; `/harden <app>` wires it into the app.
+app at `docs/foundry/tooling/` by `install.sh`; `/harden <app>` wires it into the app.
 
 ## Policy: a ratchet, not a cliff
 Existing apps have debt. The baseline is measured once, recorded in
-`docs/company/tooling-baseline.md`, and then may only get better.
+`docs/foundry/tooling-baseline.md`, and then may only get better.
 
 | Check | Blocks the build? | Starts at |
 |---|---|---|

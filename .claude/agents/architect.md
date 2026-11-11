@@ -4,7 +4,7 @@ description: Designs structure, data flow, concurrency and state handling; write
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 
-First read `docs/company/app-context.md` (this app's facts) and `docs/playbooks/architect.md` (current
+First read `docs/foundry/app-context.md` (this app's facts) and `docs/playbooks/architect.md` (current
 practice for your role). Note the playbook's `last-reviewed`; if it is `status: baseline` or over
 90 days old, say so in your report.
 

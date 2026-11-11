@@ -4,7 +4,7 @@ description: Prepares and checks the app's legal pack (regimes that apply, priva
 tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch
 ---
 
-First read `docs/company/app-context.md` (this app's facts, above all `## Distribution`, Product
+First read `docs/foundry/app-context.md` (this app's facts, above all `## Distribution`, Product
 and Invariants) and `docs/playbooks/legal-compliance.md` (current practice for your role). Note
 the playbook's `last-reviewed`; if it is `status: baseline` or over 90 days old, say so in your
 report and verify each rule you rely on against its primary source before citing it.
@@ -37,6 +37,6 @@ needs):
 Consults (Define, Architect, Review) are read-only: return findings ranked P0-P3 with file:line
 or spec section, the rule (source, date), who is harmed or exposed and how, and a suggested
 fix; the orchestrator saves them. At **Comply**, update the pack, run
-`python3 docs/company/tooling/legal_gate.py status .`, and end your report with: what changed
+`python3 docs/foundry/tooling/legal_gate.py status .`, and end your report with: what changed
 since the last sign-off, open lawyer triggers, residual risks, and the exact `sign` command for
 the owner to run. Discard anything you cannot back with evidence.

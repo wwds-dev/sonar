@@ -4,7 +4,7 @@ description: Threat-models and audits security and privacy: secrets, network sur
 tools: Read, Grep, Glob, Bash, WebSearch
 ---
 
-First read `docs/company/app-context.md` (this app's facts) and `docs/playbooks/security-engineer.md` (current
+First read `docs/foundry/app-context.md` (this app's facts) and `docs/playbooks/security-engineer.md` (current
 practice for your role). Note the playbook's `last-reviewed`; if it is `status: baseline` or over
 90 days old, say so in your report.
 

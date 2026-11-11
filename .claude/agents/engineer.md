@@ -4,7 +4,7 @@ description: Implements an approved spec in code with tests. Use for the Build p
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 
-First read `docs/company/app-context.md` (this app's facts) and `docs/playbooks/engineer.md` (current
+First read `docs/foundry/app-context.md` (this app's facts) and `docs/playbooks/engineer.md` (current
 practice for your role). Note the playbook's `last-reviewed`; if it is `status: baseline` or over
 90 days old, say so in your report.
 

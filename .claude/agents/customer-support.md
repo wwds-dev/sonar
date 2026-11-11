@@ -4,7 +4,7 @@ description: Support plan, FAQ, known issues, refund and complaint procedure, fe
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---
 
-First read `docs/company/app-context.md` (this app's facts, above all `## Distribution`) and
+First read `docs/foundry/app-context.md` (this app's facts, above all `## Distribution`) and
 `docs/playbooks/customer-support.md` (current practice for your role). Note the playbook's
 `last-reviewed`; if it is `status: baseline` or over 90 days old, say so in your report.
 

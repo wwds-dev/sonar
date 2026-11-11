@@ -1,7 +1,7 @@
 # AGENTS.md: engineering process
 
 This app is built the Foundry way: roles, gates, written artifacts. App facts
-live in `docs/company/app-context.md`; product facts in the README. Any workspace-level
+live in `docs/foundry/app-context.md`; product facts in the README. Any workspace-level
 rules above this repo still apply.
 
 ## Owner
@@ -23,6 +23,11 @@ An app with no tier is `unclassified`: the dashboard warns and Release stops unt
 
 Raising the tier (for example `internal` to `public`) is itself a change: it goes through
 Comply before the first release at the new tier.
+
+Only the owner sets the tier. An agent may propose one, with its evidence, by adding the line
+`Status: proposed by agent, not yet confirmed by the owner` under `tier:`. While that line is
+there the tier is shown but Release stays stopped; the owner confirms by deleting it (or changes
+the tier first). An agent never deletes it.
 
 ## The pipeline
 Every change that is more than a typo goes through these phases. Each ends in a file under
@@ -64,11 +69,11 @@ at **Review** (licences of new dependencies, claims in copy, notices), each into
 
 **Legal sign-off.** Agents prepare and check; they never approve. A legal document is `DRAFT`,
 then `CHECKED (agent)`, and only a person makes it `SIGNED OFF`:
-- `python3 docs/company/tooling/legal_gate.py check .` decides whether Release may start. It
+- `python3 docs/foundry/tooling/legal_gate.py check .` decides whether Release may start. It
   fails when the tier is unset, the pack is missing, there is no sign-off, the pack changed
   after the sign-off, or a lawyer trigger is open and only the owner signed without accepting
   the risk in writing.
-- `python3 docs/company/tooling/legal_gate.py sign . --by "<name>" --role owner|lawyer` records
+- `python3 docs/foundry/tooling/legal_gate.py sign . --by "<name>" --role owner|lawyer` records
   a sign-off against a hash of `docs/legal/`. **A person runs it in a terminal. Agents never
   run `sign`**, never edit `docs/legal/signoff.jsonl`, and never write "compliant", "approved"
   or "legally reviewed" anywhere.
@@ -108,7 +113,7 @@ practice: at **Define** for a new app, idea or feature (`new-idea` / `feature`);
 old). It proposes only: nothing is installed, enabled or connected without the owner's yes.
 
 **Log activity.** At the start and end of each phase, run
-`python3 docs/company/tooling/log_activity.py . <phase> start|done [--spec <slug>]` (phases:
+`python3 docs/foundry/tooling/log_activity.py . <phase> start|done [--spec <slug>]` (phases:
 case define design architect build review verify secure document comply launch release
 operate; use `blocked` when stopped on a gate). The Foundry dashboard reads it to show what is
 in progress. It records nothing else and never blocks work: if the command fails, say so and
@@ -119,7 +124,7 @@ continue.
 - Full suite green in every mode; new logic mutation-checked.
 - Reviewer P0/P1 findings fixed or explicitly deferred by the owner.
 - CHANGELOG entry; docs updated; version bumped per the app's versioning doc.
-- CI is green and the tooling baseline (`docs/company/tooling-baseline.md`, from `/harden`) has not
+- CI is green and the tooling baseline (`docs/foundry/tooling-baseline.md`, from `/harden`) has not
   regressed: no new lint/type findings, coverage at or above the floor, no secrets, no new
   vulnerable dependency.
 - `legal_gate.py check` passes for the app's tier, and every claim in release notes, listing
@@ -136,18 +141,18 @@ continue.
   the rule, its source and date; never give a legal or tax opinion or record a sign-off.
 - Concurrent sessions may share this worktree: stage files by name, never `git add -A`.
 - Do not commit, push, or release without the owner asking.
-- Read `docs/company/app-context.md` first; app-specific invariants there override defaults.
+- Read `docs/foundry/app-context.md` first; app-specific invariants there override defaults.
 
 ## Staying current
-- Every agent reads `docs/playbooks/<role>.md`. Playbooks are copies of the company's
+- Every agent reads `docs/playbooks/<role>.md`. Playbooks are copies of Foundry's
   current practice, refreshed with `install.sh --update`; never hand-edit them in an app.
   `status: baseline` or `last-reviewed` over 90 days old means stale: say so. A baseline
   legal, tax or marketing-law practice is a prompt to check the source, not a fact.
-- The company's radar proposes playbook changes; only the owner approves them.
+- Foundry's radar proposes playbook changes; only the owner approves them.
 
 ## Machine-checked gates
 `/harden <app>` wires CI, lint, coverage, secret and dependency scanning into an app (see
-`docs/company/tooling/README.md`). These checks, not an agent's opinion, decide whether a build
+`docs/foundry/tooling/README.md`). These checks, not an agent's opinion, decide whether a build
 fails. `legal_gate.py check` is the same kind of gate for the legal sign-off. What stays with
 the owner: branch protection, repo secrets, the GitHub connector, activating the git hook, and
 every sign-off.
@@ -156,6 +161,6 @@ every sign-off.
 `docs/specs/` specs · `docs/adr/` decisions · `docs/audit/` review reports ·
 `docs/legal/` legal pack and `signoff.jsonl` · `docs/business/` case, pricing, reviews ·
 `docs/launch/` launch plans · `docs/support/` support plan, FAQ, incidents ·
-`docs/playbooks/` role practices · `docs/company/app-context.md` this app's facts.
+`docs/playbooks/` role practices · `docs/foundry/app-context.md` this app's facts.
 Agents in `.claude/agents/`; commands `/ship-feature`, `/audit`, `/legal-check`, `/harden`,
 `/radar-check` in `.claude/commands/`.

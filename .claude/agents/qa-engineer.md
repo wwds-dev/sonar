@@ -4,7 +4,7 @@ description: Verifies a change meets its success measure; judges test quality, r
 tools: Read, Grep, Glob, Bash
 ---
 
-First read `docs/company/app-context.md` (this app's facts) and `docs/playbooks/qa-engineer.md` (current
+First read `docs/foundry/app-context.md` (this app's facts) and `docs/playbooks/qa-engineer.md` (current
 practice for your role). Note the playbook's `last-reviewed`; if it is `status: baseline` or over
 90 days old, say so in your report.
 

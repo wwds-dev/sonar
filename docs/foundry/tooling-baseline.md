@@ -9,8 +9,8 @@ The worktree had uncommitted changes from other sessions at measurement time.
 - `.gitleaks.toml`
 - `ruff.toml` (pyproject.toml has no `[tool.ruff]`, so a separate file; pyproject.toml untouched)
 - `.githooks/pre-commit` (executable, NOT activated)
-- `docs/company/tooling/baseline.json` (ratchet baseline; must be committed or the ratchet fails)
-- `docs/company/tooling-baseline.md` (this file)
+- `docs/foundry/tooling/baseline.json` (ratchet baseline; must be committed or the ratchet fails)
+- `docs/foundry/tooling-baseline.md` (this file)
 
 `.github/workflows/tests.yml` already runs the suite, so `quality.yml` was not created.
 Consequence: CI does not yet run the ruff ratchet or a coverage floor. Wiring those into
@@ -22,7 +22,7 @@ Re-verified 2026-10-12 on the resumed run. Worktree had other sessions' uncommit
 | Check | Command | Result |
 |---|---|---|
 | Lint | `uvx ruff check --no-cache --quiet --output-format=concise --exit-zero .` | 86 findings (B905 23, F401 21, E702 15, F841 4, E402 4, B007 4, B904 3, B023 3, E731 2, other) |
-| Ratchet | `python docs/company/tooling/ratchet.py --update ruff uvx ruff check --no-cache --quiet --output-format=concise --exit-zero .` | baseline.json: ruff = 86 |
+| Ratchet | `python docs/foundry/tooling/ratchet.py --update ruff uvx ruff check --no-cache --quiet --output-format=concise --exit-zero .` | baseline.json: ruff = 86 |
 | Secrets, history (matches CI) | `gitleaks detect --redact -c .gitleaks.toml` | no leaks found (315 commits, 4.75 MB) |
 | Secrets, working tree | `gitleaks detect --no-git --redact -c <scratch config excluding build, dist*, .venv, __pycache__, .git>` | no leaks found (17.7 MB) |
 | Dependencies | `uvx pip-audit -r requirements.txt` | no known vulnerabilities (requirements.txt lists only `PySide6>=6.6`; `anthropic` is commented out, so it was not audited) |

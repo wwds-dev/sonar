@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Legal sign-off gate: agents prepare and check, a person signs, and Release waits for it.
 
-    python3 docs/company/tooling/legal_gate.py status <app>
-    python3 docs/company/tooling/legal_gate.py check  <app>     exit 0 = Release may start
-    python3 docs/company/tooling/legal_gate.py sign   <app> --by NAME --role owner|lawyer
+    python3 docs/foundry/tooling/legal_gate.py status <app>
+    python3 docs/foundry/tooling/legal_gate.py check  <app>     exit 0 = Release may start
+    python3 docs/foundry/tooling/legal_gate.py sign   <app> --by NAME --role owner|lawyer
                                                       [--scope TEXT] [--accept-risk WHY]
 
-The tier comes from `tier:` under `## Distribution` in docs/company/app-context.md. A sign-off is
+The tier comes from `tier:` under `## Distribution` in docs/foundry/app-context.md. A sign-off is
 one line in docs/legal/signoff.jsonl, bound to a hash of every other file under docs/legal/, so
 any later edit to the pack makes it stale. `sign` needs an interactive terminal and a typed
 confirmation: it is run by the owner or a lawyer, never by an agent.
@@ -37,17 +37,37 @@ REQUIRED = {"public": ("register.md", "licences.md", "privacy.md", "name.md"),
 TRIGGER = re.compile(r"^\s*[-*] \[ \]\s*\**LAWYER\b\**:?\s*(.*)$", re.M)
 
 
+def foundry_dir(app: Path) -> Path:
+    """The app's Foundry folder, docs/foundry. An app not yet updated to Foundry v7 still has
+    docs/company; it is read until `install.sh --update` has moved it."""
+    new, old = app / "docs" / "foundry", app / "docs" / "company"
+    return old if old.is_dir() and not new.is_dir() else new
+
+
+PROPOSED = "not yet confirmed by the owner"
+
+
+def _distribution(app: Path) -> str:
+    """The text of the `## Distribution` section of app-context ('' when there is none)."""
+    try:
+        text = (foundry_dir(app) / "app-context.md").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    m = re.search(r"^##\s*Distribution\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    return m.group(1) if m else ""
+
+
 def tier(app: Path) -> str | None:
     """The tier named under `## Distribution` in app-context; None when unset or not a known tier."""
-    try:
-        text = (app / "docs" / "company" / "app-context.md").read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    m = re.search(r"^##\s*Distribution\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
-    if not m:
-        return None
-    t = re.search(r"^\s*tier:\s*`?([a-z-]+)`?", m.group(1), re.M)
+    t = re.search(r"^\s*tier:\s*`?([a-z-]+)`?", _distribution(app), re.M)
     return t.group(1) if t and t.group(1) in TIERS else None
+
+
+def tier_proposed(app: Path) -> bool:
+    """An agent may propose a tier but not set it: while the section still says
+    'not yet confirmed by the owner', the tier is shown and Release stays stopped. The owner
+    confirms by deleting that line."""
+    return PROPOSED in _distribution(app).lower()
 
 
 def pack_files(app: Path) -> list[Path]:
@@ -108,8 +128,12 @@ def evaluate(app: Path) -> dict:
     last = signs[-1] if signs else None
     current = [s for s in signs if s["hash"] == h] if h else []
     reasons: list[str] = []
+    proposed = t is not None and tier_proposed(app)
     if t is None:
-        reasons.append("no distribution tier in docs/company/app-context.md (## Distribution, tier:)")
+        reasons.append("no distribution tier in docs/foundry/app-context.md (## Distribution, tier:)")
+    elif proposed:
+        reasons.append(f"distribution tier {t} is proposed, {PROPOSED}: to confirm, delete that "
+                       "line under ## Distribution in docs/foundry/app-context.md")
     elif t in NEEDS_SIGNOFF:
         gaps = missing_files(app, t)
         if not (app / "docs" / "legal" / REGISTER).is_file():
@@ -123,7 +147,7 @@ def evaluate(app: Path) -> dict:
         elif trig and not any(s["role"] == "lawyer" or s.get("risk_accepted") for s in current):
             reasons.append(f"{len(trig)} open lawyer trigger(s): needs a lawyer's sign-off, "
                            "or the owner's with --accept-risk")
-    return {"tier": t, "needs_signoff": t in NEEDS_SIGNOFF, "hash": h,
+    return {"tier": t, "tier_proposed": proposed, "needs_signoff": t in NEEDS_SIGNOFF, "hash": h,
             "files": [p.relative_to(app).as_posix() for p in pack_files(app)],
             "open_triggers": trig, "last_signoff": last,
             "valid_signoff": current[-1] if current else None, "ok": not reasons, "reasons": reasons}

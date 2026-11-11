@@ -3,7 +3,7 @@ description: Internal audit of this app as an outside engineering firm would do 
 argument-hint: [all | ux | architecture | code | qa | security | model | domain | ops | docs | legal | business | marketing | support]
 ---
 
-**App root:** if this repo has `docs/company/app-context.md`, it is the app; otherwise you are in the Foundry HQ: the first argument is an app name from `apps.md`; resolve its path, tell each agent the absolute app root, and have it work only there.
+**App root:** if this repo has `docs/foundry/app-context.md`, it is the app; otherwise you are in the Foundry HQ: the first argument is an app name from `apps.md`; resolve its path, tell each agent the absolute app root, and have it work only there.
 
 Run the audit scope "$ARGUMENTS" (default `all`). Read-only on production code.
 Anything after ` -- reason:` is the owner's reason for sending the app back to this department

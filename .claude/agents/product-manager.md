@@ -4,7 +4,7 @@ description: Defines what to build and why. Use before any new or user-visible c
 tools: Read, Grep, Glob, Write, Edit, WebSearch, WebFetch
 ---
 
-First read `docs/company/app-context.md` (this app's facts) and `docs/playbooks/product-manager.md` (current
+First read `docs/foundry/app-context.md` (this app's facts) and `docs/playbooks/product-manager.md` (current
 practice for your role). Note the playbook's `last-reviewed`; if it is `status: baseline` or over
 90 days old, say so in your report.
 
