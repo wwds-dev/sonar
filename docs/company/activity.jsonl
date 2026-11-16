@@ -28,3 +28,6 @@
 {"ts": "2026-10-12T10:18:16", "phase": "release", "state": "start", "spec": "qa11-qa13-honest-baselines"}
 {"ts": "2026-10-12T10:29:02", "phase": "release", "state": "blocked", "spec": "qa11-qa13-honest-baselines"}
 {"ts": "2026-10-12T10:30:05", "phase": "release", "state": "blocked", "spec": "qa11-qa13-honest-baselines"}
+{"ts": "2026-10-12T12:03:12", "phase": "build", "state": "done", "spec": "untrusted-text-sweep"}
+{"ts": "2026-10-12T12:03:12", "phase": "review", "state": "start", "spec": "untrusted-text-sweep"}
+{"ts": "2026-10-12T12:11:08", "phase": "review", "state": "done", "spec": "untrusted-text-sweep"}
