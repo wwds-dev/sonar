@@ -33,3 +33,5 @@
 {"ts": "2026-10-12T11:06:12", "phase": "verify", "state": "start", "spec": "closing-qa-fixes"}
 {"ts": "2026-10-12T11:14:16", "phase": "review", "state": "done", "spec": "closing-qa-fixes"}
 {"ts": "2026-10-12T11:14:16", "phase": "verify", "state": "done", "spec": "closing-qa-fixes"}
+{"ts": "2026-10-12T11:28:10", "phase": "build", "state": "done", "spec": "holder-llm-playmaker-plaintext"}
+{"ts": "2026-10-12T11:28:10", "phase": "review", "state": "start", "spec": "holder-llm-playmaker-plaintext"}
