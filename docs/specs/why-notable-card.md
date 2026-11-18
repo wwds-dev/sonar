@@ -114,7 +114,7 @@ adds layout, interaction, states and the Learn text below.
 
 ### Card structure (fixed order, every row)
 
-1. **Title line**: `{name} — worth a look {score} / 100 ({rank} of {n} on the board)`.
+1. **Title line**: `{name} — notability score {score} / 100, ranked {rank} of {n} by this score today (risk filter: {profile})`.
 2. **"What put it here"**: four lines, sorted by points (ties in weight order news, move, swings, date), zero lines
    last and greyed. Each line: plain label, `{points} of {max}`, one or two sentences of fact.
 3. **"What this does not say"**: the fixed footer, always visible, not collapsible, identical on every card:
@@ -126,24 +126,24 @@ adds layout, interaction, states and the Learn text below.
 
 | Component | Max | Template |
 |---|---|---|
-| News | 35 | `{k} matched news stor{y/ies} in the last {span} (newest {age} ago; {sources}).` + level sentence: Spike → `That counts as a news spike.` · Elevated → `More coverage than usual.` · Normal → `Ordinary coverage.` · none → `No matched news.` |
-| Recent move | 30 | `{Rose/Fell} {x}% over the last {d} days, the {ordinal}-largest move of {N} {class plural} on the board. The size counts, not the direction: a fall scores the same as a rise.` |
-| Swing size | 15 | `Usually moves about {v}% a day ({swing words}), the {ordinal}-largest of {N} {class plural} ("the largest" / "the smallest" at the ends). The score compares it with other {class plural}, not with every market.` + W8 note |
-| Scheduled date | 20 | equity with a date: `{Earnings label} ({date}): a date on the calendar, not a forecast.` · equity without: `No earnings date within the next {2d} days.` · other classes: `SONAR only tracks company earnings dates, so {class plural} never score here.` |
+| News | 35 | `{k} matched news stor{y/ies} in the last {span} (newest {age} before the scan; {sources}).` + level sentence: Spike → `3 or more stories in the last 6 hours.` · Elevated → `At least one story in the last 6 hours, or 3 in the last day.` · Normal → `No story in the last 6 hours and fewer than 3 in the last day.` · none → `No matched news.` The numbers come from `news_level`, never typed. |
+| Recent move | 30 | `{Rose/Fell} {x}% over the last {d} days, the {ordinal}-largest move of {N} {class plural} on the board; the score partly compares moves within the kind and partly with a fixed size. The size counts, not the direction: a fall scores the same as a rise.` |
+| Swing size | 15 | `SONAR's estimate of its daily swing is about {v}% ({swing words}), the {ordinal}-largest of {N} {class plural} ("the largest" / "the smallest" at the ends). The score partly compares it with other {class plural} and partly with a fixed size.` + W8 note |
+| Earnings date | 20 | equity with a date: `{Earnings label} ({date}): a date on the calendar, not a forecast.` · equity without: `No earnings date within the next {2d} days.` · other classes: `SONAR only tracks company earnings dates, so {class plural} never score here.` |
 
 Class plurals: Equity → shares, Index → indices, Forex → currency pairs, Crypto → cryptocurrencies, Commodity →
 commodities. Ranks and N are among rows currently on the board (after the risk filter), which is the set the score
 was standardised against.
 
 Expert wording: the same lines with the component value and weight appended (`0.88 × 0.30 = 26.4`), ticker in place
-of the name, labels MOM / VOL / NEWS / CAT. Same footer.
+of the name, labels MOM / VOL / NEWS / EARN. Same footer.
 
 ### Wording rules
 
 - **W1 Facts only.** Every clause is a number on the row, a rank computed from the board, or a fixed sentence from
   this spec. Nothing is inferred, and no headline text is paraphrased.
 - **W2 Tense.** Price movement in the past tense only. No future tense anywhere in the templates (no "will").
-- **W3 Banned terms** (test-enforced, whole words, case-insensitive, both wordings): buy, sell, short, long, bullish,
+- **W3 Banned terms** (test-enforced, matched by stem so inflections are caught, case-insensitive, both wordings, run over every card string, the W8 sentence, the state strings, tooltips and the Learn paragraph; exact allow-list: the footer, the earnings label, the column name "Worth a look"). Added at Design: recommend, advice, advise, pick, top, best, worst, winner, loser, favourite, attractive, promising, hot, trending, bet, invest, hold, avoid, accumulate, outperform, underperform, beat, bottom, rally, surge, soar, plunge, crash, dip, trigger, driver, poised, due, soon, imminent, certain, definitely, proven, reliable, obvious, confirmed, validated, probably, possible, potential, might, must, conf, catalyst. Original list: buy, sell, short, long, bullish,
   bearish, upside, downside, opportunity, signal, edge, profit, gain, win, likely, expect, expected, will, should,
   could, may, breakout, rebound, recover, bounce, oversold, overbought, cheap, expensive, undervalued, overvalued,
   target, chance, odds, probability, confident, confidence, sure, guaranteed, safe, risky, strong, weak, positive,
@@ -168,50 +168,47 @@ of the name, labels MOM / VOL / NEWS / CAT. Same footer.
 No scan with components is cached on disk (`SONAR_DATA` holds state, ledgers and FRED caches only), so these come
 from the running agent's loopback `/api/assets` at 12:32 (129 rows). Points use the largest-remainder rule.
 
-**1. Nvidia — worth a look 75 / 100 (1st of 129 on the board)**
-- News 35 of 35: 4 matched news stories in the last 3 hours (newest 12 minutes ago; MarketWatch, Financial Times,
-  Times of India ×2). That counts as a news spike.
+**1. Nvidia — notability score 75 / 100, ranked 1st of 129 by this score today (risk filter: aggressive)**
+- News 35 of 35: 4 matched news stories in the last 3 hours (newest 12 minutes before the scan; MarketWatch, Financial Times,
+  Times of India ×2). 3 or more stories in the last 6 hours.
 - Recent move 27 of 30: Fell 8.0% over the last 5 days, the 5th-largest move of 50 shares on the board. The size
   counts, not the direction: a fall scores the same as a rise.
-- Swing size 13 of 15: Usually moves about 3.5% a day (big swings), the 9th-largest of 50 shares. The score compares it with
-  other shares, not with every market. Whether big swings belong in this score is an open question in SONAR's
+- Swing size 13 of 15: SONAR's estimate of its daily swing is about 3.5% (big swings), the 9th-largest of 50 shares. The score partly compares it with other shares and partly with a fixed size. Whether big swings belong in this score is an open question in SONAR's
   own research (Learn, section 5).
-- Scheduled date 0 of 20: No earnings date within the next 10 days.
+- Earnings date 0 of 20: No earnings date within the next 10 days.
 - *Footer.*
 
-**2. Alibaba — worth a look 66 / 100 (2nd of 129)**
+**2. Alibaba — notability score 66 / 100, ranked 2nd of 129 by this score today (risk filter: aggressive)**
 - Recent move 29 of 30: Fell 15.6% over the last 5 days, the largest move of 50 shares on the board. The size
   counts, not the direction: a fall scores the same as a rise.
-- Scheduled date 20 of 20: Earnings tomorrow (pre-market) (2026-11-19): a date on the calendar, not a
+- Earnings date 20 of 20: Earnings tomorrow (pre-market) (2026-11-19): a date on the calendar, not a
   forecast.
-- Swing size 13 of 15: Usually moves about 3.3% a day (big swings), the 12th-largest of 50 shares. … *(W8 note)*
-- News 4 of 35: 1 matched news story in the last 7 days (newest 7 days ago; CNBC Markets). Ordinary coverage.
+- Swing size 13 of 15: SONAR's estimate of its daily swing is about 3.3% (big swings), the 12th-largest of 50 shares. … *(W8 note)*
+- News 4 of 35: 1 matched news story in the last 7 days (newest 7 days before the scan; CNBC Markets). No story in the last 6 hours and fewer than 3 in the last day.
 - *Footer.*
 
-**3. EUR/USD — worth a look 54 / 100 (6th of 129)**
-- News 35 of 35: 2 matched news stories in the last 4 hours (newest 3 hours ago; Reuters, Financial Times). More
-  coverage than usual.
+**3. EUR/USD — notability score 54 / 100, ranked 6th of 129 by this score today (risk filter: aggressive)**
+- News 35 of 35: 2 matched news stories in the last 4 hours (newest 3 hours before the scan; Reuters, Financial Times). At least one story in the last 6 hours.
 - Recent move 13 of 30: Fell 1.8% over the last 5 days, the 7th-largest move of 20 currency pairs on the board. The
   size counts, not the direction: a fall scores the same as a rise.
-- Swing size 6 of 15: Usually moves about 0.4% a day (small swings), the 9th-largest of 20 currency pairs. The score compares it
-  with other currency pairs, not with every market. … *(W8 note)*
-- Scheduled date 0 of 20: SONAR only tracks company earnings dates, so currency pairs never score here.
+- Swing size 6 of 15: SONAR's estimate of its daily swing is about 0.4% (small swings), the 9th-largest of 20 currency pairs. The score partly compares it with other currency pairs and partly with a fixed size. … *(W8 note)*
+- Earnings date 0 of 20: SONAR only tracks company earnings dates, so currency pairs never score here.
 - *Footer.*
 
-**4. VIX — worth a look 44 / 100 (10th of 129)**
+**4. VIX — notability score 44 / 100, ranked 10th of 129 by this score today (risk filter: aggressive)**
 - Recent move 29 of 30: Rose 39.1% over the last 5 days, the largest move of 20 indices on the board. The size
   counts, not the direction: a fall scores the same as a rise.
-- Swing size 15 of 15: Usually moves about 14.4% a day (big swings), the largest of 20 indices. … *(W8 note)*
+- Swing size 15 of 15: SONAR's estimate of its daily swing is about 14.4% (big swings), the largest of 20 indices. … *(W8 note)*
 - News 0 of 35: No matched news.
-- Scheduled date 0 of 20: SONAR only tracks company earnings dates, so indices never score here.
+- Earnings date 0 of 20: SONAR only tracks company earnings dates, so indices never score here.
 - *Footer.*
 
-**5. TRON — worth a look 7 / 100 (129th of 129)**
-- Swing size 4 of 15: Usually moves about 1.6% a day (medium), the smallest of 21 cryptocurrencies. … *(W8 note)*
+**5. TRON — notability score 7 / 100, ranked 129th of 129 by this score today (risk filter: aggressive)**
+- Swing size 4 of 15: SONAR's estimate of its daily swing is about 1.6% (medium), the smallest of 21 cryptocurrencies. … *(W8 note)*
 - Recent move 3 of 30: Fell 0.7% over the last 5 days, the 20th-largest move of 21 cryptocurrencies on the board.
   The size counts, not the direction: a fall scores the same as a rise.
 - News 0 of 35: No matched news.
-- Scheduled date 0 of 20: SONAR only tracks company earnings dates, so cryptocurrencies never score here.
+- Earnings date 0 of 20: SONAR only tracks company earnings dates, so cryptocurrencies never score here.
 - *Footer.*
 
 What the examples show: EUR/USD (3) is the case the card exists for: "small swings" in absolute terms and still
@@ -274,7 +271,7 @@ nothing else takes width from it at 1,280.
   760pt (about 85 characters at 10pt, the readable limit; it does not stretch to the right edge, the rest stays
   empty). The footer spans both and wraps at the same 760pt.
 - Height budget: title 22 + heading 18 + four lines of at most three wrapped text lines each (about 4 × 50) + rounding
-  note 16 + footer 36 + padding 24 ≈ **270pt**, with a stale-row line 290pt. The board viewport at 775pt high is about
+  note 16 + footer 36 + padding 24 ≈ **290pt**, with a stale-row line 310pt. The board viewport at 775pt high is about
   560pt, so one open card plus its own row always fits. Build test: at 1280×775, open the card on the tallest fixture
   row (Alibaba-like: W8 note, earnings label) and assert the card is fully inside the scroll viewport.
 - Type: facts in `theme.text(10)` / `INK`; labels `theme.text(10, True)` / `INK`; secondary text and zero lines
@@ -288,7 +285,7 @@ red-orange, catalyst green; same colours as the bar, so the two read as one lege
 **`27 of 30`**, then a mini bar of `points / max` on `GRID`. **Colour never carries the meaning alone**: the label
 and the number do. Contrast: swatches and bars are non-text (3:1 needed; all four `COMP` colours are light on the
 dark `PANEL`, well above), and every text colour is `INK`, `MUTED` or `FAINT`, which clear 4.5:1 (`ui/theme.py:42`).
-Build adds a test that every colour the card paints text with is one of those three and that the measured ratio
+Build adds a test that the Learn paragraph's four maxima equal `_W` × 100, and a test that every colour the card paints text with is one of those three and that the measured ratio
 against `PANEL` is at least 4.5. Catalyst and edge share a green in `COMP`; edge is not on this board, so no clash.
 A fixed rounding note sits under the four lines in both wordings: "Points are rounded to whole numbers so they add up
 to the score." (W5).
@@ -300,8 +297,8 @@ never the layout).
 
 | | Plain | Expert |
 |---|---|---|
-| Title | `Nvidia — worth a look 75 / 100 (1st of 129)` | `NVDA — CONF 75 (1st of 129)` |
-| Line labels | News · Recent move · Swing size · Scheduled date | NEWS · MOM · VOL · CAT |
+| Title | `Nvidia — notability score 75 / 100, ranked 1st of 129 by this score today (risk filter: aggressive)` | `NVDA — NOTABILITY 75, ranked 1st of 129 (risk filter: aggressive)` |
+| Line labels | News · Recent move · Swing size · Earnings date | NEWS · MOM · VOL · EARN |
 | Line detail | the template sentences | the template sentences' numbers, then `0.88 × 0.30 = 26.4` in `MUTED` |
 | Footer, rounding note | identical | identical |
 
@@ -313,7 +310,7 @@ the rounding note rather than looking like an error.
 | State | What the reader sees |
 |---|---|
 | **No rows** | Nothing to open: the board shows its existing empty message (`_assets_empty_text`). No card, no card placeholder. |
-| **Stale row** | The AGE column already turns gold at 20 min and red at 60 min (`AGE_WARN_S`, `AGE_BAD_S`). When the row is at or past 20 min, the card adds one line under the title, in the same colour: `The price for this row is {age} old; the move and swing figures are as of then.` The score is shown unchanged and is not recomputed or hidden. |
+| **Stale row** | The AGE column already turns gold at 20 min and red at 60 min (`AGE_WARN_S`, `AGE_BAD_S`). When the row is at or past 20 min, the card adds one line under the title, in the same colour. Every card also shows `As of the {HH:MM} scan.` under the title, so no relative time can look current after the board stops updating: `The price and news for this row are {age} old; every figure here is as of then.` The score is shown unchanged and is not recomputed or hidden. |
 | **Component missing from `comp`** | A key absent from `comp` is not a zero. The line shows `– of {max}` in `FAINT` and `Not available for this row.`; the other three lines are unaffected. The points rounding runs over the components that exist, so the displayed score is still the sum of the lines shown, and the rounding note stays. If `comp` is missing or empty, the card shows the title, `The parts of this score are not available for this row.`, and the footer. |
 | **Non-equity catalyst** | Always the fixed "never score here" sentence, even if `comp` carries a catalyst key. |
 | **Open card, row leaves the board** | Closes, focus to the board header (above). |
@@ -328,7 +325,7 @@ Insert after the table that ends at `</table>` (line 482), before the "R:R and P
 <p>Click the score in the <b>Worth a look</b> column (or press Tab to it, then
   Enter) and a card opens under that row. It lists the four things the score is
   made of and how many points each one added: news, up to 35; recent move, up
-  to 30; scheduled date, up to 20; and swing size, up to 15. The points add up
+  to 30; earnings date, up to 20; and swing size, up to 15. The points add up
   to the score. Under each one is the plain fact behind it: how many matching
   news stories there were and how fresh, how far the price moved and how that
   size ranks among markets of the same kind, how much it usually moves in a
@@ -336,7 +333,7 @@ Insert after the table that ends at `</table>` (line 482), before the "R:R and P
 <p>Two things are worth knowing. The recent move and swing size are compared
   with other markets of the same kind (shares with shares, currency pairs with
   currency pairs); news is not. And only company earnings dates are tracked, so
-  only shares can score for the scheduled date.</p>
+  only shares can score for the earnings date.</p>
 <p>The card says what the score leaves out, on every row: it says something is
   happening in that market. It does not say which way the price goes next, and
   a fall counts the same as a rise. Whether big swings belong in the score at
@@ -351,42 +348,40 @@ Characters stand in for pixels (one column is about 9.5pt at 1280); the card spa
 text column stops at 760pt.
 
 ```
-+--------------------------------------------------------------------------------------------------------------+
-| Nvidia        ~~~~  182.40   -2.1%   Fell 8.0%   big swings    4 stories    win 1.5×     75 / 100 ▾   3m   [Buy][Short] |
-|  NVDA              trend                           3.5% a day   Spike        40% of time  [=======--]                |
-+--------------------------------------------------------------------------------------------------------------+
-|  Nvidia — worth a look 75 / 100  (1st of 129 on the board)                                         [ Hide ] |
-|                                                                                                              |
-|  What put it here                                                                                            |
-|  [#] News            35 of 35  [==========]  4 matched news stories in the last 3 hours (newest 12 minutes   |
-|                                              ago; MarketWatch, Financial Times, Times of India ×2). That     |
-|                                              counts as a news spike.                                         |
-|  [#] Recent move     27 of 30  [=========-]  Fell 8.0% over the last 5 days, the 5th-largest move of 50      |
-|                                              shares on the board. The size counts, not the direction: a      |
-|                                              fall scores the same as a rise.                                 |
-|  [#] Swing size      13 of 15  [========--]  Usually moves about 3.5% a day (big swings), the 9th-largest    |
-|                                              of 50 shares. The score compares it with other shares, not      |
-|                                              with every market. Whether big swings belong in this score     |
-|                                              is an open question in SONAR's own research (Learn, section 5). |
-|  [#] Scheduled date   0 of 20  [----------]  No earnings date within the next 10 days.          (muted)       |
-|      Points are rounded to whole numbers so they add up to the score.                          (faint)       |
-|                                                                                                              |
-|  What this does not say                                                                                      |
-|  This score counts what was found in news and price data. It does not say which way the price goes next, or that |
-|  a trade would make money. In SONAR's own simulated replay of 25,504 past setups, before costs, big moves and    |
-|  news spikes showed no clear link to which way prices went; that test can only rule out large effects.         |
-+--------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------+
+|  Nvidia — notability score 75 / 100, ranked 1st of 129 by this score today (risk filter: aggressive)   [ Hide ]|
+|  As of the 12:32 scan.                                                                                     |
+|                                                                                                            |
+|  What put it here                                                                                          |
+|  [#] News            35 of 35 [==========] 4 matched news stories in the last 3 hours (newest 12 minutes before|
+|                                            the scan; MarketWatch, Financial Times, Times of India ×2).     |
+|                                            3 or more stories in the last 6 hours.                          |
+|  [#] Recent move     27 of 30 [=========-] Fell 8.0% over the last 5 days, the 5th-largest move of 50 shares on|
+|                                            the board; the score partly compares moves within the kind and partly|
+|                                            with a fixed size. The size counts, not the direction: a fall scores|
+|                                            the same as a rise.                                             |
+|  [#] Swing size      13 of 15 [========--] SONAR's estimate of its daily swing is about 3.5% (big swings), the|
+|                                            9th-largest of 50 shares. The score partly compares it with other|
+|                                            shares and partly with a fixed size. Whether big swings belong in this|
+|                                            score is an open question in SONAR's own research (Learn, section 5).|
+|  [#] Earnings date    0 of 20 [----------] No earnings date within the next 10 days.                    (muted)|
+|      Points are rounded to whole numbers so they add up to the score.                                   (faint)|
+|                                                                                                            |
+|  What this does not say                                                                                    |
+|  This score counts what was found in news and price data. It does not say which way the price goes next, or that|
+|  a trade would make money. In SONAR's own simulated replay of 25,504 past setups, before costs, big moves and news|
+|  spikes showed no clear link to which way prices went; that test can only rule out large effects.          |
++------------------------------------------------------------------------------------------------------------+
 ```
 
-`[#]` is the colour swatch (`theme.COMP`). The row above is the existing row, unchanged apart from the caret.
+`[#]` is the colour swatch (`theme.COMP`). The card sits directly under its row (not drawn), which is the existing row unchanged apart from the caret.
 
 ### Domain-finance review (2026-11-18, `docs/audit/why-notable-card-domain-finance.md`)
 
 No P0. The three P1s are fixed above: (1) the footer's research sentence now says simulated, before costs, and that
 the test only rules out large effects (CONFIDENCE.md §13); (2) "something is happening here" is gone from the footer;
 (3) the no-date sentence now looks 2 horizons ahead (`catalyst_score` decays to zero one horizon after the first), so
-it can no longer sit beside points from a date 6-9 days out. Ten P2 and six P3 items remain in the audit file; the
-ones that change copy ("Usually moves", "More coverage than usual", ranks within class vs the 60/40 blend, frozen
+it can no longer sit beside points from a date 6-9 days out. P2-1 to 5 and 7 to 9 were applied on the owner's "apply as recommended" (swing wording, within-class note, story-count levels, "as of the scan" time, "notability score" title, expert "NOTABILITY", "Earnings date"/EARN, stem-matched W3, Learn-maxima test). **Parked:** P2-6 (the volatility sentence, reversing Define decision 2) is the owner's call and stays as W8 until then; P2-10 (Buy/Short labels) is in `TODO.md`; whether the column heading "Worth a look" and the rank read as a pick list goes to a qualified person. Six P3 items remain in the audit file. The ones that change copy ("Usually moves", "More coverage than usual", ranks within class vs the 60/40 blend, frozen
 "ago" times, extra W3 words such as recommend/best/top/pick/avoid, Learn maxima drifting from `_W`) go to the owner
 before Build. Not re-verified: live board ranks and numbers in the examples. Whether "worth a look" plus "1st of 129"
 reads as a pick list, and Buy/Short beside the card, are flagged for a qualified person, not ruled on.
