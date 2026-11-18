@@ -41,7 +41,7 @@ def _texts(layout):
 
 class FakeRow(QWidget):
     """Stands in for AssetRow: what is tested is that the board is rebuilt."""
-    def __init__(self, a, *_):
+    def __init__(self, a, *_, **__):
         super().__init__()
         self.symbol = a["symbol"]
 
