@@ -182,6 +182,9 @@ def test_a_broken_sum_falls_back_to_unrounded_points_without_the_note(caplog):
     assert c.rounding_note == ""
     assert any(isinstance(ln.points, float) for ln in c.lines)
     assert "do not add up" in caplog.text
+    # catalyst is still zero, not "missing", on the fallback path
+    cat = next(ln for ln in c.lines if ln.key == "catalyst")
+    assert cat.points == 0 and cat.text == "No earnings date within the next 10 days."
 
 
 def test_displayed_score_is_the_cells_own_format():
