@@ -88,6 +88,9 @@ point in about 1 run in 6.**
   approved gates; `docs/foundry/activity.jsonl` ends 2026-10-19 (providers-wiring review "start"). TODO still says
   "Next: Review" or "Verify" for the alarm (P0), starved-engine, build-traceability and providers-wiring items, and
   "Decide whether to restart the launchd agent on v2.178" / "Open the installed v2.178".
+- Correction (same day): `docs/foundry/activity.jsonl` logs build-traceability Verify done 2026-10-19
+  (`build-traceability-qa.md`); only a file under the planned name is missing. The owner confirmed the install was
+  deliberate (Lab Hub "Update now"); record in `docs/audit/release-v2.406.md`.
 - Fix: a release note for v2.406 (what it contains, who installed it, smoke-test result) and a CHANGELOG entry; update
   the four TODO items to say what is live and which phase is still owed; record future gate approvals with
   `record_approval.py`. The owner says whether v2.406 was a deliberate release.

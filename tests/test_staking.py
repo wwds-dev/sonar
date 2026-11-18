@@ -185,3 +185,50 @@ def test_an_assessment_says_when_uncertainty_is_what_blocked_the_bet():
     a = s.assess(s.Estimate(0.55, 0.45, 0.65, "model"), 100, fair=0.5)
     assert a.fraction == 0.0
     assert "no edge at this price" in a.note
+
+
+# --------------------------------------------------------------------------- #
+# An interval that was not measured never stakes (docs/specs/readiness-h3-h4.md)
+# --------------------------------------------------------------------------- #
+def _priced_best(text: str):
+    quotes = d.parse_quotes(text)
+    best = d.screen(quotes, min_edge=0.005)[0]
+    est = s.from_consensus(d.consensus(quotes, exclude=best.book), best.outcome)
+    return best, est, s.assess(est, best.odds, fair=best.fair)
+
+
+def test_peers_with_no_spread_stake_nothing_and_say_why():
+    """Two books at -110/-110 and one at +105/-125 staked 2.38% of bankroll,
+    "sized at the low end of the interval (50.0%)": a zero-width interval
+    because nothing varied, not because anything was known."""
+    best, est, a = _priced_best("A -110 -110\nB -110 -110\nC +105 -125")
+    assert best.book == "C" and est.width == 0.0 and est.measured is False
+    assert est.can_size, "still a sizeable kind of source; this one was not measured"
+    assert s.kelly(est, best.odds) == 0.0 and a.fraction == 0.0
+    assert "no spread" in a.note and "low end" not in a.note
+
+
+def test_the_interval_uses_students_t_for_the_number_of_books():
+    quotes = [d.Quote("a", (-110, -110)), d.Quote("b", (-112, -108))]
+    cons = d.consensus(quotes)
+    est = s.from_consensus(cons, 0)
+    half = cons.standard_error(0) * d.t_975(1)
+    assert d.t_975(1) == pytest.approx(12.706)
+    assert est.probability - est.low == pytest.approx(half)
+    assert "t, 1 df" in est.basis
+
+
+def test_two_close_peers_no_longer_stake_on_a_normal_interval():
+    """The control: peers -110/-110 and -112/-108 staked 1.96% at z = 1.96."""
+    best, est, a = _priced_best("A -110 -110\nB -112 -108\nC +105 -125")
+    assert est.measured and a.fraction == 0.0
+    legacy = s.from_consensus(d.consensus(d.parse_quotes("A -110 -110\nB -112 -108")),
+                              best.outcome, confidence=1.96)
+    assert s.kelly(legacy, best.odds) > 0.0, "the old interval did stake"
+
+
+def test_many_tight_books_still_stake_the_cap():
+    best, est, a = _priced_best(
+        "DraftKings -150 130\nFanDuel -155 132\nPinnacle -148 128\nBetMGM -150 210")
+    assert best.book == "BetMGM" and est.measured
+    assert a.fraction == pytest.approx(s.MAX_FRACTION)

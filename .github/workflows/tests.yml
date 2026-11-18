@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: wwds-dev/sonar_playmaker
-          ref: 8e5fcc3d3ad4d73c7332fd1c44556895a6a8b523
+          ref: d20e54b3ae8b2d21f2107055d45d245d5113770d
           path: sonar/playmaker
       - uses: actions/setup-python@v7
         with:

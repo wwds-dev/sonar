@@ -1,6 +1,6 @@
 # Spec: Playmaker stake on an unmeasured interval (H3) and the v2.406 release record (H4)
 
-- Status: approved
+- Status: built (2026-11-18: playmaker `d20e54b`; H4 records written). Review and Verify still to run
 - Owner approval: 2026-11-18, Define + Architect ("Fix H3 and H4", then "Approve as written");
   recorded in `docs/foundry/approvals.jsonl`. H4: the owner says the v2.406 install was deliberate ("Yes,
   deliberate") and will run the smoke test themselves ("Skip, I'll run it").

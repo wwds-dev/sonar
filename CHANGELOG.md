@@ -28,12 +28,25 @@ not yet reviewed or installed; the agent keeps running v2.406 until the owner sa
   an hour old (a rescan that fetched nothing used to keep health green), and the agent pushes "board prices are
   stale" after ten minutes. README outage list and RUNBOOK §2 updated.
 - CI pins move to macro `d9b0d0d` and playmaker `8e5fcc3` (the audit's TODO-only commits, pushed), so
-  `tests/test_ci_pins.py` matches the checkouts again. Suite: 3,271 tests.
+  `tests/test_ci_pins.py` matches the checkouts again. Suite: 3,278 tests (with H3 below).
+- **Playmaker: no stake on an interval nobody measured** (`docs/specs/readiness-h3-h4.md`, audit H3; playmaker
+  `d20e54b`). When the other books showed no spread, the consensus interval had zero width and full Kelly was taken
+  at its "low end": 2.38% of bankroll on three books. It now stakes nothing and says the spread could not be
+  measured. The interval and the outlier flag use Student's t for the number of books (12.7 at two peers, where
+  1.96 was used), and a price with no measured spread is not called an outlier. CI pins playmaker `d20e54b`.
 
-## Unreleased — 2026-11-10
+## v2.406 — 2026-11-17
+
+Installed by the owner through Lab Hub's "Update now" on 2026-11-17 21:01; the agent restarted onto it at 21:02.
+Recorded after the fact on 2026-11-18 in `docs/audit/release-v2.406.md`, which lists every change since the last
+recorded install (v2.340) and the phases each had reached. Besides the legal fixes below, v2.406 is the first
+installed build with the **alarm-delivery**, **starved-engine**, **build-traceability** and **providers-wiring**
+entries further down (v2.363-v2.366 and "Unreleased — alarm-delivery"), and with the Lab Hub merges of
+2026-11-17 (shadow-ledger follow-up, closing-QA fixes, Playmaker plaintext for the holder LLM, untrusted-text
+sweep). Smoke test: not run yet; the owner runs it.
 
 **Legal audit code and copy fixes** (Foundry's first legal audit of SONAR, findings 3, 4, 5, 7, 8, 9; branch
-`legal-audit-fixes`). Not yet built or installed. No behaviour change beyond wording and packaging.
+`legal-audit-fixes`). No behaviour change beyond wording and packaging.
 
 - **Playmaker says it is not betting advice** (finding 3). A notice sits at the top of the tab, in Learn §14 and in
   `sonar/playmaker/README.md`: arithmetic on published prices, no bets taken, betting can lose money and can be

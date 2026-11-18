@@ -25,12 +25,9 @@ not-planned list sit between the two.
       health problem so the watchdog alarms, and add both to the README outage list. Source: readiness audit H2.
       **Built 2026-11-18** on `claude/readiness-h1-h2` (spec `docs/specs/readiness-h1-h2.md`, Define and
       Architect approved). Next: Review, Verify, Document check, then install with the owner's yes.
-- [ ] `P1` `docs` `@me` **v2.406 is live with no release record.** The agent restarted onto it 2026-11-17 21:02; it
-      carries alarm-delivery, starved-engine, build-traceability, providers-wiring, the legal fixes and Lab Hub
-      merges. No CHANGELOG entry (newest v2.366; legal fixes still "Unreleased"), no release report, no
-      `approvals.jsonl`, activity log ends 2026-10-19, and the alarm, starved-engine, build-traceability and
-      providers-wiring items above still read "Next: Review/Verify". Owner: say whether it was a release; then
-      `@ai` writes the note and CHANGELOG entry, runs the smoke test and corrects those items. Source: audit H4.
+- [ ] `P1` `testing` `@me` **Run the v2.406 release smoke test.** Steps in `docs/audit/release-v2.406.md`
+      ("Smoke test"): About shows v2.406, one scan, one paper trade (Undo it if unwanted), quit and relaunch,
+      `install_agent.sh --status`, phone heartbeat. Note the result in that file.
 - [ ] `P2` `bug` `@ai` **A restored book is announced only on stderr.** `paths.read_state` (`paths.py:188-229`)
       loads the newest daily backup when `portfolio.json` is unreadable; nothing in the UI or `/api/health` says
       so, so up to a day of positions can vanish silently. Surface `restored_from` on My trades and as a health
@@ -83,6 +80,8 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       (ntfy.sh data terms), Document; at Release the owner stores the Keychain topic, runs `--test-alarm`, says yes to
       the agent restart, and saves the phone evidence (measures 6, 7). Review fix round 1 done 2026-10-19 (owner
       decisions (a)-(c) in the spec). Source: ops audit wave 2 P0-1.
+      **Status 2026-11-18:** installed in v2.406 on 2026-11-17 (`docs/audit/release-v2.406.md`). Live: ntfy configured, banner 3/3 and ntfy 3/3 OK, heartbeat
+      sent. Still owed: the release report's measures 6-7 (phone evidence) `@me`.
 - [ ] `P1` `infra` `@ai` **External probe outside the agent.** A separate 5-minute launchd job that runs
       `curl /api/health` and pushes to ntfy when the agent is dead, hung or silent. It closes the blind spot in
       RUNBOOK §2, where a missing 09:00 heartbeat is today's only sign. Needs its own spec (alarm-delivery Owner
@@ -94,6 +93,8 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       `SONAR_ALARM` A2, harness `scripts/diag_priority.py` A4, unit tests only). Next: Review, then the measured hour
       (`diag_priority.py run --follower`, outside US market hours) to fill RUNBOOK §7 and decide A5, then Verify, Secure.
       Ships with alarm-delivery, so there is one live restart, with the owner's yes. Source: ops audit wave 2 P1-2.
+      **Status 2026-11-18:** installed in v2.406 on 2026-11-17 (`docs/audit/release-v2.406.md`). Live plist: `ProcessType Standard`, no `Nice`; health answered
+      in 15 ms under load. Still owed: Review, the measured hour (RUNBOOK §7), Verify, Secure.
 - [ ] `P1` `infra` `@ai` **Build traceability: the release gate passes a bundle whose nested-module code cannot be named.**
       v2.340's stamp has `"nested": {}` and `"dirty": false`, but the bundle holds macro and playmaker. Release worktrees
       have plain copies, build numbers are not unique, and the ledger `build` field stores only the number. Planned fixes:
@@ -107,6 +108,8 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       the bootstrap report + install time into `docs/audit/build-traceability-verify.md`; Secure (file writes,
       packaging). The owner runs the printed tag commands, including the retroactive `v2.340`. Ships in the shared items
       1+2+3 install. Source: ops audit wave 2 P1-1, P2-1, prior P3-1.
+      **Status 2026-11-18:** installed in v2.406 on 2026-11-17 (`docs/audit/release-v2.406.md`). Verify was logged done 2026-10-19 (`build-traceability-qa.md`);
+      v2.406's stamp names both nested commits. Still owed: Secure, and the tag commands `@me`.
 - [ ] `P3` `security` `@ai` **Untracked importable files in a nested repo count as clean.** `_dirty`
       (`sonar/version.py`) uses `--untracked-files=no`, so an untracked package in `sonar/macro` or `sonar/playmaker`
       can shadow a tracked module, get bundled, and still be stamped clean. Fix: count untracked, non-ignored paths in
@@ -142,6 +145,8 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       `docs.html`, `.env.example`, `SUGGESTIONS.md` and `TESTPLAN.md` match the code; `providers.py` and its tests are
       deleted; the source line is in the result records; `tests/test_providers_docs_truth.py` keeps the false phrases
       out. Measures 1-6 in `docs/specs/providers-wiring.md`. Review, verify and document are still to run.
+      **Status 2026-11-18:** installed in v2.406 on 2026-11-17 (`docs/audit/release-v2.406.md`). Installed mid-review (docs and dead-code removal only).
+      Still owed: Review, Verify, Document.
 - [ ] `P1` `feature` `@ai` **The Lab is the least readable tab in the app** and
       it is the one that decides whether anything here is true. Three parts:
       a guided mode whose controls are questions rather than `STEP (BARS)`;
@@ -165,12 +170,6 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       Everywhere the app refuses to claim something, say what would change it
       and how far along it is: "unproven — needs ~20 closed positions, you have
       3". The Book tab has the count already.
-- [ ] `P2` `testing` `@me` **Open the installed v2.178 once and look.** The first-run placeholders (My trades, News),
-      the plain captions on Practice, Sports and Macro, and the attribution table in both wordings were verified by
-      tests, not by eye. Toggle Wording and run one Practice simulation.
-- [ ] `P2` `infra` `@me` **Decide whether to restart the launchd agent on v2.178.** It still runs the code from before
-      2026-10-10's wording and docs changes; none of them touch the engine, so leaving it keeps the 30-day clean run
-      (day 1 = 2026-10-10, due 2026-11-09) undisturbed. Restarting puts agent and app on one build.
 
 ### After QA-11 / QA-13 (honest baselines) — recorded 2026-10-12, not built
 
@@ -307,6 +306,8 @@ spec's owner decisions (`docs/specs/qa11-qa13-honest-baselines.md`).
         cannot see that."; the ten-year sentence quotes about 1 run in 10 and about 1 in 4 on one set of past
         bars; the Lab shows the survivorship line on every result; `static/docs.html:716` range advice stops at
         five years.
+      **Status 2026-11-18:** shipped in v2.340 (`8e7d024`); the measured rates are in `CONFIDENCE.md`. What is open
+      is only the sub-items below.
 - [ ] `P2` `research` `@me` **The h = 1 Terminal verdict sits on the daily-bar tie residual.** At a 1-day horizon a
       bar that touches both barriers scores a loss; a coin-flip direction read "below" on 11 of 38 seeds in QA r4
       (P2-A). Live 2y h = 1 now reads Δ −0.99 within ±1.4 (QA r6 §4). Options: a placebo baseline, or no verdict
@@ -398,6 +399,23 @@ sections on 2026-10-10 without edits to the entries.
       lab-wide doc sweep. **Done 2026-11-18:** `docs/audit/code-readiness-2026-11-18.md`
       (4 High, 8 Medium, 6 Low; suite 3256 passed offscreen); new items under Open and in the macro and playmaker
       TODOs.
+
+- [x] `P1` `docs` `@me` **v2.406 is live with no release record.** The agent restarted onto it 2026-11-17 21:02; it
+      carries alarm-delivery, starved-engine, build-traceability, providers-wiring, the legal fixes and Lab Hub
+      merges. No CHANGELOG entry (newest v2.366; legal fixes still "Unreleased"), no release report, no
+      `approvals.jsonl`, activity log ends 2026-10-19, and the alarm, starved-engine, build-traceability and
+      providers-wiring items above still read "Next: Review/Verify". Owner: say whether it was a release; then
+      `@ai` writes the note and CHANGELOG entry, runs the smoke test and corrects those items. Source: audit H4.
+      **Done 2026-11-18:** the owner confirmed the install was deliberate (Lab Hub "Update now");
+      `docs/audit/release-v2.406.md`, CHANGELOG v2.406, the items above corrected. Spec `readiness-h3-h4`.
+- [x] `P2` `testing` `@me` **Open the installed v2.178 once and look.** The first-run placeholders (My trades, News),
+      the plain captions on Practice, Sports and Macro, and the attribution table in both wordings were verified by
+      tests, not by eye. Toggle Wording and run one Practice simulation.
+      **Closed 2026-11-18:** superseded; the app and the agent run v2.406 (`docs/audit/release-v2.406.md`).
+- [x] `P2` `infra` `@me` **Decide whether to restart the launchd agent on v2.178.** It still runs the code from before
+      2026-10-10's wording and docs changes; none of them touch the engine, so leaving it keeps the 30-day clean run
+      (day 1 = 2026-10-10, due 2026-11-09) undisturbed. Restarting puts agent and app on one build.
+      **Closed 2026-11-18:** superseded; the app and the agent run v2.406 (`docs/audit/release-v2.406.md`).
 
 ### Landing page, the book and early test coverage
 

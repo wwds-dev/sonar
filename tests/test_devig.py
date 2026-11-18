@@ -278,3 +278,25 @@ def test_parsed_prices_feed_the_screen_directly():
     best = d.screen(quotes, min_edge=0.01)[0]
     assert best.book == "BetMGM"
     assert best.is_outlier
+
+
+# --------------------------------------------------------------------------- #
+# An outlier is judged against the peers' own spread (readiness-h3-h4)
+# --------------------------------------------------------------------------- #
+def test_t_975_takes_the_wider_row_between_table_rows():
+    assert d.t_975(2) == pytest.approx(4.303)
+    assert d.t_975(35) == d.t_975(30)
+    assert d.t_975(500) == pytest.approx(1.96)
+    assert d.t_975(0) == float("inf")
+
+
+def test_no_measured_spread_is_not_an_outlier():
+    hits = d.screen(d.parse_quotes("A -110 -110\nB -110 -110\nC +105 -125"), min_edge=0.005)
+    assert hits and all(math.isnan(o.z) and not o.is_outlier for o in hits)
+
+
+def test_two_peers_need_students_t_not_two():
+    (hit,) = [o for o in d.screen(d.parse_quotes("A -110 -110\nB -112 -108\nC +105 -125"),
+                                  min_edge=0.005) if o.book == "C"]
+    assert hit.peers == 2 and 2.0 < hit.z < d.t_975(1)
+    assert not hit.is_outlier
