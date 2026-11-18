@@ -1,7 +1,7 @@
 # Spec: a "why is this notable" card per instrument on the Screener
 
 - Status: approved (Define); Design done 2026-11-18; Architect done 2026-11-18 (gate not triggered, see A5),
-  three copy questions open for the owner
+  copy questions decided by the owner ("Yes, as recommended")
 - Owner approval: 2026-11-18, Define ("go with recommendations"); recorded in `docs/foundry/approvals.jsonl`.
   Decisions under "Owner decisions at the Define gate" below.
 - Source: `SUGGESTIONS.md` #23 (portfolio review 2026-11-18); `TODO.md` "Approachability — the app is unreadable
@@ -311,7 +311,7 @@ the rounding note rather than looking like an error.
 | State | What the reader sees |
 |---|---|
 | **No rows** | Nothing to open: the board shows its existing empty message (`_assets_empty_text`). No card, no card placeholder. |
-| **Stale row** | The AGE column already turns gold at 20 min and red at 60 min (`AGE_WARN_S`, `AGE_BAD_S`). When the row is at or past 20 min, the card adds one line under the title, in the same colour. Every card also shows `As of the {HH:MM} scan.` under the title, so no relative time can look current after the board stops updating: `The price and news for this row are {age} old; every figure here is as of then.` The score is shown unchanged and is not recomputed or hidden. |
+| **Stale row** | The AGE column already turns gold at 20 min and red at 60 min (`AGE_WARN_S`, `AGE_BAD_S`). When the row is at or past 20 min, the card adds one line under the title, in the same colour. Every card also shows `As of the {HH:MM} scan.` under the title, and no relative time is used, so nothing can look current after the board stops updating: `The price and news for this row were fetched at {HH:MM}; every figure here is as of then.` (absolute time, so it cannot freeze; owner decision at Architect, copy decision 1) The score is shown unchanged and is not recomputed or hidden. |
 | **Component missing from `comp`** | A key absent from `comp` is not a zero. The line shows `– of {max}` in `FAINT` and `Not available for this row.`; the other three lines are unaffected. The points rounding runs over the components that exist, so the displayed score is still the sum of the lines shown, and the rounding note stays. If `comp` is missing or empty, the card shows the title, `The parts of this score are not available for this row.`, and the footer. |
 | **Non-equity catalyst** | Always the fixed "never score here" sentence, even if `comp` carries a catalyst key. |
 | **Open card, row leaves the board** | Closes, focus to the board header (above). |
@@ -489,7 +489,7 @@ as the widgets it belongs to.
 - **Rank population** is the rows in `board["assets"]` with the same `cls`. This is the post-risk-filter set the score
   was standardised against. N is the count of that set.
 - **Rank method**: competition rank, descending (1 + the number of same-class rows with a strictly larger key), so
-  ties share a rank. Rank 1 gives "the largest". Rank N with N > 1 gives "the smallest". N = 1 is open (Q2 below).
+  ties share a rank. Rank 1 gives "the largest". Rank N with N > 1 gives "the smallest". N = 1 gives "the only {class singular} on the board" (copy decision 2).
 - **Board rank in the title** uses the same competition rank on `confidence` over all of `board["assets"]`. The
   payload is already sorted by it (`assets.py:499`), but the card does not rely on that order.
 - **Weights.** `_W` is imported, as `ui/app.py:60` already does. Max points per line = `round(100 * _W[k])`. The
@@ -505,7 +505,7 @@ as the widgets it belongs to.
 - **Story count, span and ages** come from `row["headlines"]`: count = `len`, newest and oldest = min/max of the
   `age_h` values that are not `None`. Undated headlines count towards *k* but not towards the span. This matches
   `news_level`, which counts only dated headlines towards levels. If every headline is undated, the span clause is
-  left out: "{k} matched news stories (no dates given; {sources})". That is new copy, so it is Q3 below.
+  left out: "{k} matched news stories (no dates given; {sources})". Decided: copy decision 3 below.
 - **Swing words** come from `swing_words(row["volatility"])` (A1). Its thresholds stay where they are, in one place.
 - **Earnings window** is `2 × board["horizon"]["momentum_days"]`. That is the horizon length `catalyst_score` is
   called with (`assets.py:460`, `days` = `hz.momentum_days`), and the score decays to zero at 2 horizons
@@ -569,18 +569,19 @@ it does not, which is the intent.
   at 1280×775 (Design).
 - Mutation targets: the rounding (A4), competition rank and its key (A3), the sign verb, the catalyst-absent branch.
 
-### Open questions for the owner (copy only; none blocks the gate)
+### Copy decisions (owner, 2026-11-18: "Yes, as recommended")
 
-1. **Frozen stale line.** The 1 s timer never touches the card (Design), so `The price and news for this row are
-   {age} old` is computed when the card renders. If scans stop, the board does not rebuild and that relative age
-   freezes while the card is open. The `As of the {HH:MM} scan` line stays correct. **Recommendation:** change the
-   stale line to an absolute time, "The price and news for this row were fetched at {HH:MM}; every figure here is as
-   of then." It never goes stale. The alternative is to let `update_age` refresh only that one label, once a minute.
-2. **Only one of its kind** (N = 1 in a class after the risk filter). "The largest of 1 shares" is wrong.
-   **Recommendation:** "the only {class singular} on the board". This needs class singulars (share, index, currency
-   pair, cryptocurrency, commodity) beside the plurals.
-3. **All matched headlines undated.** There is no span or newest age to state. **Recommendation:**
-   "{k} matched news stor{y/ies}, with no publication time given ({sources})."
+The three copy questions raised at Architect were decided as recommended. The W3 banned-term test covers the new
+strings.
+
+1. **Stale line is absolute.** `The price and news for this row were fetched at {HH:MM}; every figure here is as of
+   then.` `{HH:MM}` is `board["generated"] - row["data_age_s"]`, formatted like the `As of` line. `age_s` still
+   decides whether the line shows (at or past `AGE_WARN_S`) and its colour, when the card renders. The 1 s timer still
+   never touches the card. The Design States table is updated to match.
+2. **Only one of its kind** (N = 1 in a class): `the only {class singular} on the board`. Class singulars sit beside
+   the plurals in `ui/why_card.py`: Equity → share, Index → index, Forex → currency pair, Crypto → cryptocurrency,
+   Commodity → commodity.
+3. **All matched headlines undated:** `{k} matched news stor{y/ies}, with no publication time given ({sources}).`
 
 ## Smallest first slice
 
