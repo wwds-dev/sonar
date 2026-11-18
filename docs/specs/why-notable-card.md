@@ -1,6 +1,6 @@
 # Spec: a "why is this notable" card per instrument on the Screener
 
-- Status: approved (Define)
+- Status: approved (Define); Design done 2026-11-18, awaiting owner review (not a gate: Design has none)
 - Owner approval: 2026-11-18, Define ("go with recommendations"); recorded in `docs/foundry/approvals.jsonl`.
   Decisions under "Owner decisions at the Define gate" below.
 - Source: `SUGGESTIONS.md` #23 (portfolio review 2026-11-18); `TODO.md` "Approachability — the app is unreadable
@@ -106,7 +106,11 @@ Not in:
   reuse this card's footer sentence verbatim so the two cannot drift.
 - Removing `_rationale`'s tone or `news_sentiment` from the LLM prompt (question 5).
 
-## Design (Define-level; the ux-designer owns layout)
+## Design
+
+Designed 2026-11-18 by the `ux-designer`. The card copy (structure, templates, W1–W9, examples) was set at
+Define and is kept; this phase fixed two copy conflicts found while checking it (see "Copy fixes at Design") and
+adds layout, interaction, states and the Learn text below.
 
 ### Card structure (fixed order, every row)
 
@@ -114,9 +118,9 @@ Not in:
 2. **"What put it here"**: four lines, sorted by points (ties in weight order news, move, swings, date), zero lines
    last and greyed. Each line: plain label, `{points} of {max}`, one or two sentences of fact.
 3. **"What this does not say"**: the fixed footer, always visible, not collapsible, identical on every card:
-   > This score says something is happening here. It does not say which way the price goes next, or that a trade
-   > would make money. SONAR tested big moves and news spikes over 25,504 past setups: neither told which way prices
-   > went.
+   > This score counts what was found in news and price data. It does not say which way the price goes next, or that a
+   > trade would make money. In SONAR's own simulated replay of 25,504 past setups, before costs, big moves and news
+   > spikes showed no clear link to which way prices went; that test can only rule out large effects.
 
 ### Line templates (plain wording)
 
@@ -125,7 +129,7 @@ Not in:
 | News | 35 | `{k} matched news stor{y/ies} in the last {span} (newest {age} ago; {sources}).` + level sentence: Spike → `That counts as a news spike.` · Elevated → `More coverage than usual.` · Normal → `Ordinary coverage.` · none → `No matched news.` |
 | Recent move | 30 | `{Rose/Fell} {x}% over the last {d} days, the {ordinal}-largest move of {N} {class plural} on the board. The size counts, not the direction: a fall scores the same as a rise.` |
 | Swing size | 15 | `Usually moves about {v}% a day ({swing words}), the {ordinal}-largest of {N} {class plural} ("the largest" / "the smallest" at the ends). The score compares it with other {class plural}, not with every market.` + W8 note |
-| Scheduled date | 20 | equity with a date: `{Earnings label} ({date}): a date on the calendar, not a forecast.` · equity without: `No earnings date within the next {d} days.` · other classes: `SONAR only tracks company earnings dates, so {class plural} never score here.` |
+| Scheduled date | 20 | equity with a date: `{Earnings label} ({date}): a date on the calendar, not a forecast.` · equity without: `No earnings date within the next {2d} days.` · other classes: `SONAR only tracks company earnings dates, so {class plural} never score here.` |
 
 Class plurals: Equity → shares, Index → indices, Forex → currency pairs, Crypto → cryptocurrencies, Commodity →
 commodities. Ranks and N are among rows currently on the board (after the risk filter), which is the set the score
@@ -155,8 +159,7 @@ of the name, labels MOM / VOL / NEWS / CAT. Same footer.
   in the column tooltips (moves and news spikes did not predict direction).
 - **W8 Components under dispute.** A component with an open research row whose result could change its weight or sign
   carries one fixed neutral sentence, from a static map in code with a test that #10 is in it: volatility →
-  `Whether big swings should add to this score is an open question in SONAR's own research (Learn: the volatility
-  component).` It states no measured result, because the result did not clear SONAR's own bar. When #10 is decided,
+  `Whether big swings belong in this score is an open question in SONAR's own research (Learn, section 5).` It states no measured result, because the result did not clear SONAR's own bar. When #10 is decided,
   the map entry is removed or rewritten in that change, not here.
 - **W9 No model output.** The card text is the same whether or not an Anthropic key is configured.
 
@@ -171,9 +174,9 @@ from the running agent's loopback `/api/assets` at 12:32 (129 rows). Points use 
 - Recent move 27 of 30: Fell 8.0% over the last 5 days, the 5th-largest move of 50 shares on the board. The size
   counts, not the direction: a fall scores the same as a rise.
 - Swing size 13 of 15: Usually moves about 3.5% a day (big swings), the 9th-largest of 50 shares. The score compares it with
-  other shares, not with every market. Whether big swings should add to this score is an open question in SONAR's
-  own research.
-- Scheduled date 0 of 20: No earnings date within the next 5 days.
+  other shares, not with every market. Whether big swings belong in this score is an open question in SONAR's
+  own research (Learn, section 5).
+- Scheduled date 0 of 20: No earnings date within the next 10 days.
 - *Footer.*
 
 **2. Alibaba — worth a look 66 / 100 (2nd of 129)**
@@ -215,6 +218,178 @@ What the examples show: EUR/USD (3) is the case the card exists for: "small swin
 mid-table, because the comparison is within currency pairs. Alibaba (2) is near the top with almost no news.
 VIX (4) is a volatility index, so its "swing size" is large by construction; the card states the number and does not
 editorialise.
+
+### Copy fixes at Design
+
+- **W3 contradicted W8.** The Define W8 sentence used "should", which W3 bans. Reworded to "belong in this score" and
+  its pointer changed to "Learn, section 5", because Learn has no "volatility component" section (checked
+  `static/docs.html`; §5 now carries the explanation, text below). The wording tests must run W3 over this sentence
+  too, so the two can never disagree again.
+- **No other W3 term appears** in the five examples, the footer or the new strings below (checked by hand against
+  the whole list; Build turns that into the test).
+
+### Opening the card: inline expand, not a popover
+
+The card opens **inline, as a second line of the same Screener row**, pushing the rows below it down. Reasons:
+
+1. It stays in the layout, so it is reachable by Tab, readable by a screen reader in order, and not tied to the
+   mouse, which is the exact complaint about the hover-only bar tooltip. A popover is a separate top-level window
+   that must be focus-trapped and positioned near the screen edge.
+2. The reader compares a row with its neighbours ("why Nvidia above TRON"). A popover covers those rows; inline
+   keeps the open row's own figures visible directly above its explanation.
+3. The board is already a scroll area of rows (`_rebuild`, `ui/app.py:4903`); inline adds no new window type.
+
+**Trigger.** The whole "Worth a look" cell (`ui/app.py:1600-1621`) is the control: pointing-hand cursor, focus
+policy StrongFocus, a visible focus ring (`theme.UP`, 2px, like the line edits in `ui/theme.py:196`), tooltip
+"Click to see why this row scores {score}". A caret shows that it opens: plain `75 / 100 ▸`, expert `75 ▸`; `▾`
+while open (the caret is `FAINT`, 4.6:1, and is not the only cue: cursor, tooltip and focus ring carry it too). The
+cell's accessible name is "Why {name} is worth a look, {score} of 100; {shown|hidden}". The column heading still
+links to Learn §5 and its tooltip gains one line: "Click a score to see why." The `ComponentBar`'s hover text
+stays as it is.
+
+**Closing, keyboard, one at a time.**
+- Click the cell again, press Enter or Space on the focused cell, press **Esc** with focus anywhere inside the open
+  card, or press the card's "Hide" button (top right, in the tab order).
+- Tab order: cell → (card) Hide → next row's controls. Esc returns focus to the cell that opened the card.
+- **Only one card is open.** Opening a card closes any other first; the board remembers one symbol, not a set.
+- The card is **not** an event for the board's rebuild: `_rebuild` runs on every scan (about every 3 minutes,
+  `ui/app.py:4885-4896`) and replaces every `AssetRow`. The open symbol is kept by the board and re-opened on the new
+  row; the card text is rebuilt from the new numbers in place, without moving focus or the scroll position. If the
+  symbol is no longer on the board (the risk filter dropped it), the card closes and focus moves to the board's
+  header. Wording switch: the card stays open and is re-rendered in the new wording. The 1 s age timer
+  (`update_age`) never touches the card. The Architect decides where that remembered symbol lives.
+- No animation (also keeps the offscreen tests deterministic). On opening, the board scrolls only as much as is
+  needed for the whole card to be visible; it never scrolls if the card already fits.
+
+### Layout at the 1280×775 minimum window
+
+Numbers measured from the code, not guessed: the columns total 1,050pt (`ASSET_COLS`), plus ten 12pt gaps and 12pt
+margins either side, so a row is **1,194pt** wide, and below `RAIL_COLLAPSE_BELOW` (1,420pt) the rail is collapsed, so
+nothing else takes width from it at 1,280.
+
+- The card spans the row's inner width (1,170pt) and adds **no width**: every label is built with `wrap=True`
+  (`label()`, `ui/app.py:353`), so `test_long_prose_labels_wrap` and `test_no_single_tab_forces_the_window_wide`
+  (`tests/test_layout.py:65-85`) keep passing.
+- Two columns: a **points column** 200pt wide (swatch, label, "27 of 30", mini bar) and a **text column** capped at
+  760pt (about 85 characters at 10pt, the readable limit; it does not stretch to the right edge, the rest stays
+  empty). The footer spans both and wraps at the same 760pt.
+- Height budget: title 22 + heading 18 + four lines of at most three wrapped text lines each (about 4 × 50) + rounding
+  note 16 + footer 36 + padding 24 ≈ **270pt**, with a stale-row line 290pt. The board viewport at 775pt high is about
+  560pt, so one open card plus its own row always fits. Build test: at 1280×775, open the card on the tallest fixture
+  row (Alibaba-like: W8 note, earnings label) and assert the card is fully inside the scroll viewport.
+- Type: facts in `theme.text(10)` / `INK`; labels `theme.text(10, True)` / `INK`; secondary text and zero lines
+  `MUTED` (6.4:1 on `PANEL`); the "of {max}" and rounding note `FAINT` (4.6:1). Nothing below `FAINT` is text.
+  Points figures in `theme.figure(11, True)` (tabular numerals, so the column lines up).
+
+### Points beside the component colours
+
+Each of the four lines starts with a swatch 10×10pt in `theme.COMP[key]` (momentum violet, news orange, volatility
+red-orange, catalyst green; same colours as the bar, so the two read as one legend), then the label, then
+**`27 of 30`**, then a mini bar of `points / max` on `GRID`. **Colour never carries the meaning alone**: the label
+and the number do. Contrast: swatches and bars are non-text (3:1 needed; all four `COMP` colours are light on the
+dark `PANEL`, well above), and every text colour is `INK`, `MUTED` or `FAINT`, which clear 4.5:1 (`ui/theme.py:42`).
+Build adds a test that every colour the card paints text with is one of those three and that the measured ratio
+against `PANEL` is at least 4.5. Catalyst and edge share a green in `COMP`; edge is not on this board, so no clash.
+A fixed rounding note sits under the four lines in both wordings: "Points are rounded to whole numbers so they add up
+to the score." (W5).
+
+### Plain and expert variants
+
+Same layout, same lines, same order; only vocabulary and one detail differ (the Wording rule in `ui/words.py`:
+never the layout).
+
+| | Plain | Expert |
+|---|---|---|
+| Title | `Nvidia — worth a look 75 / 100 (1st of 129)` | `NVDA — CONF 75 (1st of 129)` |
+| Line labels | News · Recent move · Swing size · Scheduled date | NEWS · MOM · VOL · CAT |
+| Line detail | the template sentences | the template sentences' numbers, then `0.88 × 0.30 = 26.4` in `MUTED` |
+| Footer, rounding note | identical | identical |
+
+The expert detail shows the unrounded product next to the whole points figure, so `26.4` beside `27` is explained by
+the rounding note rather than looking like an error.
+
+### States
+
+| State | What the reader sees |
+|---|---|
+| **No rows** | Nothing to open: the board shows its existing empty message (`_assets_empty_text`). No card, no card placeholder. |
+| **Stale row** | The AGE column already turns gold at 20 min and red at 60 min (`AGE_WARN_S`, `AGE_BAD_S`). When the row is at or past 20 min, the card adds one line under the title, in the same colour: `The price for this row is {age} old; the move and swing figures are as of then.` The score is shown unchanged and is not recomputed or hidden. |
+| **Component missing from `comp`** | A key absent from `comp` is not a zero. The line shows `– of {max}` in `FAINT` and `Not available for this row.`; the other three lines are unaffected. The points rounding runs over the components that exist, so the displayed score is still the sum of the lines shown, and the rounding note stays. If `comp` is missing or empty, the card shows the title, `The parts of this score are not available for this row.`, and the footer. |
+| **Non-equity catalyst** | Always the fixed "never score here" sentence, even if `comp` carries a catalyst key. |
+| **Open card, row leaves the board** | Closes, focus to the board header (above). |
+| **Expert wording** | As the variants table. |
+
+### Learn: the new paragraph for `static/docs.html` §5
+
+Insert after the table that ends at `</table>` (line 482), before the "R:R and P(profit)" callout:
+
+```html
+<h3 id="why-card">Why a row has the score it has</h3>
+<p>Click the score in the <b>Worth a look</b> column (or press Tab to it, then
+  Enter) and a card opens under that row. It lists the four things the score is
+  made of and how many points each one added: news, up to 35; recent move, up
+  to 30; scheduled date, up to 20; and swing size, up to 15. The points add up
+  to the score. Under each one is the plain fact behind it: how many matching
+  news stories there were and how fresh, how far the price moved and how that
+  size ranks among markets of the same kind, how much it usually moves in a
+  day, and whether a company earnings date is coming up.</p>
+<p>Two things are worth knowing. The recent move and swing size are compared
+  with other markets of the same kind (shares with shares, currency pairs with
+  currency pairs); news is not. And only company earnings dates are tracked, so
+  only shares can score for the scheduled date.</p>
+<p>The card says what the score leaves out, on every row: it says something is
+  happening in that market. It does not say which way the price goes next, and
+  a fall counts the same as a rise. Whether big swings belong in the score at
+  all is an open question in SONAR's own research; the card says so instead of
+  hiding it. One card is open at a time; press Esc or click the score again to
+  close it.</p>
+```
+
+### Mockup: Nvidia at real width (1,194pt row, 1280×775, plain wording, card open)
+
+Characters stand in for pixels (one column is about 9.5pt at 1280); the card spans the row's inner width, and the
+text column stops at 760pt.
+
+```
++--------------------------------------------------------------------------------------------------------------+
+| Nvidia        ~~~~  182.40   -2.1%   Fell 8.0%   big swings    4 stories    win 1.5×     75 / 100 ▾   3m   [Buy][Short] |
+|  NVDA              trend                           3.5% a day   Spike        40% of time  [=======--]                |
++--------------------------------------------------------------------------------------------------------------+
+|  Nvidia — worth a look 75 / 100  (1st of 129 on the board)                                         [ Hide ] |
+|                                                                                                              |
+|  What put it here                                                                                            |
+|  [#] News            35 of 35  [==========]  4 matched news stories in the last 3 hours (newest 12 minutes   |
+|                                              ago; MarketWatch, Financial Times, Times of India ×2). That     |
+|                                              counts as a news spike.                                         |
+|  [#] Recent move     27 of 30  [=========-]  Fell 8.0% over the last 5 days, the 5th-largest move of 50      |
+|                                              shares on the board. The size counts, not the direction: a      |
+|                                              fall scores the same as a rise.                                 |
+|  [#] Swing size      13 of 15  [========--]  Usually moves about 3.5% a day (big swings), the 9th-largest    |
+|                                              of 50 shares. The score compares it with other shares, not      |
+|                                              with every market. Whether big swings belong in this score     |
+|                                              is an open question in SONAR's own research (Learn, section 5). |
+|  [#] Scheduled date   0 of 20  [----------]  No earnings date within the next 10 days.          (muted)       |
+|      Points are rounded to whole numbers so they add up to the score.                          (faint)       |
+|                                                                                                              |
+|  What this does not say                                                                                      |
+|  This score counts what was found in news and price data. It does not say which way the price goes next, or that |
+|  a trade would make money. In SONAR's own simulated replay of 25,504 past setups, before costs, big moves and    |
+|  news spikes showed no clear link to which way prices went; that test can only rule out large effects.         |
++--------------------------------------------------------------------------------------------------------------+
+```
+
+`[#]` is the colour swatch (`theme.COMP`). The row above is the existing row, unchanged apart from the caret.
+
+### Domain-finance review (2026-11-18, `docs/audit/why-notable-card-domain-finance.md`)
+
+No P0. The three P1s are fixed above: (1) the footer's research sentence now says simulated, before costs, and that
+the test only rules out large effects (CONFIDENCE.md §13); (2) "something is happening here" is gone from the footer;
+(3) the no-date sentence now looks 2 horizons ahead (`catalyst_score` decays to zero one horizon after the first), so
+it can no longer sit beside points from a date 6-9 days out. Ten P2 and six P3 items remain in the audit file; the
+ones that change copy ("Usually moves", "More coverage than usual", ranks within class vs the 60/40 blend, frozen
+"ago" times, extra W3 words such as recommend/best/top/pick/avoid, Learn maxima drifting from `_W`) go to the owner
+before Build. Not re-verified: live board ranks and numbers in the examples. Whether "worth a look" plus "1st of 129"
+reads as a pick list, and Buy/Short beside the card, are flagged for a qualified person, not ruled on.
 
 ## Smallest first slice
 
