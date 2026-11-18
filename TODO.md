@@ -11,6 +11,12 @@
 Only unfinished items live here. Finished work is under **Done** at the foot; v3 and the
 not-planned list sit between the two.
 
+- [ ] `P2` `testing` `@ai` **Code-level readiness audit (promises vs code).** Check every promise in the
+      README, `docs/foundry/app-context.md` and the in-app wording against the code (app, headless agent,
+      `macro/`, `playmaker/`); classify each Delivered / Narrower / Stub / Needs a live check; findings to
+      `docs/audit/` and this file. Own chat, Opus high, ~45–90 min. Requested 2026-11-18 after the
+      lab-wide doc sweep.
+
 ### Handing SONAR to other people — only if "others later" happens
 
 Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading tool until the
