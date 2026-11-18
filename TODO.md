@@ -11,11 +11,36 @@
 Only unfinished items live here. Finished work is under **Done** at the foot; v3 and the
 not-planned list sit between the two.
 
-- [ ] `P2` `testing` `@ai` **Code-level readiness audit (promises vs code).** Check every promise in the
-      README, `docs/foundry/app-context.md` and the in-app wording against the code (app, headless agent,
-      `macro/`, `playmaker/`); classify each Delivered / Narrower / Stub / Needs a live check; findings to
-      `docs/audit/` and this file. Own chat, Opus high, ~45–90 min. Requested 2026-11-18 after the
-      lab-wide doc sweep.
+- [ ] `P1` `research` `@ai` **Model-vs-market verdict is a 2-se test re-read every hour.** Under no edge it reads
+      "model beats market" at some look in 16.8% of runs (3.0% at one fixed look; either side 30.6%), measured to
+      n = 975 (`engine.py:632-645`), and `model_better` colours the Terminal's edge by side (`ui/app.py:4795`). Use
+      `Z_CLAIM = 3` or an alpha-spending boundary (1.5% / 3.0% at 3 se) with a rate test, or reword docs.html §
+      "Brier, model vs market". Source: `docs/audit/code-readiness-2026-11-18.md` H1.
+- [ ] `P1` `bug` `@ai` **A Yahoo outage leaves health green while paper entries book at hours-old prices.** Failed
+      fetches keep the cached row (`assets.py:252-257`, `397-401`); the rescan still marks the book, runs Protocol
+      entries and re-stamps `_scan_at` (`core.py:428-449`), so the "not rescanned" health check never fires;
+      `trade`/`enter` take `asset["price"]` with no age check. Refuse entries past a data-age bound, add a `data`
+      health problem so the watchdog alarms, and add both to the README outage list. Source: readiness audit H2.
+- [ ] `P1` `docs` `@me` **v2.406 is live with no release record.** The agent restarted onto it 2026-11-17 21:02; it
+      carries alarm-delivery, starved-engine, build-traceability, providers-wiring, the legal fixes and Lab Hub
+      merges. No CHANGELOG entry (newest v2.366; legal fixes still "Unreleased"), no release report, no
+      `approvals.jsonl`, activity log ends 2026-10-19, and the alarm, starved-engine, build-traceability and
+      providers-wiring items above still read "Next: Review/Verify". Owner: say whether it was a release; then
+      `@ai` writes the note and CHANGELOG entry, runs the smoke test and corrects those items. Source: audit H4.
+- [ ] `P2` `bug` `@ai` **A restored book is announced only on stderr.** `paths.read_state` (`paths.py:188-229`)
+      loads the newest daily backup when `portfolio.json` is unreadable; nothing in the UI or `/api/health` says
+      so, so up to a day of positions can vanish silently. Surface `restored_from` on My trades and as a health
+      problem; fsync before the rename in `write_atomically` (`paths.py:131-148`). Source: readiness audit M3.
+- [ ] `P2` `research` `@ai` **"DROP" has no error bar.** `_verdict_for` returns DROP ("the weight is buying
+      nothing") whenever `loo_cost <= 0` (`backtest.py:1670-1673`), a plain difference with no se, while every other
+      grade is gated on FDR, a 2-se spread and the randomisation check. Gate it on a bootstrap se of `loo_cost`, or
+      reword. Measure the false-DROP rate with the existing placebo harness. Source: readiness audit M4.
+- [ ] `P3` `testing` `@ai` **Three `test_server.py` tests leave a live Watchdog thread** (`server.main` without
+      patching `Watchdog.run`, unlike `tests/test_alarm.py:851`); it logs `'StubLive' object has no attribute
+      '_stop'` every 15 s for the rest of the run. Patch it. Source: readiness audit L3.
+- [ ] `P3` `infra` `@ai` **Agent log hygiene.** `agent.err.log` has no rotation (739 KB since 2026-10-12) and mixes
+      local and ISO-UTC timestamps (`core.py:1521` vs `alarm.ts()`); `/api/health` shows `ok: true` with an old
+      `last_error`. Rotate, use one timestamp, clear or age-stamp `last_error`. Source: readiness audit L4.
 
 ### Handing SONAR to other people — only if "others later" happens
 
@@ -94,7 +119,9 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       build-traceability domain review P3-3, P2-2.
 - [ ] `P2` `bug` `@ai` **A forwarded trade that times out is reported "not taken" but may have been booked.**
       `core.py:1827-1830` says "did not take it" on any exception, and `/api/trade` has no idempotency key
-      (`server.py:137-143`). If the user clicks again, a duplicate paper position opens. Fix: change the copy to "no
+      (`server.py:137-143`). If the user clicks again, a duplicate paper position opens. **Narrowed 2026-11-18 (readiness audit M1):** no
+      duplicate can open (one position per symbol, `portfolio.py:263-264`), but a booked trade also reads "not
+      taken" when the follow-up `/api/book` fetch times out (`core.py:1829-1831`), and the Undo toast is lost. Fix: change the copy to "no
       answer in time; it may have gone through, check the book", and/or add a client id that `/api/trade`
       deduplicates. Source: starved-engine domain review P2-1 (outside that spec's scope).
 - [ ] `P2` `security` `@ai` **ntfy reserved topic plus access token.** Today the topic is the only access control:
@@ -357,6 +384,16 @@ From the v2.190 release (`docs/audit/qa11-qa13-honest-baselines-sre-release.md`)
 
 Everything that shipped, newest areas last as they were written. Moved here from the old Open and v2
 sections on 2026-10-10 without edits to the entries.
+
+### Audits
+
+- [x] `P2` `testing` `@ai` **Code-level readiness audit (promises vs code).** Check every promise in the
+      README, `docs/foundry/app-context.md` and the in-app wording against the code (app, headless agent,
+      `macro/`, `playmaker/`); classify each Delivered / Narrower / Stub / Needs a live check; findings to
+      `docs/audit/` and this file. Own chat, Opus high, ~45–90 min. Requested 2026-11-18 after the
+      lab-wide doc sweep. **Done 2026-11-18:** `docs/audit/code-readiness-2026-11-18.md`
+      (4 High, 8 Medium, 6 Low; suite 3256 passed offscreen); new items under Open and in the macro and playmaker
+      TODOs.
 
 ### Landing page, the book and early test coverage
 
