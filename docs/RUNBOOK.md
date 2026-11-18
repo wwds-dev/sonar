@@ -63,7 +63,8 @@ curl -s 127.0.0.1:8787/api/health
 ```
 
 Healthy: `"ok": true`, `"problems": []`, and `build.dirty` false with the `build.commit` you expect. HTTP 503 means a problem: `poll` (no price for
-minutes), `scan` (the board is not being rescanned), `settle` (no hour settled for hours), `loop` (the engine
+minutes), `scan` (the board is not being rescanned), `data` (more than half the board's prices are over an
+hour old: Yahoo is probably not answering; entries on those rows are refused), `settle` (no hour settled for hours), `loop` (the engine
 loop ended) or `notify` (an alarm channel is failing, see below).
 
 ### Alarms: what reaches you, and when

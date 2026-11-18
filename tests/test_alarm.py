@@ -68,7 +68,7 @@ def notifiers():
 # --------------------------------------------------------------------------- #
 #: Every kind ``core.Live.health`` can emit. test_core_kinds_are_in_sync keeps
 #: this honest against core.py's source.
-CORE_KINDS = {"loop", "poll", "scan", "settle"}
+CORE_KINDS = {"loop", "poll", "scan", "settle", "data"}
 
 STATES = {"banner": {"state": "failing"}, "ntfy": {"state": "ok"}}
 

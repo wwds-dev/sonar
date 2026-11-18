@@ -1,6 +1,6 @@
 # Spec: honest model-vs-market verdict (H1) and stale board prices (H2)
 
-- Status: approved
+- Status: built (2026-11-18, branch `claude/readiness-h1-h2`; Review and Verify still to run)
 - Owner approval: 2026-11-18, Define + Architect ("Fix H1 and H2", then "Approve as written"); recorded in `docs/foundry/approvals.jsonl`
 - Source: `docs/audit/code-readiness-2026-11-18.md` H1, H2. Session-owned slug: `readiness-h1-h2`.
 
@@ -70,9 +70,11 @@ re-mark at an unchanged price cannot cross a barrier); install or restart of the
   the kinds in `core.py`; extending it is required, not weakening).
 - **Lock order** unchanged: `trade` reads `self.assets` under `self.lock` as today and decides before taking the
   book's lock.
-- **Failure modes.** After a night's sleep every row is over an hour old until the rotation refetches it (26 rows per
-  90 s scan, so more than half are fresh within about 4.5 min): manual entries on not-yet-refreshed rows are refused
-  for those minutes, Protocol waits a rescan or two, and the `data` problem clears before its 10-minute alarm delay.
+- **Failure modes.** After a night's sleep every row is over an hour old until the rotation refetches it. The board
+  refreshes 26 of 129 rows about every 180 s (the scanner's 120 s TTL on the 90 s scan cadence), so more than half
+  are fresh after the third refresh, about 6 min after wake: manual entries on not-yet-refreshed rows are refused for
+  those minutes, Protocol waits a few rescans, and the `data` problem clears before its 10-minute alarm delay, with
+  about 3-4 min of margin (checked from the code, not live: Release check below).
   A throttled source that keeps the rotation behind for an hour refuses entries, which is the intent.
 - **Alternatives rejected.** H1: an alpha-spending boundary (more exact, harder to explain, and 3 se already measures
   under 5% to the cap). H2: refusing inside `Portfolio.enter` (it does not know the scan time; replays and tests call
@@ -91,3 +93,6 @@ fresh one, follower path unaffected; Protocol skips stale rows and keeps the day
 `data` problem on, off and at exactly half; watchdog alarm after 600 s with the fixed phrase and recovery; existing
 kind-sync test extended. Mutation check: 3 back to 2 fails the rate test; dropping the `now - generated` term fails the
 stalled-rescan test. Full suite offscreen; native is the owner's run.
+
+Release check (owner, live): after the install, one night's sleep and wake produce no "board prices are stale"
+push, and `/api/health` shows `data` for no more than about 6 minutes after wake (agent.err.log).

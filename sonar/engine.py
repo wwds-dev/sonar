@@ -51,6 +51,13 @@ SCORELOG_MAX = 3000
 # for this long has stalled — feed dead, machine asleep, agent gone — and a
 # stalled run looks exactly like a healthy one from the menu bar.
 STALE_AFTER_S = 2 * 3600
+# How many standard errors model_vs_market needs (docs/specs/readiness-h1-h2.md).
+# The verdict is re-read every hour as the log grows, so it is a sequence of
+# looks, not one test: under a null (model and market equally good) a 2-se
+# rule read "model beats market" at some look in 18.8% of runs up to the
+# 3,000-hour cap (either side 36.5%); 3 se reads 2.7% (either side 5.1%).
+# The same trap and the same answer as calibration.Z_CLAIM.
+MVM_Z = 3.0
 
 
 @dataclass
@@ -96,6 +103,23 @@ def _locked(method):
         with self.lock:
             return method(self, *args, **kwargs)
     return run_locked
+
+
+def mvm_verdict_state(mean_d: float, se: float, n: int, min_sample: int,
+                      z: float = MVM_Z) -> str:
+    """The model-vs-market rule, on its own so a rate test runs the shipped one.
+
+    ``mean_d`` is the mean paired Brier difference (model minus market; negative
+    means the model was better) and ``se`` its standard error. Returns ``few``
+    under ``min_sample`` hours, ``model`` or ``market`` past ``z`` standard
+    errors on that side, else ``noise``."""
+    if n < min_sample:
+        return "few"
+    if mean_d < 0 and mean_d < -z * se:
+        return "model"
+    if mean_d > 0 and mean_d > z * se:
+        return "market"
+    return "noise"
 
 
 def _mean_se(rets: list[float]) -> tuple[float, float]:
@@ -628,19 +652,20 @@ class Engine:
             "brier_diff": round(mean_d, 4),      # negative = model better
             "diff_se": round(se, 4),
         }
+        state = mvm_verdict_state(mean_d, se, n, self.SCORE_MIN_SAMPLE)
         # The one test the window may colour a disagreement by: anything less
         # and the "edge" figure is a disagreement, not a measured advantage.
-        out["model_better"] = bool(n >= self.SCORE_MIN_SAMPLE
-                                   and mean_d < -2 * se and mean_d < 0)
-        if n < self.SCORE_MIN_SAMPLE:
+        out["model_better"] = state == "model"
+        if state == "few":
             out["verdict"] = (f"{n} of {self.SCORE_MIN_SAMPLE} hours scored — "
                               "too few to compare the model to the market.")
-        elif mean_d < -2 * se and mean_d < 0:
+        elif state == "model":
             out["verdict"] = ("Model beats the market's calibration by more "
-                              "than two standard errors over these hours.")
-        elif mean_d > 2 * se and mean_d > 0:
-            out["verdict"] = ("The market is better calibrated than the model "
-                              "— the realised-vol edge is not showing up.")
+                              "than three standard errors over these hours.")
+        elif state == "market":
+            out["verdict"] = ("The market is better calibrated than the model by "
+                              "more than three standard errors — the realised-vol "
+                              "edge is not showing up.")
         else:
             out["verdict"] = ("Model and market are within noise of each "
                               "other, which is what no edge looks like.")

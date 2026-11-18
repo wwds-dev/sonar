@@ -248,6 +248,23 @@ FETCH_WORKERS = 8
 #: the ~64/minute that refetching all 129 would imply.
 ROLL_BATCH = 26
 
+#: A board price older than this may not open a position, and a board where
+#: more than half the prices are older is a health problem (``data``): the
+#: README's red line on the Updated column. The rotation refreshes a row every
+#: few minutes, so an hour old means the source is not answering or the
+#: rotation is losing badly (docs/specs/readiness-h1-h2.md).
+BOARD_STALE_S = 3600.0
+
+
+def row_age_s(row: dict, generated: float | None, now: float) -> float:
+    """How old a board row's price is *now*: its fetch age when the board was
+    built plus the time since. A stalled rescan must not make an old price look
+    as young as it was at the last scan."""
+    age = float(row.get("data_age_s") or 0.0)
+    if generated:
+        age += max(0.0, now - float(generated))
+    return age
+
 
 def _get(url: str):
     try:

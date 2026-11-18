@@ -218,8 +218,10 @@ class PaperServer(ThreadingHTTPServer):
 # How long a problem must last before it becomes a notification. A stalled
 # poll is worth knowing about in minutes; "no hour settled" needs over an hour,
 # because after the Mac wakes from a night's sleep it stays true until the next
-# hour settles, and that is not a fault.
-ALARM_AFTER_S = {"loop": 0.0, "poll": 600.0, "scan": 600.0, "settle": 75 * 60.0}
+# hour settles, and that is not a fault. Stale board prices ("data") also hold
+# for a few minutes after a wake, while the rotation refetches; ten is past it.
+ALARM_AFTER_S = {"loop": 0.0, "poll": 600.0, "scan": 600.0, "settle": 75 * 60.0,
+                 "data": 600.0}
 WATCH_EVERY = 15.0
 
 

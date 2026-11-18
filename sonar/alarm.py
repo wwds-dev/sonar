@@ -79,6 +79,7 @@ PHRASES = {
     "poll": ("no successful price poll", "min"),
     "scan": ("the board scan stalled", "min"),
     "settle": ("no hour settled", "h"),
+    "data": ("board prices are stale", "min"),
     "notify": ("an alarm channel is failing", None),
     "other": ("other problem", None),
 }

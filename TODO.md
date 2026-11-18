@@ -16,11 +16,15 @@ not-planned list sit between the two.
       n = 975 (`engine.py:632-645`), and `model_better` colours the Terminal's edge by side (`ui/app.py:4795`). Use
       `Z_CLAIM = 3` or an alpha-spending boundary (1.5% / 3.0% at 3 se) with a rate test, or reword docs.html §
       "Brier, model vs market". Source: `docs/audit/code-readiness-2026-11-18.md` H1.
+      **Built 2026-11-18** on `claude/readiness-h1-h2` (spec `docs/specs/readiness-h1-h2.md`, Define and
+      Architect approved). Next: Review, Verify, Document check, then install with the owner's yes.
 - [ ] `P1` `bug` `@ai` **A Yahoo outage leaves health green while paper entries book at hours-old prices.** Failed
       fetches keep the cached row (`assets.py:252-257`, `397-401`); the rescan still marks the book, runs Protocol
       entries and re-stamps `_scan_at` (`core.py:428-449`), so the "not rescanned" health check never fires;
       `trade`/`enter` take `asset["price"]` with no age check. Refuse entries past a data-age bound, add a `data`
       health problem so the watchdog alarms, and add both to the README outage list. Source: readiness audit H2.
+      **Built 2026-11-18** on `claude/readiness-h1-h2` (spec `docs/specs/readiness-h1-h2.md`, Define and
+      Architect approved). Next: Review, Verify, Document check, then install with the owner's yes.
 - [ ] `P1` `docs` `@me` **v2.406 is live with no release record.** The agent restarted onto it 2026-11-17 21:02; it
       carries alarm-delivery, starved-engine, build-traceability, providers-wiring, the legal fixes and Lab Hub
       merges. No CHANGELOG entry (newest v2.366; legal fixes still "Unreleased"), no release report, no

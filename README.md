@@ -180,7 +180,10 @@ grading is the app's largest fragility.
 What a Yahoo outage does:
 
 - **The board** keeps scoring from cached prices while the app runs, and the Updated column turns gold past 20
-  minutes and red past an hour (below). The cache is in memory, so after a relaunch or a horizon change during an
+  minutes and red past an hour (below). **No position opens at a price over an hour old**: a click on such a row
+  is refused with the price's age, and Protocol mode leaves those rows out (with too few fresh rows it tries again
+  on the next scan instead of using up the day). When more than half the board is that old, `/api/health` reports
+  a `data` problem, and after ten minutes the agent pushes "board prices are stale" to your phone. The cache is in memory, so after a relaunch or a horizon change during an
   outage, rows are missing.
 - **Shadow grading.** A failed fetch keeps the closes already held. The symbol is marked as tried for that UTC day
   and is not refetched until the next one. An entry past its time-stop with no closing bar stays "waiting for a
@@ -293,7 +296,7 @@ each look). After a deliberate reset, you may instead retire it: copy that newes
 ### Tests
 
 ```bash
-./run-tests.sh tests/ -q          # 3,256 tests, bounded by an external watchdog
+./run-tests.sh tests/ -q          # 3,271 tests, bounded by an external watchdog
 QT_QPA_PLATFORM=offscreen ./run-tests.sh -q   # the same suite, offscreen — both must pass
 ```
 

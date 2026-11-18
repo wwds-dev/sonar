@@ -10,6 +10,26 @@ back-numbered: assigning versions to releases that never had them would make
 this a worse record than the git log it was written from. `TODO.md`'s `## v2`
 section lists what the v2 arc shipped.
 
+## Unreleased — 2026-11-18
+
+**Readiness audit H1 and H2** (`docs/specs/readiness-h1-h2.md`; `docs/audit/code-readiness-2026-11-18.md`). Built,
+not yet reviewed or installed; the agent keeps running v2.406 until the owner says yes to an install.
+
+- **Model vs market needs three standard errors, not two.** The verdict is re-read every hour, and at two a model no
+  better than the market read "beats the market" at some point in 18.8% of simulated runs up to the 3,000-hour log
+  cap (36.5% either way). At three: 2.7% (5.1%). The same rule sets `model_better`, which colours the Terminal's edge
+  by side. `engine.MVM_Z`, `engine.mvm_verdict_state`; a rate test runs the shipped rule with a 2-se control. Learn
+  §"Brier, model vs market" says why.
+- **No paper position opens at a price over an hour old.** A failed Yahoo fetch keeps the old row, so during an
+  outage clicks and Protocol mode opened at it. A click is now refused with the price's age; Protocol leaves such
+  rows out and, with too few fresh rows, tries again on the next scan. A row's age counts the time since the scan,
+  so a stalled rescan cannot hide it (`assets.BOARD_STALE_S`, `assets.row_age_s`).
+- **A mostly stale board is a health problem.** `/api/health` reports `data` when more than half the board is over
+  an hour old (a rescan that fetched nothing used to keep health green), and the agent pushes "board prices are
+  stale" after ten minutes. README outage list and RUNBOOK §2 updated.
+- CI pins move to macro `d9b0d0d` and playmaker `8e5fcc3` (the audit's TODO-only commits, pushed), so
+  `tests/test_ci_pins.py` matches the checkouts again. Suite: 3,271 tests.
+
 ## Unreleased — 2026-11-10
 
 **Legal audit code and copy fixes** (Foundry's first legal audit of SONAR, findings 3, 4, 5, 7, 8, 9; branch

@@ -1331,6 +1331,80 @@ def test_buyability_counts_every_scored_hour_exactly_once(engine):
             + r["n_bad_book"]) == len(rows)
 
 
-def test_model_better_needs_the_sample_and_two_standard_errors(engine):
+def _scorelog_at(t: float, n: int = 200, c: float = 0.1, leader: str = "model") -> list[dict]:
+    """Hours whose paired Brier differences alternate s+c and s-c, with s set so
+    ``leader`` leads by about ``t`` standard errors. Market 0.5, outcome up, so
+    a model_up of 1 - sqrt(0.25 + d) gives the difference d exactly."""
+    s = (-1 if leader == "model" else 1) * t * c / (n - 1) ** 0.5
+    rows = []
+    for i in range(n):
+        d = s + (c if i % 2 else -c)
+        rows.append({"model_up": 1 - (0.25 + d) ** 0.5, "market_up": 0.5, "outcome": 1.0})
+    return rows
+
+
+def test_model_better_needs_the_sample_and_three_standard_errors(engine):
+    """docs/specs/readiness-h1-h2.md: 2.5 se is noise now, 3.5 se is a verdict."""
+    assert engine.model_vs_market().get("model_better", False) is False
+    engine.scorelog = _scorelog_at(2.5)
     mvm = engine.model_vs_market()
-    assert mvm.get("model_better", False) is False
+    assert 2.2 < -mvm["brier_diff"] / mvm["diff_se"] < 2.8       # the fixture is what it says
+    assert mvm["model_better"] is False and "noise" in mvm["verdict"]
+    engine.scorelog = _scorelog_at(3.5)
+    mvm = engine.model_vs_market()
+    assert 3.2 < -mvm["brier_diff"] / mvm["diff_se"] < 3.8
+    assert mvm["model_better"] is True
+    assert "three standard errors" in mvm["verdict"]
+
+
+def test_the_market_side_needs_three_standard_errors_too(engine):
+    engine.scorelog = _scorelog_at(2.5, leader="market")
+    mvm = engine.model_vs_market()
+    assert 2.2 < mvm["brier_diff"] / mvm["diff_se"] < 2.8
+    assert "noise" in mvm["verdict"]
+    engine.scorelog = _scorelog_at(3.5, leader="market")
+    mvm = engine.model_vs_market()
+    assert 3.2 < mvm["brier_diff"] / mvm["diff_se"] < 3.8
+    assert mvm["model_better"] is False
+    assert "market is better calibrated" in mvm["verdict"] and "three" in mvm["verdict"]
+
+
+def _null_any_look_rate(z: float, runs: int = 300, hours: int = 975) -> tuple[float, float]:
+    """How often the shipped rule says "model" (and either side) at *any* hourly
+    look, when model and market are equally good: each is the true p plus its
+    own N(0, 0.05) noise. The live log is re-read every hour, so this is the
+    rate the window shows, not the one-look rate."""
+    import math
+    import random
+    rng = random.Random(20261118)
+    said_model = said_either = 0
+    for _ in range(runs):
+        s = s2 = 0.0
+        hit_model = hit_either = False
+        for i in range(1, hours + 1):
+            p = rng.uniform(0.2, 0.8)
+            y = 1.0 if rng.random() < p else 0.0
+            m = min(0.99, max(0.01, p + rng.gauss(0, 0.05)))
+            k = min(0.99, max(0.01, p + rng.gauss(0, 0.05)))
+            d = (m - y) ** 2 - (k - y) ** 2
+            s += d
+            s2 += d * d
+            if i >= eng.Engine.SCORE_MIN_SAMPLE:
+                mean = s / i
+                se = math.sqrt(max((s2 - i * mean * mean) / (i - 1), 0.0) / i)
+                state = eng.mvm_verdict_state(mean, se, i, eng.Engine.SCORE_MIN_SAMPLE, z)
+                hit_model |= state == "model"
+                hit_either |= state in ("model", "market")
+        said_model += hit_model
+        said_either += hit_either
+    return said_model / runs, said_either / runs
+
+
+def test_model_vs_market_rarely_calls_noise_a_win_across_hourly_looks():
+    """The rate test (spec measure 1): at MVM_Z a null reads "model beats
+    market" at some look in at most 5% of runs; at the old 2 se the same
+    seeded runs read it in at least 10% (the control: the test can fail)."""
+    shipped, _either = _null_any_look_rate(eng.MVM_Z)
+    old, _ = _null_any_look_rate(2.0)
+    assert shipped <= 0.05, shipped
+    assert old >= 0.10, old

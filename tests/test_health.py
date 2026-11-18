@@ -546,7 +546,7 @@ def test_every_push_says_only_what_the_allowlist_allows(kind, notifiers, tmp_pat
     for req in opener.requests:
         assert_allowlisted(req["headers"]["x-title"], req["body"])
     if kind == "heartbeat":
-        assert "open problems: loop, poll, scan, settle, notify, other;" in req["body"]
+        assert "open problems: loop, poll, scan, settle, data, notify, other;" in req["body"]
     if kind == "recovery":
         assert _titles(opener)[-1] == "SONAR (paper) working again"
 

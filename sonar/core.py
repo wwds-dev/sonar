@@ -500,8 +500,13 @@ class Live:
         today = time.strftime("%Y-%m-%d")
         if self._protocol_last_day == today:
             return
+        # A stale row is left out of the day's ranking, not entered at an old
+        # price; a board mostly stale (an outage, or the minutes after a wake)
+        # is a thin screen and the day stays open (readiness-h1-h2, H2).
+        now, generated = time.time(), asset_payload.get("generated")
         rows = [a for a in asset_payload.get("assets", [])
-                if a.get("price") and a.get("volatility")]
+                if a.get("price") and a.get("volatility")
+                and assets.row_age_s(a, generated, now) <= assets.BOARD_STALE_S]
         if len(rows) < PROTOCOL_MIN_ROWS:
             return                # thin screen — try again next rescan
         book = self.book
@@ -1136,12 +1141,21 @@ class Live:
             return {"ok": False, "message": self._READ_ONLY, "position": None}
         with self.lock:
             rows = list(self.assets.get("assets", []))
+            generated = self.assets.get("generated")
         asset = next((a for a in rows if a["symbol"] == symbol), None)
         if asset is None:
             # Same shape as every other return from here. A caller reading
             # result["position"] should not have to know which failure it hit.
             return {"ok": False, "message": f"unknown symbol {symbol}",
                     "position": None}
+        # A failed fetch keeps the old price on the board, so during an outage
+        # the row still shows one: never open at it (readiness-h1-h2, H2).
+        age = assets.row_age_s(asset, generated, time.time())
+        if age > assets.BOARD_STALE_S:
+            return {"ok": False, "position": None,
+                    "message": f"{symbol}'s price is {int(age // 60)} min old (the price "
+                               "source may not be answering), so it was not entered; "
+                               "try again after the next scan"}
         book = self.book
         with book.lock:
             pos, msg = book.enter(
@@ -1526,7 +1540,10 @@ class Live:
         """Is this engine doing its job, judged now — not when a snapshot was
         built? ``problems`` lists what is wrong, each with a ``kind``: ``loop``
         (the engine loop ended), ``poll`` (driving, but no successful poll for
-        HEALTH_MAX_POLL_AGE) or ``settle`` (polling, but no hour settled for
+        HEALTH_MAX_POLL_AGE), ``scan`` (the board is not being rescanned),
+        ``data`` (more than half the board's prices are older than
+        assets.BOARD_STALE_S, as in a price-source outage) or ``settle``
+        (polling, but no hour settled for
         engine.STALE_AFTER_S). Waiting for or following another engine is not
         a problem here: that engine answers for itself."""
         now = time.time() if now is None else now
@@ -1560,6 +1577,17 @@ class Live:
             elif self._scan_at and now - self._scan_at > 3 * SCAN_EVERY:
                 problems.append({"kind": "scan", "text": "the board has not been rescanned "
                                  f"for {int((now - self._scan_at) // 60)} min"})
+            # A rescan that fetched nothing still re-stamps _scan_at and keeps the
+            # cached prices, so "rescanned" alone says nothing about the data.
+            with self.lock:
+                board = [a for a in self.assets.get("assets", []) if a.get("price")]
+                generated = self.assets.get("generated")
+            old = sum(1 for a in board
+                      if assets.row_age_s(a, generated, now) > assets.BOARD_STALE_S)
+            if board and old > len(board) / 2:
+                problems.append({"kind": "data", "text": f"{old} of {len(board)} board "
+                                 "prices are over an hour old (the price source may "
+                                 "not be answering)"})
             run = self.engine.run_health(now)
             if run.get("stale"):
                 problems.append({"kind": "settle", "text": "no hour has settled for "

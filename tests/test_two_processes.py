@@ -62,8 +62,10 @@ CHILD = textwrap.dedent("""
 
     def warmup(self):
         # One row on the board, so a forwarded trade has something to book.
+        # Built now: a board stamped 1970 is one the agent must refuse to trade
+        # at (docs/specs/readiness-h1-h2.md, H2).
         with self.lock:
-            self.assets = {"status": "live", "generated": 1, "assets": [
+            self.assets = {"status": "live", "generated": core.time.time(), "assets": [
                 {"symbol": "AAA", "name": "Alpha", "price": 100.0,
                  "volatility": 0.02, "confidence": 55.0, "cls": "Equity"}]}
 
