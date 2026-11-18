@@ -45,6 +45,14 @@ not-planned list sit between the two.
 - [ ] `P3` `infra` `@ai` **Agent log hygiene.** `agent.err.log` has no rotation (739 KB since 2026-10-12) and mixes
       local and ISO-UTC timestamps (`core.py:1521` vs `alarm.ts()`); `/api/health` shows `ok: true` with an old
       `last_error`. Rotate, use one timestamp, clear or age-stamp `last_error`. Source: readiness audit L4.
+- [ ] `P2` `feature` `@ai` **Why-notable card, slice 1** (spec `docs/specs/why-notable-card.md`, branch
+      `claude/build-why-notable-card`). Build tasks, in order:
+      (1) pure `ui/why_card.py` (`build_card`, `displayed_score`, `FOOTER`, `UNDER_DISPUTE`, class words;
+      `_swing_words` moved and aliased); (2) `news_level` thresholds lifted into `sonar/assets.py` constants,
+      behaviour unchanged; (3) ranks from `CROSS_SECTIONAL`, competition rank; (4) largest-remainder points;
+      (5) `WhyCard` widget, `MainWindow._why_open` applied in `_refresh_cards`, scroll and focus kept; (6) score cell
+      as the control (caret, tooltip, accessible name); (7) Learn §5 paragraph; (8) fixture tests for success
+      measures 1–3 and the A6 Qt tests; mutation check. Then Review, Verify (owner check, measure 4), Document.
 
 ### Handing SONAR to other people — only if "others later" happens
 
