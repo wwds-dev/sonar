@@ -18,6 +18,7 @@ import types
 from dataclasses import dataclass
 
 from sonar import assets as A
+from sonar import events as events_mod
 
 log = logging.getLogger(__name__)
 
@@ -40,10 +41,15 @@ ROUNDING_NOTE = "Points are rounded to whole numbers so they add up to the score
 #: no measured result. Remove or reword the entry in the change that decides #10.
 UNDER_DISPUTE = {
     "volatility": "Whether big swings belong in this score is an open question "
-                  "in SONAR's own research (Learn, section 5).",
+                  "in SONAR's own research (Learn, section 11).",
 }
 
 UNAVAILABLE_PART = "Not available for this row."
+NO_CALENDAR = "Earnings calendar not available."
+FALLBACK_NOTE = ("Points are shown unrounded here, so their sum can differ from "
+                 "the score.")
+#: The earnings calendar looks this far ahead at most (`sonar.events`).
+CALENDAR_DAYS = events_mod.LOOKAHEAD_DAYS
 UNAVAILABLE_ALL = "The parts of this score are not available for this row."
 
 SINGULAR = {"Equity": "share", "Index": "index", "Forex": "currency pair",
@@ -172,6 +178,12 @@ def _span_phrase(hours: float) -> str:
     return f"{math.ceil(hours / 24)} days"
 
 
+def _days_phrase(days: int, cls: str) -> str:
+    """"1 day", "5 days"; shares count trading days."""
+    unit = "trading day" if cls == "Equity" else "day"
+    return f"{days} {unit}" + ("" if days == 1 else "s")
+
+
 def _hours_phrase(h: int) -> str:
     return "day" if h == 24 else f"{h} hours"
 
@@ -248,9 +260,17 @@ def _move_text(row: dict, board: dict) -> str:
     rank, n = _class_rank("momentum", row, board)
     days = row.get("momentum_days") or board.get("horizon", {}).get("momentum_days", 0)
     mom = row.get("momentum", 0.0)
-    verb = "Rose" if mom > 0 else "Fell" if mom < 0 else "Moved"
+    shown = f"{abs(mom) * 100:.1f}"
+    # The verb follows the figure on the card: a move that rounds to 0.0% is not
+    # a rise or a fall.
+    verb = ("Moved" if float(shown) == 0
+            else "Rose" if mom > 0 else "Fell")
     where = _kind_phrase(rank, n, "move", cls, of=True)
-    out = f"{verb} {abs(mom) * 100:.1f}% over the last {days} days, {where}."
+    if days == 1:
+        span = "the last trading day" if cls == "Equity" else "the last day"
+    else:
+        span = f"the last {_days_phrase(days, cls)}"
+    out = f"{verb} {shown}% over {span}, {where}."
     if n > 1:
         out += " The score partly compares moves within the kind and partly with a fixed size."
     return out + " The size counts, not the direction: a fall scores the same as a rise."
@@ -280,13 +300,17 @@ def _earn_text(row: dict, board: dict) -> str:
         return (f"{label[:1].upper()}{label[1:]} ({cat['date']}): a date on the "
                 "calendar, not a forecast.")
     days = row.get("momentum_days") or board.get("horizon", {}).get("momentum_days", 0)
-    return f"No earnings date within the next {2 * days} days."
+    cal = board.get("earnings_calendar") or {}
+    if not cal.get("n"):
+        return NO_CALENDAR
+    reach = min(2 * days, cal.get("days") or CALENDAR_DAYS)
+    return f"No earnings date in the next {reach} days of SONAR's calendar."
 
 
 def build_card(row: dict, board: dict, *, plain: bool, age_s: float) -> Card:
     score = displayed_score(row["confidence"])
     allrows = board.get("assets", []) or [row]
-    brank = _rank(row["confidence"], [r["confidence"] for r in allrows])
+    brank = _rank(score, [displayed_score(r["confidence"]) for r in allrows])
     n = len(allrows)
     profile = (board.get("risk") or {}).get("name", "")
     if plain:
@@ -317,6 +341,9 @@ def build_card(row: dict, board: dict, *, plain: bool, age_s: float) -> Card:
                     "unrounded points", row.get("symbol"), score)
         pts = {k: round(100 * A._W[k] * comp.get(k, 0.0), 1)
                for k in ORDER if k in comp or k == "catalyst"}
+    if row.get("cls") != "Equity" and pts.get("catalyst"):
+        log.warning("why card: %s is not a share but carries %s earnings points",
+                    row.get("symbol"), pts["catalyst"])
     texts = {"momentum": _move_text, "volatility": _swing_text,
              "catalyst": _earn_text}
     lines = []
@@ -332,7 +359,7 @@ def build_card(row: dict, board: dict, *, plain: bool, age_s: float) -> Card:
         detail = None
         if not plain:
             c = comp.get(k, 0.0)
-            detail = f"{c:.2f} × {A._W[k]:.2f} = {100 * A._W[k] * c:.1f}"
+            detail = f"{c:.3f} × {A._W[k]:.2f} = {100 * A._W[k] * c:.1f}"
         lines.append(CardLine(k, label, pts[k], mx, text, detail, pts[k] == 0))
 
     def order_key(ln: CardLine):
@@ -341,4 +368,4 @@ def build_card(row: dict, board: dict, *, plain: bool, age_s: float) -> Card:
         return (1 if ln.points == 0 else 0, -ln.points, ORDER.index(ln.key))
     lines.sort(key=order_key)
     return Card(title, as_of, stale, level, None, tuple(lines),
-                ROUNDING_NOTE if exact_ok else "", FOOTER)
+                ROUNDING_NOTE if exact_ok else FALLBACK_NOTE, FOOTER)

@@ -130,7 +130,7 @@ adds layout, interaction, states and the Learn text below.
 | News | 35 | `{k} matched news stor{y/ies} in the last {span} (newest {age} before the scan; {sources}).` + level sentence: Spike → `3 or more stories in the last 6 hours.` · Elevated → `At least one story in the last 6 hours, or 3 in the last day.` · Normal → `No story in the last 6 hours and fewer than 3 in the last day.` · none → `No matched news.` The numbers come from `news_level`, never typed. |
 | Recent move | 30 | `{Rose/Fell} {x}% over the last {d} days, the {ordinal}-largest move of {N} {class plural} on the board; the score partly compares moves within the kind and partly with a fixed size. The size counts, not the direction: a fall scores the same as a rise.` |
 | Swing size | 15 | `SONAR's estimate of its daily swing is about {v}% ({swing words}), the {ordinal}-largest of {N} {class plural} ("the largest" / "the smallest" at the ends). The score partly compares it with other {class plural} and partly with a fixed size.` + W8 note |
-| Earnings date | 20 | equity with a date: `{Earnings label} ({date}): a date on the calendar, not a forecast.` · equity without: `No earnings date within the next {2d} days.` · other classes: `SONAR only tracks company earnings dates, so {class plural} never score here.` |
+| Earnings date | 20 | equity with a date: `{Earnings label} ({date}): a date on the calendar, not a forecast.` · equity without: `No earnings date in the next {min(2d,14)} days of SONAR's calendar.` (calendar empty or never fetched: `Earnings calendar not available.`; see Review changes) · other classes: `SONAR only tracks company earnings dates, so {class plural} never score here.` |
 
 Class plurals: Equity → shares, Index → indices, Forex → currency pairs, Crypto → cryptocurrencies, Commodity →
 commodities. Ranks and N are among rows currently on the board (after the risk filter), which is the set the score
@@ -160,7 +160,7 @@ of the name, labels MOM / VOL / NEWS / EARN. Same footer.
   in the column tooltips (moves and news spikes did not predict direction).
 - **W8 Components under dispute.** A component with an open research row whose result could change its weight or sign
   carries one fixed neutral sentence, from a static map in code with a test that #10 is in it: volatility →
-  `Whether big swings belong in this score is an open question in SONAR's own research (Learn, section 5).` It states no measured result, because the result did not clear SONAR's own bar. When #10 is decided,
+  `Whether big swings belong in this score is an open question in SONAR's own research (Learn, section 11).` It states no measured result, because the result did not clear SONAR's own bar. When #10 is decided,
   the map entry is removed or rewritten in that change, not here.
 - **W9 No model output.** The card text is the same whether or not an Anthropic key is configured.
 
@@ -175,7 +175,7 @@ from the running agent's loopback `/api/assets` at 12:32 (129 rows). Points use 
 - Recent move 27 of 30: Fell 8.0% over the last 5 days, the 5th-largest move of 50 shares on the board. The size
   counts, not the direction: a fall scores the same as a rise.
 - Swing size 13 of 15: SONAR's estimate of its daily swing is about 3.5% (big swings), the 9th-largest of 50 shares. The score partly compares it with other shares and partly with a fixed size. Whether big swings belong in this score is an open question in SONAR's
-  own research (Learn, section 5).
+  own research (Learn, section 11).
 - Earnings date 0 of 20: No earnings date within the next 10 days.
 - *Footer.*
 
@@ -364,7 +364,7 @@ text column stops at 760pt.
 |  [#] Swing size      13 of 15 [========--] SONAR's estimate of its daily swing is about 3.5% (big swings), the|
 |                                            9th-largest of 50 shares. The score partly compares it with other|
 |                                            shares and partly with a fixed size. Whether big swings belong in this|
-|                                            score is an open question in SONAR's own research (Learn, section 5).|
+|                                            score is an open question in SONAR's own research (Learn, section 11).|
 |  [#] Earnings date    0 of 20 [----------] No earnings date within the next 10 days.                    (muted)|
 |      Points are rounded to whole numbers so they add up to the score.                                   (faint)|
 |                                                                                                            |
@@ -582,6 +582,36 @@ strings.
    the plurals in `ui/why_card.py`: Equity → share, Index → index, Forex → currency pair, Crypto → cryptocurrency,
    Commodity → commodity.
 3. **All matched headlines undated:** `{k} matched news stor{y/ies}, with no publication time given ({sources}).`
+
+### Changes at Review (2026-11-18, owner: "Yes, send fixes")
+
+Fixes for `docs/audit/why-notable-card-code-reviewer.md` and `docs/audit/why-notable-card-review-domain-finance.md`.
+Copy that departs from the text approved above (the approved text in Design and the examples is kept as history;
+this list wins where they differ):
+
+1. **Earnings line (DF P1-1).** `No earnings date in the next {min(2d,14)} days of SONAR's calendar.`: the calendar
+   looks 14 days ahead (`sonar/events.py` `LOOKAHEAD_DAYS`), so a longer window claimed more than was checked. When
+   the calendar holds nothing, or was never fetched: `Earnings calendar not available.` To know that, the
+   `/api/assets` payload gains `earnings_calendar: {"n": <earnings held>, "days": 14}` (read from
+   `EventsCache.cached_payload()`, no fetch). This changes A5's "no payload change": one added field, no change to the score.
+2. **Learn (DF P1-2, P2-1, P3).** "it says something is happening in that market" is gone; the paragraph now says the
+   card says what the score does not tell you. "how much it usually moves in a day" became "SONAR's estimate of its
+   daily swing". Move and swing are "partly compared with other markets of the same kind ... and partly with a fixed
+   size".
+3. **W8 pointer** now reads `(Learn, section 11)`, the section that holds the evidence (Learn §5 only repeated the
+   question). Neutral wording is unchanged.
+4. **Expert arithmetic (CR P2-1).** The component value is printed to three decimals (`0.971 × 0.35 = 34.0`), the
+   precision the score uses, so the line multiplies out as printed.
+5. **Wording of the window.** Shares count trading days: `over the last 5 trading days`; `1 day` / `1 trading day`
+   in the singular (`over the last day`); a move that rounds to 0.0% reads `Moved 0.0%`, not `Rose`/`Fell`.
+6. **Board rank** is taken from the score as displayed, so two rows that both show 75 share a rank.
+7. **Fallback** (points that cannot be rounded to the score) shows `Points are shown unrounded here, so their sum can
+   differ from the score.` in place of the rounding note.
+8. Not a copy change: the score cell announces itself as a button, ignores key auto-repeat, and is transparent
+   (CR P1-1); focus on any score cell survives a scan (CR P3-4).
+
+Not done: P3 `pass in the window actually used` (needs the shortened window in the payload), and the open Design P3-5
+and P3-6.
 
 ## Smallest first slice
 

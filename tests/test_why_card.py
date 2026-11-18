@@ -100,7 +100,7 @@ def test_every_lines_facts_match_the_row(no_llm):
         else:
             assert by["news"].text == "No matched news."
         assert f"{abs(r['momentum']) * 100:.1f}%" in by["momentum"].text
-        assert f"{r['momentum_days']} days" in by["momentum"].text
+        assert W._days_phrase(r["momentum_days"], r["cls"]) in by["momentum"].text
         assert f"{r['volatility'] * 100:.1f}%" in by["volatility"].text
         assert W.swing_words(r["volatility"]) in by["volatility"].text
         assert str(W.displayed_score(r["confidence"])) in card(r).title
@@ -179,12 +179,12 @@ def test_a_broken_sum_falls_back_to_unrounded_points_without_the_note(caplog):
     r = copy.deepcopy(row_of("NVDA"))
     r["confidence"] = 3.0
     c = card(r)
-    assert c.rounding_note == ""
+    assert c.rounding_note == W.FALLBACK_NOTE
     assert any(isinstance(ln.points, float) for ln in c.lines)
     assert "do not add up" in caplog.text
     # catalyst is still zero, not "missing", on the fallback path
     cat = next(ln for ln in c.lines if ln.key == "catalyst")
-    assert cat.points == 0 and cat.text == "No earnings date within the next 10 days."
+    assert cat.points == 0 and cat.text == "No earnings date in the next 10 days of SONAR's calendar."
 
 
 def test_displayed_score_is_the_cells_own_format():
@@ -291,7 +291,7 @@ def test_labels_and_expert_detail():
         ["News", "Recent move", "Swing size", "Earnings date"]
     assert [exp[k].label for k in ("news", "momentum", "volatility", "catalyst")] == \
         ["NEWS", "MOM", "VOL", "EARN"]
-    assert exp["news"].expert_detail == "1.00 × 0.35 = 35.0"
+    assert exp["news"].expert_detail == "1.000 × 0.35 = 35.0"
     assert all(l.expert_detail is None for l in plain.values())
 
 
@@ -366,7 +366,7 @@ def test_a_row_without_news_says_so():
 def test_move_line_reads():
     r = row_of("NVDA")
     t = {l.key: l.text for l in card(r).lines}["momentum"]
-    assert t.startswith("Fell 13.1% over the last 5 days, the 3rd-largest move of 50 shares on the board.")
+    assert t.startswith("Fell 13.1% over the last 5 trading days, the 3rd-largest move of 50 shares on the board.")
     assert t.endswith("The size counts, not the direction: a fall scores the same as a rise.")
 
 
@@ -381,7 +381,7 @@ def test_swing_line_carries_the_dispute_note_only_for_volatility():
 def test_issue_10_is_in_the_dispute_map():
     assert set(W.UNDER_DISPUTE) == {"volatility"}
     assert "open question" in W.UNDER_DISPUTE["volatility"]
-    assert "Learn, section 5" in W.UNDER_DISPUTE["volatility"]
+    assert "Learn, section 11" in W.UNDER_DISPUTE["volatility"]
 
 
 # -- the catalyst-absent branch ------------------------------------------------ #
@@ -390,7 +390,7 @@ def test_equity_without_an_earnings_date_is_zero_not_missing():
     assert "catalyst" not in r["comp"]
     ln = next(l for l in card(r).lines if l.key == "catalyst")
     assert ln.points == 0 and ln.muted
-    assert ln.text == "No earnings date within the next 10 days."
+    assert ln.text == "No earnings date in the next 10 days of SONAR's calendar."
 
 
 def test_equity_with_a_date():
@@ -562,3 +562,136 @@ def test_swing_words_follow_the_number():
     assert W.swing_words(0.020) == "medium"
     assert W.swing_words(0.015) == "medium"
     assert W.swing_words(0.007) == "small swings"
+
+
+# --------------------------------------------------------------------------- #
+# Review fixes (docs/audit/why-notable-card-*review*.md)
+# --------------------------------------------------------------------------- #
+ROOT = Path(__file__).parent.parent
+
+
+def test_expert_arithmetic_multiplies_out_as_printed():
+    """CR P2-1: 158 of 516 expert lines once showed `0.97 x 0.30 = 29.2`."""
+    n = 0
+    for r in ROWS:
+        for ln in card(r, False).lines:
+            if ln.expert_detail is None:
+                continue
+            m = re.fullmatch(r"(\d\.\d+) × (\d\.\d+) = (\d+\.\d)", ln.expert_detail)
+            assert m, ln.expert_detail
+            a, b, prod = (float(x) for x in m.groups())
+            assert f"{a * b * 100:.1f}" == f"{prod:.1f}" or abs(a * b * 100 - prod) < 0.051, \
+                (r["symbol"], ln.expert_detail)
+            n += 1
+    assert n >= 500
+
+
+def test_the_earnings_sentence_never_looks_further_than_the_calendar():
+    """DF P1-1: the calendar reaches 14 days; the horizon-scaled window did not."""
+    r = copy.deepcopy(row_of("NVDA"))
+    for days in (1, 5, 20, 60, 250):
+        r["momentum_days"] = days
+        t = next(l for l in card(r).lines if l.key == "catalyst").text
+        reach = min(2 * days, 14)
+        assert t == f"No earnings date in the next {reach} days of SONAR's calendar."
+    assert W.CALENDAR_DAYS == 14
+
+
+@pytest.mark.parametrize("cal", [None, {}, {"n": 0, "days": 14}])
+def test_an_empty_or_unfetched_calendar_says_so(cal):
+    b = copy.deepcopy(BOARD)
+    if cal is None:
+        b.pop("earnings_calendar")
+    else:
+        b["earnings_calendar"] = cal
+    r = next(x for x in b["assets"] if x["symbol"] == "NVDA")
+    t = next(l for l in card(r, board=b).lines if l.key == "catalyst").text
+    assert t == "Earnings calendar not available."
+    # a dated share and a non-share are unaffected
+    baba = next(x for x in b["assets"] if x["symbol"] == "BABA")
+    assert "a date on the calendar" in \
+        next(l for l in card(baba, board=b).lines if l.key == "catalyst").text
+
+
+def test_the_payload_carries_the_calendar_coverage():
+    from sonar.assets import AssetScanner  # noqa: F401  (the class that builds it)
+    import inspect
+    assert "_calendar_coverage" in inspect.getsource(A)
+    assert "earnings_calendar" in inspect.getsource(A)
+
+
+def test_the_calendar_coverage_reads_the_cache_without_fetching():
+    class Ev:
+        calls = 0
+        def cached_payload(self):
+            Ev.calls += 1
+            return {"n_earnings": 7}
+    scanner = A.AssetScanner(events=Ev())
+    assert scanner._calendar_coverage() == {"n": 7, "days": 14}
+    assert A.AssetScanner(events=None)._calendar_coverage() == {"n": 0, "days": 14}
+
+
+def test_the_25504_figure_is_the_one_in_confidence_13_and_the_footer_is_the_specs():
+    """DF P2-2."""
+    conf = (ROOT / "CONFIDENCE.md").read_text()
+    sec13 = conf[conf.index("## 13. The completed studies"):conf.index("## Sources")]
+    assert "25,504 setups" in sec13
+    assert "25,504" in W.FOOTER
+    spec = (ROOT / "docs" / "specs" / "why-notable-card.md").read_text()
+    quoted = re.search(r"> This score counts.*?large effects\.", spec, re.S).group(0)
+    quoted = " ".join(l.lstrip("> ").strip() for l in quoted.splitlines())
+    assert W.FOOTER == quoted
+
+
+def test_a_zero_move_is_not_a_rise_or_a_fall():
+    for mom in (0.0, 0.0004, -0.0004):
+        r = mk("A", "Equity", mom, .01)
+        t = next(l for l in card(r, board=board_of([r])).lines if l.key == "momentum").text
+        assert t.startswith("Moved 0.0% over"), t
+    r = mk("A", "Equity", 0.0006, .01)
+    assert next(l for l in card(r, board=board_of([r])).lines
+                if l.key == "momentum").text.startswith("Rose 0.1% over")
+
+
+def test_days_wording():
+    assert W._days_phrase(1, "Equity") == "1 trading day"
+    assert W._days_phrase(5, "Equity") == "5 trading days"
+    assert W._days_phrase(1, "Crypto") == "1 day"
+    assert W._days_phrase(5, "Forex") == "5 days"
+    r = mk("A", "Crypto", 0.02, .01, momentum_days=1)
+    t = next(l for l in card(r, board=board_of([r])).lines if l.key == "momentum").text
+    assert " over the last day, " in t
+    r = mk("A", "Equity", 0.02, .01, momentum_days=1)
+    t = next(l for l in card(r, board=board_of([r])).lines if l.key == "momentum").text
+    assert " over the last trading day, " in t
+    assert "1 days" not in " ".join(strings(card(r, board=board_of([r]))))
+
+
+def test_two_rows_that_show_the_same_score_share_a_rank():
+    rows = [mk("A", "Equity", 0, .01, 74.6), mk("B", "Equity", 0, .01, 75.4),
+            mk("C", "Equity", 0, .01, 60.0)]
+    b = board_of(rows)
+    assert "ranked 1st of 3" in card(rows[0], board=b).title    # both show 75
+    assert "ranked 1st of 3" in card(rows[1], board=b).title
+    assert "ranked 3rd of 3" in card(rows[2], board=b).title
+
+
+def test_non_shares_carry_no_earnings_points_on_the_recorded_board():
+    for r in ROWS:
+        if r["cls"] != "Equity":
+            assert next(l for l in card(r).lines if l.key == "catalyst").points == 0, r["symbol"]
+
+
+def test_a_non_share_with_earnings_points_is_logged(caplog):
+    r = mk("X", "Forex", 0.01, .01, comp={"momentum": .5, "volatility": .5, "news": 0,
+                                         "catalyst": 1.0}, confidence=0.0)
+    r["confidence"] = round(100 * sum(A._W[k] * r["comp"].get(k, 0) for k in A._W), 1)
+    card(r, board=board_of([r]))
+    assert "not a share but carries" in caplog.text
+
+
+def test_the_fallback_says_the_points_are_not_rounded():
+    r = copy.deepcopy(row_of("NVDA"))
+    r["confidence"] = 3.0
+    assert card(r).rounding_note == W.FALLBACK_NOTE
+    assert not banned_in(W.FALLBACK_NOTE) and not banned_in(W.NO_CALENDAR)

@@ -36,8 +36,8 @@ import time
 
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (QColor, QDesktopServices, QIcon, QKeySequence,
-                           QPainter, QShortcut)
-from PySide6.QtWidgets import QApplication
+                           QAccessible, QPainter, QShortcut)
+from PySide6.QtWidgets import QAccessibleWidget, QApplication
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow,
@@ -1464,7 +1464,8 @@ class ScoreCell(QFrame):
         super().__init__(parent)
         self.setObjectName("scorecell")
         self.setStyleSheet(
-            "QFrame#scorecell { border: 2px solid transparent; border-radius: 4px; }"
+            "QFrame#scorecell { background: transparent;"
+            " border: 2px solid transparent; border-radius: 4px; }"
             f"QFrame#scorecell:focus {{ border: 2px solid {theme.UP.name()}; }}")
 
     def enable_control(self) -> None:
@@ -1481,10 +1482,28 @@ class ScoreCell(QFrame):
 
     def keyPressEvent(self, ev) -> None:
         if ev.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
-            self.activated.emit()
+            if not ev.isAutoRepeat():      # holding a key must not flicker the card
+                self.activated.emit()
             ev.accept()
             return
         super().keyPressEvent(ev)
+
+
+class _ScoreCellAccessible(QAccessibleWidget):
+    """Announces the score cell as a button, which is what it is. (Its default
+    role is a plain frame, so a screen reader would read it as decoration.)"""
+
+    def __init__(self, widget) -> None:
+        super().__init__(widget, QAccessible.Role.Button)
+
+
+def _accessible_factory(class_name, obj):
+    if class_name == "ScoreCell" and obj is not None and obj.isWidgetType():
+        return _ScoreCellAccessible(obj)
+    return None
+
+
+QAccessible.installFactory(_accessible_factory)
 
 
 class _MiniBar(QWidget):
@@ -1555,6 +1574,7 @@ class WhyCard(QFrame):
         for r, ln in enumerate(card.lines):
             ink = theme.MUTED if ln.muted else theme.INK
             left = QWidget()
+            left.setObjectName("cell")          # transparent, like the row's cells
             left.setFixedWidth(self.POINTS_W)
             lv = QVBoxLayout(left)
             lv.setContentsMargins(0, 0, 0, 0)
@@ -5113,11 +5133,13 @@ class MainWindow(QMainWindow):
                 where = "hide"
             elif fw is card or card.isAncestorOf(fw):
                 where = "card"
+        cell_symbol = None
         if where is None and fw is not None:
             for row in self._asset_rows:
-                if isValid(row) and fw is row.score_cell and row.symbol == self._why_open:
-                    where = "cell"
-        return {"scroll": bar.value(), "where": where, "had_card": card is not None}
+                if isValid(row) and fw is row.score_cell:
+                    where, cell_symbol = "cell", row.symbol
+        return {"scroll": bar.value(), "where": where,
+                "had_card": card is not None, "cell_symbol": cell_symbol}
 
     def _why_restore(self, keep: dict) -> None:
         self._assets_lay.activate()
@@ -5126,7 +5148,7 @@ class MainWindow(QMainWindow):
         # The new widgets are only laid out and shown once the event loop runs,
         # and Qt scrolls to reveal whatever takes focus using the geometry it
         # has at that moment. So do it all again, in order, once they are.
-        # The wanted scroll value is also kept for half a second, to be applied
+        # The wanted scroll value is also kept for three seconds, to be applied
         # when the scroll range widens to hold it.
         # Ranks reorder every scan, so if focus was inside the card and it has
         # moved out of view it is brought back; otherwise the scroll is left
@@ -5136,27 +5158,26 @@ class MainWindow(QMainWindow):
                              and keep["where"] in ("hide", "card"))
         QTimer.singleShot(0, lambda w=self._scroll_want, k=keep:
                           self._finish_restore(w, k))
-        QTimer.singleShot(500, lambda w=self._scroll_want: self._drop_scroll_want(w))
+        QTimer.singleShot(3000, lambda w=self._scroll_want: self._drop_scroll_want(w))
 
     def _restore_focus(self, keep: dict) -> None:
         where, card = keep["where"], self._why_card
         if where is None:
             return
-        if card is None:
-            if keep["had_card"]:
-                self.asset_header.setFocus()
-        elif where == "hide":
-            card.hide_btn.setFocus()
-        elif where == "cell":
-            row = self._row_of(self._why_open)
+        if where == "cell":
+            row = self._row_of(keep["cell_symbol"])
             if row is not None:
                 row.score_cell.setFocus()
+        elif card is None:
+            if keep["had_card"]:
+                self.asset_header.setFocus()     # the card closed: its row left
+        elif where == "hide":
+            card.hide_btn.setFocus()
 
     def _finish_restore(self, want, keep: dict) -> None:
         if getattr(self, "_scroll_want", None) is not want:
             return
-        if self._why_card is not None and isValid(self._why_card):
-            self._restore_focus(keep)
+        self._restore_focus(keep)
         self._set_scroll(self._scroll_target(want))
 
     def _scroll_target(self, want) -> int:

@@ -508,8 +508,20 @@ class AssetScanner:
             "classes": sorted({s.cls for s in out}),
             "horizon": hz.as_dict(),
             "risk": profile.as_dict(),
+            # How much of the earnings calendar SONAR actually holds, so a card
+            # can say "no date in SONAR's calendar" only when there is one.
+            "earnings_calendar": self._calendar_coverage(),
             "assets": [asdict(s) for s in out],
         }
+
+    def _calendar_coverage(self) -> dict:
+        n = 0
+        if self.events is not None:
+            try:
+                n = int(self.events.cached_payload().get("n_earnings", 0))
+            except Exception:
+                n = 0
+        return {"n": n, "days": events_mod.LOOKAHEAD_DAYS}
 
 
 #: Components standardised within asset class, and the *raw* quantity each one

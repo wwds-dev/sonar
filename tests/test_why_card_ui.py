@@ -11,7 +11,7 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
 from sonar.core import Live
 from ui import app as ui_app
@@ -361,3 +361,95 @@ def test_no_banned_term_in_the_learn_paragraph_or_the_cell_strings(window):
                 window._why_card.accessibleName()]
     for s in strings:
         assert not banned_in(s), (s, banned_in(s))
+
+
+# --------------------------------------------------------------------------- #
+# Review fixes
+# --------------------------------------------------------------------------- #
+def _count(image, rect, colour: QColor) -> int:
+    rgb = colour.rgb()
+    return sum(1 for x in range(rect.left(), rect.right() + 1)
+               for y in range(rect.top(), rect.bottom() + 1)
+               if image.pixel(x, y) == rgb)
+
+
+def test_the_score_cell_paints_no_dark_box(window):
+    """CR P1-1: QFrame#scorecell inherited the window's BG, so all 129 rows drew a
+    BG-coloured rectangle on their PANEL. The old holder was transparent.
+    (The app sets theme.STYLESHEET on the QApplication; setting it on the one
+    widget cascades the same rules without restyling the whole window.)"""
+    r = row(window, "NVDA")
+    r.setStyleSheet(theme.STYLESHEET)
+    for _ in range(3):                  # let the new rows be laid out and shown
+        QApplication.processEvents()
+    img = r.grab().toImage()
+    rect = r.score_cell.geometry()
+    assert not img.isNull() and rect.height() > 20, rect
+    assert _count(img, rect, theme.BG) == 0
+    assert _count(img, rect, theme.PANEL) > 200     # it is the panel showing through
+
+
+def test_the_cards_points_holders_paint_no_dark_box(window):
+    click(row(window, "NVDA").score_cell)
+    card = window._why_card
+    card.setStyleSheet(theme.STYLESHEET)
+    for _ in range(3):
+        QApplication.processEvents()
+    img = card.grab().toImage()
+    assert not img.isNull()
+    holders = [w for w in card.findChildren(QWidget)
+               if w.objectName() == "cell" and w.width() == window._why_card.POINTS_W]
+    assert len(holders) == 4
+    for h in holders:
+        rect = h.geometry()
+        rect.moveTopLeft(h.mapTo(card, rect.topLeft()) - rect.topLeft())
+        assert _count(img, rect, theme.BG) == 0
+
+
+def test_the_score_cell_is_announced_as_a_button(window):
+    from PySide6.QtGui import QAccessible
+    QAccessible.setActive(True)
+    cell = row(window, "NVDA").score_cell
+    iface = QAccessible.queryAccessibleInterface(cell)
+    assert iface.role() == QAccessible.Role.Button
+    assert iface.text(QAccessible.Text.Name) == cell.accessibleName()
+    assert iface.state().focusable
+
+
+def test_a_held_key_does_not_flicker_the_card(window):
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtCore import QEvent
+    c = row(window, "NVDA").score_cell
+    c.setFocus()
+    first = QKeyEvent(QEvent.KeyPress, Qt.Key_Space, Qt.NoModifier, " ", False, 1)
+    repeat = QKeyEvent(QEvent.KeyPress, Qt.Key_Space, Qt.NoModifier, " ", True, 1)
+    c.keyPressEvent(first)
+    assert window._why_open == "NVDA"
+    for _ in range(5):
+        c.keyPressEvent(repeat)
+    assert window._why_open == "NVDA"
+
+
+def test_a_scan_keeps_focus_on_any_score_cell(window):
+    """CR P3-4: only the open row's cell kept focus across a scan."""
+    window._drop_why_card()
+    row(window, "BABA").score_cell.setFocus()
+    rebuild(window, board())
+    assert focused(window, row(window, "BABA").score_cell)
+
+
+def test_learn_says_what_the_card_says():
+    text = " ".join(learn_paragraph().split())
+    assert "something is happening" not in text            # DF P1-2
+    assert "usually moves" not in text                     # DF P2-1
+    assert "SONAR's estimate of its daily swing" in text
+    assert "partly compared with other markets of the same kind" in text.replace("\n", " ")
+    assert "does not say which way the price goes next" in text
+
+
+def test_the_dispute_pointer_names_a_section_that_exists():
+    import re
+    html = (HERE.parent / "static" / "docs.html").read_text()
+    n = re.search(r"section (\d+)\)", W.UNDER_DISPUTE["volatility"]).group(1)
+    assert re.search(rf'<h2 id="[a-z]+"><span class="n">{n}</span>What the research found',
+                     html)
