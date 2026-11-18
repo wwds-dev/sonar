@@ -172,3 +172,5 @@
 {"ts": "2026-11-18T20:00:13", "phase": "architect", "state": "start", "spec": "why-notable-card"}
 {"ts": "2026-11-18T20:03:06", "phase": "architect", "state": "done", "spec": "why-notable-card"}
 {"ts": "2026-11-18T21:28:15", "phase": "plan", "state": "start", "spec": "why-notable-card"}
+{"ts": "2026-11-18T21:52:34", "phase": "review", "state": "start", "spec": "why-notable-card"}
+{"ts": "2026-11-18T21:58:54", "phase": "review", "state": "done", "spec": "why-notable-card"}
