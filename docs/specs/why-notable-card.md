@@ -1,11 +1,12 @@
 # Spec: a "why is this notable" card per instrument on the Screener
 
-- Status: draft (Define)
-- Owner approval: pending (Define gate: user-visible and new)
+- Status: approved (Define)
+- Owner approval: 2026-11-18, Define ("go with recommendations"); recorded in `docs/foundry/approvals.jsonl`.
+  Decisions under "Owner decisions at the Define gate" below.
 - Source: `SUGGESTIONS.md` #23 (portfolio review 2026-11-18); `TODO.md` "Approachability — the app is unreadable
   without a finance background". Session-owned slug: `why-notable-card`.
 - Skipped at Define: `/radar-check` (no new dependency, tool or data source; copy and one pure function only).
-  Domain-finance consult not yet run: see question 6.
+  Domain-finance consult not yet run: it runs once the Design copy is final (decision 6).
 
 ## Problem
 
@@ -259,6 +260,20 @@ Questions for the owner at the Define gate:
    are unused by the UI but still produced. Add a TODO row to remove them, or leave them?
 6. **Domain-finance review** of the templates before you approve (read-only, one pass), or after Design?
 7. **Owner check:** are you the reader for success measure 4, and is "five of five" the bar?
+
+### Owner decisions at the Define gate (2026-11-18)
+
+The owner answered "go with recommendations". Questions 1–3 had a stated recommendation. Questions 4–7 had none, so
+the agent took the defaults below, which the owner may still overturn before Design:
+
+1. Approved as written: Screener only, four component lines plus footer, no headline titles, no model call.
+2. W8 stands: the neutral "open question" sentence for volatility; no measured result on the card.
+3. The past move keeps its sign ("Rose / Fell"), with the "size counts, not the direction" sentence.
+4. Default: headline titles stay planned for slice 2, behind a Secure pass; slice 1 shows sources and ages only.
+5. Default: a `TODO.md` row records removing the word-list tone (`_rationale`, `news_sentiment` in the LLM read).
+   Out of scope here.
+6. Default: the domain-finance review runs once the Design copy is final, before Architect and Build.
+7. Default: the owner is the reader for success measure 4, and the bar is five of five.
 
 ## Verification plan *(qa-engineer, to be completed in Verify)*
 

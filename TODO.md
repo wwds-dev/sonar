@@ -35,6 +35,10 @@ not-planned list sit between the two.
       nothing") whenever `loo_cost <= 0` (`backtest.py:1670-1673`), a plain difference with no se, while every other
       grade is gated on FDR, a 2-se spread and the randomisation check. Gate it on a bootstrap se of `loo_cost`, or
       reword. Measure the false-DROP rate with the existing placebo harness. Source: readiness audit M4.
+- [ ] `P3` `design` `@ai` **The word-list "tone" is still produced.** `_rationale` (`assets.py:588`) writes "tone
+      positive/negative/mixed" into every `/api/assets` row, and `Live.read` passes `news_sentiment` to the optional
+      LLM read (`core.py:1373`). The Qt UI shows neither, and `CONFIDENCE.md` §9 calls the word list unfit. Remove
+      both, or justify keeping them. Source: `docs/specs/why-notable-card.md` (Define, decision 5).
 - [ ] `P3` `testing` `@ai` **Three `test_server.py` tests leave a live Watchdog thread** (`server.main` without
       patching `Watchdog.run`, unlike `tests/test_alarm.py:851`); it logs `'StubLive' object has no attribute
       '_stop'` every 15 s for the rest of the run. Patch it. Source: readiness audit L3.
