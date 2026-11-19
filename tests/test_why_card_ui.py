@@ -61,9 +61,12 @@ def board(**over):
     return b
 
 
+_scan = __import__("itertools").count(1)     # every call is a new scan
+
+
 def rebuild(window, b):
     """A new scan: a new `generated` stamp makes the board rebuild."""
-    b["generated"] = b.get("generated", 0) + 1
+    b["generated"] = b.get("generated", 0) + next(_scan)
     window._refresh_cards(b)
     for _ in range(3):          # layout, show and the scroll restore each take a turn
         QApplication.processEvents()
@@ -453,3 +456,19 @@ def test_the_dispute_pointer_names_a_section_that_exists():
     n = re.search(r"section (\d+)\)", W.UNDER_DISPUTE["volatility"]).group(1)
     assert re.search(rf'<h2 id="[a-z]+"><span class="n">{n}</span>What the research found',
                      html)
+
+
+def test_a_score_cell_whose_row_leaves_the_board_sends_focus_to_the_header(window):
+    """QA P2-1: with the card closed or open, focus on a row's own score cell,
+    and that row leaving the board, used to land on another row's cell."""
+    for opened in (False, True):
+        window._drop_why_card()
+        if opened:
+            click(row(window, "NVDA").score_cell)
+        row(window, "NVDA").score_cell.setFocus()
+        b = board()
+        b["assets"] = [a for a in b["assets"] if a["symbol"] != "NVDA"]
+        rebuild(window, b)
+        assert focused(window, window.asset_header), opened
+        rebuild(window, board())            # put it back for the next pass
+

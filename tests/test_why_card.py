@@ -30,7 +30,7 @@ potential might must conf catalyst buy sell short long bullish bearish upside do
 opportunity signal edge profit gain win likely expect will should could may breakout
 rebound recover bounce oversold overbought cheap expensive undervalued overvalued
 target chance odds probability confident confidence sure guaranteed safe risky strong
-weak positive negative tone sentiment""".split()
+weak positive negative tone sentiment momentum""".split()
 ALLOWED = ["worth a look"]
 
 
@@ -613,11 +613,31 @@ def test_an_empty_or_unfetched_calendar_says_so(cal):
         next(l for l in card(baba, board=b).lines if l.key == "catalyst").text
 
 
-def test_the_payload_carries_the_calendar_coverage():
-    from sonar.assets import AssetScanner  # noqa: F401  (the class that builds it)
-    import inspect
-    assert "_calendar_coverage" in inspect.getsource(A)
-    assert "earnings_calendar" in inspect.getsource(A)
+def test_the_payload_carries_the_calendar_coverage(monkeypatch):
+    """QA P3: a payload built by the real scanner, with the fetch stubbed, not a
+    grep of the source."""
+    from sonar import horizon, risk
+
+    def fetch(symbol, rng):
+        closes = [100.0 + i * 0.01 for i in range(300)]
+        return (closes[-1], "USD", closes)
+
+    class Ev:
+        def cached_payload(self):
+            return {"n_earnings": 9}
+
+        def earnings_for(self, symbol):
+            return None
+
+    monkeypatch.setattr(A, "_fetch", fetch)
+    board = A.AssetScanner(events=Ev()).payload(
+        [], horizon.HORIZONS["week"], risk.get("aggressive"))
+    assert board["status"] == "live" and board["assets"]
+    assert board["earnings_calendar"] == {"n": 9, "days": 14}
+    # and the card reads it from there
+    row = next(r for r in board["assets"] if r["cls"] == "Equity")
+    t = next(l for l in card(row, board=board).lines if l.key == "catalyst").text
+    assert t == "No earnings date in the next 10 days of SONAR's calendar."
 
 
 def test_the_calendar_coverage_reads_the_cache_without_fetching():
@@ -695,3 +715,13 @@ def test_the_fallback_says_the_points_are_not_rounded():
     r["confidence"] = 3.0
     assert card(r).rounding_note == W.FALLBACK_NOTE
     assert not banned_in(W.FALLBACK_NOTE) and not banned_in(W.NO_CALENDAR)
+
+
+def test_a_part_with_no_fraction_never_gets_the_extra_point():
+    """QA M2: a component that is already whole must not be rounded up, even when
+    the target needs another point (the formula then does not reach it)."""
+    comp = {"news": 0.4, "momentum": 0.5, "volatility": 0.0}   # 14.0, 15.0, 0.0
+    assert W.allocate_points(comp, 29) == {"news": 14, "momentum": 15,
+                                           "catalyst": 0, "volatility": 0}
+    assert W.allocate_points(comp, 30) is None       # no part has a fraction to round up
+    assert W.allocate_points(comp, 28) is None

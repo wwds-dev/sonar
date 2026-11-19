@@ -2793,7 +2793,11 @@ class MainWindow(QMainWindow):
         setattr(self, f"_{which}_host", host)
         setattr(self, f"_{which}_area", area)
         if which == "assets":
-            area.verticalScrollBar().rangeChanged.connect(self._on_scroll_range)
+            bar = area.verticalScrollBar()
+            bar.rangeChanged.connect(self._on_scroll_range)
+            # only a person moves a slider through these; setValue() does not
+            bar.actionTriggered.connect(lambda _a: self._drop_scroll_want(
+                getattr(self, "_scroll_want", None)))
         setattr(self, f"_{which}_lay", lay)
         setattr(self, f"_{which}_sig", None)
         if header is None:
@@ -5148,8 +5152,12 @@ class MainWindow(QMainWindow):
         # The new widgets are only laid out and shown once the event loop runs,
         # and Qt scrolls to reveal whatever takes focus using the geometry it
         # has at that moment. So do it all again, in order, once they are.
-        # The wanted scroll value is also kept for three seconds, to be applied
-        # when the scroll range widens to hold it.
+        # The wanted scroll value is kept until the scroll range widens to hold
+        # it (`_on_scroll_range`) or the reader scrolls (`actionTriggered`):
+        # state, not a delay, because how long the new rows take to lay out
+        # depends on the machine (a 500 ms and then a 3 s window both lost the
+        # restore when earlier windows in the same process kept it busy). The
+        # 30 s timer is only a safety net for a board that shrank for good.
         # Ranks reorder every scan, so if focus was inside the card and it has
         # moved out of view it is brought back; otherwise the scroll is left
         # exactly as it was.
@@ -5158,7 +5166,7 @@ class MainWindow(QMainWindow):
                              and keep["where"] in ("hide", "card"))
         QTimer.singleShot(0, lambda w=self._scroll_want, k=keep:
                           self._finish_restore(w, k))
-        QTimer.singleShot(3000, lambda w=self._scroll_want: self._drop_scroll_want(w))
+        QTimer.singleShot(30000, lambda w=self._scroll_want: self._drop_scroll_want(w))
 
     def _restore_focus(self, keep: dict) -> None:
         where, card = keep["where"], self._why_card
@@ -5168,6 +5176,9 @@ class MainWindow(QMainWindow):
             row = self._row_of(keep["cell_symbol"])
             if row is not None:
                 row.score_cell.setFocus()
+            else:
+                # its row left the board: Qt would hand focus to a neighbour
+                self.asset_header.setFocus()
         elif card is None:
             if keep["had_card"]:
                 self.asset_header.setFocus()     # the card closed: its row left
