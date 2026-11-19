@@ -28,6 +28,9 @@ not-planned list sit between the two.
 - [ ] `P1` `testing` `@me` **Run the v2.406 release smoke test.** Steps in `docs/audit/release-v2.406.md`
       ("Smoke test"): About shows v2.406, one scan, one paper trade (Undo it if unwanted), quit and relaunch,
       `install_agent.sh --status`, phone heartbeat. Note the result in that file.
+- [ ] `P2` `docs` `@me` **Land `claude/defer-suggestions-19-24`.** One commit (`134d18d`, pushed, found unmerged
+  2026-11-19) marks SUGGESTIONS #19 (Playmaker out) and #24 (claim checker) as DEFERRED until after the redesign,
+  per your decision of 2026-11-18. `master` still lists both as IDEA. Merge it, or say to drop the branch.
 - [ ] `P2` `bug` `@ai` **A restored book is announced only on stderr.** `paths.read_state` (`paths.py:188-229`)
       loads the newest daily backup when `portfolio.json` is unreadable; nothing in the UI or `/api/health` says
       so, so up to a day of positions can vanish silently. Surface `restored_from` on My trades and as a health
