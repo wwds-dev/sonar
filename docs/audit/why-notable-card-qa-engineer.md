@@ -43,3 +43,51 @@ All three runs used `./run-tests.sh -q -p no:cacheprovider -rfE`.
 4. Pending: needs five cards read by the owner.
 
 Branch coverage: not verified, because coverage is not installed.
+
+---
+
+# Re-Verify (scoped, owner's choice), 2026-11-19, at 2132740
+
+**Verdict: pass with notes.** P1-1, P2-1 and the four P3s from the first Verify are fixed. There are no P0, P1 or P2 findings.
+
+## What changed
+- **P1-1, scroll restore:** it no longer drops the wanted scroll position on a timer. It now restores on a scroll-range change (`ui/app.py:5156-5169`, `:5213-5217`) or when the reader scrolls (`:2799`). A 30 s timer remains only as a safety net.
+- **P2-1, focus:** focus goes to the board header when the focused row leaves the board (`ui/app.py:5179-5181`). Covered by `tests/test_why_card_ui.py:461`.
+- **P3s:**
+  - zero-fraction test at `tests/test_why_card.py:720` (it kills the old M2 mutant)
+  - real-payload calendar test at `:616`
+  - fixture `_fixture_note`
+  - "momentum" added to BANNED
+
+## Test runs
+
+| Run | Mode | Result |
+|---|---|---|
+| Card tests | offscreen | 108 passed |
+| Card tests | native | 108 passed |
+| Files `test_[a-v]*` + card tests | offscreen | 5 failed, 3312 passed |
+| Files `test_[a-v]*` + card tests | native | 4 failed, 3313 passed |
+
+No card test failed in either slice, so the order dependence is gone.
+
+## Failures not caused by the branch
+
+Checked on origin/master 71c078d, offscreen only. The nested repos were symlinked from the branch worktree for that check.
+- `test_ci_pins[macro]` and `test_ci_pins[playmaker]`: this worktree's nested repos are stale.
+- `test_legal_copy` playmaker notice: same cause.
+- `test_shadow_ui::test_h3_a_look_number…`: depends on the date, and fails on master too.
+- `test_health::test_the_topic_never_appears_in_any_output`: flakes under load. It passes when run alone.
+
+## Mutants
+- New restore and focus logic: 4 of 7 killed.
+- Survivors:
+  - mutant 4: `actionTriggered` hookup removed
+  - mutant 5: `hi > target` boundary
+  - mutant 6: wanted position not cleared
+- All three are P3 test gaps, tracked in TODO.md.
+
+## Not verified
+- The builder's full-suite numbers (3,359 passed / 4 failed, both modes). QA did not re-run the full suite, by scope.
+- Coverage.
+- Native mode on master.
+- Success measure 4, which is pending the owner.
