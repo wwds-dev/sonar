@@ -34,9 +34,10 @@ import statistics
 import sys
 import time
 
-from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import (QColor, QDesktopServices, QIcon, QKeySequence,
+                           QAccessible, QPainter, QShortcut)
+from PySide6.QtWidgets import QAccessibleWidget, QApplication
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow,
@@ -62,6 +63,9 @@ from sonar.assets import _W as ASSET_W
 from . import learn as learn_mod
 from . import theme
 from . import words
+from . import why_card as why_mod
+from .why_card import AGE_BAD_S, AGE_WARN_S
+from .why_card import swing_words as _swing_words
 from .charts import (AccountCurve, ComponentBar, DepthChart, EquityCurve,
                      HourBar, Lattice, PositionChart, PositionTiles, Sparkline)
 from .tabs import PlainTabs
@@ -157,7 +161,8 @@ ASSET_COLS = [
     ("conf", ("Worth a look", "CONF"), 80, "scores",
      "0–100: how notable this looks right now.\n"
      "NOT the chance you will make money — that is the column to the left.\n"
-     "The bar underneath splits the score into what produced it."),
+     "The bar underneath splits the score into what produced it.\n"
+     "Click a score to see why."),
     ("age", ("Updated", "AGE"), 72, "",
      "How long ago this row's price was actually fetched.\n"
      "The board recomputes about every 3 minutes, but only the 26 stalest of\n"
@@ -174,8 +179,7 @@ ASSET_COLS = [
 # `assets.ROLL_BATCH` rows of `assets.WATCHLIST` are refetched per scan, so a
 # full pass takes ceil(129/26) = 5 scans of ~3 minutes each. Anything inside
 # that is the design working; past it the fetch is losing ground.
-AGE_WARN_S = 20 * 60
-AGE_BAD_S = 60 * 60
+# (AGE_WARN_S and AGE_BAD_S live in ui/why_card.py, which the card needs too.)
 
 
 def _age_text(seconds: float, plain: bool | None = None) -> str:
@@ -198,17 +202,6 @@ def _age_color(seconds: float):
     if seconds >= AGE_WARN_S:
         return theme.GOLD
     return theme.MUTED
-
-
-def _swing_words(daily_vol: float) -> str:
-    """The same number in words. 4.3% a day means nothing to most people; "big
-    swings" does, and the number is right there for anyone it does mean
-    something to."""
-    if daily_vol >= 0.030:
-        return "big swings"
-    if daily_vol >= 0.015:
-        return "medium"
-    return "small swings"
 
 
 def _plain_read(a: dict) -> str:
@@ -1457,6 +1450,174 @@ class Stat(QWidget):
 
 
 
+class ScoreCell(QFrame):
+    """The "Worth a look" cell, which is also the button that opens the card.
+
+    A focus ring and a pointing hand say it is a control; the tooltip and the
+    accessible name say what it does, so the card is reachable by Tab and by a
+    screen reader and not only by a mouse.
+    """
+
+    activated = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("scorecell")
+        self.setStyleSheet(
+            "QFrame#scorecell { background: transparent;"
+            " border: 2px solid transparent; border-radius: 4px; }"
+            f"QFrame#scorecell:focus {{ border: 2px solid {theme.UP.name()}; }}")
+
+    def enable_control(self) -> None:
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def mouseReleaseEvent(self, ev) -> None:
+        if (self.focusPolicy() == Qt.StrongFocus and ev.button() == Qt.LeftButton
+                and self.rect().contains(ev.position().toPoint())):
+            self.activated.emit()
+            ev.accept()
+            return
+        super().mouseReleaseEvent(ev)
+
+    def keyPressEvent(self, ev) -> None:
+        if ev.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+            if not ev.isAutoRepeat():      # holding a key must not flicker the card
+                self.activated.emit()
+            ev.accept()
+            return
+        super().keyPressEvent(ev)
+
+
+class _ScoreCellAccessible(QAccessibleWidget):
+    """Announces the score cell as a button, which is what it is. (Its default
+    role is a plain frame, so a screen reader would read it as decoration.)"""
+
+    def __init__(self, widget) -> None:
+        super().__init__(widget, QAccessible.Role.Button)
+
+
+def _accessible_factory(class_name, obj):
+    if class_name == "ScoreCell" and obj is not None and obj.isWidgetType():
+        return _ScoreCellAccessible(obj)
+    return None
+
+
+QAccessible.installFactory(_accessible_factory)
+
+
+class _MiniBar(QWidget):
+    """points / max, on the grid colour. Non-text, so 3:1 is the bar."""
+
+    def __init__(self, fraction: float, colour: QColor, parent=None) -> None:
+        super().__init__(parent)
+        self._fraction = max(0.0, min(1.0, fraction))
+        self._colour = colour
+        self.setFixedHeight(5)
+
+    def paintEvent(self, _ev) -> None:
+        p = QPainter(self)
+        p.fillRect(self.rect(), theme.GRID)
+        w = round(self.width() * self._fraction)
+        if w:
+            p.fillRect(0, 0, w, self.height(), self._colour)
+        p.end()
+
+
+class WhyCard(QFrame):
+    """The inline card under a Screener row. Draws a `why_card.Card`; computes
+    nothing. Esc or Hide closes it through `on_hide`."""
+
+    POINTS_W = 200      # pt: swatch, label, "27 of 30", mini bar
+    TEXT_W = 760        # pt: the readable limit, about 85 characters
+
+    def __init__(self, card, plain: bool, on_hide, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("panel")
+        self.card = card
+        self._on_hide = on_hide
+        self.setAccessibleName("Why this row has its score")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 9, 12, 12)
+        lay.setSpacing(6)
+
+        def text(s, colour, font=None, wrap=True, maxw=None):
+            lb = label(s, font=font or theme.text(10), wrap=wrap)
+            lb.setStyleSheet(f"color: {colour.name()};")
+            if maxw:
+                lb.setMaximumWidth(maxw)
+            return lb
+
+        head = QHBoxLayout()
+        head.setSpacing(12)
+        head.addWidget(text(card.title, theme.INK, theme.text(11, True)), 1)
+        self.hide_btn = QPushButton("Hide")
+        self.hide_btn.setToolTip("Close this card (Esc)")
+        self.hide_btn.setAccessibleName("Hide the explanation of this score")
+        self.hide_btn.clicked.connect(lambda _c=False: self._on_hide())
+        head.addWidget(self.hide_btn, 0, Qt.AlignTop)
+        lay.addLayout(head)
+        lay.addWidget(text(card.as_of, theme.FAINT))
+        if card.stale:
+            colour = theme.DOWN if card.stale_level == "bad" else theme.GOLD
+            self.stale_label = text(card.stale, colour)
+            lay.addWidget(self.stale_label)
+
+        lay.addWidget(text("What put it here", theme.INK, theme.text(10, True),
+                           wrap=False))
+        if card.unavailable:
+            lay.addWidget(text(card.unavailable, theme.MUTED, maxw=self.TEXT_W))
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(8)
+        grid.setColumnMinimumWidth(0, self.POINTS_W)
+        for r, ln in enumerate(card.lines):
+            ink = theme.MUTED if ln.muted else theme.INK
+            left = QWidget()
+            left.setObjectName("cell")          # transparent, like the row's cells
+            left.setFixedWidth(self.POINTS_W)
+            lv = QVBoxLayout(left)
+            lv.setContentsMargins(0, 0, 0, 0)
+            lv.setSpacing(3)
+            top = QHBoxLayout()
+            top.setSpacing(6)
+            sw = QFrame()
+            sw.setFixedSize(10, 10)
+            sw.setStyleSheet(f"background: {theme.COMP[ln.key].name()}; border: none;")
+            top.addWidget(sw)
+            top.addWidget(text(ln.label, ink, theme.text(10, True), wrap=False))
+            top.addStretch(1)
+            pts = "–" if ln.points is None else f"{ln.points:g}"
+            top.addWidget(text(pts, ink, theme.figure(11, True), wrap=False))
+            top.addWidget(text(f"of {ln.max}", theme.FAINT, wrap=False))
+            lv.addLayout(top)
+            frac = 0.0 if ln.points is None else ln.points / ln.max
+            lv.addWidget(_MiniBar(frac, theme.COMP[ln.key]))
+            grid.addWidget(left, r, 0, Qt.AlignTop)
+            right = QVBoxLayout()
+            right.setSpacing(2)
+            right.addWidget(text(ln.text, ink, maxw=self.TEXT_W))
+            if ln.expert_detail:
+                right.addWidget(text(ln.expert_detail, theme.MUTED,
+                                     theme.figure(10), maxw=self.TEXT_W))
+            grid.addLayout(right, r, 1, Qt.AlignTop)
+        grid.setColumnStretch(2, 1)
+        lay.addLayout(grid)
+        if card.rounding_note:
+            lay.addWidget(text(card.rounding_note, theme.FAINT, maxw=self.TEXT_W))
+
+        lay.addWidget(text("What this does not say", theme.INK,
+                           theme.text(10, True), wrap=False))
+        lay.addWidget(text(card.footer, theme.MUTED, maxw=self.TEXT_W))
+
+    def keyPressEvent(self, ev) -> None:
+        if ev.key() == Qt.Key_Escape:
+            self._on_hide()
+            ev.accept()
+            return
+        super().keyPressEvent(ev)
+
+
 class AssetRow(QFrame):
     """One market on the board.
 
@@ -1467,9 +1628,11 @@ class AssetRow(QFrame):
     """
 
     def __init__(self, a: dict, on_read, on_trade, generated: float = 0.0,
-                 parent=None) -> None:
+                 parent=None, on_why=None, why_open: bool = False) -> None:
         super().__init__(parent)
         self.setObjectName("panel")
+        self.a = a
+        self.symbol = a["symbol"]
         # When this row's price was fetched, as an absolute time. `data_age_s`
         # is measured when the scan runs, so storing it as-is would freeze the
         # age at whatever it was then and count nothing afterwards — the exact
@@ -1598,20 +1761,23 @@ class AssetRow(QFrame):
         lay.addWidget(traded)
 
         # -- worth a look --------------------------------------------------- #
-        holder = QWidget()
-        holder.setObjectName("cell")
+        holder = ScoreCell()
         holder.setFixedWidth(widths["conf"])
+        self.score_cell = holder
+        self._score = why_mod.displayed_score(a["confidence"])
         box = QVBoxLayout(holder)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(3)
         line = QHBoxLayout()
         line.setContentsMargins(0, 0, 0, 0)
         line.setSpacing(3)
-        score = label(f'{a["confidence"]:.0f}', font=theme.figure(15, True))
+        score = label(f"{self._score}", font=theme.figure(15, True))
         line.addWidget(score)
         if plain:
             line.addWidget(label("/ 100", "faint", theme.text(9)))
         line.addStretch(1)
+        self.caret = label("▸", "faint", theme.text(9))
+        line.addWidget(self.caret)
         box.addLayout(line)
         bar = ComponentBar()
         # Length reads as "how notable", segments as "why". One 80px cell
@@ -1619,6 +1785,13 @@ class AssetRow(QFrame):
         bar.set_parts(a.get("comp", {}), ASSET_W, fill=a["confidence"] / 100.0)
         box.addWidget(bar)
         lay.addWidget(holder)
+        if on_why is None:
+            self.caret.hide()
+        else:
+            holder.enable_control()
+            holder.activated.connect(lambda: on_why(self.symbol))
+        self._has_why = on_why is not None
+        self.set_why_open(why_open)
 
         # -- updated -------------------------------------------------------- #
         self.age = label("", font=theme.text(9))
@@ -1661,6 +1834,18 @@ class AssetRow(QFrame):
             al.addWidget(b)
         al.addStretch(1)
         lay.addWidget(acts)
+
+    def set_why_open(self, is_open: bool) -> None:
+        """Caret, tooltip and accessible name of the score cell."""
+        self.why_is_open = is_open
+        if not self._has_why:
+            return
+        self.caret.setText("▾" if is_open else "▸")
+        self.score_cell.setToolTip(
+            f"Click to see why this row scores {self._score}")
+        self.score_cell.setAccessibleName(
+            f"Why {_clean(self.a['name'], 80)} is worth a look, {self._score} of "
+            f"100; {'shown' if is_open else 'hidden'}")
 
     def update_age(self, now: float | None = None) -> None:
         """Re-render the age. Cheap enough for the 1s timer because the text
@@ -2087,6 +2272,11 @@ class MainWindow(QMainWindow):
                       "Everything you hold in practice money — what you put "
                       "in, and what it is worth right now.")
         self._asset_rows: list[AssetRow] = []   # ticked by the Updated column
+        # The symbol whose "why" card is open, kept across board rebuilds. Widget
+        # state only: never persisted, never sent to the engine.
+        self._why_open: str | None = None
+        self._why_card: WhyCard | None = None
+        self._assets_board: dict = {}
         self.tabs.add(self._assets_tab(), "Screener", "Assets",
                       "129 markets ranked by how notable they look right now. "
                       "Notable, never 'going up'.")
@@ -2601,6 +2791,13 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         area.setWidget(host)
         setattr(self, f"_{which}_host", host)
+        setattr(self, f"_{which}_area", area)
+        if which == "assets":
+            bar = area.verticalScrollBar()
+            bar.rangeChanged.connect(self._on_scroll_range)
+            # only a person moves a slider through these; setValue() does not
+            bar.actionTriggered.connect(lambda _a: self._drop_scroll_want(
+                getattr(self, "_scroll_want", None)))
         setattr(self, f"_{which}_lay", lay)
         setattr(self, f"_{which}_sig", None)
         if header is None:
@@ -4884,16 +5081,185 @@ class MainWindow(QMainWindow):
         if asig != self._assets_sig:
             self._assets_sig = asig
             generated = float(assets.get("generated") or 0.0)
+            keep = self._why_snapshot()
+            self._assets_board = assets
             # Kept so the AGE column can keep counting between scans. The list
             # is replaced in the same breath as the widgets it names, so it can
             # never outlive them — a stale entry here would be a deleted C++
             # object and a RuntimeError on the next tick.
-            self._asset_rows = [AssetRow(a, self._read, self._trade, generated)
-                                for a in assets.get("assets", [])]
-            self._rebuild(self._assets_lay, list(self._asset_rows), empty or "")
+            self._asset_rows = [
+                AssetRow(a, self._read, self._trade, generated,
+                         on_why=self._toggle_why,
+                         why_open=(a["symbol"] == self._why_open))
+                for a in assets.get("assets", [])]
+            widgets: list[QWidget] = []
+            self._why_card = None
+            for row in self._asset_rows:
+                widgets.append(row)
+                if row.symbol == self._why_open:
+                    self._why_card = self._make_why_card(row, now)
+                    widgets.append(self._why_card)
+            if self._why_open and self._why_card is None:
+                self._why_open = None          # the risk filter dropped it
+            self._rebuild(self._assets_lay, widgets, empty or "")
+            self._tab_to_card()
+            self._why_restore(keep)
         else:
             for row in self._asset_rows:
                 row.update_age(now)
+
+    # -- the "why is this notable" card ------------------------------------ #
+    def _make_why_card(self, row: AssetRow, now: float) -> WhyCard:
+        card = why_mod.build_card(row.a, self._assets_board, plain=words.plain(),
+                                  age_s=max(0.0, now - row._fetched_at))
+        return WhyCard(card, words.plain(), self._close_why)
+
+    def _tab_to_card(self) -> None:
+        """Cell, then Hide, then the rest of the row. A card made after its
+        row would otherwise sit last in the tab order. Needs the card to be in
+        the window already."""
+        row = self._row_of(self._why_open)
+        if row is not None and self._why_card is not None:
+            QWidget.setTabOrder(row.score_cell, self._why_card.hide_btn)
+
+    def _why_snapshot(self) -> dict:
+        """Scroll position and where focus is, taken before the board's widgets
+        are dropped, so a scan every three minutes does not move either."""
+        bar = self._assets_area.verticalScrollBar()
+        where = None
+        # The window's own record of where focus sits, which stays right while
+        # the window is not the active one; QApplication.focusWidget() would be
+        # None then and a scan would drop the reader's place.
+        fw = self.focusWidget()
+        card = self._why_card
+        if fw is not None and card is not None and isValid(card):
+            if fw is card.hide_btn:
+                where = "hide"
+            elif fw is card or card.isAncestorOf(fw):
+                where = "card"
+        cell_symbol = None
+        if where is None and fw is not None:
+            for row in self._asset_rows:
+                if isValid(row) and fw is row.score_cell:
+                    where, cell_symbol = "cell", row.symbol
+        return {"scroll": bar.value(), "where": where,
+                "had_card": card is not None, "cell_symbol": cell_symbol}
+
+    def _why_restore(self, keep: dict) -> None:
+        self._assets_lay.activate()
+        self._restore_focus(keep)
+        self._set_scroll(keep["scroll"])
+        # The new widgets are only laid out and shown once the event loop runs,
+        # and Qt scrolls to reveal whatever takes focus using the geometry it
+        # has at that moment. So do it all again, in order, once they are.
+        # The wanted scroll value is kept until the scroll range widens to hold
+        # it (`_on_scroll_range`) or the reader scrolls (`actionTriggered`):
+        # state, not a delay, because how long the new rows take to lay out
+        # depends on the machine (a 500 ms and then a 3 s window both lost the
+        # restore when earlier windows in the same process kept it busy). The
+        # 30 s timer is only a safety net for a board that shrank for good.
+        # Ranks reorder every scan, so if focus was inside the card and it has
+        # moved out of view it is brought back; otherwise the scroll is left
+        # exactly as it was.
+        self._scroll_want = (keep["scroll"],
+                             self._why_card is not None
+                             and keep["where"] in ("hide", "card"))
+        QTimer.singleShot(0, lambda w=self._scroll_want, k=keep:
+                          self._finish_restore(w, k))
+        QTimer.singleShot(30000, lambda w=self._scroll_want: self._drop_scroll_want(w))
+
+    def _restore_focus(self, keep: dict) -> None:
+        where, card = keep["where"], self._why_card
+        if where is None:
+            return
+        if where == "cell":
+            row = self._row_of(keep["cell_symbol"])
+            if row is not None:
+                row.score_cell.setFocus()
+            else:
+                # its row left the board: Qt would hand focus to a neighbour
+                self.asset_header.setFocus()
+        elif card is None:
+            if keep["had_card"]:
+                self.asset_header.setFocus()     # the card closed: its row left
+        elif where == "hide":
+            card.hide_btn.setFocus()
+
+    def _finish_restore(self, want, keep: dict) -> None:
+        if getattr(self, "_scroll_want", None) is not want:
+            return
+        self._restore_focus(keep)
+        self._set_scroll(self._scroll_target(want))
+
+    def _scroll_target(self, want) -> int:
+        """The wanted scroll value, moved just far enough to show the card when
+        focus is inside it. Worked out from the card's geometry, which the
+        layout has already fixed, so it does not depend on the scroll range."""
+        value, check = want
+        card = self._why_card
+        if check and card is not None and isValid(card) and card.isVisible() and card.height() > 0:
+            view_h = self._assets_area.viewport().height()
+            top, bottom = card.y(), card.y() + card.height()
+            if top < value:
+                value = top
+            elif bottom > value + view_h:
+                value = min(bottom - view_h, top)
+        return value
+
+    def _drop_scroll_want(self, want) -> None:
+        if getattr(self, "_scroll_want", None) is want:
+            self._scroll_want = None
+
+    def _on_scroll_range(self, _lo: int, hi: int) -> None:
+        want = getattr(self, "_scroll_want", None)
+        if want is not None and hi >= self._scroll_target(want):
+            self._set_scroll(self._scroll_target(want))
+            self._scroll_want = None
+
+    def _set_scroll(self, value: int) -> None:
+        if isValid(self._assets_area):
+            self._assets_area.verticalScrollBar().setValue(value)
+
+    def _row_of(self, symbol: str | None) -> "AssetRow | None":
+        return next((r for r in self._asset_rows
+                     if isValid(r) and r.symbol == symbol), None)
+
+    def _toggle_why(self, symbol: str) -> None:
+        """Open the card under `symbol`'s row, or close it if it is the open one.
+        One card at a time."""
+        if self._why_open == symbol:
+            self._close_why()
+            return
+        self._drop_why_card()
+        row = self._row_of(symbol)
+        if row is None:
+            return
+        self._why_open = symbol
+        row.set_why_open(True)
+        self._why_card = self._make_why_card(row, time.time())
+        lay = self._assets_lay
+        lay.insertWidget(lay.indexOf(row) + 1, self._why_card)
+        self._tab_to_card()
+        lay.activate()
+        # Scrolls only as far as needed; not at all if the card already fits.
+        self._assets_area.ensureWidgetVisible(self._why_card, 0, 0)
+
+    def _drop_why_card(self) -> None:
+        card, self._why_card = self._why_card, None
+        if card is not None and isValid(card):
+            self._assets_lay.removeWidget(card)
+            card.hide()
+            card.deleteLater()
+        for row in self._asset_rows:
+            if isValid(row) and row.why_is_open:
+                row.set_why_open(False)
+        self._why_open = None
+
+    def _close_why(self) -> None:
+        row = self._row_of(self._why_open)
+        self._drop_why_card()
+        if row is not None:
+            row.score_cell.setFocus()
 
     @staticmethod
     def _rebuild(lay: QVBoxLayout, widgets: list[QWidget], empty_msg: str) -> None:

@@ -36,12 +36,24 @@ not-planned list sit between the two.
       nothing") whenever `loo_cost <= 0` (`backtest.py:1670-1673`), a plain difference with no se, while every other
       grade is gated on FDR, a 2-se spread and the randomisation check. Gate it on a bootstrap se of `loo_cost`, or
       reword. Measure the false-DROP rate with the existing placebo harness. Source: readiness audit M4.
+- [ ] `P3` `design` `@ai` **The word-list "tone" is still produced.** `_rationale` (`assets.py:588`) writes "tone
+      positive/negative/mixed" into every `/api/assets` row, and `Live.read` passes `news_sentiment` to the optional
+      LLM read (`core.py:1373`). The Qt UI shows neither, and `CONFIDENCE.md` §9 calls the word list unfit. Remove
+      both, or justify keeping them. Source: `docs/specs/why-notable-card.md` (Define, decision 5).
 - [ ] `P3` `testing` `@ai` **Three `test_server.py` tests leave a live Watchdog thread** (`server.main` without
       patching `Watchdog.run`, unlike `tests/test_alarm.py:851`); it logs `'StubLive' object has no attribute
       '_stop'` every 15 s for the rest of the run. Patch it. Source: readiness audit L3.
 - [ ] `P3` `infra` `@ai` **Agent log hygiene.** `agent.err.log` has no rotation (739 KB since 2026-10-12) and mixes
       local and ISO-UTC timestamps (`core.py:1521` vs `alarm.ts()`); `/api/health` shows `ok: true` with an old
       `last_error`. Rotate, use one timestamp, clear or age-stamp `last_error`. Source: readiness audit L4.
+- [ ] `P2` `feature` `@ai` **Why-notable card, slice 1** (spec `docs/specs/why-notable-card.md`, branch
+      `claude/build-why-notable-card`). Build tasks, in order:
+      (1) pure `ui/why_card.py` (`build_card`, `displayed_score`, `FOOTER`, `UNDER_DISPUTE`, class words;
+      `_swing_words` moved and aliased); (2) `news_level` thresholds lifted into `sonar/assets.py` constants,
+      behaviour unchanged; (3) ranks from `CROSS_SECTIONAL`, competition rank; (4) largest-remainder points;
+      (5) `WhyCard` widget, `MainWindow._why_open` applied in `_refresh_cards`, scroll and focus kept; (6) score cell
+      as the control (caret, tooltip, accessible name); (7) Learn §5 paragraph; (8) fixture tests for success
+      measures 1–3 and the A6 Qt tests; mutation check. Then Review, Verify (owner check, measure 4), Document.
 
 ### Handing SONAR to other people — only if "others later" happens
 
@@ -846,3 +858,5 @@ need an account and time rather than code are under **Open** above.
       order guard's constructors (`docs/specs/book-broker-truth.md`, 2026-10-12).
 
 - [ ] P3 · shadow ledger · @ai — The retired-record count on the record line stops at 50 without saying so (`sonar/core.py:879`, `SHADOW_RETIRED_MAX`); show "50 or more" at the cap (domain-finance r4 P3-1, `docs/audit/shadow-ledger-domain-finance-r4.md`).
+
+- [ ] P3 · UI wording · @ai — Row buttons read "Buy" / "Short" directly above the why-notable card; label them "Paper buy" / "Paper short" (domain-finance P2-10, `docs/audit/why-notable-card-domain-finance.md`; spec `why-notable-card`).

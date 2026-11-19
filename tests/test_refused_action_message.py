@@ -24,8 +24,9 @@ ASSET = {"symbol": "AAA", "name": "Aaa", "price": 100.0, "volatility": 0.02,
 
 class FakeRow(QWidget):
     """The board is not under test; refresh() draws it in every state."""
-    def __init__(self, a, *_):
+    def __init__(self, a, *_, **__):
         super().__init__()
+        self.symbol = a.get("symbol")
 
     def update_age(self, now):
         pass

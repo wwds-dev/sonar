@@ -1,0 +1,8 @@
+# Foundry plan: estimates and milestones. Written by docs/foundry/tooling/plan.py.
+# Read by the Foundry workspace. A missing key is shown as 'not recorded'.
+updated = "2026-11-18"
+
+[[milestone]]
+name = "Why-notable card slice 1 (Screener)"
+due = "2026-11-25"
+spec = "why-notable-card"

@@ -165,6 +165,17 @@
 {"ts": "2026-10-19T19:59:53", "phase": "build", "state": "done", "spec": "providers-wiring"}
 {"ts": "2026-10-19T19:59:53", "phase": "review", "state": "start", "spec": "providers-wiring"}
 {"ts": "2026-11-18T12:30:19", "phase": "build", "state": "start", "spec": "readiness-h1-h2"}
+{"ts": "2026-11-18T12:36:16", "phase": "define", "state": "start", "spec": "why-notable-card"}
+{"ts": "2026-11-18T12:37:47", "phase": "define", "state": "done", "spec": "why-notable-card"}
 {"ts": "2026-11-18T12:43:08", "phase": "build", "state": "done", "spec": "readiness-h1-h2"}
 {"ts": "2026-11-18T14:49:54", "phase": "build", "state": "start", "spec": "readiness-h3-h4"}
 {"ts": "2026-11-18T14:59:12", "phase": "build", "state": "done", "spec": "readiness-h3-h4"}
+{"ts": "2026-11-18T17:40:32", "phase": "design", "state": "start", "spec": "why-notable-card"}
+{"ts": "2026-11-18T17:44:29", "phase": "design", "state": "done", "spec": "why-notable-card"}
+{"ts": "2026-11-18T20:00:13", "phase": "architect", "state": "start", "spec": "why-notable-card"}
+{"ts": "2026-11-18T20:03:06", "phase": "architect", "state": "done", "spec": "why-notable-card"}
+{"ts": "2026-11-18T21:28:15", "phase": "plan", "state": "start", "spec": "why-notable-card"}
+{"ts": "2026-11-18T21:52:34", "phase": "review", "state": "start", "spec": "why-notable-card"}
+{"ts": "2026-11-18T21:58:54", "phase": "review", "state": "done", "spec": "why-notable-card"}
+{"ts": "2026-11-18T22:32:02", "phase": "verify", "state": "start", "spec": "why-notable-card"}
+{"ts": "2026-11-18T23:47:59", "phase": "verify", "state": "blocked", "spec": "why-notable-card"}

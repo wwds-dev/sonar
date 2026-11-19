@@ -525,8 +525,20 @@ class AssetScanner:
             "classes": sorted({s.cls for s in out}),
             "horizon": hz.as_dict(),
             "risk": profile.as_dict(),
+            # How much of the earnings calendar SONAR actually holds, so a card
+            # can say "no date in SONAR's calendar" only when there is one.
+            "earnings_calendar": self._calendar_coverage(),
             "assets": [asdict(s) for s in out],
         }
+
+    def _calendar_coverage(self) -> dict:
+        n = 0
+        if self.events is not None:
+            try:
+                n = int(self.events.cached_payload().get("n_earnings", 0))
+            except Exception:
+                n = 0
+        return {"n": n, "days": events_mod.LOOKAHEAD_DAYS}
 
 
 #: Components standardised within asset class, and the *raw* quantity each one
@@ -578,6 +590,14 @@ def _daily_vol(closes: list[float]) -> float:
     return math.sqrt(sum((r - mean) ** 2 for r in rets) / (len(rets) - 1))
 
 
+#: The thresholds `news_level` uses, as names, so the why-notable card
+#: (`ui/why_card.py`) quotes them instead of retyping them.
+NEWS_FRESH_H = 6    # a story this young is "fresh"
+NEWS_DAY_H = 24     # a story this young counts towards the day
+NEWS_SPIKE_N = 3    # this many fresh stories is a "Spike"
+NEWS_DAY_N = 3      # this many stories in the day is "Elevated"
+
+
 def news_level(matched: list) -> str:
     """How unusual today's coverage is, from the matched headlines themselves.
 
@@ -589,11 +609,11 @@ def news_level(matched: list) -> str:
     Counting instead, with recency doing the work: a spike means several
     genuinely fresh stories, not merely that the company exists.
     """
-    fresh = sum(1 for h in matched if h.dated and h.age_hours < 6)
-    day = sum(1 for h in matched if h.dated and h.age_hours < 24)
-    if fresh >= 3:
+    fresh = sum(1 for h in matched if h.dated and h.age_hours < NEWS_FRESH_H)
+    day = sum(1 for h in matched if h.dated and h.age_hours < NEWS_DAY_H)
+    if fresh >= NEWS_SPIKE_N:
         return "Spike"
-    if fresh >= 1 or day >= 3:
+    if fresh >= 1 or day >= NEWS_DAY_N:
         return "Elevated"
     if matched:
         return "Normal"
