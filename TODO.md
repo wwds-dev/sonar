@@ -53,6 +53,22 @@ not-planned list sit between the two.
       (5) `WhyCard` widget, `MainWindow._why_open` applied in `_refresh_cards`, scroll and focus kept; (6) score cell
       as the control (caret, tooltip, accessible name); (7) Learn §5 paragraph; (8) fixture tests for success
       measures 1–3 and the A6 Qt tests; mutation check. Then Review, Verify (owner check, measure 4), Document.
+      Status 2026-11-19: built (2132740), reviewed, Verify passed with notes
+      (`docs/audit/why-notable-card-qa-engineer.md`). Left: success measure 4 (`@me`: read five random cards and
+      record a screenshot and your words), then Document.
+- [ ] `P3` `testing` `@ai` **Why-notable card: open P3s from Review and Verify.**
+      (a) The scroll-restore tests miss "the reader scrolls, so the wanted position is dropped", "the position is
+      cleared once restored" and the `hi == target` edge (re-Verify mutants 4–6 survived; a Tab or
+      `ensureWidgetVisible` scroll does not fire `actionTriggered`). (b) The card shows the configured days, not the
+      window the scan actually used. (c) A non-share earnings value is only logged, not zeroed at the source.
+      (d) Design P3-5 (earnings dates can move; no note) and P3-6 (news sources have no label). Source:
+      `docs/audit/why-notable-card-qa-engineer.md`, `docs/audit/why-notable-card-review-domain-finance.md`.
+- [ ] `P3` `testing` `@ai` **Two suite failures not caused by the why-notable branch.**
+      `tests/test_shadow_ui.py:773` `test_h3_a_look_number…` fails on some dates (`NOW = time.time()`; "30 Oct"
+      contains "0"); it fails on master 71c078d too. `test_health::test_the_topic_never_appears_in_any_output` flakes
+      under load (`drain(5)` timing). Pin the date; wait on a condition, not a time. Stale nested repos in a worktree
+      also fail `test_ci_pins` and `test_legal_copy`: run `scripts/bootstrap_nested.sh` first. Source: re-Verify
+      2026-11-19 in `docs/audit/why-notable-card-qa-engineer.md`.
 
 ### Handing SONAR to other people — only if "others later" happens
 
