@@ -460,15 +460,18 @@ def test_the_dispute_pointer_names_a_section_that_exists():
 
 def test_a_score_cell_whose_row_leaves_the_board_sends_focus_to_the_header(window):
     """QA P2-1: with the card closed or open, focus on a row's own score cell,
-    and that row leaving the board, used to land on another row's cell."""
+    and that row leaving the board, used to land on another row's cell.
+    A small board keeps each rebuild quick when the process is slow."""
+    small = board()
+    small["assets"] = small["assets"][:12]
+    assert any(a["symbol"] == "NVDA" for a in small["assets"])
     for opened in (False, True):
+        rebuild(window, copy.deepcopy(small))
         window._drop_why_card()
         if opened:
             click(row(window, "NVDA").score_cell)
         row(window, "NVDA").score_cell.setFocus()
-        b = board()
-        b["assets"] = [a for a in b["assets"] if a["symbol"] != "NVDA"]
-        rebuild(window, b)
+        gone = copy.deepcopy(small)
+        gone["assets"] = [a for a in gone["assets"] if a["symbol"] != "NVDA"]
+        rebuild(window, gone)
         assert focused(window, window.asset_header), opened
-        rebuild(window, board())            # put it back for the next pass
-
