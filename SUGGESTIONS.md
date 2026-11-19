@@ -27,12 +27,12 @@ Status: `IDEA` · `CONSIDERING` · `PLANNED` · `BLOCKED` · `DEFERRED` — a ro
 | I-15 | **Guided mode for the Lab** — controls phrased as questions, a verdict in words above the table, and the three tests that decide whether a result means anything stated inline rather than assumed | feature | L | PLANNED |
 | 16 | **First-run cards**: paper money, notability is not direction, start on Assets, check claims in the Lab, the manual is a tab | feature | M | PLANNED |
 | 17 | Say what would change an "unproven" — "needs ~20 closed positions, you have 3" — wherever the app refuses to claim something | design | S | PLANNED |
-| 19 | Move Playmaker fully out into its own app; SONAR keeps the screener and the paper book (portfolio review 2026-11-18) | design | L | IDEA |
+| 19 | Move Playmaker fully out into its own app; SONAR keeps the screener and the paper book (portfolio review 2026-11-18) | design | L | DEFERRED — out of redesign scope (owner, 2026-11-18); revisit after the redesign ships |
 | 20 | Retire the hourly BTC up/down model from Practice (portfolio review 2026-11-18) | design | S | IDEA |
 | 21 | One scorecard in place of the three self-grading loops (calibration, shadow grade, model-vs-market) (portfolio review 2026-11-18) | design | M | IDEA |
 | 22 | Four tabs instead of eight: Today, Screener, Portfolio, Learn (portfolio review 2026-11-18) | design | L | IDEA |
 | 23 | A plain-language "why is this notable" card per instrument, built only from the model's own numbers and never stating direction (portfolio review 2026-11-18) | feature | M | IDEA |
-| 24 | Claim checker: paste a tip or an influencer's claim and SONAR tests it against its data, answering "no support found" when there is none (portfolio review 2026-11-18) | feature | L | IDEA |
+| 24 | Claim checker: paste a tip or an influencer's claim and SONAR tests it against its data, answering "no support found" when there is none (portfolio review 2026-11-18) | feature | L | DEFERRED — out of redesign scope (owner, 2026-11-18); revisit after the redesign ships |
 
 ## Done
 
