@@ -105,7 +105,7 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       auto-update). Say in the app and README that results come from free public sources and can be stale or
       wrong. (The licence is settled: MIT, see Done.)
 
-- [ ] `P0` `infra` `@ai` **Alarm delivery: the agent's only alarm (osascript banner) failed 45 of 47 times.** Add ntfy
+- [ ] `P0` `infra` `@me` **Alarm delivery: the agent's only alarm (osascript banner) failed 45 of 47 times.** Built, merged (`d548361`) and live since v2.406; only the owner's phone evidence (measures 6-7) is still owed, see the status line below. Original scope: add ntfy
       push, a daily heartbeat and `notify_failures` in `/api/health`; diagnose the timeouts; timestamp watchdog lines;
       fix RUNBOOK §2. Spec `docs/specs/alarm-delivery.md` (Define and Architect gates approved; **built 2026-10-14,
       uncommitted**: `sonar/alarm.py`, watchdog wiring in `sonar/server.py`, `--test-alarm`, 76 tests; diagnosis
