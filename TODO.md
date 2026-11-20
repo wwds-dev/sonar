@@ -1,5 +1,7 @@
 # SONAR — TODO
 
+> **Testing first (owner, 2026-11-20).** `P0` now means: needed before the owner can test this app on his own Mac, or a security must. Everything else waits until after testing, and no new feature or redesign row starts unless the owner asks for it. The why-notable card (slice 1) is built and merged; reading five cards is the owner's part of it.
+
 > **Legend** — priority `P0` critical · `P1` high · `P2` normal · `P3` low
 > categories `security` `bug` `feature` `performance` `design` `docs` `testing` `infra` `research`
 > owner `@me` (needs you — accounts, keys, money, judgement) · `@ai` (Claude can do this)
@@ -11,21 +13,21 @@
 Only unfinished items live here. Finished work is under **Done** at the foot; v3 and the
 not-planned list sit between the two.
 
-- [ ] `P1` `research` `@ai` **Model-vs-market verdict is a 2-se test re-read every hour.** Under no edge it reads
+- [ ] `P0` `research` `@ai` **Model-vs-market verdict is a 2-se test re-read every hour.** Under no edge it reads
       "model beats market" at some look in 16.8% of runs (3.0% at one fixed look; either side 30.6%), measured to
       n = 975 (`engine.py:632-645`), and `model_better` colours the Terminal's edge by side (`ui/app.py:4795`). Use
       `Z_CLAIM = 3` or an alpha-spending boundary (1.5% / 3.0% at 3 se) with a rate test, or reword docs.html §
       "Brier, model vs market". Source: `docs/audit/code-readiness-2026-11-18.md` H1.
       **Built 2026-11-18** on `claude/readiness-h1-h2` (spec `docs/specs/readiness-h1-h2.md`, Define and
       Architect approved). Next: Review, Verify, Document check, then install with the owner's yes.
-- [ ] `P1` `bug` `@ai` **A Yahoo outage leaves health green while paper entries book at hours-old prices.** Failed
+- [ ] `P0` `bug` `@ai` **A Yahoo outage leaves health green while paper entries book at hours-old prices.** Failed
       fetches keep the cached row (`assets.py:252-257`, `397-401`); the rescan still marks the book, runs Protocol
       entries and re-stamps `_scan_at` (`core.py:428-449`), so the "not rescanned" health check never fires;
       `trade`/`enter` take `asset["price"]` with no age check. Refuse entries past a data-age bound, add a `data`
       health problem so the watchdog alarms, and add both to the README outage list. Source: readiness audit H2.
       **Built 2026-11-18** on `claude/readiness-h1-h2` (spec `docs/specs/readiness-h1-h2.md`, Define and
       Architect approved). Next: Review, Verify, Document check, then install with the owner's yes.
-- [ ] `P1` `testing` `@me` **Run the v2.406 release smoke test.** Steps in `docs/audit/release-v2.406.md`
+- [ ] `P0` `testing` `@me` **Run the v2.406 release smoke test.** Steps in `docs/audit/release-v2.406.md`
       ("Smoke test"): About shows v2.406, one scan, one paper trade (Undo it if unwanted), quit and relaunch,
       `install_agent.sh --status`, phone heartbeat. Note the result in that file.
 - [x] `P2` `docs` `@me` **Land `claude/defer-suggestions-19-24`.** One commit (`134d18d`) marks SUGGESTIONS #19
@@ -186,7 +188,7 @@ Unscheduled (`docs/specs/v1-product.md`): SONAR is the owner's own paper-trading
       run already produces; and the three tests that decide whether a result
       means anything (error bar, out-of-sample, multiple testing) stated inline
       with a link to §8 rather than assumed.
-- [ ] `P1` `research` `@me` **Let the paper book run.** The calibration table stays empty until ~20 positions have closed. No amount of backtesting substitutes for a track record. **Protocol mode** (Book tab, off by default) now fills it systematically — coin-flip direction, fixed small stakes — so the remaining decision is only to switch it on and leave the app running.
+- [ ] `P0` `research` `@me` **Let the paper book run.** The calibration table stays empty until ~20 positions have closed. No amount of backtesting substitutes for a track record. **Protocol mode** (Book tab, off by default) now fills it systematically — coin-flip direction, fixed small stakes — so the remaining decision is only to switch it on and leave the app running.
 - [ ] `P2` `design` `@ai` **The other six tabs are still written in jargon.**
       The Screener is done and the shared stat strips got English captions via
       `STAT_WORDS`, but the Practice tab still asks for `STEP (BARS)`, and the
